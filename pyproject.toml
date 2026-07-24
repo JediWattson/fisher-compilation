@@ -25,6 +25,7 @@ fisher-graph-modal-executor = "fisher_graph.modal_executor_experiment:main"
 fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"
 fisher-graph-modal-compose = "fisher_graph.modal_composition_experiment:main"
 fisher-graph-fuse = "fisher_graph.fused_executor_experiment:main"
+fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 
 [tool.setuptools.packages.find]

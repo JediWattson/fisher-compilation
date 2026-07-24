@@ -48,6 +48,15 @@ and
 The fused runtime and benchmark are in
 [`artifacts/associative_recall/fused_executor_report.md`](artifacts/associative_recall/fused_executor_report.md).
 
+## Optimization summary
+
+[![Three-panel optimization summary comparing arithmetic, CPU latency, and resident tensor storage](docs/images/fused-executor-optimization.svg)](docs/images/fused-executor-optimization.svg)
+
+The committed SVG is generated directly from the authenticated fused-executor
+report. Its source hash is embedded in the image, and the test suite rejects a
+stale figure if the benchmark JSON changes. The triangular arithmetic bar is an
+available backend specialization, not a measured speedup.
+
 ## Reproduce the build
 
 ```bash
@@ -63,6 +72,7 @@ fisher-graph-modal-executor --layer-index 1 --routing-widths 4 6 8 12 16 24
 fisher-graph-modal-completion --layer-index 1
 fisher-graph-modal-compose
 fisher-graph-fuse
+fisher-graph-plot-optimizations
 fisher-graph-verify
 python -m pytest -W error
 ```
@@ -78,6 +88,7 @@ python -m fisher_graph.modal_executor_experiment --layer-index 1 --routing-width
 python -m fisher_graph.modal_completion_experiment --layer-index 1
 python -m fisher_graph.modal_composition_experiment
 python -m fisher_graph.fused_executor_experiment
+python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```
 
