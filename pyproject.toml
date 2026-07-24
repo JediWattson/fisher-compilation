@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fisher-graph"
+version = "0.1.0"
+description = "Instrumentable activation-Fisher analysis and modal graph compilation."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "torch>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+]
+
+[project.scripts]
+fisher-graph-experiment = "fisher_graph.associative_experiment:main"
+fisher-graph-intervene = "fisher_graph.intervention_experiment:main"
+fisher-graph-modal-executor = "fisher_graph.modal_executor_experiment:main"
+fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"
+fisher-graph-modal-compose = "fisher_graph.modal_composition_experiment:main"
+fisher-graph-fuse = "fisher_graph.fused_executor_experiment:main"
+fisher-graph-verify = "fisher_graph.verify:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
