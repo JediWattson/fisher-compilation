@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -493,11 +494,62 @@ class RuntimeManifestTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(first.resources), 9)
+        descriptors = {item.id: item for item in first.resources}
+        self.assertEqual(descriptors["fused.report"].format_version, 3)
+        self.assertEqual(descriptors["runtime.fast"].format_version, 2)
         for descriptor in first.resources:
             self.assertEqual(
                 resolve_resource_bytes(ARTIFACTS, descriptor),
                 (ARTIFACTS / descriptor.path).read_bytes(),
             )
+
+    def test_legacy_migration_preserves_v2_report_and_runtime_versions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "artifacts"
+            shutil.copytree(ARTIFACTS, root)
+            report_path = root / "fused_executor_report.json"
+            report = json.loads(report_path.read_text())
+            report["format_version"] = 2
+            report.pop("triangular_runtime_benchmark")
+            report_path.write_text(json.dumps(report, allow_nan=False))
+
+            manifest = manifest_from_legacy_runtime(root)
+
+            descriptors = {item.id: item for item in manifest.resources}
+            self.assertEqual(descriptors["fused.report"].format_version, 2)
+            self.assertEqual(descriptors["runtime.fast"].format_version, 2)
+
+    def test_legacy_migration_requires_triangular_section_for_v3(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "artifacts"
+            shutil.copytree(ARTIFACTS, root)
+            report_path = root / "fused_executor_report.json"
+            report = json.loads(report_path.read_text())
+            report["format_version"] = 3
+            report["triangular_runtime_benchmark"] = {}
+            report_path.write_text(json.dumps(report, allow_nan=False))
+
+            manifest = manifest_from_legacy_runtime(root)
+
+            descriptors = {item.id: item for item in manifest.resources}
+            self.assertEqual(descriptors["fused.report"].format_version, 3)
+            self.assertEqual(descriptors["runtime.fast"].format_version, 2)
+            self.assertEqual(
+                manifest.annotations["migration"]["source_format_version"],
+                2,
+            )
+
+            report.pop("triangular_runtime_benchmark")
+            report_path.write_text(json.dumps(report, allow_nan=False))
+            with self.assertRaisesRegex(
+                ValueError,
+                "v3 triangular section must be an object",
+            ):
+                manifest_from_legacy_runtime(root)
 
 
 if __name__ == "__main__":

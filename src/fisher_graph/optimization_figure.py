@@ -44,6 +44,9 @@ class OptimizationFigureData:
     latency: tuple[LatencySeries, ...]
     storage: tuple[OptimizationBar, ...]
     speedup_range: tuple[float, float]
+    triangular_vs_lazy_speedup_range: tuple[float, float] | None
+    report_format_version: int
+    triangular_measured: bool
     device: str
     dtype: str
     arithmetic_scope: str
@@ -90,8 +93,11 @@ def extract_optimization_figure_data(
 ) -> OptimizationFigureData:
     """Extract and validate the report fields represented by the figure."""
 
-    if report.get("format_version") != 2:
-        raise ValueError("report.format_version must be 2")
+    format_version = report.get("format_version")
+    if format_version not in (2, 3):
+        raise ValueError("report.format_version must be 2 or 3")
+    assert isinstance(format_version, int)
+    triangular_measured = format_version == 3
 
     arithmetic = _object(report.get("arithmetic"), "report.arithmetic")
     compute = (
@@ -120,18 +126,34 @@ def extract_optimization_figure_data(
             "executed",
         ),
         OptimizationBar(
-            "Triangular backend opportunity",
+            (
+                "Packed triangular reference"
+                if triangular_measured
+                else "Triangular backend opportunity"
+            ),
             _number(
                 arithmetic.get("fused_triangular_nonzero_multiplies"),
                 "report.arithmetic.fused_triangular_nonzero_multiplies",
             ),
-            "not yet executed",
+            (
+                "measured packed reference"
+                if triangular_measured
+                else "not yet executed"
+            ),
         ),
     )
 
-    environment = _object(
-        report.get("benchmark_environment"), "report.benchmark_environment"
-    )
+    benchmark_value = report.get("benchmark")
+    environment_value = report.get("benchmark_environment")
+    triangular_section: Mapping[str, object] | None = None
+    if triangular_measured:
+        triangular_section = _object(
+            report.get("triangular_runtime_benchmark"),
+            "report.triangular_runtime_benchmark",
+        )
+        benchmark_value = triangular_section.get("benchmark")
+        environment_value = triangular_section.get("benchmark_environment")
+    environment = _object(environment_value, "benchmark_environment")
     contract = _object(
         environment.get("benchmark_contract"),
         "report.benchmark_environment.benchmark_contract",
@@ -160,14 +182,17 @@ def extract_optimization_figure_data(
         "monolithic": "Monolithic fused",
         "lazy": "Compact lazy",
     }
+    if triangular_measured:
+        system_labels["triangular"] = "Packed triangular"
     if expected_systems != tuple(system_labels):
+        expected_system_names = ", ".join(system_labels)
         raise ValueError(
-            "benchmark systems must be teacher, unfused, monolithic, lazy"
+            f"benchmark systems must be {expected_system_names}"
         )
 
     benchmark_rows: dict[int, Mapping[str, object]] = {}
     for index, value in enumerate(
-        _array(report.get("benchmark"), "report.benchmark")
+        _array(benchmark_value, "benchmark")
     ):
         row = _object(value, f"report.benchmark[{index}]")
         batch_size = _integer(
@@ -237,7 +262,7 @@ def extract_optimization_figure_data(
         storage_report.get("lazy_storage_contract"),
         "report.storage.lazy_storage_contract",
     )
-    storage = (
+    storage_rows = [
         OptimizationBar(
             "Monolithic full runtime",
             _number(
@@ -268,9 +293,32 @@ def extract_optimization_figure_data(
             ),
             "instrumented",
         ),
-    )
+    ]
+    if triangular_section is not None:
+        triangular_contract = _object(
+            triangular_section.get("runtime_contract"),
+            "report.triangular_runtime_benchmark.runtime_contract",
+        )
+        packed_stack_bytes = _number(
+            triangular_contract.get("packed_fast_state_tensor_bytes"),
+            "report.triangular_runtime_benchmark.runtime_contract."
+            "packed_fast_state_tensor_bytes",
+        )
+        model_shell_bytes = _number(
+            lazy_contract.get("model_shell_tensor_bytes"),
+            "report.storage.lazy_storage_contract.model_shell_tensor_bytes",
+        )
+        storage_rows.append(
+            OptimizationBar(
+                "Packed triangular reference",
+                packed_stack_bytes + model_shell_bytes,
+                "derived fast-only",
+            )
+        )
+    storage = tuple(storage_rows)
 
     speedups: list[float] = []
+    triangular_speedups: list[float] = []
     for batch_size in expected_batches:
         row = benchmark_rows[batch_size]
         ratios = _object(
@@ -283,12 +331,27 @@ def extract_optimization_figure_data(
                 f"benchmark[{batch_size}].speedup_ratios.lazy_vs_unfused",
             )
         )
+        if triangular_measured:
+            triangular_speedups.append(
+                _number(
+                    ratios.get("triangular_vs_lazy"),
+                    f"benchmark[{batch_size}].speedup_ratios."
+                    "triangular_vs_lazy",
+                )
+            )
 
     return OptimizationFigureData(
         compute=compute,
         latency=tuple(latency),
         storage=storage,
         speedup_range=(min(speedups), max(speedups)),
+        triangular_vs_lazy_speedup_range=(
+            (min(triangular_speedups), max(triangular_speedups))
+            if triangular_speedups
+            else None
+        ),
+        report_format_version=format_version,
+        triangular_measured=triangular_measured,
         device=_string(environment.get("device"), "benchmark_environment.device"),
         dtype=_string(environment.get("dtype"), "benchmark_environment.dtype"),
         arithmetic_scope=_string(
@@ -425,8 +488,14 @@ def render_optimization_figure(
         "unfused": "#7c3aed",
         "monolithic": "#2563eb",
         "lazy": "#059669",
+        "triangular": "#d97706",
         "opportunity": "#d97706",
     }
+    description_systems = (
+        "five execution systems"
+        if data.triangular_measured
+        else "four execution systems"
+    )
     svg: list[str] = [
         (
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
@@ -436,7 +505,8 @@ def render_optimization_figure(
         '<title id="figure-title">Fisher modal compilation optimization profile</title>',
         (
             '<desc id="figure-description">Three panels compare scalar '
-            "multiplies, end-to-end CPU latency across four batch sizes, and "
+            f"multiplies, end-to-end CPU latency for {description_systems} "
+            "across four batch sizes, and "
             "resident tensor storage for the locked two-layer associative-recall "
             "checkpoint.</desc>"
         ),
@@ -502,6 +572,25 @@ def render_optimization_figure(
         ),
     ]
 
+    if data.triangular_vs_lazy_speedup_range is None:
+        latency_summary = (
+            f"compact lazy is {data.speedup_range[0]:.2f}–"
+            f"{data.speedup_range[1]:.2f}× faster than logical modal"
+        )
+    else:
+        latency_summary = (
+            "triangular vs lazy speedup "
+            f"{data.triangular_vs_lazy_speedup_range[0]:.2f}–"
+            f"{data.triangular_vs_lazy_speedup_range[1]:.2f}×"
+        )
+
+    storage_colors = [
+        colors["teacher"],
+        colors["lazy"],
+        colors["monolithic"],
+    ]
+    if data.triangular_measured:
+        storage_colors.append(colors["triangular"])
     svg.extend(
         _bar_panel(
             x=50,
@@ -530,11 +619,7 @@ def render_optimization_figure(
             subtitle="Full model runtime · normalized to monolithic",
             rows=data.storage,
             formatter=_format_bytes,
-            colors=(
-                colors["teacher"],
-                colors["lazy"],
-                colors["monolithic"],
-            ),
+            colors=tuple(storage_colors),
         )
     )
 
@@ -556,8 +641,7 @@ def render_optimization_figure(
                 panel_y + 68,
                 (
                     "Median of 9 rotating rounds · p10–p90 whiskers · log scale "
-                    f"· compact lazy is {data.speedup_range[0]:.2f}–"
-                    f"{data.speedup_range[1]:.2f}× faster than logical modal"
+                    f"· {latency_summary}"
                 ),
                 css_class="subtitle",
             ),
@@ -671,6 +755,7 @@ def render_optimization_figure(
         "unfused": "3 5",
         "monolithic": "12 5",
         "lazy": "",
+        "triangular": "10 4 2 4",
     }
     for series in data.latency:
         color = colors[series.key]
@@ -730,10 +815,10 @@ def render_optimization_figure(
                 f'cy="{point_y:.1f}" r="6" style="fill:{color}"/>'
             )
 
-    legend_x = 825.0
+    legend_x = 590.0
     legend_y = 564.0
     for index, series in enumerate(data.latency):
-        item_x = legend_x + index * 170
+        item_x = legend_x + index * 190
         color = colors[series.key]
         dash = dash_patterns[series.key]
         dash_attribute = (
@@ -774,8 +859,16 @@ def render_optimization_figure(
                 56,
                 1006,
                 (
-                    "Dashed amber arithmetic is a triangular-kernel opportunity, "
-                    "not measured execution. Exploratory single-checkpoint result."
+                    (
+                        "Packed triangular is a measured in-memory PyTorch "
+                        "reference, not the serialized default or an MLX/Metal "
+                        "kernel. "
+                        if data.triangular_measured
+                        else
+                        "Dashed amber arithmetic is a triangular-kernel "
+                        "opportunity, not measured execution. "
+                    )
+                    + "Exploratory single-checkpoint result."
                 ),
                 css_class="footer",
             ),

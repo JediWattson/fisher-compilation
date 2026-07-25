@@ -20,6 +20,8 @@ This repository now contains a complete reference run:
 - a compact seven-tensor fused executor whose inspectable logical graph loads
   lazily for activation capture or interventions, with measured end-to-end
   CPU speedups;
+- a packed causal-pair triangular reference derived from that authenticated
+  runtime, with validation-gated arithmetic, storage, and latency measurements;
 - a trainable, sequence-length-independent causal modal executor for dynamic
   prefill, with explicit padding, logical-position, and visibility guards;
 - a nonmutating mixed runtime that dispatches each manifested segment to a
@@ -54,8 +56,9 @@ The fused runtime and benchmark are in
 
 The committed SVG is generated directly from the authenticated fused-executor
 report. Its source hash is embedded in the image, and the test suite rejects a
-stale figure if the benchmark JSON changes. The triangular arithmetic bar is an
-available backend specialization, not a measured speedup.
+stale figure if the benchmark JSON changes. The packed triangular line is a
+measured in-memory PyTorch reference. It is not the serialized default backend
+or an MLX/Metal kernel.
 
 ## Reproduce the build
 
@@ -106,8 +109,11 @@ The fusion command then folds that locked runtime algebraically, saves both
 the backward-compatible monolithic artifact and the compact lazy artifact,
 reloads them, applies a stricter numerical equivalence gate, exercises the
 lazy instrumentation lifecycle, and benchmarks the teacher, logical modal,
-monolithic fused, and compact lazy systems. It regenerates the authenticated
-runtime manifest after writing the final benchmark report.
+monolithic fused, and compact lazy systems. It also derives the packed
+triangular candidate without fitting any weight, validation-gates it against
+the lazy runtime, and runs a separate same-round five-system benchmark without
+using the test split. It regenerates the authenticated runtime manifest after
+writing the final benchmark report.
 
 ## Compiler interfaces and scaling boundary
 
@@ -727,7 +733,11 @@ dimensions merely to project it back into layer 1's 25 retained coordinates.
 No coefficient is fitted or updated during fusion.
 
 ```python
-from fisher_graph import FusedToyTransformer, load_lazy_fused_modal_stack
+from fisher_graph import (
+    FusedToyTransformer,
+    PackedTriangularFusedTwoLayerModalStack,
+    load_lazy_fused_modal_stack,
+)
 from fisher_graph.training import load_checkpoint
 
 teacher, _ = load_checkpoint(
@@ -740,6 +750,12 @@ runtime = FusedToyTransformer.from_teacher(teacher, stack).eval()
 
 fast_output = runtime(tokens)
 print(stack.instrumentation_status())  # sidecar is still unloaded
+
+packed_stack = PackedTriangularFusedTwoLayerModalStack.from_lazy(stack)
+packed_runtime = FusedToyTransformer.from_teacher(
+    teacher, packed_stack
+).eval()
+packed_output = packed_runtime(tokens)
 
 traced_output = runtime(tokens, capture_activations=True)
 print(traced_output.activations["layer.0.modal.hidden"])
@@ -756,6 +772,13 @@ re-folds them to prove that they derive the resident fast tensors, and caches
 the accepted logical layers. Later instrumented calls reuse that cache. An
 explicit eviction releases it, and a dtype/device conversion evicts it
 automatically so that a later trace reloads it in the new runtime format.
+
+The packed triangular candidate copies only the 36 legal lower-triangular
+position pairs from the two causal kernels and retains the position-local
+decoder. It is algebraically equivalent for finite inputs, but floating-point
+reduction order means it is not bit-identical to the dense path. The candidate
+does not carry instrumentation sidecars: capture and intervention continue to
+use the authenticated lazy runtime shown above.
 
 Missing or corrupt sidecars therefore disable only capture/intervention:
 ordinary inference continues to use the already-resident fast tensors. The
@@ -783,12 +806,12 @@ Block-only scalar-multiply accounting is:
 | Two original transformer blocks | 139,264 | 100.000% |
 | Logical completed modal stack | 72,384 | 51.976% |
 | Current fused dense path | 49,152 | 35.294% |
-| Causal-triangular nonzero opportunity | 30,336 | 21.783% |
+| Packed triangular reference | 30,336 | 21.783% |
 
-The current PyTorch executor uses dense `einsum` kernels containing structural
-causal zeros, so 49,152 is the executed contraction count. The 30,336 figure
-is an available next optimization for a triangular or sparse specialized
-backend, not a speedup already claimed.
+The authenticated executor continues to use dense `einsum` kernels containing
+structural causal zeros. The packed PyTorch reference executes the 30,336
+nonzero multiplies using gathered causal pairs and indexed reduction. Arithmetic
+reduction alone is not treated as a latency claim.
 
 The full fixed-length model was benchmarked on the recorded arm64 CPU with one
 PyTorch intra-op thread, inference mode, adaptive iterations, nine rotating
@@ -796,13 +819,30 @@ measurement rounds, and input construction outside the timed region:
 
 | Batch | Teacher | Logical modal | Monolithic fused | Compact lazy | Lazy vs logical |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 108.566 us | 173.011 us | 54.645 us | 54.785 us | 3.158x |
-| 8 | 200.643 us | 235.553 us | 67.853 us | 67.949 us | 3.467x |
-| 64 | 751.302 us | 358.892 us | 109.984 us | 108.006 us | 3.323x |
-| 256 | 2,734.323 us | 617.775 us | 230.706 us | 227.514 us | 2.715x |
+| 1 | 114.198 us | 190.748 us | 57.049 us | 55.976 us | 3.408x |
+| 8 | 205.205 us | 242.431 us | 67.965 us | 68.461 us | 3.541x |
+| 64 | 817.487 us | 364.664 us | 108.473 us | 107.841 us | 3.381x |
+| 256 | 2,904.923 us | 615.545 us | 236.815 us | 235.440 us | 2.614x |
 
 Across these batches, the compact/monolithic geometric-mean latency ratio was
-0.993x; the maximum observed ratio was 1.003x. No hard latency gate was used.
+0.994x. No hard latency gate was used.
+
+The triangular candidate was measured in a separate five-system cohort so its
+ratios use dense and packed measurements from the same rotating rounds:
+
+| Batch | Compact lazy | Packed triangular | Triangular vs lazy | Triangular vs logical |
+|---:|---:|---:|---:|---:|
+| 1 | 57.362 us | 55.558 us | 1.032x | 3.416x |
+| 8 | 67.494 us | 106.630 us | 0.633x | 2.191x |
+| 64 | 110.239 us | 249.445 us | 0.442x | 1.427x |
+| 256 | 218.363 us | 434.046 us | 0.503x | 1.374x |
+
+The packed reference wins narrowly at batch 1, but its geometric-mean speedup
+versus dense lazy execution is only 0.617x: the current gather, temporary
+pair-output, and `index_add` overhead outweigh the 38.3% multiply reduction at
+larger batches. It still beats the unfused logical runtime at every measured
+batch, with a 1.957x geometric-mean speedup. This crossover is the reason the
+dense lazy runtime remains the authenticated default.
 
 The compact runtime changes the storage tradeoff:
 
@@ -812,6 +852,7 @@ The compact runtime changes the storage tradeoff:
 | Compact full runtime during ordinary inference | 205,952 |
 | Logical sidecar added after instrumentation | 203,648 |
 | Compact full runtime with sidecar cached | 409,600 |
+| Derived packed triangular full model | 131,264 |
 
 The ordinary-inference footprint is 71.2% below the monolithic runtime. Even
 after instrumentation is loaded it remains 42.6% below it, because the compact
@@ -820,6 +861,10 @@ copies. These are resident tensor bytes for the complete model shell; the four
 sidecar files occupy 244,724 bytes on disk and are read only on first
 instrumentation. The compact artifact plus those reusable sidecars occupies
 451,617 bytes on disk, 37.4% below the 721,471-byte monolithic artifact.
+The derived packed fast stack occupies 125,120 tensor bytes instead of 199,808,
+a 37.4% reduction; with the model shell it is 36.3% below the compact dense
+runtime and 81.6% below the monolithic runtime. That figure excludes an
+instrumentation sidecar because the candidate is deliberately fast-only.
 
 These timings are backend- and hardware-specific. The executor is also
 deliberately specialized to the fixed, unpadded eight-token task. As with the
@@ -870,7 +915,8 @@ than a seed-replicated claim.
   lazy references to the four existing logical executor/completion sidecars;
 - `fused_executor_report.json` and `fused_executor_report.md`: numerical
   equivalence gate, lazy dispatch/cache/eviction contract, arithmetic, storage,
-  provenance, and four-system steady-state CPU benchmark.
+  provenance, the original four-system benchmark, and a validation-only
+  five-system packed-triangular benchmark bound to the lazy artifact.
 
 Layer 0 keeps the original unsuffixed filenames for backward compatibility.
 For layer \(i>0\), executor artifacts use
@@ -893,7 +939,11 @@ and sidecar manifest, and zero-load fast execution. It recomputes
 logical-versus-fused validation and test behavior, verifies one authenticated
 lazy load, cache reuse, intervention dispatch, and eviction, validates
 arithmetic and storage accounting, and treats benchmark timings as positive
-hardware observations rather than exact reproducibility targets.
+hardware observations rather than exact reproducibility targets. For format-3
+reports it independently reconstructs the packed candidate, verifies all 36
+causal pairs and its 125,120-byte state, recomputes validation equivalence,
+proves zero sidecar access and no test usage, and checks every five-system
+timing and derived ratio. Format-2 reports remain supported.
 The test suite additionally checks position-conditioned and fractional
 suppression, downstream propagation, autograd, invalid interventions, and
 standard-versus-graph executor equivalence under the same intervention.

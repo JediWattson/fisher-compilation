@@ -36,7 +36,15 @@ def test_verify_build_reports_each_modal_layer_and_keeps_layer_zero_aliases():
     assert fused["cross_layer_bypass"] is True
     assert fused["parameter_count"] == 0
     assert fused["contains_transformer_block"] is False
-    assert fused["format_version"] == 2
+    assert fused["format_version"] == 3
+    assert fused["triangular_runtime_present"] is True
+    assert fused["triangular_causal_pair_count"] == 36
+    assert (
+        fused["triangular_fast_stack_resident_tensor_bytes"]
+        == 125_120
+    )
+    assert fused["triangular_validation_gate_passed"] is True
+    assert fused["triangular_zero_source_sidecar_loads"] is True
     assert fused["lazy_runtime"] is True
     assert fused["fast_state_tensor_count"] == 7
     assert fused["fast_stack_resident_tensor_bytes"] == 199_808

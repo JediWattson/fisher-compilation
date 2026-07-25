@@ -13,6 +13,7 @@ from fisher_graph.fused_executor import (
     FusedToyTransformer,
     FusedTwoLayerModalStack,
     LazyFusedTwoLayerModalStack,
+    PackedTriangularFusedTwoLayerModalStack,
     load_fused_modal_stack,
     load_lazy_fused_modal_stack,
     save_fused_modal_stack,
@@ -785,6 +786,267 @@ class FusedExecutorTests(unittest.TestCase):
                             malformed,
                             sidecar_root=ARTIFACTS,
                         )
+
+    def test_packed_triangular_state_is_exactly_derived_in_memory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._save_lazy(Path(directory))
+            lazy, _, _ = load_lazy_fused_modal_stack(
+                artifact,
+                sidecar_root=ARTIFACTS,
+            )
+        status_before = lazy.instrumentation_status()
+
+        packed = PackedTriangularFusedTwoLayerModalStack.from_lazy(
+            lazy
+        ).eval()
+
+        self.assertEqual(lazy.instrumentation_status(), status_before)
+        self.assertEqual(sum(p.numel() for p in packed.parameters()), 0)
+        self.assertEqual(
+            set(packed.state_dict()),
+            {
+                "first_input_mean",
+                "packed_first_input_kernel",
+                "first_hidden_bias",
+                "packed_bridge_kernel",
+                "bridge_bias",
+                "second_fused_output_weight",
+                "second_fused_output_bias",
+                "causal_target_indices",
+                "causal_source_indices",
+            },
+        )
+        target, source = torch.tril_indices(8, 8)
+        self.assertTrue(
+            torch.equal(packed.causal_target_indices, target)
+        )
+        self.assertTrue(
+            torch.equal(packed.causal_source_indices, source)
+        )
+        self.assertTrue(
+            torch.equal(
+                packed.packed_first_input_kernel,
+                lazy.first_input_kernel[target, source],
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                packed.packed_bridge_kernel,
+                lazy.bridge_kernel[target, source],
+            )
+        )
+        for name in (
+            "first_input_mean",
+            "first_hidden_bias",
+            "bridge_bias",
+            "second_fused_output_weight",
+            "second_fused_output_bias",
+        ):
+            self.assertTrue(
+                torch.equal(getattr(packed, name), getattr(lazy, name)),
+                name,
+            )
+            self.assertNotEqual(
+                getattr(packed, name).data_ptr(),
+                getattr(lazy, name).data_ptr(),
+                name,
+            )
+        self.assertEqual(packed.dense_position_pair_count, 64)
+        self.assertEqual(packed.causal_pair_count, 36)
+        self.assertEqual(packed.eliminated_position_pair_count, 28)
+        self.assertEqual(packed.source_fast_state_bytes, 199_808)
+        self.assertEqual(packed.packed_float_state_bytes, 124_544)
+        self.assertEqual(packed.packed_index_state_bytes, 576)
+        self.assertEqual(packed.packed_state_bytes, 125_120)
+        provenance = packed.runtime_provenance()
+        self.assertEqual(provenance["dense_scalar_multiplies"], 49_152)
+        self.assertEqual(provenance["packed_scalar_multiplies"], 30_336)
+        self.assertTrue(
+            provenance["algebraically_exact_for_finite_inputs"]
+        )
+        self.assertFalse(provenance["bit_exact_to_dense_source"])
+        self.assertFalse(provenance["supports_activation_trace"])
+        self.assertFalse(hasattr(packed, "sidecars"))
+
+    def test_packed_triangular_forward_matches_dense_with_float_tolerance(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._save_lazy(Path(directory))
+            lazy, _, _ = load_lazy_fused_modal_stack(
+                artifact,
+                sidecar_root=ARTIFACTS,
+            )
+        packed = PackedTriangularFusedTwoLayerModalStack(lazy).eval()
+        generator = torch.Generator().manual_seed(944)
+        values = (
+            lazy.first_input_mean
+            + 0.05
+            * torch.randn(
+                5,
+                8,
+                32,
+                generator=generator,
+            )
+        )
+        with torch.no_grad():
+            dense = lazy(values)
+            triangular = packed(values)
+        self.assertTrue(torch.isfinite(triangular).all())
+        self.assertFalse(torch.equal(triangular, dense))
+        torch.testing.assert_close(
+            triangular,
+            dense,
+            rtol=2e-4,
+            atol=2e-3,
+        )
+
+        lazy.double()
+        packed.double()
+        values64 = (
+            lazy.first_input_mean
+            + 0.05
+            * torch.randn(
+                3,
+                8,
+                32,
+                generator=torch.Generator().manual_seed(945),
+                dtype=torch.float64,
+            )
+        )
+        with torch.no_grad():
+            dense64 = lazy(values64)
+            triangular64 = packed(values64)
+        self.assertTrue(torch.isfinite(triangular64).all())
+        torch.testing.assert_close(
+            triangular64,
+            dense64,
+            rtol=2e-12,
+            atol=2e-11,
+        )
+
+    def test_packed_triangular_is_causal_and_preserves_input_gradients(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._save_lazy(Path(directory))
+            lazy, _, _ = load_lazy_fused_modal_stack(
+                artifact,
+                sidecar_root=ARTIFACTS,
+            )
+        lazy.double()
+        packed = PackedTriangularFusedTwoLayerModalStack.from_lazy(
+            lazy
+        ).eval()
+        generator = torch.Generator().manual_seed(946)
+        values = (
+            lazy.first_input_mean
+            + 0.05
+            * torch.randn(
+                2,
+                8,
+                32,
+                generator=generator,
+                dtype=torch.float64,
+            )
+        )
+        with torch.no_grad():
+            reference = packed(values)
+            for last_visible in (0, 3, 6):
+                changed = values.clone()
+                changed[:, last_visible + 1 :] += torch.randn(
+                    changed[:, last_visible + 1 :].shape,
+                    generator=generator,
+                    dtype=torch.float64,
+                )
+                changed_output = packed(changed)
+                self.assertTrue(
+                    torch.equal(
+                        reference[:, : last_visible + 1],
+                        changed_output[:, : last_visible + 1],
+                    )
+                )
+
+        dense_input = values.clone().requires_grad_()
+        packed_input = values.clone().requires_grad_()
+        dense_loss = lazy(dense_input).square().mean()
+        packed_loss = packed(packed_input).square().mean()
+        dense_gradient = torch.autograd.grad(
+            dense_loss,
+            dense_input,
+        )[0]
+        packed_gradient = torch.autograd.grad(
+            packed_loss,
+            packed_input,
+        )[0]
+        torch.testing.assert_close(
+            packed_gradient,
+            dense_gradient,
+            rtol=2e-11,
+            atol=2e-10,
+        )
+
+    def test_packed_triangular_validates_inputs_and_rejects_trace(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = self._save_lazy(Path(directory))
+            lazy, _, _ = load_lazy_fused_modal_stack(
+                artifact,
+                sidecar_root=ARTIFACTS,
+            )
+        packed = PackedTriangularFusedTwoLayerModalStack.from_lazy(
+            lazy
+        ).eval()
+        values = lazy.first_input_mean.unsqueeze(0)
+        status_before = lazy.instrumentation_status()
+
+        with torch.no_grad():
+            packed(values)
+        self.assertEqual(lazy.instrumentation_status(), status_before)
+        with self.assertRaisesRegex(ValueError, "must have shape"):
+            packed(torch.zeros(1, 7, 32))
+        with self.assertRaisesRegex(ValueError, "dtype and device"):
+            packed(values.double())
+        with self.assertRaisesRegex(ValueError, "does not support padding"):
+            packed(
+                values,
+                attention_mask=torch.tensor(
+                    [[True] * 7 + [False]]
+                ),
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "does not support activation traces",
+        ):
+            packed(
+                values,
+                trace=ActivationTrace(retain_grad=False),
+            )
+        self.assertEqual(lazy.instrumentation_status(), status_before)
+
+        teacher, _ = load_checkpoint(ARTIFACTS / "checkpoint.pt")
+        teacher.eval()
+        runtime = FusedToyTransformer.from_teacher(
+            teacher,
+            packed,
+        ).eval()
+        input_ids = torch.randint(
+            teacher.config.vocab_size,
+            (2, 8),
+            generator=torch.Generator().manual_seed(947),
+        )
+        with torch.no_grad():
+            output = runtime(input_ids)
+        self.assertTrue(torch.isfinite(output.logits).all())
+        with self.assertRaisesRegex(
+            ValueError,
+            "does not support activation traces",
+        ):
+            runtime(input_ids, capture_activations=True)
+        self.assertEqual(lazy.instrumentation_status(), status_before)
 
     def test_fused_model_shell_preserves_api_and_gradients(self) -> None:
         stack = FusedTwoLayerModalStack.from_executors(

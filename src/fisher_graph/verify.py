@@ -34,6 +34,7 @@ from .fused_executor import (
     FusedToyTransformer,
     FusedTwoLayerModalStack,
     LazyFusedTwoLayerModalStack,
+    PackedTriangularFusedTwoLayerModalStack,
     load_fused_modal_stack,
     load_lazy_fused_modal_stack,
 )
@@ -4565,8 +4566,9 @@ def _fused_expected_arithmetic(
             "dense kernels"
         ),
         "triangular_interpretation": (
-            "nonzero causal arithmetic available to a sparse or "
-            "triangular backend"
+            "packed causal-pair PyTorch reference executes only the "
+            "lower-triangular position pairs; wall-clock behavior is "
+            "reported in its separate benchmark"
         ),
     }
 
@@ -4988,7 +4990,43 @@ def _fused_percentile(
 def _verify_fused_benchmark(
     environment_value: object,
     benchmark_value: object,
+    *,
+    systems: tuple[str, ...] = (
+        "teacher",
+        "unfused",
+        "monolithic",
+        "lazy",
+    ),
+    speedup_pairs: Mapping[str, tuple[str, str]] | None = None,
+    minimum_speedup_name: str = "lazy_vs_unfused",
 ) -> tuple[int, float]:
+    if speedup_pairs is None:
+        speedup_pairs = {
+            "monolithic_vs_unfused": ("unfused", "monolithic"),
+            "lazy_vs_unfused": ("unfused", "lazy"),
+            "monolithic_vs_teacher": ("teacher", "monolithic"),
+            "lazy_vs_teacher": ("teacher", "lazy"),
+            "lazy_vs_monolithic": ("monolithic", "lazy"),
+        }
+    if (
+        not systems
+        or len(set(systems)) != len(systems)
+        or any(not isinstance(name, str) or not name for name in systems)
+    ):
+        raise ValueError("fused benchmark verifier systems are invalid")
+    if minimum_speedup_name not in speedup_pairs:
+        raise ValueError("fused benchmark minimum speedup is undeclared")
+    if any(
+        not isinstance(name, str)
+        or not name
+        or len(pair) != 2
+        or pair[0] not in systems
+        or pair[1] not in systems
+        or pair[0] == pair[1]
+        for name, pair in speedup_pairs.items()
+    ):
+        raise ValueError("fused benchmark verifier speedup pairs are invalid")
+
     environment = _object(
         environment_value,
         "fused benchmark_environment",
@@ -5042,12 +5080,7 @@ def _verify_fused_benchmark(
     expected_contract = {
         "input_split": "validation_fisher",
         "batch_sizes": [1, 8, 64, 256],
-        "systems": [
-            "teacher",
-            "unfused",
-            "monolithic",
-            "lazy",
-        ],
+        "systems": list(systems),
         "intraop_threads": 1,
         "inference_mode": True,
         "repeats": 9,
@@ -5066,7 +5099,6 @@ def _verify_fused_benchmark(
     benchmark = _array(benchmark_value, "fused benchmark")
     if len(benchmark) != len(expected_contract["batch_sizes"]):
         raise ValueError("fused benchmark batch count mismatch")
-    systems = tuple(expected_contract["systems"])
     minimum_observed_speedup = math.inf
     for batch_index, (value, expected_batch) in enumerate(
         zip(
@@ -5210,21 +5242,8 @@ def _verify_fused_benchmark(
             f"{path}.speedup_ratios",
         )
         expected_speedups = {
-            "monolithic_vs_unfused": (
-                medians["unfused"] / medians["monolithic"]
-            ),
-            "lazy_vs_unfused": (
-                medians["unfused"] / medians["lazy"]
-            ),
-            "monolithic_vs_teacher": (
-                medians["teacher"] / medians["monolithic"]
-            ),
-            "lazy_vs_teacher": (
-                medians["teacher"] / medians["lazy"]
-            ),
-            "lazy_vs_monolithic": (
-                medians["monolithic"] / medians["lazy"]
-            ),
+            name: medians[reference] / medians[candidate]
+            for name, (reference, candidate) in speedup_pairs.items()
         }
         if set(speedups) != set(expected_speedups):
             raise ValueError(f"{path}.speedup_ratios fields mismatch")
@@ -5244,7 +5263,7 @@ def _verify_fused_benchmark(
                 )
         minimum_observed_speedup = min(
             minimum_observed_speedup,
-            expected_speedups["lazy_vs_unfused"],
+            expected_speedups[minimum_speedup_name],
         )
 
         orders = _array(
@@ -5334,6 +5353,390 @@ def _fused_lazy_benchmark_comparison(
     }
 
 
+def _fused_triangular_benchmark_comparison(
+    benchmark_value: object,
+) -> dict[str, object]:
+    """Recompute every reported packed-triangular benchmark comparison."""
+
+    benchmark = _array(
+        benchmark_value,
+        "fused triangular benchmark for comparison",
+    )
+    per_batch: list[dict[str, object]] = []
+    lazy_speedups: list[float] = []
+    unfused_speedups: list[float] = []
+    for index, value in enumerate(benchmark):
+        path = f"fused triangular benchmark[{index}]"
+        batch = _object(value, path)
+        timings = _object(batch.get("timings"), f"{path}.timings")
+        speedups = _object(
+            batch.get("speedup_ratios"),
+            f"{path}.speedup_ratios",
+        )
+        lazy_median = _number(
+            _object(
+                timings.get("lazy"),
+                f"{path}.timings.lazy",
+            ).get("median_microseconds"),
+            f"{path}.lazy median",
+        )
+        unfused_median = _number(
+            _object(
+                timings.get("unfused"),
+                f"{path}.timings.unfused",
+            ).get("median_microseconds"),
+            f"{path}.unfused median",
+        )
+        triangular_median = _number(
+            _object(
+                timings.get("triangular"),
+                f"{path}.timings.triangular",
+            ).get("median_microseconds"),
+            f"{path}.triangular median",
+        )
+        lazy_speedup = _number(
+            speedups.get("triangular_vs_lazy"),
+            f"{path}.triangular_vs_lazy",
+        )
+        unfused_speedup = _number(
+            speedups.get("triangular_vs_unfused"),
+            f"{path}.triangular_vs_unfused",
+        )
+        lazy_speedups.append(lazy_speedup)
+        unfused_speedups.append(unfused_speedup)
+        per_batch.append(
+            {
+                "batch_size": _integer(
+                    batch.get("batch_size"),
+                    f"{path}.batch_size",
+                ),
+                "triangular_vs_lazy_speedup": lazy_speedup,
+                "triangular_to_lazy_latency_ratio": (
+                    triangular_median / lazy_median
+                ),
+                "triangular_vs_unfused_speedup": unfused_speedup,
+                "triangular_to_unfused_latency_ratio": (
+                    triangular_median / unfused_median
+                ),
+            }
+        )
+    if not lazy_speedups:
+        raise ValueError("fused triangular benchmark comparison is empty")
+    return {
+        "per_batch": per_batch,
+        "geometric_mean_triangular_vs_lazy_speedup": math.exp(
+            sum(math.log(value) for value in lazy_speedups)
+            / len(lazy_speedups)
+        ),
+        "geometric_mean_triangular_vs_unfused_speedup": math.exp(
+            sum(math.log(value) for value in unfused_speedups)
+            / len(unfused_speedups)
+        ),
+        "hard_latency_gate_applied": False,
+        "interpretation": (
+            "speedups above one mean the packed triangular runtime was faster; "
+            "latency ratios below one mean it was faster"
+        ),
+    }
+
+
+def _verify_fused_triangular_runtime(
+    section_value: object,
+    *,
+    source_lazy_path: Path,
+    source_lazy_sha256: str,
+    lazy_stack: LazyFusedTwoLayerModalStack,
+    lazy_model: FusedToyTransformer,
+    teacher: ToyTransformer,
+    validation_split,
+    gate: Mapping[str, float],
+    arithmetic: Mapping[str, object],
+) -> dict[str, object]:
+    """Verify the optional v3 packed runtime without rerunning wall time."""
+
+    section = _object(
+        section_value,
+        "fused executor triangular_runtime_benchmark",
+    )
+    expected_section_fields = {
+        "source_lazy_artifact",
+        "runtime_contract",
+        "source_lazy_status_before",
+        "source_lazy_status_after",
+        "validation",
+        "benchmark_environment",
+        "benchmark",
+        "comparison",
+    }
+    if set(section) != expected_section_fields:
+        raise ValueError(
+            "fused triangular runtime benchmark fields mismatch"
+        )
+
+    expected_source = {
+        "filename": source_lazy_path.name,
+        "sha256": source_lazy_sha256,
+        "artifact_kind": "lazy_fused_two_layer_modal_stack",
+        "format_version": 2,
+    }
+    _assert_numeric_tree_match(
+        section.get("source_lazy_artifact"),
+        expected_source,
+        path="fused triangular source_lazy_artifact",
+    )
+
+    source_state_before = _module_state_sha256(lazy_stack)
+    actual_source_status_before = _lazy_status_dict(lazy_stack)
+    _validate_lazy_status(
+        actual_source_status_before,
+        path="fused triangular verifier source status before derivation",
+        require_unloaded_fast_only=True,
+    )
+    triangular_stack = (
+        PackedTriangularFusedTwoLayerModalStack.from_lazy(lazy_stack)
+    )
+    actual_source_status_after_derivation = _lazy_status_dict(lazy_stack)
+    _assert_numeric_tree_match(
+        actual_source_status_after_derivation,
+        actual_source_status_before,
+        path="fused triangular source status across derivation",
+    )
+    if _module_state_sha256(lazy_stack) != source_state_before:
+        raise ValueError(
+            "packed triangular derivation mutated the lazy source runtime"
+        )
+
+    expected_pair_count = (
+        lazy_stack.sequence_length * (lazy_stack.sequence_length + 1) // 2
+    )
+    if triangular_stack.causal_pair_count != expected_pair_count:
+        raise ValueError("packed triangular causal-pair count mismatch")
+    expected_target, expected_source_indices = torch.tril_indices(
+        lazy_stack.sequence_length,
+        lazy_stack.sequence_length,
+        device=lazy_stack.reference_tensor.device,
+    )
+    if not torch.equal(
+        triangular_stack.causal_target_indices,
+        expected_target,
+    ) or not torch.equal(
+        triangular_stack.causal_source_indices,
+        expected_source_indices,
+    ):
+        raise ValueError("packed triangular causal index order mismatch")
+    expected_packed_tensors = {
+        "first_input_mean": lazy_stack.first_input_mean,
+        "first_hidden_bias": lazy_stack.first_hidden_bias,
+        "bridge_bias": lazy_stack.bridge_bias,
+        "second_fused_output_weight": (
+            lazy_stack.second_fused_output_weight
+        ),
+        "second_fused_output_bias": lazy_stack.second_fused_output_bias,
+        "packed_first_input_kernel": lazy_stack.first_input_kernel[
+            expected_target,
+            expected_source_indices,
+        ],
+        "packed_bridge_kernel": lazy_stack.bridge_kernel[
+            expected_target,
+            expected_source_indices,
+        ],
+        "causal_target_indices": expected_target,
+        "causal_source_indices": expected_source_indices,
+    }
+    if set(triangular_stack.state_dict()) != set(expected_packed_tensors):
+        raise ValueError("packed triangular state fields mismatch")
+    for name, expected in expected_packed_tensors.items():
+        if not torch.equal(
+            triangular_stack.state_dict()[name],
+            expected,
+        ):
+            raise ValueError(
+                f"packed triangular state is not source-derived: {name}"
+            )
+    triangular_storage = _fused_state_storage(triangular_stack)
+    if (
+        triangular_storage["total_state_bytes"]
+        != triangular_stack.packed_state_bytes
+        or list(triangular_stack.parameters())
+    ):
+        raise ValueError("packed triangular state accounting mismatch")
+    if any(
+        isinstance(module, TransformerBlock)
+        for module in triangular_stack.modules()
+    ):
+        raise ValueError("packed triangular runtime contains a transformer block")
+    provenance = triangular_stack.runtime_provenance()
+    if provenance.get("source_provenance") != lazy_stack.provenance:
+        raise ValueError("packed triangular source provenance mismatch")
+    if (
+        provenance.get("source_fast_state_bytes") != lazy_stack.fast_state_bytes
+        or provenance.get("dense_scalar_multiplies")
+        != arithmetic["fused_dense_executed_multiplies"]
+        or provenance.get("packed_scalar_multiplies")
+        != arithmetic["fused_triangular_nonzero_multiplies"]
+    ):
+        raise ValueError("packed triangular derived facts mismatch")
+
+    expected_runtime_contract = {
+        "implementation": "packed_triangular_prefix_v1",
+        "serialized_artifact": False,
+        "default_backend": False,
+        "weights_updated": False,
+        "test_used": False,
+        "validation_split": "validation_fisher",
+        "benchmark_split": "validation_fisher",
+        "packed_causal_pair_count": expected_pair_count,
+        "packed_fast_state_tensor_bytes": (
+            triangular_stack.packed_state_bytes
+        ),
+    }
+    _assert_numeric_tree_match(
+        section.get("runtime_contract"),
+        expected_runtime_contract,
+        path="fused triangular runtime_contract",
+    )
+
+    reported_before = _validate_lazy_status(
+        section.get("source_lazy_status_before"),
+        path="fused triangular reported source status before",
+        require_unloaded_fast_only=True,
+    )
+    reported_after = _validate_lazy_status(
+        section.get("source_lazy_status_after"),
+        path="fused triangular reported source status after",
+        require_unloaded_fast_only=True,
+    )
+    if (
+        reported_after["fast_path_calls"]
+        <= reported_before["fast_path_calls"]
+        or reported_after["last_dispatch"] != "fast_cross_layer"
+    ):
+        raise ValueError(
+            "fused triangular source statuses do not prove fast-only use"
+        )
+
+    triangular_model = FusedToyTransformer.from_teacher(
+        teacher,
+        triangular_stack,
+    )
+    _fused_freeze(triangular_model)
+    if list(triangular_model.parameters()):
+        raise ValueError(
+            "packed triangular full runtime unexpectedly contains parameters"
+        )
+    lazy_logits = associative_recall_answer_logits(
+        lazy_model,
+        validation_split,
+    )
+    triangular_logits = associative_recall_answer_logits(
+        triangular_model,
+        validation_split,
+    )
+    recomputed_comparison = _fused_comparison(
+        split=validation_split,
+        unfused_logits=lazy_logits,
+        fused_logits=triangular_logits,
+    )
+    validation = _object(
+        section.get("validation"),
+        "fused triangular validation",
+    )
+    if set(validation) != {"gate", "gate_passed", "triangular_vs_lazy"}:
+        raise ValueError("fused triangular validation fields mismatch")
+    _assert_numeric_tree_match(
+        validation.get("gate"),
+        dict(gate),
+        path="fused triangular validation.gate",
+    )
+    _assert_numeric_tree_match(
+        validation.get("triangular_vs_lazy"),
+        recomputed_comparison,
+        path="fused triangular validation.triangular_vs_lazy",
+    )
+    gate_passed = _fused_gate_passed(recomputed_comparison, gate)
+    if validation.get("gate_passed") is not gate_passed or not gate_passed:
+        raise ValueError("fused triangular validation gate failed")
+
+    actual_source_status_after_validation = _lazy_status_dict(lazy_stack)
+    _validate_lazy_status(
+        actual_source_status_after_validation,
+        path="fused triangular verifier source status after validation",
+        require_unloaded_fast_only=True,
+    )
+    if (
+        actual_source_status_after_validation["fast_path_calls"]
+        <= actual_source_status_after_derivation["fast_path_calls"]
+        or actual_source_status_after_validation["last_dispatch"]
+        != "fast_cross_layer"
+    ):
+        raise ValueError(
+            "fused triangular validation did not use the lazy fast reference"
+        )
+    if (
+        _module_state_sha256(lazy_stack) != source_state_before
+        or _sha256(source_lazy_path) != source_lazy_sha256
+    ):
+        raise ValueError(
+            "fused triangular verification changed its lazy source"
+        )
+
+    triangular_systems = (
+        "teacher",
+        "unfused",
+        "monolithic",
+        "lazy",
+        "triangular",
+    )
+    triangular_speedup_pairs = {
+        "monolithic_vs_unfused": ("unfused", "monolithic"),
+        "lazy_vs_unfused": ("unfused", "lazy"),
+        "monolithic_vs_teacher": ("teacher", "monolithic"),
+        "lazy_vs_teacher": ("teacher", "lazy"),
+        "lazy_vs_monolithic": ("monolithic", "lazy"),
+        "triangular_vs_unfused": ("unfused", "triangular"),
+        "triangular_vs_teacher": ("teacher", "triangular"),
+        "triangular_vs_monolithic": ("monolithic", "triangular"),
+        "triangular_vs_lazy": ("lazy", "triangular"),
+    }
+    benchmark_batch_count, minimum_speedup = _verify_fused_benchmark(
+        section.get("benchmark_environment"),
+        section.get("benchmark"),
+        systems=triangular_systems,
+        speedup_pairs=triangular_speedup_pairs,
+        minimum_speedup_name="triangular_vs_lazy",
+    )
+    comparison = _fused_triangular_benchmark_comparison(
+        section.get("benchmark")
+    )
+    _assert_numeric_tree_match(
+        section.get("comparison"),
+        comparison,
+        path="fused triangular comparison",
+    )
+
+    return {
+        "triangular_runtime_present": True,
+        "triangular_implementation": "packed_triangular_prefix_v1",
+        "triangular_serialized_artifact": False,
+        "triangular_default_backend": False,
+        "triangular_causal_pair_count": expected_pair_count,
+        "triangular_fast_stack_resident_tensor_bytes": (
+            triangular_stack.packed_state_bytes
+        ),
+        "triangular_validation_gate_passed": True,
+        "triangular_zero_source_sidecar_loads": True,
+        "triangular_benchmark_batch_count": benchmark_batch_count,
+        "minimum_observed_triangular_vs_lazy_speedup": minimum_speedup,
+        "geometric_mean_triangular_vs_lazy_speedup": comparison[
+            "geometric_mean_triangular_vs_lazy_speedup"
+        ],
+        "geometric_mean_triangular_vs_unfused_speedup": comparison[
+            "geometric_mean_triangular_vs_unfused_speedup"
+        ],
+        "triangular_benchmark_hard_latency_gate_applied": False,
+    }
+
+
 def _verify_optional_fused_executor(
     directory: Path,
     *,
@@ -5374,6 +5777,12 @@ def _verify_optional_fused_executor(
         "fused executor report",
     )
     _assert_finite_tree(report, "fused executor report")
+    report_format_version = _integer(
+        report.get("format_version"),
+        "fused executor format_version",
+    )
+    if report_format_version not in (2, 3):
+        raise ValueError("unsupported fused executor report format")
     expected_report_fields = {
         "format_version",
         "checkpoint_sha256",
@@ -5398,13 +5807,10 @@ def _verify_optional_fused_executor(
         "scientific_status",
         "elapsed_seconds",
     }
+    if report_format_version == 3:
+        expected_report_fields.add("triangular_runtime_benchmark")
     if set(report) != expected_report_fields:
         raise ValueError("fused executor report fields mismatch")
-    if _integer(
-        report.get("format_version"),
-        "fused executor format_version",
-    ) != 2:
-        raise ValueError("unsupported fused executor report format")
     fisher_hash = _sha256(fisher_path)
     manifest_path = directory / "split_manifest.json"
     manifest_hash = _sha256(manifest_path)
@@ -6067,6 +6473,11 @@ def _verify_optional_fused_executor(
         model_config=model_config,
         completed_layers=(completed_0, completed_1),
     )
+    if report_format_version == 2:
+        arithmetic["triangular_interpretation"] = (
+            "nonzero causal arithmetic available to a sparse or "
+            "triangular backend"
+        )
     _assert_numeric_tree_match(
         report.get("arithmetic"),
         arithmetic,
@@ -6134,6 +6545,19 @@ def _verify_optional_fused_executor(
         lazy_benchmark_comparison,
         path="fused executor lazy_vs_monolithic_benchmark",
     )
+    triangular_summary: dict[str, object] = {}
+    if report_format_version == 3:
+        triangular_summary = _verify_fused_triangular_runtime(
+            report.get("triangular_runtime_benchmark"),
+            source_lazy_path=paths.runtime,
+            source_lazy_sha256=lazy_artifact_hash_before,
+            lazy_stack=lazy_stack,
+            lazy_model=lazy,
+            teacher=teacher,
+            validation_split=splits.validation,
+            gate=gate,
+            arithmetic=arithmetic,
+        )
 
     if _sha256(paths.stack) != artifact_hash_before:
         raise ValueError(
@@ -6168,9 +6592,9 @@ def _verify_optional_fused_executor(
         test.get("lazy_vs_unfused"),
         "fused test comparison",
     )
-    return {
+    summary = {
         "present": True,
-        "format_version": 2,
+        "format_version": report_format_version,
         "cross_layer_bypass": True,
         "parameter_count": 0,
         "contains_transformer_block": False,
@@ -6227,6 +6651,8 @@ def _verify_optional_fused_executor(
         ),
         "status": "verified",
     }
+    summary.update(triangular_summary)
+    return summary
 
 
 def _verify_optional_runtime_manifest(

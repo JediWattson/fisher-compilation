@@ -2056,6 +2056,377 @@ class LazyFusedTwoLayerModalStack(nn.Module):
             )
 
 
+class PackedTriangularFusedTwoLayerModalStack(nn.Module):
+    """Non-instrumentable causal-pair packing of a lazy fused fast path.
+
+    The authenticated lazy runtime remains the source of truth and the default
+    instrumentable executor. This derived runtime copies its five position-
+    local fast tensors and stores only the lower-triangular position pairs from
+    its two causal kernels. It never retains or opens source sidecars.
+
+    Packing is algebraically exact for finite inputs. Its gather/einsum/
+    ``index_add`` reduction order differs from the dense source einsums, so
+    floating-point results are intentionally not claimed to be bit-exact.
+    """
+
+    def __init__(
+        self,
+        source: LazyFusedTwoLayerModalStack,
+    ) -> None:
+        super().__init__()
+        if not isinstance(source, LazyFusedTwoLayerModalStack):
+            raise TypeError(
+                "source must be a LazyFusedTwoLayerModalStack"
+            )
+        if not source.uses_cross_layer_bypass:
+            raise ValueError(
+                "packed triangular fusion requires the exact cross-layer "
+                "bypass"
+            )
+
+        # ``LazyFusedTwoLayerModalStack._apply`` takes this same lock. Holding
+        # it while cloning prevents a concurrent dtype/device conversion from
+        # exposing a mixed source state, without loading instrumentation.
+        with source._instrumentation_lock:
+            _require_causal_zeros(
+                "first_input_kernel",
+                source.first_input_kernel,
+            )
+            _require_causal_zeros(
+                "bridge_kernel",
+                source.bridge_kernel,
+            )
+            target_indices, source_indices = torch.tril_indices(
+                source.sequence_length,
+                source.sequence_length,
+                device=source.reference_tensor.device,
+            )
+            packed_first = source.first_input_kernel[
+                target_indices,
+                source_indices,
+            ]
+            packed_bridge = source.bridge_kernel[
+                target_indices,
+                source_indices,
+            ]
+            retained = {
+                "first_input_mean": _clone_buffer(
+                    source.first_input_mean
+                ),
+                "first_hidden_bias": _clone_buffer(
+                    source.first_hidden_bias
+                ),
+                "bridge_bias": _clone_buffer(source.bridge_bias),
+                "second_fused_output_weight": (
+                    _clone_buffer(source.second_fused_output_weight)
+                ),
+                "second_fused_output_bias": (
+                    _clone_buffer(source.second_fused_output_bias)
+                ),
+            }
+            self.config = source.config
+            self._source_fast_state_bytes = source.fast_state_bytes
+            portable_provenance = _portable_metadata(
+                source.provenance,
+                path="packed source provenance",
+            )
+            assert isinstance(portable_provenance, dict)
+            self._source_provenance = portable_provenance
+
+        expected_pairs = (
+            self.sequence_length * (self.sequence_length + 1) // 2
+        )
+        expected_first = (
+            expected_pairs,
+            self.width,
+            self.config.first.routing_width,
+        )
+        expected_bridge = (
+            expected_pairs,
+            self.config.first.routing_width,
+            self.config.second.routing_width,
+        )
+        if tuple(packed_first.shape) != expected_first:
+            raise ValueError(
+                "packed first input kernel has an invalid shape"
+            )
+        if tuple(packed_bridge.shape) != expected_bridge:
+            raise ValueError("packed bridge kernel has an invalid shape")
+
+        for name, value in retained.items():
+            self.register_buffer(name, _clone_buffer(value))
+        self.register_buffer(
+            "packed_first_input_kernel",
+            _clone_buffer(packed_first),
+        )
+        self.register_buffer(
+            "packed_bridge_kernel",
+            _clone_buffer(packed_bridge),
+        )
+        self.register_buffer(
+            "causal_target_indices",
+            target_indices.detach().clone(),
+        )
+        self.register_buffer(
+            "causal_source_indices",
+            source_indices.detach().clone(),
+        )
+
+    @classmethod
+    def from_lazy(
+        cls,
+        source: LazyFusedTwoLayerModalStack,
+    ) -> PackedTriangularFusedTwoLayerModalStack:
+        """Derive a sidecar-free packed executor from lazy fast tensors."""
+
+        return cls(source)
+
+    @property
+    def uses_cross_layer_bypass(self) -> bool:
+        return True
+
+    @property
+    def sequence_length(self) -> int:
+        return self.config.first.sequence_length
+
+    @property
+    def width(self) -> int:
+        return self.config.first.width
+
+    @property
+    def reference_tensor(self) -> Tensor:
+        return self.first_input_mean
+
+    @property
+    def dense_position_pair_count(self) -> int:
+        return self.sequence_length * self.sequence_length
+
+    @property
+    def causal_pair_count(self) -> int:
+        return self.causal_target_indices.numel()
+
+    @property
+    def eliminated_position_pair_count(self) -> int:
+        return self.dense_position_pair_count - self.causal_pair_count
+
+    @property
+    def source_fast_state_bytes(self) -> int:
+        return self._source_fast_state_bytes
+
+    @property
+    def packed_float_state_bytes(self) -> int:
+        return sum(
+            value.numel() * value.element_size()
+            for value in self.state_dict().values()
+            if value.is_floating_point()
+        )
+
+    @property
+    def packed_index_state_bytes(self) -> int:
+        return sum(
+            value.numel() * value.element_size()
+            for value in self.state_dict().values()
+            if not value.is_floating_point()
+        )
+
+    @property
+    def packed_state_bytes(self) -> int:
+        return self.packed_float_state_bytes + self.packed_index_state_bytes
+
+    @property
+    def packed_fast_state_bytes(self) -> int:
+        """Alias used by runtime storage reports."""
+
+        return self.packed_state_bytes
+
+    @property
+    def fast_state_bytes(self) -> int:
+        return self.packed_state_bytes
+
+    def runtime_provenance(self) -> dict[str, object]:
+        """Return portable derivation, arithmetic, and storage facts."""
+
+        first_dense = (
+            self.dense_position_pair_count
+            * self.width
+            * self.config.first.routing_width
+        )
+        bridge_dense = (
+            self.dense_position_pair_count
+            * self.config.first.routing_width
+            * self.config.second.routing_width
+        )
+        output_local = (
+            self.sequence_length
+            * self.config.second.routing_width
+            * self.width
+        )
+        first_packed = (
+            self.causal_pair_count
+            * self.width
+            * self.config.first.routing_width
+        )
+        bridge_packed = (
+            self.causal_pair_count
+            * self.config.first.routing_width
+            * self.config.second.routing_width
+        )
+        return {
+            "runtime_kind": (
+                "packed_triangular_fused_two_layer_modal_stack"
+            ),
+            "derived_from_runtime_kind": (
+                "lazy_fused_two_layer_modal_stack"
+            ),
+            "derivation": "lower_triangular_position_pair_pack",
+            "algebraically_exact_for_finite_inputs": True,
+            "bit_exact_to_dense_source": False,
+            "supports_activation_trace": False,
+            "sequence_length": self.sequence_length,
+            "dense_position_pair_count": self.dense_position_pair_count,
+            "causal_pair_count": self.causal_pair_count,
+            "eliminated_position_pair_count": (
+                self.eliminated_position_pair_count
+            ),
+            "source_fast_state_bytes": self.source_fast_state_bytes,
+            "packed_float_state_bytes": self.packed_float_state_bytes,
+            "packed_index_state_bytes": self.packed_index_state_bytes,
+            "packed_state_bytes": self.packed_state_bytes,
+            "dense_scalar_multiplies": (
+                first_dense + bridge_dense + output_local
+            ),
+            "packed_scalar_multiplies": (
+                first_packed + bridge_packed + output_local
+            ),
+            "packed_components": {
+                "input_to_layer_0_hidden": first_packed,
+                "layer_0_hidden_to_layer_1_hidden": bridge_packed,
+                "layer_1_hidden_to_residual_output": output_local,
+            },
+            "source_provenance": dict(self._source_provenance),
+        }
+
+    def _validate_input(
+        self,
+        hidden_states: Tensor,
+        attention_mask: Tensor | None,
+    ) -> None:
+        if not isinstance(hidden_states, Tensor):
+            raise TypeError("packed triangular fused input must be a Tensor")
+        if hidden_states.ndim != 3 or hidden_states.shape[1:] != (
+            self.sequence_length,
+            self.width,
+        ):
+            raise ValueError(
+                "packed triangular fused input must have shape "
+                "[batch, fixed_sequence, width]"
+            )
+        if (
+            hidden_states.dtype != self.reference_tensor.dtype
+            or hidden_states.device != self.reference_tensor.device
+        ):
+            raise ValueError(
+                "packed triangular fused input must match the runtime "
+                "dtype and device"
+            )
+        if attention_mask is not None:
+            if not isinstance(attention_mask, Tensor):
+                raise TypeError("attention_mask must be a Tensor")
+            if attention_mask.shape != hidden_states.shape[:2]:
+                raise ValueError(
+                    "attention_mask must have shape [batch, sequence]"
+                )
+            if not attention_mask.to(torch.bool).all():
+                raise ValueError(
+                    "the packed fixed-position runtime does not support "
+                    "padding"
+                )
+
+    def _causal_stage(
+        self,
+        values: Tensor,
+        packed_kernel: Tensor,
+        bias: Tensor,
+    ) -> Tensor:
+        gathered = values.index_select(
+            1,
+            self.causal_source_indices,
+        )
+        pair_outputs = torch.einsum(
+            "bpi,pio->bpo",
+            gathered,
+            packed_kernel,
+        )
+        output = values.new_zeros(
+            values.shape[0],
+            self.sequence_length,
+            packed_kernel.shape[2],
+        )
+        return (
+            output.index_add(
+                1,
+                self.causal_target_indices,
+                pair_outputs,
+            )
+            + bias
+        )
+
+    def forward_fast(
+        self,
+        hidden_states: Tensor,
+        *,
+        attention_mask: Tensor | None = None,
+    ) -> Tensor:
+        self._validate_input(hidden_states, attention_mask)
+        centered = hidden_states - self.first_input_mean
+        first_hidden = F.gelu(
+            self._causal_stage(
+                centered,
+                self.packed_first_input_kernel,
+                self.first_hidden_bias,
+            )
+        )
+        second_hidden = F.gelu(
+            self._causal_stage(
+                first_hidden,
+                self.packed_bridge_kernel,
+                self.bridge_bias,
+            )
+        )
+        return (
+            torch.einsum(
+                "bsh,shw->bsw",
+                second_hidden,
+                self.second_fused_output_weight,
+            )
+            + self.second_fused_output_bias
+        )
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        *,
+        attention_mask: Tensor | None = None,
+        trace: ActivationTrace | None = None,
+        prefixes: Sequence[str] = ("layer.0", "layer.1"),
+    ) -> Tensor:
+        if len(prefixes) != 2 or not all(
+            isinstance(prefix, str) and prefix for prefix in prefixes
+        ):
+            raise ValueError(
+                "packed triangular fused stack requires exactly two prefixes"
+            )
+        if trace is not None:
+            raise ValueError(
+                "packed triangular runtime does not support activation "
+                "traces; use the authenticated lazy fused source runtime"
+            )
+        return self.forward_fast(
+            hidden_states,
+            attention_mask=attention_mask,
+        )
+
+
 def save_lazy_fused_modal_stack(
     path: str | Path,
     *,
@@ -2240,7 +2611,11 @@ def load_lazy_fused_modal_stack(
     return runtime, config, portable_metadata
 
 
-FusedStackRuntime = FusedTwoLayerModalStack | LazyFusedTwoLayerModalStack
+FusedStackRuntime = (
+    FusedTwoLayerModalStack
+    | LazyFusedTwoLayerModalStack
+    | PackedTriangularFusedTwoLayerModalStack
+)
 
 
 class FusedToyTransformer(nn.Module):
@@ -2267,7 +2642,11 @@ class FusedToyTransformer(nn.Module):
             raise TypeError("config must be a TransformerConfig")
         if not isinstance(
             stack,
-            (FusedTwoLayerModalStack, LazyFusedTwoLayerModalStack),
+            (
+                FusedTwoLayerModalStack,
+                LazyFusedTwoLayerModalStack,
+                PackedTriangularFusedTwoLayerModalStack,
+            ),
         ):
             raise TypeError("stack must be a supported fused modal stack")
         if any(True for _ in stack.parameters()):
@@ -2468,6 +2847,7 @@ __all__ = [
     "FusedTwoLayerStackConfig",
     "LazyFusedTwoLayerModalStack",
     "LazyInstrumentationStatus",
+    "PackedTriangularFusedTwoLayerModalStack",
     "load_fused_modal_stack",
     "load_lazy_fused_modal_stack",
     "save_fused_modal_stack",

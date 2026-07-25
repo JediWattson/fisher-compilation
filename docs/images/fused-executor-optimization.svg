@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="figure-title figure-description">
 <title id="figure-title">Fisher modal compilation optimization profile</title>
-<desc id="figure-description">Three panels compare scalar multiplies, end-to-end CPU latency across four batch sizes, and resident tensor storage for the locked two-layer associative-recall checkpoint.</desc>
-<metadata>source=artifacts/associative_recall/fused_executor_report.json;sha256=b421bb0ef1ccb54ba4a762db20fab20831a2499747fce0c713533d8569b0d448</metadata>
+<desc id="figure-description">Three panels compare scalar multiplies, end-to-end CPU latency for five execution systems across four batch sizes, and resident tensor storage for the locked two-layer associative-recall checkpoint.</desc>
+<metadata>source=artifacts/associative_recall/fused_executor_report.json;sha256=722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6</metadata>
 <style>
             .background { fill: #f1f5f9; }
             .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
@@ -63,11 +63,11 @@
 <rect class="bar" x="320.0" y="329.0" width="91.8" height="24" rx="6" style="fill:#2563eb"/>
 <text class="bar-value" x="752.0" y="351.0" text-anchor="end">49,152 · 35.3%</text>
 <text class="qualifier" x="78.0" y="370.0">executed</text>
-<text class="row-label" x="78.0" y="408.0">Triangular backend opportunity</text>
+<text class="row-label" x="78.0" y="408.0">Packed triangular reference</text>
 <rect class="bar-track" x="320.0" y="386.0" width="260.0" height="24" rx="6"/>
-<rect class="bar opportunity" x="320.0" y="386.0" width="56.6" height="24" rx="6" style="fill:#d97706"/>
+<rect class="bar" x="320.0" y="386.0" width="56.6" height="24" rx="6" style="fill:#d97706"/>
 <text class="bar-value" x="752.0" y="408.0" text-anchor="end">30,336 · 21.8%</text>
-<text class="qualifier" x="78.0" y="427.0">not yet executed</text>
+<text class="qualifier" x="78.0" y="427.0">measured packed reference</text>
 <rect class="panel" x="820.0" y="120.0" width="730.0" height="365.0" rx="18"/>
 <text class="panel-title" x="848.0" y="160.0">Resident tensor storage</text>
 <text class="subtitle" x="848.0" y="188.0">Full model runtime · normalized to monolithic</text>
@@ -86,9 +86,14 @@
 <rect class="bar" x="1090.0" y="329.0" width="149.2" height="24" rx="6" style="fill:#2563eb"/>
 <text class="bar-value" x="1522.0" y="351.0" text-anchor="end">400.0 KiB · 57.4%</text>
 <text class="qualifier" x="848.0" y="370.0">instrumented</text>
+<text class="row-label" x="848.0" y="408.0">Packed triangular reference</text>
+<rect class="bar-track" x="1090.0" y="386.0" width="260.0" height="24" rx="6"/>
+<rect class="bar" x="1090.0" y="386.0" width="47.8" height="24" rx="6" style="fill:#d97706"/>
+<text class="bar-value" x="1522.0" y="408.0" text-anchor="end">128.2 KiB · 18.4%</text>
+<text class="qualifier" x="848.0" y="427.0">derived fast-only</text>
 <rect class="panel" x="50" y="520" width="1500" height="430" rx="18"/>
 <text class="panel-title" x="78.0" y="560.0">End-to-end CPU latency</text>
-<text class="subtitle" x="78.0" y="588.0">Median of 9 rotating rounds · p10–p90 whiskers · log scale · compact lazy is 2.72–3.47× faster than logical modal</text>
+<text class="subtitle" x="78.0" y="588.0">Median of 9 rotating rounds · p10–p90 whiskers · log scale · triangular vs lazy speedup 0.44–1.03×</text>
 <line class="grid" x1="145.0" y1="867.9" x2="1485.0" y2="867.9"/>
 <text class="tick" x="131.0" y="872.9" text-anchor="end">50</text>
 <line class="grid" x1="145.0" y1="830.3" x2="1485.0" y2="830.3"/>
@@ -113,83 +118,102 @@
 <text class="tick" x="1150.0" y="907.0" text-anchor="middle">64</text>
 <line class="axis" x1="1485.0" y1="880.0" x2="1485.0" y2="887.0"/>
 <text class="tick" x="1485.0" y="907.0" text-anchor="middle">256</text>
-<line class="whisker" x1="145.0" y1="825.1" x2="145.0" y2="826.3" style="stroke:#64748b"/>
-<line class="whisker" x1="140.0" y1="825.1" x2="150.0" y2="825.1" style="stroke:#64748b"/>
-<line class="whisker" x1="140.0" y1="826.3" x2="150.0" y2="826.3" style="stroke:#64748b"/>
-<line class="whisker" x1="647.5" y1="792.1" x2="647.5" y2="792.7" style="stroke:#64748b"/>
-<line class="whisker" x1="642.5" y1="792.1" x2="652.5" y2="792.1" style="stroke:#64748b"/>
-<line class="whisker" x1="642.5" y1="792.7" x2="652.5" y2="792.7" style="stroke:#64748b"/>
-<line class="whisker" x1="1150.0" y1="719.7" x2="1150.0" y2="721.1" style="stroke:#64748b"/>
-<line class="whisker" x1="1145.0" y1="719.7" x2="1155.0" y2="719.7" style="stroke:#64748b"/>
-<line class="whisker" x1="1145.0" y1="721.1" x2="1155.0" y2="721.1" style="stroke:#64748b"/>
-<line class="whisker" x1="1485.0" y1="649.8" x2="1485.0" y2="653.7" style="stroke:#64748b"/>
-<line class="whisker" x1="1480.0" y1="649.8" x2="1490.0" y2="649.8" style="stroke:#64748b"/>
-<line class="whisker" x1="1480.0" y1="653.7" x2="1490.0" y2="653.7" style="stroke:#64748b"/>
-<path class="series-line" d="M 145.0 825.8 L 647.5 792.5 L 1150.0 720.8 L 1485.0 650.7" style="stroke:#64748b" stroke-dasharray="8 6"/>
-<circle class="marker" cx="145.0" cy="825.8" r="6" style="fill:#64748b"/>
-<circle class="marker" cx="647.5" cy="792.5" r="6" style="fill:#64748b"/>
-<circle class="marker" cx="1150.0" cy="720.8" r="6" style="fill:#64748b"/>
-<circle class="marker" cx="1485.0" cy="650.7" r="6" style="fill:#64748b"/>
-<line class="whisker" x1="145.0" y1="799.4" x2="145.0" y2="800.8" style="stroke:#7c3aed"/>
-<line class="whisker" x1="140.0" y1="799.4" x2="150.0" y2="799.4" style="stroke:#7c3aed"/>
-<line class="whisker" x1="140.0" y1="800.8" x2="150.0" y2="800.8" style="stroke:#7c3aed"/>
-<line class="whisker" x1="647.5" y1="781.5" x2="647.5" y2="784.1" style="stroke:#7c3aed"/>
-<line class="whisker" x1="642.5" y1="781.5" x2="652.5" y2="781.5" style="stroke:#7c3aed"/>
-<line class="whisker" x1="642.5" y1="784.1" x2="652.5" y2="784.1" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1150.0" y1="760.7" x2="1150.0" y2="761.1" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1145.0" y1="760.7" x2="1155.0" y2="760.7" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1145.0" y1="761.1" x2="1155.0" y2="761.1" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1485.0" y1="728.9" x2="1485.0" y2="732.6" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1480.0" y1="728.9" x2="1490.0" y2="728.9" style="stroke:#7c3aed"/>
-<line class="whisker" x1="1480.0" y1="732.6" x2="1490.0" y2="732.6" style="stroke:#7c3aed"/>
-<path class="series-line" d="M 145.0 800.5 L 647.5 783.7 L 1150.0 760.9 L 1485.0 731.4" style="stroke:#7c3aed" stroke-dasharray="3 5"/>
-<circle class="marker" cx="145.0" cy="800.5" r="6" style="fill:#7c3aed"/>
-<circle class="marker" cx="647.5" cy="783.7" r="6" style="fill:#7c3aed"/>
-<circle class="marker" cx="1150.0" cy="760.9" r="6" style="fill:#7c3aed"/>
-<circle class="marker" cx="1485.0" cy="731.4" r="6" style="fill:#7c3aed"/>
-<line class="whisker" x1="145.0" y1="862.5" x2="145.0" y2="863.2" style="stroke:#2563eb"/>
-<line class="whisker" x1="140.0" y1="862.5" x2="150.0" y2="862.5" style="stroke:#2563eb"/>
-<line class="whisker" x1="140.0" y1="863.2" x2="150.0" y2="863.2" style="stroke:#2563eb"/>
-<line class="whisker" x1="647.5" y1="850.4" x2="647.5" y2="851.7" style="stroke:#2563eb"/>
-<line class="whisker" x1="642.5" y1="850.4" x2="652.5" y2="850.4" style="stroke:#2563eb"/>
-<line class="whisker" x1="642.5" y1="851.7" x2="652.5" y2="851.7" style="stroke:#2563eb"/>
-<line class="whisker" x1="1150.0" y1="823.4" x2="1150.0" y2="825.3" style="stroke:#2563eb"/>
-<line class="whisker" x1="1145.0" y1="823.4" x2="1155.0" y2="823.4" style="stroke:#2563eb"/>
-<line class="whisker" x1="1145.0" y1="825.3" x2="1155.0" y2="825.3" style="stroke:#2563eb"/>
-<line class="whisker" x1="1485.0" y1="780.6" x2="1485.0" y2="786.5" style="stroke:#2563eb"/>
-<line class="whisker" x1="1480.0" y1="780.6" x2="1490.0" y2="780.6" style="stroke:#2563eb"/>
-<line class="whisker" x1="1480.0" y1="786.5" x2="1490.0" y2="786.5" style="stroke:#2563eb"/>
-<path class="series-line" d="M 145.0 863.1 L 647.5 851.3 L 1150.0 825.1 L 1485.0 784.9" style="stroke:#2563eb" stroke-dasharray="12 5"/>
-<circle class="marker" cx="145.0" cy="863.1" r="6" style="fill:#2563eb"/>
-<circle class="marker" cx="647.5" cy="851.3" r="6" style="fill:#2563eb"/>
-<circle class="marker" cx="1150.0" cy="825.1" r="6" style="fill:#2563eb"/>
-<circle class="marker" cx="1485.0" cy="784.9" r="6" style="fill:#2563eb"/>
-<line class="whisker" x1="145.0" y1="862.6" x2="145.0" y2="863.1" style="stroke:#059669"/>
-<line class="whisker" x1="140.0" y1="862.6" x2="150.0" y2="862.6" style="stroke:#059669"/>
-<line class="whisker" x1="140.0" y1="863.1" x2="150.0" y2="863.1" style="stroke:#059669"/>
-<line class="whisker" x1="647.5" y1="850.9" x2="647.5" y2="851.7" style="stroke:#059669"/>
-<line class="whisker" x1="642.5" y1="850.9" x2="652.5" y2="850.9" style="stroke:#059669"/>
-<line class="whisker" x1="642.5" y1="851.7" x2="652.5" y2="851.7" style="stroke:#059669"/>
-<line class="whisker" x1="1150.0" y1="826.0" x2="1150.0" y2="826.3" style="stroke:#059669"/>
-<line class="whisker" x1="1145.0" y1="826.0" x2="1155.0" y2="826.0" style="stroke:#059669"/>
-<line class="whisker" x1="1145.0" y1="826.3" x2="1155.0" y2="826.3" style="stroke:#059669"/>
-<line class="whisker" x1="1485.0" y1="781.2" x2="1485.0" y2="787.0" style="stroke:#059669"/>
-<line class="whisker" x1="1480.0" y1="781.2" x2="1490.0" y2="781.2" style="stroke:#059669"/>
-<line class="whisker" x1="1480.0" y1="787.0" x2="1490.0" y2="787.0" style="stroke:#059669"/>
-<path class="series-line" d="M 145.0 862.9 L 647.5 851.2 L 1150.0 826.1 L 1485.0 785.6" style="stroke:#059669"/>
-<circle class="marker" cx="145.0" cy="862.9" r="6" style="fill:#059669"/>
-<circle class="marker" cx="647.5" cy="851.2" r="6" style="fill:#059669"/>
-<circle class="marker" cx="1150.0" cy="826.1" r="6" style="fill:#059669"/>
-<circle class="marker" cx="1485.0" cy="785.6" r="6" style="fill:#059669"/>
-<line class="series-line" x1="825.0" y1="564.0" x2="853.0" y2="564.0" style="stroke:#64748b" stroke-dasharray="8 6"/>
-<text class="legend-label" x="862.0" y="569.0">Teacher transformer</text>
-<line class="series-line" x1="995.0" y1="564.0" x2="1023.0" y2="564.0" style="stroke:#7c3aed" stroke-dasharray="3 5"/>
-<text class="legend-label" x="1032.0" y="569.0">Logical modal</text>
-<line class="series-line" x1="1165.0" y1="564.0" x2="1193.0" y2="564.0" style="stroke:#2563eb" stroke-dasharray="12 5"/>
-<text class="legend-label" x="1202.0" y="569.0">Monolithic fused</text>
-<line class="series-line" x1="1335.0" y1="564.0" x2="1363.0" y2="564.0" style="stroke:#059669"/>
-<text class="legend-label" x="1372.0" y="569.0">Compact lazy</text>
+<line class="whisker" x1="145.0" y1="817.5" x2="145.0" y2="822.0" style="stroke:#64748b"/>
+<line class="whisker" x1="140.0" y1="817.5" x2="150.0" y2="817.5" style="stroke:#64748b"/>
+<line class="whisker" x1="140.0" y1="822.0" x2="150.0" y2="822.0" style="stroke:#64748b"/>
+<line class="whisker" x1="647.5" y1="789.7" x2="647.5" y2="792.9" style="stroke:#64748b"/>
+<line class="whisker" x1="642.5" y1="789.7" x2="652.5" y2="789.7" style="stroke:#64748b"/>
+<line class="whisker" x1="642.5" y1="792.9" x2="652.5" y2="792.9" style="stroke:#64748b"/>
+<line class="whisker" x1="1150.0" y1="719.8" x2="1150.0" y2="722.0" style="stroke:#64748b"/>
+<line class="whisker" x1="1145.0" y1="719.8" x2="1155.0" y2="719.8" style="stroke:#64748b"/>
+<line class="whisker" x1="1145.0" y1="722.0" x2="1155.0" y2="722.0" style="stroke:#64748b"/>
+<line class="whisker" x1="1485.0" y1="655.5" x2="1485.0" y2="656.5" style="stroke:#64748b"/>
+<line class="whisker" x1="1480.0" y1="655.5" x2="1490.0" y2="655.5" style="stroke:#64748b"/>
+<line class="whisker" x1="1480.0" y1="656.5" x2="1490.0" y2="656.5" style="stroke:#64748b"/>
+<path class="series-line" d="M 145.0 820.1 L 647.5 791.9 L 1150.0 721.4 L 1485.0 656.3" style="stroke:#64748b" stroke-dasharray="8 6"/>
+<circle class="marker" cx="145.0" cy="820.1" r="6" style="fill:#64748b"/>
+<circle class="marker" cx="647.5" cy="791.9" r="6" style="fill:#64748b"/>
+<circle class="marker" cx="1150.0" cy="721.4" r="6" style="fill:#64748b"/>
+<circle class="marker" cx="1485.0" cy="656.3" r="6" style="fill:#64748b"/>
+<line class="whisker" x1="145.0" y1="792.6" x2="145.0" y2="796.6" style="stroke:#7c3aed"/>
+<line class="whisker" x1="140.0" y1="792.6" x2="150.0" y2="792.6" style="stroke:#7c3aed"/>
+<line class="whisker" x1="140.0" y1="796.6" x2="150.0" y2="796.6" style="stroke:#7c3aed"/>
+<line class="whisker" x1="647.5" y1="781.2" x2="647.5" y2="784.5" style="stroke:#7c3aed"/>
+<line class="whisker" x1="642.5" y1="781.2" x2="652.5" y2="781.2" style="stroke:#7c3aed"/>
+<line class="whisker" x1="642.5" y1="784.5" x2="652.5" y2="784.5" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1150.0" y1="760.4" x2="1150.0" y2="761.7" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1145.0" y1="760.4" x2="1155.0" y2="760.4" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1145.0" y1="761.7" x2="1155.0" y2="761.7" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1485.0" y1="732.3" x2="1485.0" y2="733.3" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1480.0" y1="732.3" x2="1490.0" y2="732.3" style="stroke:#7c3aed"/>
+<line class="whisker" x1="1480.0" y1="733.3" x2="1490.0" y2="733.3" style="stroke:#7c3aed"/>
+<path class="series-line" d="M 145.0 795.5 L 647.5 784.2 L 1150.0 761.3 L 1485.0 733.3" style="stroke:#7c3aed" stroke-dasharray="3 5"/>
+<circle class="marker" cx="145.0" cy="795.5" r="6" style="fill:#7c3aed"/>
+<circle class="marker" cx="647.5" cy="784.2" r="6" style="fill:#7c3aed"/>
+<circle class="marker" cx="1150.0" cy="761.3" r="6" style="fill:#7c3aed"/>
+<circle class="marker" cx="1485.0" cy="733.3" r="6" style="fill:#7c3aed"/>
+<line class="whisker" x1="145.0" y1="859.3" x2="145.0" y2="862.0" style="stroke:#2563eb"/>
+<line class="whisker" x1="140.0" y1="859.3" x2="150.0" y2="859.3" style="stroke:#2563eb"/>
+<line class="whisker" x1="140.0" y1="862.0" x2="150.0" y2="862.0" style="stroke:#2563eb"/>
+<line class="whisker" x1="647.5" y1="849.9" x2="647.5" y2="851.2" style="stroke:#2563eb"/>
+<line class="whisker" x1="642.5" y1="849.9" x2="652.5" y2="849.9" style="stroke:#2563eb"/>
+<line class="whisker" x1="642.5" y1="851.2" x2="652.5" y2="851.2" style="stroke:#2563eb"/>
+<line class="whisker" x1="1150.0" y1="821.3" x2="1150.0" y2="825.6" style="stroke:#2563eb"/>
+<line class="whisker" x1="1145.0" y1="821.3" x2="1155.0" y2="821.3" style="stroke:#2563eb"/>
+<line class="whisker" x1="1145.0" y1="825.6" x2="1155.0" y2="825.6" style="stroke:#2563eb"/>
+<line class="whisker" x1="1485.0" y1="787.2" x2="1485.0" y2="787.9" style="stroke:#2563eb"/>
+<line class="whisker" x1="1480.0" y1="787.2" x2="1490.0" y2="787.2" style="stroke:#2563eb"/>
+<line class="whisker" x1="1480.0" y1="787.9" x2="1490.0" y2="787.9" style="stroke:#2563eb"/>
+<path class="series-line" d="M 145.0 860.5 L 647.5 850.8 L 1150.0 825.0 L 1485.0 787.7" style="stroke:#2563eb" stroke-dasharray="12 5"/>
+<circle class="marker" cx="145.0" cy="860.5" r="6" style="fill:#2563eb"/>
+<circle class="marker" cx="647.5" cy="850.8" r="6" style="fill:#2563eb"/>
+<circle class="marker" cx="1150.0" cy="825.0" r="6" style="fill:#2563eb"/>
+<circle class="marker" cx="1485.0" cy="787.7" r="6" style="fill:#2563eb"/>
+<line class="whisker" x1="145.0" y1="859.0" x2="145.0" y2="861.1" style="stroke:#059669"/>
+<line class="whisker" x1="140.0" y1="859.0" x2="150.0" y2="859.0" style="stroke:#059669"/>
+<line class="whisker" x1="140.0" y1="861.1" x2="150.0" y2="861.1" style="stroke:#059669"/>
+<line class="whisker" x1="647.5" y1="850.6" x2="647.5" y2="852.1" style="stroke:#059669"/>
+<line class="whisker" x1="642.5" y1="850.6" x2="652.5" y2="850.6" style="stroke:#059669"/>
+<line class="whisker" x1="642.5" y1="852.1" x2="652.5" y2="852.1" style="stroke:#059669"/>
+<line class="whisker" x1="1150.0" y1="824.7" x2="1150.0" y2="825.1" style="stroke:#059669"/>
+<line class="whisker" x1="1145.0" y1="824.7" x2="1155.0" y2="824.7" style="stroke:#059669"/>
+<line class="whisker" x1="1145.0" y1="825.1" x2="1155.0" y2="825.1" style="stroke:#059669"/>
+<line class="whisker" x1="1485.0" y1="786.3" x2="1485.0" y2="787.9" style="stroke:#059669"/>
+<line class="whisker" x1="1480.0" y1="786.3" x2="1490.0" y2="786.3" style="stroke:#059669"/>
+<line class="whisker" x1="1480.0" y1="787.9" x2="1490.0" y2="787.9" style="stroke:#059669"/>
+<path class="series-line" d="M 145.0 860.4 L 647.5 851.6 L 1150.0 825.0 L 1485.0 787.9" style="stroke:#059669"/>
+<circle class="marker" cx="145.0" cy="860.4" r="6" style="fill:#059669"/>
+<circle class="marker" cx="647.5" cy="851.6" r="6" style="fill:#059669"/>
+<circle class="marker" cx="1150.0" cy="825.0" r="6" style="fill:#059669"/>
+<circle class="marker" cx="1485.0" cy="787.9" r="6" style="fill:#059669"/>
+<line class="whisker" x1="145.0" y1="858.9" x2="145.0" y2="866.5" style="stroke:#d97706"/>
+<line class="whisker" x1="140.0" y1="858.9" x2="150.0" y2="858.9" style="stroke:#d97706"/>
+<line class="whisker" x1="140.0" y1="866.5" x2="150.0" y2="866.5" style="stroke:#d97706"/>
+<line class="whisker" x1="647.5" y1="822.8" x2="647.5" y2="827.9" style="stroke:#d97706"/>
+<line class="whisker" x1="642.5" y1="822.8" x2="652.5" y2="822.8" style="stroke:#d97706"/>
+<line class="whisker" x1="642.5" y1="827.9" x2="652.5" y2="827.9" style="stroke:#d97706"/>
+<line class="whisker" x1="1150.0" y1="780.6" x2="1150.0" y2="780.7" style="stroke:#d97706"/>
+<line class="whisker" x1="1145.0" y1="780.6" x2="1155.0" y2="780.6" style="stroke:#d97706"/>
+<line class="whisker" x1="1145.0" y1="780.7" x2="1155.0" y2="780.7" style="stroke:#d97706"/>
+<line class="whisker" x1="1485.0" y1="750.4" x2="1485.0" y2="750.7" style="stroke:#d97706"/>
+<line class="whisker" x1="1480.0" y1="750.4" x2="1490.0" y2="750.4" style="stroke:#d97706"/>
+<line class="whisker" x1="1480.0" y1="750.7" x2="1490.0" y2="750.7" style="stroke:#d97706"/>
+<path class="series-line" d="M 145.0 862.2 L 647.5 826.8 L 1150.0 780.6 L 1485.0 750.6" style="stroke:#d97706" stroke-dasharray="10 4 2 4"/>
+<circle class="marker" cx="145.0" cy="862.2" r="6" style="fill:#d97706"/>
+<circle class="marker" cx="647.5" cy="826.8" r="6" style="fill:#d97706"/>
+<circle class="marker" cx="1150.0" cy="780.6" r="6" style="fill:#d97706"/>
+<circle class="marker" cx="1485.0" cy="750.6" r="6" style="fill:#d97706"/>
+<line class="series-line" x1="590.0" y1="564.0" x2="618.0" y2="564.0" style="stroke:#64748b" stroke-dasharray="8 6"/>
+<text class="legend-label" x="627.0" y="569.0">Teacher transformer</text>
+<line class="series-line" x1="780.0" y1="564.0" x2="808.0" y2="564.0" style="stroke:#7c3aed" stroke-dasharray="3 5"/>
+<text class="legend-label" x="817.0" y="569.0">Logical modal</text>
+<line class="series-line" x1="970.0" y1="564.0" x2="998.0" y2="564.0" style="stroke:#2563eb" stroke-dasharray="12 5"/>
+<text class="legend-label" x="1007.0" y="569.0">Monolithic fused</text>
+<line class="series-line" x1="1160.0" y1="564.0" x2="1188.0" y2="564.0" style="stroke:#059669"/>
+<text class="legend-label" x="1197.0" y="569.0">Compact lazy</text>
+<line class="series-line" x1="1350.0" y1="564.0" x2="1378.0" y2="564.0" style="stroke:#d97706" stroke-dasharray="10 4 2 4"/>
+<text class="legend-label" x="1387.0" y="569.0">Packed triangular</text>
 <text class="footer" x="56.0" y="982.0">Latency: cpu, float32, end-to-end fixed-length model forward including embedding, compiled blocks, final norm, and vocabulary head. Arithmetic covers the two replaced blocks only.</text>
-<text class="footer" x="56.0" y="1006.0">Dashed amber arithmetic is a triangular-kernel opportunity, not measured execution. Exploratory single-checkpoint result.</text>
-<text class="footer" x="1544.0" y="1006.0" text-anchor="end">source sha256 b421bb0ef1cc</text>
+<text class="footer" x="56.0" y="1006.0">Packed triangular is a measured in-memory PyTorch reference, not the serialized default or an MLX/Metal kernel. Exploratory single-checkpoint result.</text>
+<text class="footer" x="1544.0" y="1006.0" text-anchor="end">source sha256 722fb25b9671</text>
 </svg>

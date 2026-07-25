@@ -42,9 +42,9 @@ def test_optimization_figure_data_contract() -> None:
         ("Logical modal stack", 72384, "executed"),
         ("Current fused dense path", 49152, "executed"),
         (
-            "Triangular backend opportunity",
+            "Packed triangular reference",
             30336,
-            "not yet executed",
+            "measured packed reference",
         ),
     ]
     assert [series.key for series in data.latency] == [
@@ -52,6 +52,7 @@ def test_optimization_figure_data_contract() -> None:
         "unfused",
         "monolithic",
         "lazy",
+        "triangular",
     ]
     assert [
         point.batch_size for point in data.latency[0].points
@@ -59,16 +60,55 @@ def test_optimization_figure_data_contract() -> None:
     assert [
         point.median_microseconds for point in data.latency[-1].points
     ] == pytest.approx(
-        [54.78523754882813, 67.9489951171875, 108.00604248046875, 227.514486328125]
+        [
+            55.557586669921875,
+            106.63002539062501,
+            249.44535351562502,
+            434.04638671875,
+        ]
     )
     assert [(row.label, row.value) for row in data.storage] == [
         ("Monolithic full runtime", 713920),
         ("Compact runtime, default", 205952),
         ("Compact runtime + sidecar", 409600),
+        ("Packed triangular reference", 131264),
     ]
     assert data.speedup_range == pytest.approx(
-        (2.715319749943464, 3.4666128033103187)
+        (2.7317070171084086, 3.4616190674707155)
     )
+    assert data.triangular_vs_lazy_speedup_range == pytest.approx(
+        (0.4419357948052578, 1.0324769649840073)
+    )
+    assert data.report_format_version == 3
+    assert data.triangular_measured
+
+
+def test_optimization_figure_retains_v2_compatibility() -> None:
+    _, current_report = _load_report()
+    report = json.loads(json.dumps(current_report))
+    report["format_version"] = 2
+    report.pop("triangular_runtime_benchmark")
+
+    data = extract_optimization_figure_data(report)
+
+    assert [series.key for series in data.latency] == [
+        "teacher",
+        "unfused",
+        "monolithic",
+        "lazy",
+    ]
+    assert (
+        data.compute[-1].label,
+        data.compute[-1].value,
+        data.compute[-1].qualifier,
+    ) == (
+        "Triangular backend opportunity",
+        30336,
+        "not yet executed",
+    )
+    assert data.triangular_vs_lazy_speedup_range is None
+    assert data.report_format_version == 2
+    assert not data.triangular_measured
 
 
 def test_committed_optimization_figure_matches_report() -> None:
@@ -93,5 +133,5 @@ def test_optimization_figure_rejects_unknown_format() -> None:
     _, report = _load_report()
     report["format_version"] = 999
 
-    with pytest.raises(ValueError, match="format_version must be 2"):
+    with pytest.raises(ValueError, match="format_version must be 2 or 3"):
         extract_optimization_figure_data(report)

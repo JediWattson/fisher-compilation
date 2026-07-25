@@ -389,10 +389,53 @@ This backend retains the existing behavior:
 - independently parameterized position-coupled causal kernels;
 - current modal completion and composition;
 - monolithic and seven-tensor fusion;
+- an opt-in packed causal-pair specialization derived from the authenticated
+  seven-tensor runtime;
 - lazy loading of the logical instrumentation graph.
 
 It is the correctness oracle for refactoring. It should fail a shape guard
 instead of silently accepting a different length.
+
+The authenticated dense lazy runtime remains the default executor and the
+instrumentation oracle. The packed specialization stores and evaluates only
+the legal lower-triangular position pairs, but deliberately carries no
+sidecar: capture and intervention requests must return to the dense lazy
+runtime. It is currently a validation-gated, in-memory candidate rather than a
+serialized runtime ABI. The generic PyTorch lowering wins narrowly at batch 1
+on the recorded CPU and loses at larger batches because gather, temporary
+pair-output, and indexed-reduction overhead exceed the saved multiplies. A
+custom CPU or MLX/Metal kernel that schedules triangular blocks directly is
+required before promotion to a default backend.
+
+#### Packed triangular MLX/Metal kernel — next lowering
+
+The packed reference establishes the storage layout and numerical oracle for a
+custom kernel. The first Apple Silicon lowering should express the packed
+executor with MLX array operations and compile the complete fast path with
+`mx.compile`. If that graph still materializes gathered pair tensors and an
+indexed reduction, the specialized path should use `mx.fast.metal_kernel`.
+
+For a target position \(t\), its packed block row begins at \(t(t+1)/2\) and
+contains only source positions \(0 \ldots t\). The Metal kernel should assign
+threadgroups over batch, target-position, and output-feature tiles, then
+accumulate those source blocks directly:
+
+1. load the source activation tile and its packed coefficient tile;
+2. accumulate in FP32 without materializing gathered position pairs;
+3. add the target-position bias and fuse GELU before writing the next stage;
+4. repeat for the bridge contraction, then apply the position-local decoder.
+
+This schedule needs neither the reference implementation's pair-output tensor
+nor `index_add`, so target rows have exclusive ownership and require no
+atomics. At larger sequence lengths, the same idea becomes block-triangular:
+use dense tiles below the causal diagonal and a masked diagonal tile so matrix
+hardware remains well utilized.
+
+The kernel should be constructed once and reused because MLX custom Metal
+kernels are JIT compiled. Benchmarking must force lazy work with `mx.eval`,
+separate cold compilation from steady-state execution, and retain the same
+device-specific numerical and latency gates. Arithmetic reduction by itself
+is insufficient.
 
 #### Dynamic causal backend — prefill scaffold implemented
 

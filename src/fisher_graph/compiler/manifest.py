@@ -1311,11 +1311,19 @@ def manifest_from_legacy_runtime(
         label="legacy Fisher report",
     )
     try:
+        report_format_version = report["format_version"]
         if (
-            type(report["format_version"]) is not int
-            or report["format_version"] != 2
+            type(report_format_version) is not int
+            or report_format_version not in (2, 3)
         ):
             raise ValueError("unsupported legacy fused report format")
+        if report_format_version == 3 and not isinstance(
+            report.get("triangular_runtime_benchmark"),
+            Mapping,
+        ):
+            raise ValueError(
+                "legacy fused report v3 triangular section must be an object"
+            )
         lazy = report["lazy_fused_artifact"]
         sources = report["source_artifacts"]
         protocol = report["protocol"]
@@ -1438,7 +1446,7 @@ def manifest_from_legacy_runtime(
             expected_size=None,
             encoding="json",
             artifact_kind="fused_executor_report",
-            format_version=2,
+            format_version=report_format_version,
         )
         resources.append(report_descriptor)
         resources.append(
