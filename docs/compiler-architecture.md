@@ -404,21 +404,22 @@ runtime. It is currently a validation-gated, in-memory candidate rather than a
 serialized runtime ABI. The generic PyTorch lowering wins narrowly at batch 1
 on the recorded CPU and loses at larger batches because gather, temporary
 pair-output, and indexed-reduction overhead exceed the saved multiplies. A
-custom CPU or MLX/Metal kernel that schedules triangular blocks directly is
-required before promotion to a default backend.
+custom MLX/Metal lowering now schedules those triangular blocks directly, but
+its first scalar-thread kernel remains experimental because measured latency
+is only at parity with dense MLX.
 
-#### Packed triangular MLX/Metal kernel — next lowering
+#### Packed triangular MLX/Metal kernel — experimental implementation
 
-The packed reference establishes the storage layout and numerical oracle for a
-custom kernel. The first Apple Silicon lowering should express the packed
-executor with MLX array operations and compile the complete fast path with
-`mx.compile`. If that graph still materializes gathered pair tensors and an
-indexed reduction, the specialized path should use `mx.fast.metal_kernel`.
+`MLXPackedTriangularFusedTwoLayerModalStack` implements both an ordinary MLX
+reference graph and a custom `mx.fast.metal_kernel` path. Conversion begins
+from the authenticated PyTorch packed runtime, verifies canonical target-major
+causal-pair order, copies the seven float32 tensors into MLX-owned state, and
+hash-checks the result. The runtime state becomes immutable before compiled
+execution; exported state arrays are non-aliasing copies.
 
 For a target position \(t\), its packed block row begins at \(t(t+1)/2\) and
-contains only source positions \(0 \ldots t\). The Metal kernel should assign
-threadgroups over batch, target-position, and output-feature tiles, then
-accumulate those source blocks directly:
+contains only source positions \(0 \ldots t\). The current Metal kernel assigns
+one thread to each `(batch, target, output feature)` and:
 
 1. load the source activation tile and its packed coefficient tile;
 2. accumulate in FP32 without materializing gathered position pairs;
@@ -429,13 +430,32 @@ This schedule needs neither the reference implementation's pair-output tensor
 nor `index_add`, so target rows have exclusive ownership and require no
 atomics. At larger sequence lengths, the same idea becomes block-triangular:
 use dense tiles below the causal diagonal and a masked diagonal tile so matrix
-hardware remains well utilized.
+hardware remains well utilized. The current flattened offsets are 32-bit and
+are guarded before launch; a larger-model lowering must tile or adopt wider
+index arithmetic before it can exceed that bound.
 
-The kernel should be constructed once and reused because MLX custom Metal
-kernels are JIT compiled. Benchmarking must force lazy work with `mx.eval`,
-separate cold compilation from steady-state execution, and retain the same
-device-specific numerical and latency gates. Arithmetic reduction by itself
-is insufficient.
+The kernel object is constructed once and reused because MLX custom Metal
+kernels are JIT compiled. `mx.compile` wraps both the ordinary reference and
+custom-Metal fast paths. Capture requests use the ordinary differentiable MLX
+graph; the authenticated PyTorch path remains the activation-Fisher oracle,
+and the Metal path is inference-only. MLX activation interventions are not yet
+supported.
+
+The checked Apple M5 benchmark forces every lazy result with `mx.eval` and a
+device synchronization, uses one-second minimum warmups, and rotates nine
+measurement rounds. Custom Metal was 2.294x–2.786x faster than the ordinary
+packed MLX graph and 0.915x–1.090x the dense compiled MLX path across batches
+1, 8, 64, and 256. Its geometric-mean speedups were 2.555x versus ordinary
+packed and 1.007x versus dense. This removes the packed implementation
+overhead, but does not yet establish a meaningful win over optimized dense
+contractions at the toy shape. First-observed calls are recorded separately
+but are not process-isolated cold-start measurements.
+
+The next performance rung is cooperative output-feature tiling with
+threadgroup memory, followed by a block-triangular kernel for longer sequences.
+Any such change must retain the ordinary MLX and PyTorch numerical oracles,
+the validation behavior gates, immutable provenance, and the synchronized
+same-device benchmark contract.
 
 #### Dynamic causal backend — prefill scaffold implemented
 

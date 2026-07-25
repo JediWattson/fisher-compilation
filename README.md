@@ -22,6 +22,8 @@ This repository now contains a complete reference run:
   CPU speedups;
 - a packed causal-pair triangular reference derived from that authenticated
   runtime, with validation-gated arithmetic, storage, and latency measurements;
+- an optional MLX lowering plus a custom Metal kernel that consumes packed
+  causal rows directly on Apple Silicon, with a same-GPU benchmark;
 - a trainable, sequence-length-independent causal modal executor for dynamic
   prefill, with explicit padding, logical-position, and visibility guards;
 - a nonmutating mixed runtime that dispatches each manifested segment to a
@@ -49,6 +51,8 @@ and
 [`artifacts/associative_recall/modal_composition_report.md`](artifacts/associative_recall/modal_composition_report.md).
 The fused runtime and benchmark are in
 [`artifacts/associative_recall/fused_executor_report.md`](artifacts/associative_recall/fused_executor_report.md).
+The separate Apple-Silicon accelerator measurement is in
+[`artifacts/associative_recall/mlx_metal_benchmark.md`](artifacts/associative_recall/mlx_metal_benchmark.md).
 
 ## Optimization summary
 
@@ -80,6 +84,15 @@ fisher-graph-verify
 python -m pytest -W error
 ```
 
+On Apple Silicon, install the optional MLX backend and run its separate
+same-device benchmark with:
+
+```bash
+pip install -e ".[dev,mlx]"
+fisher-graph-benchmark-mlx \
+  --output artifacts/associative_recall/mlx_metal_benchmark.json
+```
+
 The equivalent module commands are:
 
 ```bash
@@ -91,6 +104,8 @@ python -m fisher_graph.modal_executor_experiment --layer-index 1 --routing-width
 python -m fisher_graph.modal_completion_experiment --layer-index 1
 python -m fisher_graph.modal_composition_experiment
 python -m fisher_graph.fused_executor_experiment
+python -m fisher_graph.mlx_benchmark \
+  --output artifacts/associative_recall/mlx_metal_benchmark.json
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```
@@ -114,6 +129,11 @@ triangular candidate without fitting any weight, validation-gates it against
 the lazy runtime, and runs a separate same-round five-system benchmark without
 using the test split. It regenerates the authenticated runtime manifest after
 writing the final benchmark report.
+The optional MLX command leaves that manifest and the CPU fused report
+unchanged. It derives the packed state in memory, checks that the source
+instrumentation sidecar remains unloaded, validates the exact outputs being
+timed, and compares dense compiled MLX, ordinary packed compiled MLX, and the
+custom packed Metal kernel on one GPU.
 
 ## Compiler interfaces and scaling boundary
 
@@ -844,6 +864,55 @@ larger batches. It still beats the unfused logical runtime at every measured
 batch, with a 1.957x geometric-mean speedup. This crossover is the reason the
 dense lazy runtime remains the authenticated default.
 
+### Experimental MLX/Metal lowering
+
+`fisher_graph.mlx_executor` copies the seven floating-point packed tensors
+once into MLX-owned arrays. The fast Metal stage launches one thread per
+`(batch, target position, output feature)`, calculates the target-major packed
+offset \(t(t+1)/2+s\), and reads only sources \(s\le t\). It accumulates in
+FP32, adds the target bias, and applies GELU before writing. It does not create
+the PyTorch reference's gathered-pair tensor, run `index_add`, or use atomics.
+
+The runtime has three selectable execution modes:
+
+| Mode | Purpose |
+|---|---|
+| `eager` | Ordinary MLX graph for inspection and differentiation |
+| `compiled` | The same ordinary graph wrapped in `mx.compile` |
+| `metal` | Two custom packed causal kernels inside a compiled fast path |
+
+Activation capture deliberately routes through the ordinary MLX graph. The
+authenticated PyTorch instrumentation path remains the activation-Fisher
+oracle, and MLX activation interventions are not implemented. Converted state
+is immutable after construction, public state exports do not alias the
+compiled arrays, token indices are bounds-checked, and the Metal launch rejects
+shapes that exceed its current 32-bit flattened-index contract.
+
+The complete 628-example validation split retained exact argmax predictions
+and 100% answer/paired accuracy for all three MLX modes. Against the PyTorch
+packed full model, hard-NLL deltas were \(1.942\times10^{-4}\) for ordinary
+MLX and \(1.967\times10^{-4}\) for Metal; maximum answer-logit differences
+were 0.02060 and 0.00680 respectively. These are cross-framework float32
+differences, not bit-exact equivalence.
+
+The separate Apple M5 report measures only the two-layer modal stack. Each
+timed call creates a fresh lazy output, evaluates it, and synchronizes the GPU;
+nine rounds rotate system order:
+
+| Batch | Dense compiled | Packed compiled | Packed Metal | Metal vs dense | Metal vs packed |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 359.525 us | 1,068.050 us | 392.740 us | 0.915x | 2.719x |
+| 8 | 393.054 us | 1,004.162 us | 360.469 us | 1.090x | 2.786x |
+| 64 | 387.539 us | 937.733 us | 382.745 us | 1.013x | 2.450x |
+| 256 | 402.594 us | 906.611 us | 395.130 us | 1.019x | 2.294x |
+
+The custom kernel is 2.555x faster than the ordinary packed MLX graph by
+geometric mean, proving that direct triangular scheduling removes the
+gather/reduction implementation penalty. It is only 1.007x faster than dense
+MLX by geometric mean: at this tiny fixed shape, optimized dense kernels and
+launch overhead almost exactly offset the 38.3% arithmetic reduction. There
+is therefore no hard latency gate, and Metal is not the default backend.
+
 The compact runtime changes the storage tradeoff:
 
 | Resident state | Bytes |
@@ -917,6 +986,10 @@ than a seed-replicated claim.
   equivalence gate, lazy dispatch/cache/eviction contract, arithmetic, storage,
   provenance, the original four-system benchmark, and a validation-only
   five-system packed-triangular benchmark bound to the lazy artifact.
+- `mlx_metal_benchmark.json` and `mlx_metal_benchmark.md`: separate
+  same-device Apple-Silicon stack measurements for dense compiled MLX,
+  ordinary packed MLX, and the custom packed Metal kernel; these are not part
+  of the authenticated runtime manifest.
 
 Layer 0 keeps the original unsuffixed filenames for backward compatibility.
 For layer \(i>0\), executor artifacts use

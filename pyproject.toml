@@ -17,6 +17,9 @@ dependencies = [
 dev = [
   "pytest>=8",
 ]
+mlx = [
+  "mlx>=0.32; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
 
 [project.scripts]
 fisher-graph-experiment = "fisher_graph.associative_experiment:main"
@@ -25,6 +28,7 @@ fisher-graph-modal-executor = "fisher_graph.modal_executor_experiment:main"
 fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"
 fisher-graph-modal-compose = "fisher_graph.modal_composition_experiment:main"
 fisher-graph-fuse = "fisher_graph.fused_executor_experiment:main"
+fisher-graph-benchmark-mlx = "fisher_graph.mlx_benchmark:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 
