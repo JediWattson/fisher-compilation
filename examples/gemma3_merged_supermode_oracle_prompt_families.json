@@ -1,0 +1,149 @@
+{
+  "schema": "fisher_graph.gemma3_prompt_family_manifest",
+  "format_version": 1,
+  "prompt_fixture": "gemma3_merged_supermode_oracle_prompts.json",
+  "prompt_fixture_sha256": "7076a630a286607f130e8060e62b1f8a17214a2ec8a80bcb1c36cd85e650d938",
+  "scientific_policy": "one_template_family_one_role_no_cross_split_reuse",
+  "roles": {
+    "calibration_a": {
+      "normalized_sha256": "2ab87a0567893b5f444e4f08481a0fec0209074955cd085c1100f46db45d2430",
+      "families": [
+        {
+          "id": "calibration_a.tide_timebase_diagnostics",
+          "description": "Tidal instruments and competing timing explanations",
+          "start": 0,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.archive_chain_of_custody",
+          "description": "Archival transfers and custody evidence",
+          "start": 8,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.modular_quantity_problems",
+          "description": "Modular arithmetic and repeated quantity calculations",
+          "start": 16,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.persistent_structure_explanations",
+          "description": "Persistent and ordered data-structure explanations",
+          "start": 24,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.spectrometer_protocols",
+          "description": "Spectrometer preparation and measurement procedures",
+          "start": 32,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.agroecology_causal_studies",
+          "description": "Agricultural microclimate causal investigations",
+          "start": 40,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.formal_rule_inference",
+          "description": "Universal-rule deductions and implication limits",
+          "start": 48,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.coordinate_geometry_analogies",
+          "description": "Coordinate, basis, and projection analogies",
+          "start": 56,
+          "count": 8
+        }
+      ]
+    },
+    "calibration_b": {
+      "normalized_sha256": "00501ac58890a3f1cbb310f3ea7fafea2851e95f5ad4ad99065fa00da9d4e6f7",
+      "families": [
+        {
+          "id": "calibration_b.bell_tower_acoustics",
+          "description": "Bell-tower timing, harmonics, echoes, and airflow",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.ceramic_workshop_arithmetic",
+          "description": "Ceramic production and inventory calculations",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.version_control_semantics",
+          "description": "Version-control history and merge semantics",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.glacier_field_protocols",
+          "description": "Glacier measurement and field-safety procedures",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    },
+    "validation": {
+      "normalized_sha256": "751713cd821914bf5a06b7627279b8e0cf2d7adbe301fbbd2912dccb91de78be",
+      "families": [
+        {
+          "id": "validation.lighthouse_optics",
+          "description": "Lighthouse lens, beam, and optical diagnostics",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "validation.orchard_allocation_arithmetic",
+          "description": "Orchard harvest and allocation calculations",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "validation.queueing_system_semantics",
+          "description": "Queues, delivery guarantees, and scheduling semantics",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "validation.textile_dye_protocols",
+          "description": "Textile dye preparation and control procedures",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    },
+    "test": {
+      "normalized_sha256": "0adb2cee2870f93db450a16dbd4579a10fd2b553204165957a511269afcbe273",
+      "families": [
+        {
+          "id": "test.radio_telemetry_diagnostics",
+          "description": "Radio telemetry transport and interpretation faults",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "test.library_shelving_arithmetic",
+          "description": "Library collection and shelving calculations",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "test.capability_security_semantics",
+          "description": "Capability-based security and authority semantics",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "test.cave_survey_protocols",
+          "description": "Cave traverse measurement and safety procedures",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    }
+  }
+}

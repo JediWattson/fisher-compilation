@@ -1,10 +1,12 @@
-"""Full-width Fisher-modal projection ablations for causal language models.
+"""Full-width modal-codec ablations for causal language models.
 
 This module deliberately evaluates projections rather than fitting an
-executor.  At each selected activation site, a complete width-by-width Fisher
-basis is required.  Keeping the leading ``k`` modes therefore has an
-unambiguous complement: the lowest ``width - k`` modes are removed around the
-pooled calibration mean.
+executor.  At each selected activation site, a complete width-by-width codec
+is required.  An ordinary Fisher basis uses the same orthonormal columns for
+encoding and decoding.  An activation-aware generalized Fisher codec can use
+distinct dual encoder/decoder columns while still reconstructing the full
+width exactly.  Keeping the leading ``k`` modes therefore has an unambiguous
+complement around the pooled calibration mean.
 
 The evaluator runs one baseline forward and one forward per ablation condition
 for every :class:`~fisher_graph.compiler.calibration.CalibrationBatch`.  Losses
@@ -24,12 +26,17 @@ from torch import Tensor
 
 from .compiler.calibration import CalibrationBatch, CausalLanguageModelNLL
 from .instrumentation import InstrumentedModel, validate_instrumented_model
+from .linear_codec import LinearActivationCodec
 from .modes import FisherModeBasis
 from .streaming_analysis import StreamingActivationFisherBasis
 from .streaming_block_validation import _validate_orthonormal_columns
 
 
-FullWidthModalBasis = FisherModeBasis | StreamingActivationFisherBasis
+FullWidthModalBasis = (
+    FisherModeBasis
+    | StreamingActivationFisherBasis
+    | LinearActivationCodec
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,12 +44,21 @@ class _ResolvedFullWidthBasis:
     activation_name: str
     width: int
     mean: Tensor
-    vectors: Tensor
+    encoder: Tensor
+    decoder: Tensor
 
 
 def _resolve_full_width_basis(
     basis: FullWidthModalBasis,
 ) -> _ResolvedFullWidthBasis:
+    if isinstance(basis, LinearActivationCodec):
+        return _ResolvedFullWidthBasis(
+            activation_name=basis.activation_name,
+            width=basis.width,
+            mean=basis.mean.detach(),
+            encoder=basis.encoder.detach(),
+            decoder=basis.decoder.detach(),
+        )
     if isinstance(basis, StreamingActivationFisherBasis):
         activation_name = basis.activation_name
         width = basis.fisher.width
@@ -60,7 +76,7 @@ def _resolve_full_width_basis(
     else:
         raise TypeError(
             "basis must be a FisherModeBasis or "
-            "StreamingActivationFisherBasis"
+            "StreamingActivationFisherBasis or LinearActivationCodec"
         )
     if modes != width or vectors.shape != (width, width):
         raise ValueError(
@@ -107,7 +123,8 @@ def _resolve_full_width_basis(
         activation_name=activation_name,
         width=width,
         mean=mean.detach(),
-        vectors=vectors.detach(),
+        encoder=vectors.detach(),
+        decoder=vectors.detach(),
     )
 
 
@@ -151,7 +168,11 @@ def _project_valid_positions(
         device=activation.device,
         dtype=compute_dtype,
     )
-    vectors = basis.vectors[:, :retained_modes].to(
+    encoder = basis.encoder[:, :retained_modes].to(
+        device=activation.device,
+        dtype=compute_dtype,
+    )
+    decoder = basis.decoder[:, :retained_modes].to(
         device=activation.device,
         dtype=compute_dtype,
     )
@@ -160,7 +181,7 @@ def _project_valid_positions(
     # an identity-through-the-projection-path control, including its numerical
     # dtype and backend behavior.
     projected = (
-        (centered @ vectors) @ vectors.transpose(0, 1) + mean
+        (centered @ encoder) @ decoder.transpose(0, 1) + mean
     ).to(dtype=activation.dtype)
     mask = valid_positions.to(device=activation.device).unsqueeze(-1)
     return torch.where(mask, projected, activation)

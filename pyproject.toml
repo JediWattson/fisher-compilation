@@ -27,6 +27,7 @@ gemma = [
 
 [project.scripts]
 fisher-graph-experiment = "fisher_graph.associative_experiment:main"
+fisher-graph-conditional-rank = "fisher_graph.associative_conditional_rank_experiment:main"
 fisher-graph-intervene = "fisher_graph.intervention_experiment:main"
 fisher-graph-modal-executor = "fisher_graph.modal_executor_experiment:main"
 fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"
@@ -37,6 +38,12 @@ fisher-graph-gemma-fisher = "fisher_graph.gemma3_experiment:main"
 fisher-graph-gemma-stability = "fisher_graph.gemma3_stability_experiment:main"
 fisher-graph-gemma-trajectory = "fisher_graph.gemma3_trajectory_experiment:main"
 fisher-graph-gemma-ablation = "fisher_graph.gemma3_ablation_experiment:main"
+fisher-graph-gemma-weighted-jacobian = "fisher_graph.gemma3_weighted_jacobian_experiment:main"
+fisher-graph-gemma-gated-executor = "fisher_graph.gemma3_gated_executor_experiment:main"
+fisher-graph-gemma-projection-ladder = "fisher_graph.gemma3_projection_ladder_experiment:main"
+fisher-graph-gemma-codimension-rotation = "fisher_graph.gemma3_codimension_rotation_experiment:main"
+fisher-graph-gemma-rotated-span-executor = "fisher_graph.gemma3_rotated_span_executor_experiment:main"
+fisher-graph-gemma-merged-supermodes = "fisher_graph.gemma3_merged_supermode_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 

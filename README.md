@@ -10,9 +10,18 @@ This repository now contains a complete reference run:
 - explicit activation and gradient capture;
 - full 32 x 32 empirical Fisher matrices at six residual-stream boundaries;
 - eigendecomposed, reusable width-wise compute modes;
+- activation-covariance-aware native, variance-weighted, and generalized
+  Fisher codecs with distinct dual encoder/decoder bases;
 - a position-conditioned Fisher-mode intervention "equalizer";
 - held-out necessity, control, localization, and sufficiency sweeps;
 - position-coupled modal layer Jacobians;
+- a bounded true-forward-JVP probe plus causal Fisher-weighted prefix SVD and
+  signed factor executor;
+- a residual-separated, variable-length gated causal modal executor with an
+  explicit same-position path and state-conditioned positive-lag experts;
+- a Fisher-need conditional-budget routing milestone with route-specific mode
+  masks, hard token grouping, static/position/shuffle controls, and an
+  explicit native-output-oracle boundary;
 - a position-conditioned modal bottleneck and standalone causal modal executor;
 - causal conditional completion of discarded boundary modes;
 - independently compiled layer-0 and layer-1 executors composed into a frozen
@@ -57,12 +66,40 @@ The separate Apple-Silicon accelerator measurement is in
 Separately, the repository contains an opt-in text-only Gemma 3 adapter,
 bounded-memory Fisher collection, split-stability plus exact held-out
 Rayleigh replay, multi-boundary modal-trajectory tooling, and an exact-logical-
-lag reverse-causal gradient predictor. The next diagnostic adds a full-width,
-joint keep-top-\(k\) sufficiency curve at selected layer outputs. That
-external-model rung has synthetic contract coverage, but it is not part of the
-completed toy reference run: no checkpoint or live result artifact is
-committed, and no rank, quality, or compilation result is accepted or claimed
+lag reverse-causal gradient predictor. The external rung now also includes
+joint full-width sufficiency curves, activation-aware codec selection, bounded
+true forward JVPs, a weighted causal-factor reference, and a split-safe gated
+block-output experiment. A fresh target-informed projection-only rank ladder
+then isolates the representation from executor fitting. Those two follow-ups
+are negative for their tested protocols: the gated graph has small resource
+accounting but poor fidelity, and no generalized-decoder prefix from rank 480
+through 639 passed both behavior gates. A later codimension-one sensitivity
+rotation did recover behavioral fidelity at rank 639, but it removes only one
+of 640 directions. A true source-independent executor was then trained inside
+that span and did skip the native layers, but it failed every calibration-B
+fidelity gate. A final Fisher-aware representation oracle found that total
+ranks 636 and 638 passed its fresh prompt- and domain-family-disjoint,
+task-form-matched B behavior gates, but a float32 endpoint-control false
+negative stopped the preregistered run before validation. It is not part of the
+completed toy reference run: no checkpoint or live tensor artifact is
+committed, and no viable external-model compression or speed result is claimed
 here.
+
+The conditional-computation follow-up asks whether a cheap causal router can
+spend a different modal budget and route-specific mode subset on each token.
+Its first rung deliberately projects a native layer output, so it can isolate
+conditional representation value before a specialist generator bank is
+trained; it is not yet a layer replacement or a FLOP/latency result. The
+strict-loaded exploratory layer-0 run retained 100% validation accuracy with
+11.535 active modes per token, while its matched static rank 12 failed and the
+smallest B-viable static rank was 16. A cheaper position-only schedule also
+retained 100% accuracy and trailed the learned router by only 0.000936 NLL, so
+the current evidence supports position-conditioned specialist allocation, not
+content-conditioned routing. The
+Fisher-need teacher, five-role
+A-basis/A-router/B/validation/test protocol, hard grouped routes, mandatory
+controls, and source-independent Gemma path are described in
+[`docs/conditional-computation.md`](docs/conditional-computation.md).
 
 ## Optimization summary
 
@@ -295,9 +332,333 @@ otherwise constrained modal approaches. All derived primary artifacts remain
 ignored and uncommitted, model weights stayed frozen, and the reserved test
 split was not evaluated.
 
-The ignored outputs contain only pooled activation means, derived Fisher
-modes, exact trace accounting, bounded transport moments or scalar evaluation
-curves, and provenance—never pretrained weights or a model state dict. The
+The activation-aware follow-up turns that posthoc observation into a
+split-safe experiment:
+
+```bash
+fisher-graph-gemma-weighted-jacobian \
+  --model google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --start-layer 4 \
+  --end-layer 6 \
+  --max-length 128 \
+  --retained-ranks 632 636 638 639 640 \
+  --sketch-rows 641 \
+  --generalized-regularization 1e-3:1e-6 \
+  --generalized-regularization 1e-2:1e-5 \
+  --selection-nll-atol 0.05 \
+  --selection-top1-min 0.95 \
+  --jacobian-max-sequences 4 \
+  --jacobian-modes 4 \
+  --jacobian-max-lag 4 \
+  --jacobian-factor-rank 2 \
+  --device cpu \
+  --dtype float32
+```
+
+Calibration A alone fits activation covariance, full-width Fisher estimates,
+and native, variance-weighted, and generalized codecs. Calibration B locks
+the lowest-rank predeclared candidate satisfying both aggregate gates, but
+only after every codec family passes its own full-width behavioral identity
+control. Validation evaluates only that locked candidate, the locked family's
+full-width identity, and the native full-width identity; the two identities
+are deduplicated for a native lock. The reserved test split remains
+parse-and-hash-only.
+
+The strict-loaded local run locked the stronger generalized regularization
+pair at joint rank 636. On calibration B it changed NLL/token by -0.003316
+with 0.9643 top-1 agreement. On the protocol validation split it changed
+NLL/token by +0.010285 with 0.9626 top-1 agreement. Both the locked
+generalized-family and native validation identities changed NLL/token by only
+\(-6.58\times10^{-8}\) with exact top-1 agreement. That validates the
+non-orthogonal encoder/decoder path itself and isolates the rank-636 effect to
+dropping four modes rather than a faulty coordinate round trip.
+
+This explains why the simpler variance score did not reproduce the earlier
+posthoc result under the stricter split: calibration A contains 366 valid
+rows at width 640, so its Fisher has a nullspace of at least 274 dimensions.
+Multiplying a zero Fisher eigenvalue by activation variance still gives zero,
+and the last eight variance-ordered columns remained the native last eight.
+The generalized codec's explicit Fisher floor lets activation covariance
+organize that otherwise unidentified tail. The result is therefore
+regularization-dependent and must be retested on larger calibration data.
+
+The expanded forward-JVP pilot used four calibration-A sequences and a
+4-by-4 projected slice of the locked modal coordinates at exact lags 0–4. It
+observed zero future-position leakage and found 99.77% temporal-window
+coverage *inside that slice*. The aggregate split was 95.67% stationary signed
+lag mean versus 4.33% within-lag variation, but lag zero dominated it. After
+excluding lag zero, only 34.93% of positive-lag energy was explained by a
+constant mean and 65.07% varied by position or context. The stationary
+fractions fell from 96.03% at lag zero to 45.33%, 30.41%, 19.23%, and 9.33%
+at lags one through four. This motivated the fresh executor experiment below:
+keep the same-position path separate and use a small state-conditioned causal
+mixture for positive lags. These JVP values are neither held-out edge results
+nor full-width Jacobian-energy measurements.
+
+On the synthetic five-position Toeplitz reference, rank-two prefix factors
+retained 97.30% of the chosen weighted operator energy and used 160 MACs
+versus 240 for an explicitly unshared dense causal map. A natural lag-shared
+map stores only 80 edge coefficients, however, while the factors store 160;
+99.83% of this synthetic weighted energy was also at lag zero. Accordingly,
+this is exact SVD/tail accounting for a rank-two approximation—not a parameter,
+FLOP, storage, latency, or Gemma-runtime compression result. Rank 636 removes
+only four of 640 coordinates at each of three sites (0.625% per site), and the
+validation corpus is only 16 short template-matched prompts. Those prompts
+were reused by earlier exploratory iterations, so this run is a controlled
+replication rather than fresh confirmatory validation; the reserved test split
+is still unevaluated. See
+[`docs/weighted-jacobian-compilation.md`](docs/weighted-jacobian-compilation.md)
+for the equations and remaining acceptance gates.
+
+The follow-up fits that proposed executor against the real frozen layers 4–6
+block on a new four-way prompt fixture:
+
+```bash
+fisher-graph-gemma-gated-executor \
+  --weighted-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-weighted-jacobian.pt \
+  --model google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_gated_executor_prompts.json \
+  --retained-ranks 320 480 \
+  --expert-counts 1 2 \
+  --expert-ranks 16 \
+  --router-widths 16 \
+  --max-positive-lags none \
+  --fit-steps 100 \
+  --device cpu \
+  --dtype float32
+```
+
+The raw input residual is an exact bypass. The graph predicts only the block
+delta in the retained output-decoder subspace, using an independent
+same-position affine map plus low-rank positive-lag experts whose router sees
+the query state, source state, and relative logical lag. Calibration A fits a
+fixed 100-step schedule, calibration B locks one predeclared candidate, and
+validation evaluates that lock once. Test remains parse-and-hash-only.
+
+No rank-320 or rank-480 candidate passed selection. The required diagnostic
+fallback locked rank 320 with two rank-16 experts and a width-16 router. Its
+validation result was:
+
+| Validation quantity | Result | Required gate |
+|---|---:|---:|
+| Block-delta NRMSE | 0.823388 | at most 0.20 |
+| Block-delta cosine | 0.605518 | at least 0.95 |
+| Delta NLL/token | +7.015665 | absolute value at most 0.05 |
+| Top-1 agreement | 0.07381 | at least 0.95 |
+| Stored coefficients / source block parameters | 3.2518% | at most 75% |
+| Analytic MACs / source block analytic MACs | 3.2290% | at most 75% |
+
+The low resource ratios are real accounting wins, but they do **not** make
+this a viable compression: the quality gates fail by large margins. More
+importantly, the rank-320 target-informed, per-token least-squares
+output-subspace reference reached direct block-delta NRMSE 0.055995, yet its
+intervention still changed NLL/token by +6.342280 and retained only 0.088095
+top-1 agreement. This reference uses the true target delta, so it is neither
+an inference-time executor nor a behavioral upper bound. It nevertheless
+isolates a key failure: a small raw residual error in this codec/subspace can
+be amplified catastrophically downstream. It is not enough to optimize
+Euclidean block-output MSE.
+
+The no-op intervention, full-width codec delta round trip, frozen-model guard,
+prompt-disjointness, and structural causality/padding controls passed. The
+experiment therefore rejects this rank-320/480, one-seed, fixed-MSE protocol;
+it does not show that gated causal edges never help, that larger or differently
+trained executors cannot work, or that modal compression is impossible. The
+analytic MAC count also excludes nonlinearities, softmax, masking, additions,
+and memory traffic, so it is not a kernel-speed measurement. See
+[`docs/gated-executor.md`](docs/gated-executor.md) for the architecture,
+protocol, and interpretation.
+
+The projection-only follow-up removes executor-fit quality from that question.
+At every token it uses the *true* native block delta and computes its
+least-squares reconstruction in nested prefixes of the locked generalized
+output decoder:
+
+```bash
+fisher-graph-gemma-projection-ladder \
+  --weighted-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-weighted-jacobian.pt \
+  --gated-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-gated-executor.pt \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_projection_ladder_prompts.json \
+  --device cpu \
+  --dtype float32
+```
+
+No reduced rank passed calibration B's predeclared
+`abs(delta NLL/token) <= 0.05` and top-1 agreement `>= 0.95` gates. The near
+miss at rank 639 had delta NLL/token -0.003372 and 0.9431 top-1 agreement even
+though its direct block-delta NRMSE was only 0.003633. The protocol therefore
+locked rank 640 identity, which independently reached delta NLL/token
++0.000000273 and exact top-1 agreement on validation. Validation did not see
+rank 639 or any other reduced candidate, and reserved test was never
+tokenized or model-evaluated.
+
+This is a strong negative result for prefix truncation of this particular
+decoder span, not for every rank-\(r\) subspace. The calculation consumes the
+native target delta and still runs source layers 4–6, so it is neither an
+inference executor nor a parameter, MAC, storage, or latency result. See
+[`docs/gemma3-270m.md`](docs/gemma3-270m.md#run-the-target-informed-projection-only-behavioral-rank-ladder)
+for the full curve and claim boundary.
+
+The preregistered codimension-one discriminator then tests whether the
+rank-639 failure was caused by the codec's coordinate ordering:
+
+```bash
+fisher-graph-gemma-codimension-rotation \
+  --projection-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-projection-ladder.pt \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits \
+    examples/gemma3_codimension_rotation_expanded_a_prompts.json \
+  --tail-width 32 \
+  --stability-policy split_half_objective_regret \
+  --device cpu \
+  --dtype float32
+```
+
+Expanded calibration A passed its objective-regret stability gate: the pooled
+direction's worst split-half regret was 6.2854% against a maximum of 10%, the
+operator cosine was 0.9943 against a 0.99 minimum, and the relative eigengap
+was 0.00622 against a 0.001 minimum. On calibration B, the rotated candidate
+at rank 639 passed with delta NLL/token
++0.000382 and 0.9843 top-1 agreement. The preregistered source codec-prefix
+rank-639 control failed with +0.016279 and 0.9303. Only the rotated candidate
+was locked for validation, where it reached delta NLL/token +0.000316, 0.9913
+top-1 agreement, block-delta NRMSE 0.0009415, and block-delta cosine
+0.99999956. Reserved test remained parse-and-hash-only.
+
+This supports a narrow basis-ordering result at codimension one. Retaining
+639/640 dimensions is not meaningful compression, and the target-informed
+projection still runs the native block. It is not an inference executor or a
+parameter, MAC, storage, latency, or speed result. See the
+[`Gemma 3 analysis`](docs/gemma3-270m.md) for the full protocol and caveats.
+
+The next experiment turns that viable rotated span into a true grouped
+replacement. The
+[`implementation`](src/fisher_graph/gemma3_rotated_span_executor_experiment.py)
+and exact-hash-disjoint
+[`prompt fixture`](examples/gemma3_rotated_span_executor_prompts.json) can be
+run with:
+
+```bash
+fisher-graph-gemma-rotated-span-executor \
+  --rotation-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-codimension-rotation.pt \
+  --model-id google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_rotated_span_executor_prompts.json \
+  --device cpu \
+  --dtype float32
+```
+
+This is an actual student execution path—native prefix, grouped causal
+executor, native suffix—not another projection oracle. Instrumentation
+recorded zero calls to native Gemma layers 4–6 in that path. The executor uses
+471,057 learned parameters plus 410,880 fixed rotated-span coefficients:
+881,937 stored coefficients, or 5.27446% of the source block's 16,720,896
+parameters. Its analytic MAC ratio is 5.22358%.
+
+Those resource ratios did not produce a viable replacement. On
+exact-hash-disjoint calibration B, the executor reached delta NLL/token
++0.061064, 0.653302 top-1
+agreement, and teacher KL/token 0.337807. Its direct block-delta diagnostics
+were much closer—NRMSE 0.060264 and cosine 0.998186—but every predeclared
+behavior-fidelity gate still failed. On the same split, the target-informed
+rotated oracle passed with delta NLL/token +0.000659, 0.988208 top-1
+agreement, and teacher KL/token 0.000240. The span therefore remained viable;
+the learned executor did not approximate it precisely enough for downstream
+behavior.
+
+Because selection failed, neither validation nor reserved test was
+model-evaluated. The parameter and MAC counts are diagnostic accounting only:
+they do not support a compression, latency, or kernel-speed claim. See
+[`the detailed protocol and result`](docs/gemma3-270m.md#run-the-true-rotated-span-grouped-executor)
+for the full claim boundary. The four split roles share broad prompt-template
+families, so this negative run is a paraphrase-interpolation test rather than
+an unseen-family generalization test. Calibration B is consumed: do not tune
+and rerun this fixture. A changed graph or loss needs wholly new
+B/validation/test families. The runner refuses to overwrite an existing
+artifact, and this FP64-audited reference path currently supports CPU or CUDA,
+not MPS.
+
+The Fisher-aware merged-tail follow-up asks whether the 31 surviving
+low-ranked coordinates inside that rotated span can be combined into fewer
+supermodes before attempting another generator:
+
+```bash
+fisher-graph-gemma-merged-supermodes \
+  --rotation-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-codimension-rotation.pt \
+  --model-id google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_merged_supermode_oracle_prompts.json \
+  --family-manifest \
+    examples/gemma3_merged_supermode_oracle_prompt_families.json \
+  --supermode-ranks 0,1,2,4,8,16,24,28,30,31 \
+  --device cpu \
+  --dtype float32
+```
+
+This is deliberately an oracle, not a replacement executor: it reads the true
+native layers 4–6 delta, preserves the 608-dimensional codec prefix, and
+reconstructs the surviving tail through an A-fitted generalized-Fisher codec.
+Total candidate rank is \(608+q\), with rank 639 as the authenticated rotated
+span and rank 640 as native identity.
+
+The fresh prompt- and domain-family-disjoint, task-form-matched calibration-B
+sweep found real but narrow evidence for merging. Rank 636 (`q=28`) was the
+smallest stable candidate passing all five behavior gates: delta NLL/token
++0.001807, 0.97717 top-1 agreement, 0.000958 teacher KL/token, 0.01673
+per-prompt p90 absolute delta NLL, and 0.92593 per-prompt p10 top-1. Rank 638
+also passed. Rank 624 passed aggregate top-1 but failed the per-prompt tail and
+split-half stability gates; rank 632 missed the p10 gate at 0.89286 and was
+unstable.
+
+The preregistered run nevertheless failed closed before validation. Its
+rank-639 endpoint agreed mathematically with the authenticated predecessor and
+passed every behavior gate, but the original multi-matrix float32 replay
+differed from the one-normal source projector by a maximum absolute
+0.00048828125, above the predeclared \(10^{-5}\) equivalence tolerance. That is
+only about \(1.12\times10^{-6}\) of the recorded boundary-output RMS, but the
+control was absolute, so it failed. Native identity was exact. The full-rank
+path now dispatches the authenticated one-normal formula bit-for-bit, with a
+large-amplitude regression test. Projection semantics are versioned so the
+completed format-1 artifact still replays its historical factorized endpoint;
+new format-2 merges use the corrected path. The B artifact is not rewritten or
+rerun.
+
+Consequently q=28 is promising calibration-B evidence, not a validated
+compression result. It removes only four of 640 representation dimensions
+(0.625%), still consumes the native block, and establishes no parameter, FLOP,
+storage, latency, or kernel-speed saving. Validation and test were never
+tokenized or model-evaluated. This B split is consumed; any confirmatory run
+needs a new family-disjoint protocol. The
+[`detailed Gemma analysis`](docs/gemma3-270m.md#run-the-fisher-aware-merged-tail-supermode-oracle)
+records the complete curve, numerical-control postmortem, strict predecessor
+binding, and claim boundary.
+
+The ignored outputs contain only pooled activation means/covariances, derived
+Fisher modes and codecs, exact trace accounting, bounded
+transport/JVP/factor/executor state or scalar evaluation curves, and
+provenance—never pretrained weights or a model state dict. The gated artifact
+defaults to the ignored local path
+`.local-runs/google--gemma-3-270m/layers-4-6-gated-executor.pt`, with a
+tensor-free JSON report beside it. The locked candidate's deployable FP32
+state accounts for about 2.17 MB; the roughly 16 MB diagnostic tensor artifact
+is larger because it retains all four fitted candidate states and audit
+payloads. Model files remain in the external Hugging Face cache. The
 trajectory writer now emits
 artifact format version 2 with the causal payload; its strict loader still
 accepts version-1 row-local artifacts without synthesizing causal results. A
@@ -329,6 +690,19 @@ python -m fisher_graph.gemma3_trajectory_experiment \
 python -m fisher_graph.gemma3_ablation_experiment \
   --prompt-splits examples/gemma3_stability_prompts.json \
   --retained-ranks 640 512 384 256 192 128 96 64 32 0
+python -m fisher_graph.gemma3_weighted_jacobian_experiment \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --retained-ranks 632 636 638 639 640
+python -m fisher_graph.gemma3_gated_executor_experiment \
+  --weighted-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-weighted-jacobian.pt \
+  --prompt-splits examples/gemma3_gated_executor_prompts.json
+python -m fisher_graph.gemma3_projection_ladder_experiment \
+  --weighted-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-weighted-jacobian.pt \
+  --gated-artifact \
+    .local-runs/google--gemma-3-270m/layers-4-6-gated-executor.pt \
+  --prompt-splits examples/gemma3_projection_ladder_prompts.json
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```
@@ -373,9 +747,20 @@ positions. The uncentered gradient score is zero-baseline explained energy
 rather than statistical \(R^2\). The ablation command instead extracts
 full-width calibration bases and projects the selected layer outputs jointly
 through descending keep-top-\(k\) prefixes on validation, with optional
-one-site-at-a-time localization. None of these commands identifies Jacobian
-blocks, fits an executor, evaluates the reserved test split, or changes a
-runtime manifest.
+one-site-at-a-time localization. The weighted-Jacobian command instead fits
+activation-aware codecs on calibration A, selects a joint codec/rank on
+calibration B, evaluates that locked choice on validation, and optionally
+measures true forward JVP edges before applying the generic weighted causal
+factorizer. The resulting Toeplitz factor is a bounded stationary reference,
+not an installed Gemma executor. The gated-executor command then fits
+residual-separated, state-conditioned causal candidates on calibration A,
+locks on calibration B, and intervenes once on validation. Its current
+rank-320/480 result is explicitly nonviable. The projection-ladder command
+strict-loads both predecessors, leaves calibration A and test hash-only,
+selects only from the calibration-B rank curve, and evaluates exactly one
+locked rank on validation. Its current rank-640 identity fallback is also
+explicitly nonviable as compression. None of these commands changes a runtime
+manifest.
 
 ## Compiler interfaces and scaling boundary
 
@@ -423,6 +808,22 @@ the cross-token omission explains a weak row-local map. It does not recover
 individual Jacobian blocks and cannot by itself authorize a sequence-aware
 modal executor. Cache-aware decode and an authenticated Gemma graph
 replacement remain later gates.
+
+`StreamingActivationCovariance` supplies the matching activation second
+moment. `LinearActivationCodec` represents either an orthonormal Fisher basis
+or a generalized dual encoder/decoder satisfying full-width identity.
+`collect_block_causal_lag_jacobian` then excites decoder columns and projects
+true source-block JVPs through output encoders, preserving signed exact-lag
+edges and separately accounting for causal leakage, omitted past energy, and
+within-lag variation both per lag and with lag zero excluded.
+`factor_causal_weighted_jacobian` factors every causal
+output prefix independently under block-local activation covariance and
+output Fisher metrics. Its executor has no future-position parameter slots
+and exposes exact SVD-tail, per-edge/per-lag energy, coefficient, and MAC
+accounting.
+These APIs implement the generic node-and-edge reference; behavioral
+completion, variable-length lowering, and authenticated Gemma replacement are
+still separate gates.
 
 The current model is exposed through `ToyTransformerAdapter`. Fisher
 collection and modal Jacobian extraction use the generic adapter path, and

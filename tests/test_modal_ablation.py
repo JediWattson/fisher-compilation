@@ -5,6 +5,7 @@ import torch
 from fisher_graph.adapters import ToyTransformerAdapter
 from fisher_graph.compiler.calibration import CalibrationBatch
 from fisher_graph.config import TransformerConfig
+from fisher_graph.linear_codec import build_generalized_fisher_codec
 from fisher_graph.modal_ablation import (
     ModalAblationCondition,
     PooledModalProjection,
@@ -124,6 +125,41 @@ class CountingInstrumentedModel:
 
 
 class ModalProjectionTests(unittest.TestCase):
+    def test_generalized_codec_uses_dual_encoder_decoder(self) -> None:
+        codec = build_generalized_fisher_codec(
+            activation_name="layer.0.output",
+            mean=torch.tensor([1.0, -2.0]),
+            covariance=torch.diag(torch.tensor([9.0, 1.0])),
+            fisher_matrix=torch.diag(torch.tensor([1.0, 4.0])),
+            alpha=0.0,
+            beta=0.0,
+        )
+        self.assertFalse(torch.equal(codec.encoder, codec.decoder))
+        activation = torch.tensor(
+            [[[7.0, 5.0], [4.0, 3.0]]],
+            dtype=torch.float64,
+        )
+        valid = torch.tensor([[True, False]])
+
+        rank_one = PooledModalProjection(
+            codec,
+            retained_modes=1,
+            valid_positions=valid,
+        )(activation)
+        torch.testing.assert_close(
+            rank_one,
+            torch.tensor(
+                [[[7.0, -2.0], [4.0, 3.0]]],
+                dtype=torch.float64,
+            ),
+        )
+        full_rank = PooledModalProjection(
+            codec,
+            retained_modes=2,
+            valid_positions=valid,
+        )(activation)
+        torch.testing.assert_close(full_rank, activation)
+
     def test_rank_zero_and_full_rank_use_valid_position_projection(self) -> None:
         mean = torch.tensor([10.0, 20.0, 30.0], dtype=torch.float64)
         basis = streaming_basis(

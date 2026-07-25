@@ -1,0 +1,190 @@
+{
+  "schema": "fisher_graph.gemma3_prompt_family_manifest",
+  "format_version": 1,
+  "prompt_fixture": "gemma3_merged_supermode_confirmation_prompts.json",
+  "prompt_fixture_sha256": "1d292f970a951fd15f85bc024c3fab7bb231971e9850d9e0110c4aab90f08c57",
+  "scientific_policy": "one_domain_template_family_one_role_no_cross_split_reuse",
+  "broad_form_policy": "broad_task_forms_may_repeat_across_roles_and_are_recorded_but_domain_template_families_must_remain_role_confined",
+  "roles": {
+    "calibration_a": {
+      "normalized_sha256": "468bb4c2b0c68c051b5afdc5dce766ebe4f475f5f215d2816853f1a7770e6e0c",
+      "families": [
+        {
+          "id": "calibration_a.river_lock_instrument_faults",
+          "domain_template": "river_lock_instrument_faults",
+          "broad_form": "observational_diagnosis",
+          "description": "River-lock sensors, controls, and competing fault explanations",
+          "start": 0,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.museum_accession_reconciliation",
+          "domain_template": "museum_accession_reconciliation",
+          "broad_form": "evidence_reconciliation",
+          "description": "Museum custody, accession, and inventory evidence",
+          "start": 8,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.astronomy_cadence_calculation",
+          "domain_template": "astronomy_cadence_calculation",
+          "broad_form": "quantitative_reasoning",
+          "description": "Astronomical observation counts, cycles, and modular calculations",
+          "start": 16,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.database_index_explanation",
+          "domain_template": "database_index_explanation",
+          "broad_form": "technical_explanation",
+          "description": "Database index structures and query-plan consequences",
+          "start": 24,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.battery_cell_safety_protocol",
+          "domain_template": "battery_cell_safety_protocol",
+          "broad_form": "procedural_instruction",
+          "description": "Battery-cell measurement and safety procedures",
+          "start": 32,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.forest_canopy_causal_study",
+          "domain_template": "forest_canopy_causal_study",
+          "broad_form": "causal_investigation",
+          "description": "Forest canopy interventions and causal observations",
+          "start": 40,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.set_membership_inference",
+          "domain_template": "set_membership_inference",
+          "broad_form": "formal_reasoning",
+          "description": "Set membership deductions and converse fallacies",
+          "start": 48,
+          "count": 8
+        },
+        {
+          "id": "calibration_a.signal_basis_analogy",
+          "domain_template": "signal_basis_analogy",
+          "broad_form": "conceptual_analogy",
+          "description": "Signal basis, projection, and sensitivity analogies",
+          "start": 56,
+          "count": 8
+        }
+      ]
+    },
+    "calibration_b": {
+      "normalized_sha256": "38a09f36adf581b91da7144682400dd66fc4fd60529d953974f9170a7952353b",
+      "families": [
+        {
+          "id": "calibration_b.clockwork_automaton_faults",
+          "domain_template": "clockwork_automaton_faults",
+          "broad_form": "observational_diagnosis",
+          "description": "Clockwork mechanism timing and mechanical fault diagnosis",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.bakery_batch_calculation",
+          "domain_template": "bakery_batch_calculation",
+          "broad_form": "quantitative_reasoning",
+          "description": "Bakery production ratios, counts, and fractions",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.distributed_consensus_explanation",
+          "domain_template": "distributed_consensus_explanation",
+          "broad_form": "technical_explanation",
+          "description": "Distributed consensus quorums, logs, and leadership",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "calibration_b.coral_census_protocol",
+          "domain_template": "coral_census_protocol",
+          "broad_form": "procedural_instruction",
+          "description": "Underwater coral census and field-record procedures",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    },
+    "validation": {
+      "normalized_sha256": "d7d275c94e5be8faa81c7ca71ea9980ebe2b8c4321cabb687bc9e673cb78298f",
+      "families": [
+        {
+          "id": "validation.telescope_mount_faults",
+          "domain_template": "telescope_mount_faults",
+          "broad_form": "observational_diagnosis",
+          "description": "Telescope mount tracking and coordinate fault diagnosis",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "validation.rail_freight_calculation",
+          "domain_template": "rail_freight_calculation",
+          "broad_form": "quantitative_reasoning",
+          "description": "Rail freight loading, ratios, and fractional unloading",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "validation.memory_allocator_explanation",
+          "domain_template": "memory_allocator_explanation",
+          "broad_form": "technical_explanation",
+          "description": "Memory allocation, fragmentation, and reclamation",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "validation.manuscript_ink_protocol",
+          "domain_template": "manuscript_ink_protocol",
+          "broad_form": "procedural_instruction",
+          "description": "Conservation sampling and manuscript ink analysis",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    },
+    "test": {
+      "normalized_sha256": "9040a545db4382081444a4ffd60ab17c9190798306e4b367a67842af5b040774",
+      "families": [
+        {
+          "id": "test.hydraulic_elevator_faults",
+          "domain_template": "hydraulic_elevator_faults",
+          "broad_form": "observational_diagnosis",
+          "description": "Hydraulic elevator motion, pressure, and sensor faults",
+          "start": 0,
+          "count": 4
+        },
+        {
+          "id": "test.solar_array_calculation",
+          "domain_template": "solar_array_calculation",
+          "broad_form": "quantitative_reasoning",
+          "description": "Solar array grouping, ratios, and maintenance counts",
+          "start": 4,
+          "count": 4
+        },
+        {
+          "id": "test.encryption_key_explanation",
+          "domain_template": "encryption_key_explanation",
+          "broad_form": "technical_explanation",
+          "description": "Encryption keys, forward secrecy, and authenticated encryption",
+          "start": 8,
+          "count": 4
+        },
+        {
+          "id": "test.volcanic_gas_protocol",
+          "domain_template": "volcanic_gas_protocol",
+          "broad_form": "procedural_instruction",
+          "description": "Volcanic gas sampling and exposure safety procedures",
+          "start": 12,
+          "count": 4
+        }
+      ]
+    }
+  }
+}

@@ -22,6 +22,11 @@ Two scopes are deliberately separate:
 - **Implemented external-model analysis diagnostic:** canonical multi-layer
   boundaries, bounded Fisher/transport moments, and frozen exact-logical-lag
   reverse-gradient prediction over adjacent edges and the block endpoint.
+- **Conditional-computation reference:** per-token Fisher-need labels, a
+  causal hard budget router, route-specific exact-cardinality mode masks,
+  grouped modal execution, and static, position-only, and histogram-matched
+  controls. The first rung is a native-output projection oracle, not an
+  authenticated replacement executor.
 - **Future production backend:** backend-neutral symbolic IR, efficient
   sliding-window kernels, cache-aware chunked prefill and decode,
   distributed/sharded Fisher accumulation, and additional model-family
@@ -101,6 +106,18 @@ objects:
 
 Those properties make the current backend an excellent oracle, but they are
 not suitable contracts for variable-length or large-model execution.
+
+The conditional-budget milestone is a separate representation branch around
+this pipeline. It uses an A-basis/A-router/B/validation/test protocol to ask
+whether per-token modal need is predictable from a causal input boundary.
+Hard routing evaluates one route-specific exact-budget subset per valid
+token; masks are fitted from each need bin and are not required to be nested
+prefixes. Static, position-only, and route-histogram-matched shuffled controls
+isolate the routing effect. Because the current reference consumes the native
+layer output, active modal accounting is not source-layer compute reduction.
+See
+[`conditional-computation.md`](conditional-computation.md) for the exact
+oracle/executor boundary and the variable-sequence Gemma follow-up.
 
 ## Target system
 
@@ -378,6 +395,183 @@ predictive coefficients, not measured per-position Jacobian blocks. The
 analysis has no context conditioning and does not implement a forward graph.
 Accordingly, even a positive held-out gain would be evidence for a compact
 relationship to model next—not executor acceptance or compilation proof.
+
+### Activation-aware forward-Jacobian reference
+
+`StreamingActivationCovariance` complements the Fisher estimator with the
+distribution of real activation displacements. `LinearActivationCodec`
+supports three full-width coordinate policies:
+
+- native Fisher order;
+- Fisher vectors reordered by eigenvalue times modal activation variance;
+- regularized generalized Fisher coordinates with dual encoder and decoder.
+
+Every codec audits \(ED^{\mathsf T}=I\), so full width remains an explicit
+identity path even when the generalized basis is not orthogonal in residual
+coordinates. Rank-deficient covariance or Fisher state requires recorded
+positive floors rather than an implicit pseudoinverse.
+
+`collect_block_causal_lag_jacobian` is distinct from the reverse-gradient
+diagnostic. It excites a codec decoder direction, executes the frozen source
+block under a true JVP, and projects through the output codec encoder. It
+keeps signed mean and RMS edges by exact logical lag, separately measuring
+future-position leakage, omitted past energy, and within-lag variation. RMS
+is never executable. A large variation fraction is the evidence needed before
+adding a causal router and multiple signed experts.
+
+`factor_causal_weighted_jacobian` builds an independent SVD for each output
+prefix:
+
+\[
+F_t^{1/2}
+\begin{bmatrix}
+J_{t,0}C_0^{1/2}&\cdots&J_{t,t}C_t^{1/2}
+\end{bmatrix}.
+\]
+
+Independent prefixes make causality structural: output \(t\) has no factor
+slot for a source later than \(t\). The result retains signed execution
+factors, exact SVD-tail energy, PSD-support accounting, analytic coefficient
+and MAC counts, and a strict weights-only round trip. Version 1 deliberately
+uses block-local \(C_s\) and \(F_t\); it omits cross-position metric blocks.
+
+The Gemma pilot expands pooled lag means into a small \(T=L+1\) stationary
+Toeplitz reference. Its SVD spectrum and discarded-tail accounting are exact
+under the chosen pooled, replicated metric; a truncated factor is still an
+approximation, and the reference is not a full state-conditioned Jacobian. Its
+dense ratio compares with an unshared causal tensor, not a natural lag-shared
+kernel, the source model, or an optimized backend.
+
+### Residual-separated gated causal executor
+
+`ResidualGatedCausalModalExecutor` is the executable follow-up to the
+stationary weighted-Jacobian reference. For modal input \(x_t\), it separates
+the local path from positive-lag transport:
+
+\[
+y_t
+= x_tW_{\mathrm{same}}+b
++\sum_{s<t}\sum_e
+p_e(x_t,x_s,\log(1+t-s))(x_sU_e)V_e.
+\]
+
+An optional exact modal skip belongs only to the same-position path.
+Positive-lag experts are shared and low rank. Their small router uses query
+state, source state, and relative logical lag; it has no absolute-position or
+position-pair table. Runtime parameter shapes are therefore independent of
+sequence length. The executor accepts distinct query/key validity masks and
+logical positions, excludes equal/future positions structurally, and may
+apply a maximum positive-lag budget.
+
+The reference exposes local output, cross-token output, legal-edge masks, and
+router probabilities separately. Its accounting includes every soft-mixture
+expert on each legal edge. The reported ideal sparse MAC count excludes
+nonlinearities, softmax, masking, additions, and memory traffic, so it cannot
+authorize a latency or kernel-speed claim.
+
+The Gemma runner keeps the raw residual \(h_{\mathrm{in}}\) as an exact bypass
+and asks this graph to predict only the layers 4–6 block delta through a
+retained output decoder:
+
+\[
+\widehat h_{\mathrm{out}}
+=h_{\mathrm{in}}
++\operatorname{Executor}\!\left(
+(h_{\mathrm{in}}-\mu_{\mathrm{in}})E_{\mathrm{in},:r}
+\right)D_{\mathrm{out},:r}^{\mathsf T}.
+\]
+
+This avoids treating two generalized-Fisher gauges as interchangeable.
+Calibration A fits a fixed update schedule; calibration B locks one
+predeclared rank/expert configuration; validation evaluates that lock once;
+reserved test remains hash-only. A diagnostic fallback is still locked when
+no candidate passes, but it is marked nonviable before validation.
+
+The current PyTorch experiment executes the source block to capture its
+reference output and then intervenes at the final boundary. Its accounting is
+for a hypothetical replacement, not the wall-clock work of the diagnostic.
+Authentication into the mixed compiled runtime remains a separate gate.
+
+### Target-informed projection rank ladder
+
+The projection ladder is a fail-closed representation diagnostic between
+codec selection and executor fitting. For each retained output-decoder prefix,
+it solves the block-delta coordinates independently at every valid token,
+intervenes once at the block output, and measures downstream NLL and top-1
+agreement. Because the coordinates use the true native block output, this
+isolates span sufficiency from graph-generation error but is not an executable
+replacement.
+
+The protocol strict-binds the weighted-codec and negative gated-executor
+artifacts before model load. Calibration B sees the preregistered rank curve;
+direct reconstruction metrics are diagnostic only. A full-width identity
+failure stops the run before validation. Otherwise the smallest reduced rank
+passing both behavior gates is locked, or full-width identity is locked with
+`selection_failed=true`. Validation sees exactly one locked-rank
+intervention. Calibration A and reserved test remain hash-only.
+
+This distinction belongs in the future planner:
+
+```text
+output-span diagnostic passes?
+        | yes                         | no
+        |                             v
+        |                       change/reorder the span
+        |                             |
+        |                             v
+        |                       lock rotated span
+        |                             |
+        +-------------+---------------+
+                      |
+                      v
+          fit executor inside locked span
+                      |
+                      v
+          authenticate replacement
+```
+
+Neither target-informed projection nor retained rank alone authorizes
+parameter, arithmetic, storage, or latency claims. Those claims begin only
+after a source-independent executor reproduces the accepted span.
+
+### Codimension-one tail-span diagnostic
+
+The codimension-one diagnostic implements the `change/reorder the span`
+branch. It consumes the strict negative projection-ladder artifact, which
+already binds the weighted-codec and gated-executor predecessors, plus a new
+source-disjoint four-way prompt protocol. Calibration A fits one omitted
+Euclidean direction inside the 32-dimensional complement of the existing
+rank-608 decoder prefix. Its sensitivity operator balances a downstream
+pseudo-top-1 score-gradient Fisher with the native block-delta second moment.
+The source codec's omitted rank-639 direction remains a same-rank control.
+
+Calibration B compares the fitted rotation, the original codec-prefix
+rank-639 span, and mandatory rank-640 identity using only aggregate NLL and
+top-1 gates. An unstable calibration-A fit stops before calibration B; a
+failed full-width identity stops before validation. If neither reduced span
+passes calibration B, the runner saves a selection-failure artifact without
+tokenizing validation. Otherwise it locks one reduced span and evaluates
+exactly that intervention on validation. Reserved test prompts are parsed and
+hashed only; they never select the direction, the span, or a threshold and
+are not model-evaluated.
+
+The pinned layers-4–6 result demonstrates that basis ordering can rescue the
+same rank. On calibration B, the rotated rank-639 span passed at
++0.000382 delta NLL/token and 0.9843 top-1 agreement, while the original
+codec-prefix rank-639 control failed at +0.016279 and 0.9303. The locked
+rotation then validated at +0.000316 delta NLL/token and 0.9913 top-1
+agreement. This is a positive representation result: the earlier rank-639
+failure was not evidence that every one-dimensional omission was harmful.
+
+The intervention still reads the true native block delta after executing the
+source layers. It removes only one of 640 coordinates and supplies no
+source-independent computation. The follow-up did train a graph executor
+inside that span and truly skipped native layers 4–6. Its structural
+accounting was small—about 5.27% of the source block's stored coefficients and
+5.22% of its ideal analytic MAC estimate—but it failed calibration-B fidelity
+at +0.0611 delta NLL/token and 0.6533 top-1 agreement. The rotated oracle still
+passed. The next compiler step is therefore a more precise generator, not
+another proof that the span exists.
 
 ## Compiler architecture
 
@@ -843,13 +1037,24 @@ suite before broadening scope.
   frozen maps, evaluations, and scalar curves into the strict two-way
   tensor/report validation path. The loader remains compatible with version 1
   row-local artifacts and does not synthesize causal results for them.
+- Implemented: streaming FP64 activation covariance plus native,
+  variance-weighted, and regularized generalized Fisher codecs with strict
+  full-width dual-identity and serialization audits.
+- Implemented: a bounded true-forward-JVP block probe with exact logical-lag
+  causality, observed-pair energy accounting, stationary-versus-varying edge
+  decomposition both per lag and with lag zero excluded, projected-slice
+  scope labels, and codec provenance binding.
+- Implemented: independent causal-prefix
+  \(F_{\rm out}^{1/2}JC_{\rm in}^{1/2}\) SVDs, signed support-aware execution
+  factors, optimal tail curves, analytic coefficient/MAC counts, and strict
+  weights-only loading.
 - Remaining: representative and sequence-balanced prompt protocols,
   predeclared acceptance/reporting orchestration, automated cross-sketch
   convergence, per-example and per-length-bucket influence diagnostics,
-  approximation residuals, scalable regularized/factorized or
+  approximation residuals, cross-position covariance metrics, scalable
   context-conditioned causal diagnostics, and sharded accumulation.
 
-### Stage 7: attach an external text decoder — analysis diagnostic complete; representative acceptance pending
+### Stage 7: attach an external text decoder — span rescued, executable compression unproven
 
 - Implemented: a structural, text-only Hugging Face Gemma 3 causal-LM adapter
   with heterogeneous layer metadata, residual-boundary capture and
@@ -888,15 +1093,128 @@ suite before broadening scope.
   homogeneous exact-lag ridge protocol, not sequence-aware executors in
   general. The ignored strict-loaded payload was approximately 56 MB with a
   987 KB JSON report.
-- Remaining: run a representative variable-length 270M protocol, define and
-  lock acceptance criteria, establish stable ranks at every intended block
-  boundary, and retest cross-position predictability with predeclared lower
-  ranks, lag budgets, and regularization before considering factorized or
-  context-conditioned alternatives.
-- Remaining: only after those gates pass, fit and compile one joint 270M block
-  while leaving the remainder original; require local, internal-trajectory,
-  end-to-end, variable-length, causal, and fallback gates; then evaluate the
-  reserved test exactly once without further selection.
+- Implemented: a four-way split-safe activation-aware rung. Calibration A fits
+  covariance/Fisher codecs; calibration B first requires every family's own
+  full-width behavioral identity and then locks the first reduced rank/family
+  passing predeclared aggregate gates. Validation sees only that locked choice,
+  its family's full-width identity, and the native identity; test remains
+  hash-only. The artifact cross-binds the optional true JVP to its codecs and
+  regenerates the merged weighted factor during strict loading.
+- A pinned local run selected a regularized generalized codec at joint rank
+  636. Calibration B delta NLL/token was -0.003316 with 0.9643 top-1
+  agreement; locked validation was +0.010285 with 0.9626 agreement. Both the
+  locked generalized-family and native validation identities were within
+  \(6.58\times10^{-8}\) NLL/token with exact top-1. This is a positive
+  node-selection result on 16 short, previously explored validation prompts,
+  not useful compression: it removes only four of 640 coordinates at each of
+  three sites and does not execute a replacement block.
+- The four-sequence, 4-by-4 projected modal slice, lag-0–4 forward pilot
+  attributed 95.67% of aggregate captured energy to its stationary signed lag
+  mean, but the aggregate was dominated by lag zero. Positive lags were only
+  34.93% stationary and 65.07% varying, with zero future leakage. Its rank-two
+  synthetic Toeplitz factor retained 97.30% of the chosen weighted energy and
+  used 160 MACs versus 240 for the explicitly unshared dense reference, but
+  99.83% of that synthetic energy was at lag zero and a natural lag-shared map
+  stores only 80 coefficients. No full-Jacobian, parameter, FLOP, storage,
+  latency, or variable-length claim follows.
+- Implemented: a residual-separated gated causal modal executor with
+  variable-length masks/positions, an independent same-position affine path,
+  low-rank positive-lag experts, state-and-relative-lag routing, inspectable
+  path outputs, exact future-edge exclusion, analytic accounting, and strict
+  weights-only loading.
+- Implemented: a source-disjoint four-way Gemma runner. It keeps the raw input
+  residual as an exact bypass, fits the block delta on calibration A, locks
+  among ranks 320/480 and one/two-expert candidates on calibration B, evaluates
+  that lock once on validation, and leaves test hash-only. Identity,
+  full-width codec round-trip, frozen-weight, prompt-disjointness,
+  causality, padding, and artifact controls pass.
+- The pinned run found no viable candidate. Its required diagnostic fallback
+  was rank 320 with two rank-16 experts and a width-16 router. Validation
+  block-delta NRMSE was 0.823388 with cosine 0.605518; delta NLL/token was
+  +7.015665 and top-1 agreement was 0.07381. Stored coefficients were 3.2518%
+  of the source block's parameters and analytic MACs were 3.2290% of its
+  matched-shape analytic MACs. The resource gates pass, but the quality gates
+  fail by large margins, so this is not a compression result.
+- The rank-320 least-squares output-subspace oracle reached validation direct
+  NRMSE 0.055995, yet its intervention still produced +6.342280 delta
+  NLL/token and 0.088095 top-1 agreement. It is a target-informed, per-token
+  reference that uses the true block delta—not an inference-time executor or a
+  behavioral upper bound. It shows that raw block-output MSE is badly
+  misaligned with downstream sensitivity in the tested codec subspace. It
+  does not prove a capacity limit, an absence of causal-edge benefit, or a
+  runtime-speed result.
+- Implemented: a second source-disjoint projection-only protocol that
+  strict-binds both predecessors, evaluates the preregistered rank-480–640
+  prefix curve on calibration B, requires full-width identity before
+  validation, locks by aggregate NLL/top-1 only, evaluates one locked rank on
+  validation, and leaves calibration A/test hash-only.
+- The pinned ladder found no viable reduced prefix. Rank 639 preserved
+  approximately 99.99868% of direct block-delta energy and passed the NLL gate
+  at -0.003372/token, but its 0.9431 top-1 agreement missed the 0.95 gate.
+  Rank 640 identity was therefore the required fallback and validated at
+  \(+2.73\times10^{-7}\) delta NLL/token with exact top-1. This rejects
+  prefix truncation of the selected generalized decoder, not arbitrary
+  rank-639 subspaces. It produces no executor, parameter, MAC, or speed claim.
+- Implemented: a preregistered codimension-one tail-span diagnostic that
+  strict-loads the failed projection ladder, fits one behavior-aware omitted
+  direction on fresh calibration A, compares it with the codec-prefix
+  direction on calibration B, locks before validation, and leaves test
+  hash-only. Its fail-closed path saves an unevaluated-validation artifact when
+  no reduced candidate passes.
+- The pinned rotation rescued rank 639. Calibration-B delta NLL/token and
+  top-1 agreement were +0.000382 and 0.9843 for the fitted span, versus
+  +0.016279 and 0.9303 for the same-rank codec-prefix control. The locked
+  rotated span validated at +0.000316 and 0.9913. This supports a basis-ordering
+  explanation for the earlier prefix failure, but it removes only one
+  coordinate and still consumes the native block output.
+- Implemented: a source-independent graph executor inside the locked rotated
+  rank-639 span, trained with modal warm-up plus downstream CE/KL supervision.
+  Its segmented student path recorded zero calls to native layers 4–6, while
+  the rotated-span oracle passed on the same exact-hash-disjoint B split. The
+  executor itself failed all behavior gates despite 0.0603 block-delta NRMSE
+  and 0.9982 cosine, so no viable compression claim follows.
+- Implemented: a prompt- and domain-family-disjoint, task-form-matched
+  Fisher-aware oracle that preserves the authenticated 608-dimensional prefix
+  and merges the 31 surviving tail coordinates through an A-fitted
+  generalized-Fisher codec. On calibration B, total ranks 636 and 638 passed
+  all five behavior gates; rank 636 was the smallest passing candidate under
+  the preregistered mean-subspace stability rule. The run still failed closed
+  because the algebraically identical
+  rank-639 endpoint accumulated 0.000488 absolute float32 error through a
+  redundant full-rank codec replay, above its \(10^{-5}\) control tolerance.
+  Validation/test remained untouched. The endpoint now dispatches the
+  authenticated one-normal projector bit-for-bit in state format 2; format 1
+  retains the historical factorized semantics needed to reproduce the saved
+  audit. The consumed B result is not rerun or retroactively promoted.
+- The merged-tail result is encouraging representation evidence, not a
+  compression result. Rank 636 removes only 4/640 coordinates, the oracle
+  reads the native block delta, and the retained subspace's mean stability hid
+  a minimum canonical correlation of only 0.0956. A confirmation needs wholly
+  fresh family-disjoint splits plus preregistered mean and worst-direction
+  stability gates.
+- Implemented as a separate toy/reference milestone: Fisher-need conditional
+  budget routing with disjoint A-basis and A-router fitting roles,
+  route-specific exact-cardinality masks, hard token grouping, and static,
+  position-only, and histogram-matched controls. Its first path projects a
+  native activation and therefore tests predictable nonuniform representation
+  need and specialist subsets, not source-layer replacement or realized
+  compute savings. The strict-loaded layer-0 result kept 100% validation
+  accuracy at 11.535 mean active modes versus the smallest B-viable static
+  rank 16, but a 10.750-mode position-only schedule also passed and the
+  learned router missed its state-advantage gate. This supports positional
+  compute scheduling on the fixed toy format, not content-conditioned
+  routing. Exact metrics and hashes are in
+  [`conditional-computation.md`](conditional-computation.md).
+- Remaining: try a more expressive same-position/nonlinear generator on wholly
+  new family-disjoint B/validation/test prompts. Add an exact native-boundary
+  replay control, retain the genuine trimmed-padding probe now used by future
+  runs, and include a parameter-matched same-position-only baseline so
+  positive-lag benefit is identifiable.
+- Remaining: only after a candidate passes local and behavioral gates, fit and
+  authenticate one joint 270M replacement block while leaving the remainder
+  original; then require internal-trajectory, variable-length, causal,
+  fallback, storage, arithmetic, and latency gates before evaluating reserved
+  test exactly once.
 - Remaining: move to Gemma 3 1B and expand depth only after those gates pass.
 
 ### Stage 8: add the multimodal decoder boundary
