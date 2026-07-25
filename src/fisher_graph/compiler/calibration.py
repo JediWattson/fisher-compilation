@@ -168,8 +168,11 @@ class CausalLanguageModelNLL:
             )
         if not supervised.any():
             raise ValueError("a calibration sample has no supervised target")
+        logits = run.logits
+        if logits.dtype in (torch.float16, torch.bfloat16):
+            logits = logits.float()
         return F.cross_entropy(
-            run.logits.reshape(-1, run.logits.shape[-1]),
+            logits.reshape(-1, logits.shape[-1]),
             targets.reshape(-1),
             ignore_index=self.ignore_index,
             reduction="sum",

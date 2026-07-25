@@ -20,6 +20,7 @@ from .base import (
     SequenceSpec,
     module_state_fingerprint,
 )
+from .gemma3 import Gemma3CausalLMAdapter
 from .toy import ToyTransformerAdapter, as_model_adapter
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "AdapterRun",
     "AttentionSpec",
     "ExecutionPhase",
+    "Gemma3CausalLMAdapter",
     "LayerSpec",
     "LengthPolicy",
     "MaskPolicy",

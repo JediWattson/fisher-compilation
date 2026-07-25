@@ -17,6 +17,7 @@ from .adapters import (
     ActivationSite,
     AdapterRun,
     AttentionSpec,
+    Gemma3CausalLMAdapter,
     LayerSpec,
     MaskPolicy,
     ModelAdapter,
@@ -146,6 +147,15 @@ from .modes import (
     save_fisher_build,
 )
 from .model import ToyTransformer, TransformerOutput
+from .streaming_analysis import (
+    StreamingActivationFisherBasis,
+    StreamingFisherCollection,
+    collect_streaming_fisher_modes,
+)
+from .streaming_fisher import (
+    StreamingActivationFisherEstimator,
+    StreamingFisherResult,
+)
 from .modal_completion import (
     LocalModalCompletionGraph,
     ModalCompletionConfig,
@@ -199,6 +209,7 @@ __all__ = [
     "DynamicExecutorFitConfig",
     "DynamicExecutorFitReport",
     "DynamicFitPoint",
+    "Gemma3CausalLMAdapter",
     "InstrumentationResource",
     "InstrumentedForward",
     "InstrumentedModel",
@@ -286,6 +297,10 @@ __all__ = [
     "PositionConditionedModalProjection",
     "SharedModalProjection",
     "StatefulCausalModalGraph",
+    "StreamingActivationFisherBasis",
+    "StreamingActivationFisherEstimator",
+    "StreamingFisherCollection",
+    "StreamingFisherResult",
     "TransformerBlock",
     "TransformerConfig",
     "TransformerOutput",
@@ -301,6 +316,7 @@ __all__ = [
     "collect_activation_score_gradients",
     "collect_adapter_score_gradients",
     "collect_instrumented_score_gradients",
+    "collect_streaming_fisher_modes",
     "decompose_fisher_modes",
     "empirical_activation_fisher",
     "extract_modal_jacobian",

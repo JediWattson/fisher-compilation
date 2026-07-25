@@ -20,6 +20,10 @@ dev = [
 mlx = [
   "mlx>=0.32; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
+gemma = [
+  "transformers>=4.55.2,<6",
+  "sentencepiece>=0.2",
+]
 
 [project.scripts]
 fisher-graph-experiment = "fisher_graph.associative_experiment:main"
@@ -29,6 +33,7 @@ fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"
 fisher-graph-modal-compose = "fisher_graph.modal_composition_experiment:main"
 fisher-graph-fuse = "fisher_graph.fused_executor_experiment:main"
 fisher-graph-benchmark-mlx = "fisher_graph.mlx_benchmark:main"
+fisher-graph-gemma-fisher = "fisher_graph.gemma3_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 

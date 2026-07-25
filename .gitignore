@@ -5,3 +5,19 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# Opt-in external model downloads and generated large-model experiments.
+# The Gemma CLI also rejects Hugging Face write paths inside the worktree.
+.cache/
+.hf-cache/
+.huggingface/
+.xet-cache/
+/models/
+/checkpoints/
+/.local-runs/
+/local-runs/
+*.safetensors
+*.safetensors.index.json
+pytorch_model*.bin
+*.gguf
+tokenizer.model

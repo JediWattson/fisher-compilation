@@ -54,6 +54,11 @@ The fused runtime and benchmark are in
 The separate Apple-Silicon accelerator measurement is in
 [`artifacts/associative_recall/mlx_metal_benchmark.md`](artifacts/associative_recall/mlx_metal_benchmark.md).
 
+Separately, the repository contains an opt-in text-only Gemma 3 adapter and a
+bounded-memory one-layer Fisher CLI. That external-model rung has synthetic
+contract coverage, but it is not part of the completed toy reference run: no
+gated Gemma checkpoint or live Gemma result is committed or claimed here.
+
 ## Optimization summary
 
 [![Three-panel optimization summary comparing arithmetic, CPU latency, and resident tensor storage](docs/images/fused-executor-optimization.svg)](docs/images/fused-executor-optimization.svg)
@@ -93,6 +98,33 @@ fisher-graph-benchmark-mlx \
   --output artifacts/associative_recall/mlx_metal_benchmark.json
 ```
 
+To try the external Gemma 3 270M scaling rung, first accept the model's
+[Gemma license on Hugging Face](https://huggingface.co/google/gemma-3-270m).
+The model remains in an external Hugging Face cache and is never copied into
+this repository:
+
+```bash
+pip install -e ".[dev,gemma]"
+fisher-graph-gemma-fisher --check-paths-only
+hf auth login
+
+fisher-graph-gemma-fisher \
+  --prompts examples/gemma3_prompts.txt \
+  --layer-index 0 \
+  --max-length 128 \
+  --rank 32 \
+  --sketch-rows 64 \
+  --output .local-runs/gemma-3-270m/layer-0-fisher.pt
+```
+
+The ignored output contains only pooled activation means, low-rank Fisher
+modes, exact trace accounting, and provenance—never pretrained weights or a
+model state dict. A successful opt-in smoke run checks the live integration
+path; the committed synthetic tests check the adapter and analysis contracts.
+Neither establishes compilability or model quality. See
+[`docs/gemma3-270m.md`](docs/gemma3-270m.md) for cache safeguards, precise
+Fisher semantics, device options, and the next validation gate.
+
 The equivalent module commands are:
 
 ```bash
@@ -106,6 +138,8 @@ python -m fisher_graph.modal_composition_experiment
 python -m fisher_graph.fused_executor_experiment
 python -m fisher_graph.mlx_benchmark \
   --output artifacts/associative_recall/mlx_metal_benchmark.json
+python -m fisher_graph.gemma3_experiment \
+  --prompts examples/gemma3_prompts.txt
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```
@@ -134,6 +168,11 @@ unchanged. It derives the packed state in memory, checks that the source
 instrumentation sidecar remains unloaded, validates the exact outputs being
 timed, and compares dense compiled MLX, ordinary packed compiled MLX, and the
 custom packed Metal kernel on one GPU.
+The optional Gemma command is a separate analysis-only rung. It freezes the
+source model, differentiates each sequence independently at one layer input
+and output, and streams the resulting rows through bounded Frequent
+Directions sketches. It neither fits an executor nor changes a runtime
+manifest.
 
 ## Compiler interfaces and scaling boundary
 
@@ -156,6 +195,13 @@ contracts (the older diagonal-Fisher helper remains toy-specific):
 - `RuntimeManifest` describes compiled segments and their guards, source
   layers, fast tensors, lazily loaded instrumentation resources, validation
   state, fallback policy, and byte-level provenance.
+
+`Gemma3CausalLMAdapter` supplies the same prefill-facing contracts for a
+text-only Hugging Face Gemma 3 causal LM. `collect_streaming_fisher_modes`
+preserves the existing summed-NLL, per-sequence score definition while
+replacing retained calibration matrices with
+`O(sketch_rows * hidden_width)` state. Cache-aware decode and an authenticated
+Gemma graph replacement remain later gates.
 
 The current model is exposed through `ToyTransformerAdapter`. Fisher
 collection and modal Jacobian extraction use the generic adapter path, and
@@ -327,6 +373,14 @@ reconstructed = basis.reconstruct(modal_coordinates)
 The width-pooled definition intentionally drops cross-position gradient
 covariance so one basis can be reused at every token. It is not the same object
 as a flattened, sequence-specific Fisher over \(T D\) coordinates.
+
+More precisely, this is a width-pooled empirical activation score-gradient
+second moment. Token positions are pooling rows, not independent conventional
+Fisher examples. With variable lengths, normalization by all valid positions
+gives longer sequences more weight; summed NLL also lets early activations
+accumulate effects from later supervised predictions. Streaming artifacts
+record those policies, so spectra from different length mixtures are not
+presented as length-neutral.
 
 The artifact stores both a pooled activation mean and validation/Fisher
 position means. Projection and reconstruction above use the pooled mean;

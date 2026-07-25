@@ -20,15 +20,17 @@ Two scopes are deliberately separate:
   fitting, explicit compiled-site instrumentation metadata, and Fisher
   gradient collection through a mixed runtime.
 - **Future production backend:** backend-neutral symbolic IR, efficient
-  sliding-window kernels, cache-aware chunked prefill and decode, scalable
-  Fisher estimators, and an external-model adapter.
+  sliding-window kernels, cache-aware chunked prefill and decode,
+  distributed/sharded Fisher accumulation, and additional model-family
+  adapters.
 
 The fixed backend remains the numerical regression oracle. Stages 1 and the
 mixed-runtime core of stage 3 are implemented. Stage 4 now has an executable,
 prefill-only trainable scaffold and adversarial sequence/runtime tests, but no
 real transformer-layer dynamic artifact has passed end-to-end acceptance.
 Compiler orchestration, the symbolic IR, efficient dynamic kernels, cache
-ownership, and an external-model adapter remain targets.
+ownership, and a validated source-fitted external-model executor remain
+targets.
 
 ## Goals
 
@@ -591,12 +593,12 @@ without requiring a mixture-of-experts runtime.
 
 ### Heterogeneous attention
 
-Gemma 3 is decoder-only and uses grouped-query attention, QK normalization,
-and pre/post RMSNorm. Its layer pattern repeats five local sliding-attention
+Gemma 3's text decoder uses grouped-query attention, QK normalization, and
+pre/post RMSNorm. Its layer pattern repeats five local sliding-attention
 layers followed by one global-attention layer, starting with a local layer.
-The technical report describes a local span of 1024; Google's current
-reference configuration uses 512 for the 1B variant and 1024 for larger
-variants. Consequently:
+The local-window value is checkpoint-specific, so the adapter reads it from
+the loaded text configuration rather than inferring it from model size.
+Consequently:
 
 - attention scope and window are per-layer configuration;
 - query heads, KV heads, head dimension, and query scaling are independent
@@ -607,6 +609,7 @@ variants. Consequently:
 Sources:
 
 - [Gemma 3 Technical Report](https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf)
+- [Official Gemma 3 270M configuration](https://huggingface.co/google/gemma-3-270m/blob/main/config.json)
 - [Official Gemma PyTorch configuration](https://github.com/google/gemma_pytorch/blob/main/gemma/config.py)
 - [Official Gemma PyTorch model](https://github.com/google/gemma_pytorch/blob/main/gemma/model.py)
 
@@ -614,8 +617,8 @@ Sources:
 
 Gemma 3 uses separate RoPE policies for its attention types: a base wavelength
 of 10,000 for local layers and 1,000,000 for global layers, with long-context
-position scaling/interpolation. The original 1B model supports 32K tokens;
-the larger original variants support 128K.
+position scaling/interpolation. The 270M and original 1B models support 32K
+tokens; the larger original variants support 128K.
 
 The sequence contract must therefore:
 
@@ -687,10 +690,10 @@ Sources:
 
 ### Multimodal boundary
 
-The 1B Gemma 3 model is text-only. The original 4B, 12B, and 27B models add a
-SigLIP vision encoder and projector. Images enter the language decoder as 256
-projected soft-token vectors, and image-token regions use bidirectional
-attention while generated text remains autoregressive.
+The 270M and 1B Gemma 3 models are text-only. The original 4B, 12B, and 27B
+models add a SigLIP vision encoder and projector. Images enter the language
+decoder as 256 projected soft-token vectors, and image-token regions use
+bidirectional attention while generated text remains autoregressive.
 
 The initial compiler should not absorb the vision encoder. Its decoder input
 boundary should nevertheless support:
@@ -700,9 +703,9 @@ boundary should nevertheless support:
 - mask policies with bidirectional image spans inside an otherwise causal
   sequence.
 
-This makes Gemma 3 1B the clean first integration target. The same decoder
-adapter can later accept projected image tokens for a larger variant without
-redesigning sequence semantics.
+This makes Gemma 3 270M the clean first integration target, followed by 1B.
+The same decoder adapter can later accept projected image tokens for a larger
+variant without redesigning sequence semantics.
 
 Sources:
 
@@ -771,19 +774,38 @@ suite before broadening scope.
 - Support both global and bounded sliding cache policies.
 - Exercise mixed compiled/original execution with one cache owner.
 
-### Stage 6: scale Fisher analysis
+### Stage 6: scale Fisher analysis — partial
 
-- Add streaming randomized and block/sketch estimators.
-- Report approximation residuals and modal stability against exact Fisher on
-  small models.
-- Stream calibration data and support sharded accumulation.
+- Implemented: a deterministic Frequent Directions estimator with bounded
+  `O(sketch_rows * hidden_width)` state, exact total score-gradient trace,
+  pooled activation means, and serialization-safe low-rank results.
+- Implemented: per-sequence summed-NLL collection through the generic
+  `InstrumentedModel` contract, including detached-leaf suffix
+  differentiation for frozen large models.
+- Implemented: exact-versus-streaming small-model tests, chunk stability, PSD,
+  zero-gradient, mask, dtype, and state-round-trip checks.
+- Remaining: replay-based Rayleigh energy in the selected subspace,
+  approximation residuals and modal stability across prompt/rank choices,
+  sequence-balanced normalization, and sharded accumulation.
 
-### Stage 7: attach an external text decoder
+### Stage 7: attach an external text decoder — code complete, live run pending
 
-- Implement a Gemma-compatible adapter against a small or reduced checkpoint.
-- Then target Gemma 3 1B text-only.
-- Compile isolated segments first, leaving the remainder original.
-- Expand depth only after local, end-to-end, sequence, and cache gates pass.
+- Implemented: a structural, text-only Hugging Face Gemma 3 causal-LM adapter
+  with heterogeneous layer metadata, residual-boundary capture and
+  intervention, explicit segment primitives, and atomic layer replacement.
+- Implemented: an opt-in `google/gemma-3-270m` one-layer Fisher CLI with
+  license/auth instructions, external-cache enforcement, ignored local
+  outputs, and a tracked-file model-payload audit.
+- Implemented: model weights remain frozen and external; the saved artifact
+  contains only pooled activation centers, low-rank Fisher modes, exact trace
+  accounting, and provenance.
+- Remaining: run a frozen representative 270M calibration/validation protocol
+  and publish stability evidence. The bundled smoke prompts are intended only
+  for a user-run integration check; committed tests use synthetic models.
+- Remaining: compile one isolated 270M segment while leaving the remainder
+  original, then require local, end-to-end, variable-length, and fallback
+  gates.
+- Remaining: move to Gemma 3 1B and expand depth only after those gates pass.
 
 ### Stage 8: add the multimodal decoder boundary
 
