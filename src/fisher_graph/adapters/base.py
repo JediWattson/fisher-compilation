@@ -517,6 +517,85 @@ class SegmentSpec:
                 raise ValueError(f"{name} must be positive")
 
 
+@dataclass(frozen=True, slots=True)
+class LayerBlockBoundaryPlan:
+    """Canonical residual boundaries for a contiguous native-layer block.
+
+    The first boundary is the selected block's explicit input intervention
+    site.  Every later boundary is a native layer output.  In particular, the
+    plan omits a later layer's input alias when it names the same baseline
+    tensor as the preceding output.  This prevents Fisher collection from
+    counting one residual boundary twice while preserving a distinct leaf at
+    the entrance to an arbitrary block.
+    """
+
+    layer_ids: tuple[str, ...]
+    layer_ordinals: tuple[int, ...]
+    activation_sites: tuple[str, ...]
+    widths: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not self.layer_ids:
+            raise ValueError("a layer block must contain at least one layer")
+        if len(self.layer_ids) != len(self.layer_ordinals):
+            raise ValueError("layer ids and ordinals must have equal length")
+        if len(set(self.layer_ids)) != len(self.layer_ids):
+            raise ValueError("layer block ids cannot contain duplicates")
+        if any(
+            not isinstance(layer_id, str) or not layer_id
+            for layer_id in self.layer_ids
+        ):
+            raise ValueError("layer block ids must be nonempty strings")
+        if any(
+            type(ordinal) is not int or ordinal < 0
+            for ordinal in self.layer_ordinals
+        ):
+            raise ValueError("layer block ordinals must be nonnegative")
+        expected_ordinals = tuple(
+            range(
+                self.layer_ordinals[0],
+                self.layer_ordinals[0] + len(self.layer_ordinals),
+            )
+        )
+        if self.layer_ordinals != expected_ordinals:
+            raise ValueError("layer block ordinals must be contiguous")
+        if len(self.activation_sites) != len(self.layer_ids) + 1:
+            raise ValueError(
+                "a layer block must have one more boundary than layers"
+            )
+        if any(
+            not isinstance(site, str) or not site
+            for site in self.activation_sites
+        ):
+            raise ValueError("block activation sites must be nonempty strings")
+        if len(set(self.activation_sites)) != len(self.activation_sites):
+            raise ValueError("block activation sites must be unique")
+        if len(self.widths) != len(self.activation_sites):
+            raise ValueError("block widths must match activation boundaries")
+        if any(type(width) is not int or width <= 0 for width in self.widths):
+            raise ValueError("block boundary widths must be positive")
+
+    @property
+    def start_ordinal(self) -> int:
+        return self.layer_ordinals[0]
+
+    @property
+    def end_ordinal(self) -> int:
+        return self.layer_ordinals[-1]
+
+    @property
+    def leaf_activation_name(self) -> str:
+        """Boundary to detach when only the block suffix needs autograd."""
+
+        return self.activation_sites[0]
+
+    @property
+    def transitions(self) -> tuple[tuple[str, str], ...]:
+        """Adjacent input/output boundary pairs in execution order."""
+
+        return tuple(zip(self.activation_sites, self.activation_sites[1:]))
+
+
 @dataclass(slots=True)
 class AdapterRun:
     """Normalized result of a complete model invocation."""
@@ -606,6 +685,98 @@ class ModelAdapter(ABC):
 
         return tuple(
             site.id for site in self.activation_sites if site.fisher_default
+        )
+
+    def plan_layer_block(
+        self,
+        start_ordinal: int,
+        end_ordinal: int,
+    ) -> LayerBlockBoundaryPlan:
+        """Plan nonduplicated residual boundaries for an inclusive layer range.
+
+        Adjacent layers may expose their shared residual tensor either under
+        one canonical name or as a later input site whose ``alias_of`` points
+        to the preceding output.  Both adapter conventions collapse to the
+        same ordered boundary plan.
+        """
+
+        for label, value in (
+            ("start_ordinal", start_ordinal),
+            ("end_ordinal", end_ordinal),
+        ):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{label} must be nonnegative")
+        if end_ordinal < start_ordinal:
+            raise ValueError("end_ordinal cannot precede start_ordinal")
+        layer_catalog = self.layers
+        layers_by_ordinal = {layer.ordinal: layer for layer in layer_catalog}
+        if len(layers_by_ordinal) != len(layer_catalog):
+            raise ValueError("adapter layer ordinals must be unique")
+        ordinals = tuple(range(start_ordinal, end_ordinal + 1))
+        missing = set(ordinals) - layers_by_ordinal.keys()
+        if missing:
+            raise ValueError(
+                "layer block ordinals are outside the adapter catalog: "
+                f"{sorted(missing)}"
+            )
+        selected = tuple(layers_by_ordinal[index] for index in ordinals)
+        sites_by_id = {site.id: site for site in self.activation_sites}
+        boundaries = (selected[0].input_site,) + tuple(
+            layer.output_site for layer in selected
+        )
+        widths = tuple(layer.residual_width for layer in selected)
+        boundary_widths = (selected[0].residual_width, *widths)
+
+        for site_name, expected_width in zip(
+            boundaries,
+            boundary_widths,
+            strict=True,
+        ):
+            try:
+                site = sites_by_id[site_name]
+            except KeyError as error:
+                raise ValueError(
+                    f"layer block boundary {site_name!r} is not cataloged"
+                ) from error
+            if not site.modal_eligible:
+                raise ValueError(
+                    f"layer block boundary {site_name!r} is not modal eligible"
+                )
+            if site.width != expected_width:
+                raise ValueError(
+                    f"layer block boundary {site_name!r} width does not "
+                    "match its layer"
+                )
+        for previous, current in zip(selected, selected[1:]):
+            if current.input_site == previous.output_site:
+                if current.residual_width != previous.residual_width:
+                    raise ValueError(
+                        "adjacent canonical layer boundaries disagree on width"
+                    )
+                continue
+            try:
+                current_input = sites_by_id[current.input_site]
+            except KeyError as error:
+                raise ValueError(
+                    f"layer input {current.input_site!r} is not cataloged"
+                ) from error
+            if current_input.alias_of != previous.output_site:
+                raise ValueError(
+                    f"{current.input_site!r} must alias preceding boundary "
+                    f"{previous.output_site!r}"
+                )
+            if current_input.width not in (
+                previous.residual_width,
+                current.residual_width,
+            ) or previous.residual_width != current.residual_width:
+                raise ValueError(
+                    "adjacent layer boundary aliases disagree on width"
+                )
+        return LayerBlockBoundaryPlan(
+            layer_ids=tuple(layer.id for layer in selected),
+            layer_ordinals=ordinals,
+            activation_sites=boundaries,
+            widths=boundary_widths,
         )
 
     def activation_site(self, site_id: str) -> ActivationSite:
@@ -772,6 +943,7 @@ __all__ = [
     "AttentionSpec",
     "ExecutionPhase",
     "LayerSpec",
+    "LayerBlockBoundaryPlan",
     "LengthPolicy",
     "MaskPolicy",
     "MaskRepresentation",

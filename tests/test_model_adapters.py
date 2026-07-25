@@ -131,6 +131,33 @@ class ModelAdapterTests(unittest.TestCase):
             "layer.0.output",
         )
 
+        block = adapter.plan_layer_block(0, 1)
+        self.assertEqual(block.layer_ids, ("layer.0", "layer.1"))
+        self.assertEqual(block.layer_ordinals, (0, 1))
+        self.assertEqual(
+            block.activation_sites,
+            (
+                "layer.0.input",
+                "layer.0.output",
+                "layer.1.output",
+            ),
+        )
+        self.assertEqual(block.widths, (8, 8, 8))
+        self.assertEqual(block.leaf_activation_name, "layer.0.input")
+        self.assertEqual(
+            block.transitions,
+            (
+                ("layer.0.input", "layer.0.output"),
+                ("layer.0.output", "layer.1.output"),
+            ),
+        )
+
+    def test_layer_block_plan_validates_ordinal_range(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cannot precede"):
+            self.adapter.plan_layer_block(1, 0)
+        with self.assertRaisesRegex(ValueError, "outside"):
+            self.adapter.plan_layer_block(0, 2)
+
     def test_sequence_context_retains_normalized_input_origin(self) -> None:
         input_ids = torch.tensor([[1, 2, 3]], dtype=torch.long)
         omitted = self.adapter.prepare_sequence({"input_ids": input_ids})

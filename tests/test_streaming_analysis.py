@@ -4,6 +4,7 @@ import unittest
 import torch
 
 from fisher_graph import (
+    ActivationScoreGradientRows,
     AdapterRun,
     CalibrationBatch,
     CausalLanguageModelNLL,
@@ -12,6 +13,7 @@ from fisher_graph import (
     ToyTransformer,
     ToyTransformerAdapter,
     TransformerConfig,
+    iter_activation_score_gradient_rows,
 )
 from fisher_graph.modes import (
     build_fisher_mode_bases,
@@ -64,6 +66,122 @@ class StreamingAnalysisTests(unittest.TestCase):
             targets=targets,
             valid_positions=valid,
             example_ids=("first", "second"),
+        )
+
+    def test_per_sequence_row_stream_matches_materialized_collection(
+        self,
+    ) -> None:
+        names = ("layer.0.input", "layer.0.output")
+        objective = CausalLanguageModelNLL()
+        exact = collect_adapter_score_gradients(
+            self.adapter,
+            (self.batch,),
+            activation_names=names,
+            score_objective=objective,
+        )
+        self.model.requires_grad_(False)
+        self.model.train()
+
+        rows = tuple(
+            iter_activation_score_gradient_rows(
+                self.adapter,
+                (self.batch,),
+                activation_names=names,
+                score_objective=objective,
+                leaf_activation_name="layer.0.input",
+            )
+        )
+
+        self.assertTrue(self.model.training)
+        self.assertEqual([row.example_id for row in rows], ["first", "second"])
+        self.assertEqual([row.observations for row in rows], [4, 3])
+        self.assertAlmostEqual(
+            sum(row.loss for row in rows) / len(rows),
+            exact.mean_loss,
+        )
+        for name in names:
+            activations = torch.cat(
+                [row.activations[name] for row in rows],
+                dim=0,
+            )
+            gradients = torch.cat(
+                [row.score_gradients[name] for row in rows],
+                dim=0,
+            )
+            self.assertEqual(activations.device.type, "cpu")
+            self.assertEqual(gradients.device.type, "cpu")
+            self.assertEqual(activations.dtype, torch.float64)
+            self.assertEqual(gradients.dtype, torch.float64)
+            torch.testing.assert_close(
+                activations,
+                exact.samples[name].activations.double(),
+            )
+            torch.testing.assert_close(
+                gradients,
+                exact.samples[name].score_gradients.double(),
+            )
+
+    def test_row_stream_close_restores_training_state(self) -> None:
+        self.model.requires_grad_(False)
+        self.model.train()
+        rows = iter_activation_score_gradient_rows(
+            self.adapter,
+            (self.batch,),
+            activation_names=("layer.0.input",),
+            score_objective=CausalLanguageModelNLL(),
+            leaf_activation_name="layer.0.input",
+        )
+
+        first = next(rows)
+
+        self.assertEqual(first.example_id, "first")
+        self.assertFalse(self.model.training)
+        rows.close()
+        self.assertTrue(self.model.training)
+
+    def test_row_stream_does_not_leak_enabled_grad_mode_at_yield(self) -> None:
+        self.model.requires_grad_(False)
+        rows = iter_activation_score_gradient_rows(
+            self.adapter,
+            (self.batch,),
+            activation_names=("layer.0.input",),
+            score_objective=CausalLanguageModelNLL(),
+            leaf_activation_name="layer.0.input",
+        )
+
+        with torch.no_grad():
+            self.assertFalse(torch.is_grad_enabled())
+            first = next(rows)
+            self.assertIsInstance(first, ActivationScoreGradientRows)
+            self.assertFalse(torch.is_grad_enabled())
+            rows.close()
+            self.assertFalse(torch.is_grad_enabled())
+
+    def test_row_stream_preserves_missing_example_ids(self) -> None:
+        anonymous = CalibrationBatch(
+            model_inputs=self.batch.model_inputs,
+            targets=self.batch.targets,
+            valid_positions=self.batch.valid_positions,
+        )
+        self.model.requires_grad_(False)
+
+        rows = tuple(
+            iter_activation_score_gradient_rows(
+                self.adapter,
+                (anonymous,),
+                activation_names=("layer.0.input",),
+                score_objective=CausalLanguageModelNLL(),
+                leaf_activation_name="layer.0.input",
+                accumulation_dtype=torch.float32,
+            )
+        )
+
+        self.assertEqual([row.example_id for row in rows], [None, None])
+        self.assertTrue(
+            all(
+                row.activations["layer.0.input"].dtype == torch.float32
+                for row in rows
+            )
         )
 
     def test_streamed_full_rank_matches_materialized_fisher(self) -> None:

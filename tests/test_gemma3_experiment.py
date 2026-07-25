@@ -9,6 +9,7 @@ from torch import nn
 
 from fisher_graph.gemma3_experiment import (
     DEFAULT_SMOKE_PROMPTS,
+    _model_dtype_load_kwargs,
     default_gemma3_output,
     load_gemma3,
     load_gemma3_fisher_artifact,
@@ -192,7 +193,11 @@ class Gemma3ExperimentTests(unittest.TestCase):
 
         with patch(
             "fisher_graph.gemma3_experiment._transformers_classes",
-            return_value=(RecordingTokenizerClass, RecordingModelClass),
+            return_value=(
+                RecordingTokenizerClass,
+                RecordingModelClass,
+                "5.14.1",
+            ),
         ):
             tokenizer, loaded = load_gemma3(
                 model_id="google/gemma-3-270m",
@@ -214,12 +219,28 @@ class Gemma3ExperimentTests(unittest.TestCase):
         self.assertFalse(model_kwargs["trust_remote_code"])
         self.assertTrue(model_kwargs["use_safetensors"])
         self.assertEqual(model_kwargs["attn_implementation"], "eager")
-        self.assertEqual(model_kwargs["torch_dtype"], torch.float32)
+        self.assertEqual(model_kwargs["dtype"], torch.float32)
+        self.assertNotIn("torch_dtype", model_kwargs)
         self.assertFalse(model.training)
         self.assertFalse(model.weight.requires_grad)
         self.assertFalse(model.config.use_cache)
         self.assertTrue(model.checkpointing_disabled)
         self.assertFalse(hasattr(model, "save_pretrained_called"))
+
+    def test_loader_dtype_keyword_supports_transformers_4_and_5(self) -> None:
+        self.assertEqual(
+            _model_dtype_load_kwargs("float32", "4.55.4"),
+            {"torch_dtype": torch.float32},
+        )
+        self.assertEqual(
+            _model_dtype_load_kwargs("float32", "5.14.1"),
+            {"dtype": torch.float32},
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "could not determine.*major version",
+        ):
+            _model_dtype_load_kwargs("float32", "development")
 
     def test_invalid_options_fail_before_model_loading(self) -> None:
         invalid = (

@@ -73,15 +73,16 @@ _ARTIFACT_SCHEMA = "fisher_graph.gemma3_streaming_fisher"
 _ARTIFACT_FORMAT_VERSION = 1
 
 
-def _transformers_classes() -> tuple[type[Any], type[Any]]:
+def _transformers_classes() -> tuple[type[Any], type[Any], str]:
     try:
+        import transformers
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError as error:
         raise RuntimeError(
             "Gemma support is optional; install it with "
             '`pip install -e ".[gemma]"`'
         ) from error
-    return AutoTokenizer, AutoModelForCausalLM
+    return AutoTokenizer, AutoModelForCausalLM, transformers.__version__
 
 
 def resolve_torch_device(name: str) -> torch.device:
@@ -117,6 +118,22 @@ def _model_dtype(name: str) -> str | torch.dtype:
         raise ValueError(f"unsupported model dtype: {name!r}") from error
 
 
+def _model_dtype_load_kwargs(
+    name: str,
+    transformers_version: str,
+) -> dict[str, str | torch.dtype]:
+    """Use the dtype spelling supported by the installed Transformers major."""
+
+    match = re.match(r"^(\d+)", transformers_version)
+    if match is None:
+        raise RuntimeError(
+            "could not determine the installed Transformers major version "
+            f"from {transformers_version!r}"
+        )
+    keyword = "dtype" if int(match.group(1)) >= 5 else "torch_dtype"
+    return {keyword: _model_dtype(name)}
+
+
 def load_gemma3(
     *,
     model_id: str,
@@ -134,7 +151,7 @@ def load_gemma3(
         not isinstance(revision, str) or not revision
     ):
         raise ValueError("revision must be a nonempty string when provided")
-    tokenizer_class, model_class = _transformers_classes()
+    tokenizer_class, model_class, transformers_version = _transformers_classes()
     common: dict[str, object] = {
         "cache_dir": str(cache_dir),
         "revision": revision,
@@ -151,7 +168,7 @@ def load_gemma3(
             model_id,
             use_safetensors=True,
             attn_implementation="eager",
-            torch_dtype=_model_dtype(dtype),
+            **_model_dtype_load_kwargs(dtype, transformers_version),
             **common,
         )
     except OSError as error:

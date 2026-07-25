@@ -274,6 +274,22 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
                 "layer.1.output",
             ),
         )
+        block = self.adapter.plan_layer_block(0, 1)
+        self.assertEqual(
+            block.activation_sites,
+            (
+                "layer.0.input",
+                "layer.0.output",
+                "layer.1.output",
+            ),
+        )
+        self.assertEqual(
+            block.transitions,
+            (
+                ("layer.0.input", "layer.0.output"),
+                ("layer.0.output", "layer.1.output"),
+            ),
+        )
 
     def test_legacy_config_preserves_distinct_local_and_global_rope(self) -> None:
         model = FakeGemma3ForCausalLM()

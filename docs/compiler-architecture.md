@@ -19,6 +19,9 @@ Two scopes are deliberately separate:
   projections, shared relative-position causal state, mixed-length boundary
   fitting, explicit compiled-site instrumentation metadata, and Fisher
   gradient collection through a mixed runtime.
+- **Implemented external-model analysis diagnostic:** canonical multi-layer
+  boundaries, bounded Fisher/transport moments, and frozen exact-logical-lag
+  reverse-gradient prediction over adjacent edges and the block endpoint.
 - **Future production backend:** backend-neutral symbolic IR, efficient
   sliding-window kernels, cache-aware chunked prefill and decode,
   distributed/sharded Fisher accumulation, and additional model-family
@@ -340,6 +343,41 @@ The estimator owns numerical accumulation and approximation error reporting.
 The modal analysis consumes `FisherSummary`, not estimator-specific state.
 This prevents the compiler from assuming a materialized `D x D` matrix at
 large width.
+
+### Reverse-causal modal transport diagnostic
+
+`StreamingCausalModalTransportEstimator` tests one specific failure mode of a
+row-local gradient map. For a forward segment from boundary \(a\) to boundary
+\(b\), it predicts the upstream modal score gradient from same-position and
+later downstream rows:
+
+\[
+\widehat z^{(g)}_{a,s}
+=
+\sum_{\delta=0}^{L} z^{(g)}_{b,s+\delta}W_\delta .
+\]
+
+Rows are grouped by sequence and matched by exact `logical_positions`.
+Padding, sparse masks, and gaps are not compressed into synthetic neighbors.
+The estimator also receives the segment's composed structural visibility: a
+pure sliding segment has visibility
+\(1+\sum_\ell(\mathrm{window}_\ell-1)\), while a segment containing a global
+layer is unbounded. Features outside that visibility remain zero.
+
+One maximum-lag replay supplies nested rank and lag-prefix fits. For modal
+rank \(k\) and maximum lag \(L\), the retained FP64 statistics are a
+`[(L + 1)k, (L + 1)k]` feature Gram, a `[(L + 1)k, k]` feature/target
+cross-moment, and a `[k, k]` target Gram. Their storage is independent of
+sequence count and length. The lag-0 ridge map is solved independently and is
+the comparison baseline for every larger lag window. Calibration fits are
+frozen before a separate validation moment replay.
+
+The Gemma trajectory rung applies this diagnostic to every adjacent canonical
+boundary pair and to the block endpoint. The fitted \(W_\delta\) are pooled
+predictive coefficients, not measured per-position Jacobian blocks. The
+analysis has no context conditioning and does not implement a forward graph.
+Accordingly, even a positive held-out gain would be evidence for a compact
+relationship to model next—not executor acceptance or compilation proof.
 
 ## Compiler architecture
 
@@ -784,11 +822,34 @@ suite before broadening scope.
   differentiation for frozen large models.
 - Implemented: exact-versus-streaming small-model tests, chunk stability, PSD,
   zero-gradient, mask, dtype, and state-round-trip checks.
-- Remaining: replay-based Rayleigh energy in the selected subspace,
-  approximation residuals and modal stability across prompt/rank choices,
-  sequence-balanced normalization, and sharded accumulation.
+- Implemented: a reusable transient per-sequence activation/score-gradient row
+  stream, sign- and rotation-invariant principal-angle stability curves, and
+  exact bounded-memory held-out Rayleigh replay in frozen mode prefixes.
+- Implemented: canonical contiguous-block boundary plans that omit adjacent
+  output/input aliases, multi-depth Fisher geometry, \(O(k^2)\) paired modal
+  moments, calibration-frozen whitened Procrustes transports, and exact
+  streaming held-out transport residuals.
+- The uncentered reverse-gradient transport is scored as zero-baseline
+  explained energy, not mean-centered \(R^2\). The Procrustes member pairs
+  equal sequence positions and therefore remains the historical row-local
+  comparison.
+- Implemented: exact-logical-lag reverse-causal ridge moments with sequence
+  isolation, sparse-position protection, composed finite visibility, nested
+  lag/rank prefixes, an independently refit lag-0 baseline, and calibration-
+  frozen validation evaluation. The diagnostic covers adjacent edges plus the
+  whole block endpoint and retains bounded sufficient statistics rather than
+  sequence rows.
+- Implemented: Gemma trajectory artifact version 2 binds those causal moments,
+  frozen maps, evaluations, and scalar curves into the strict two-way
+  tensor/report validation path. The loader remains compatible with version 1
+  row-local artifacts and does not synthesize causal results for them.
+- Remaining: representative and sequence-balanced prompt protocols,
+  predeclared acceptance/reporting orchestration, automated cross-sketch
+  convergence, per-example and per-length-bucket influence diagnostics,
+  approximation residuals, scalable regularized/factorized or
+  context-conditioned causal diagnostics, and sharded accumulation.
 
-### Stage 7: attach an external text decoder — code complete, live run pending
+### Stage 7: attach an external text decoder — analysis diagnostic complete; representative acceptance pending
 
 - Implemented: a structural, text-only Hugging Face Gemma 3 causal-LM adapter
   with heterogeneous layer metadata, residual-boundary capture and
@@ -799,12 +860,43 @@ suite before broadening scope.
 - Implemented: model weights remain frozen and external; the saved artifact
   contains only pooled activation centers, low-rank Fisher modes, exact trace
   accounting, and provenance.
-- Remaining: run a frozen representative 270M calibration/validation protocol
-  and publish stability evidence. The bundled smoke prompts are intended only
-  for a user-run integration check; committed tests use synthetic models.
-- Remaining: compile one isolated 270M segment while leaving the remainder
-  original, then require local, end-to-end, variable-length, and fallback
-  gates.
+- Implemented: a strict diagnostic split schema, calibration-A/B/full
+  extraction, rank-wise subspace geometry, exact validation replay, and
+  explicit reporting that thresholds are undefined and the reserved test
+  prompts are not model-evaluated.
+- Implemented: an analysis-only layers-4–6 trajectory rung spanning
+  sliding/global/sliding attention. It captures four unique boundaries in one
+  backward per sequence, fits activation and reverse-gradient modal maps on a
+  calibration replay, evaluates frozen maps on validation, tracks per-prompt
+  influence, and keeps test hash-only. Its gradient validation quantity is the
+  zero-baseline explained fraction. It now compares an independently fit
+  lag-0 ridge baseline with exact future-logical-lag windows on each adjacent
+  edge and the block endpoint, subject to composed attention visibility.
+- A developer-local diagnostic exercised the full analysis path, but its short
+  template-matched prompts and prompt-sensitive bases do not authorize a rank
+  or compilation claim. In the block diagnostic, the two earliest boundaries
+  passed the rank-128 capture floor but failed the rank-96 floor; activation
+  transport generalized much better than score-gradient transport. The
+  tracked classification is therefore
+  `inconclusive_basis_not_identifiable`, not a rotation claim. No live result
+  artifact is committed.
+- The pinned version-2 causal rerun also found no held-out gain from lag 1 or
+  lag 4 over lag 0 at rank 128 with relative ridge 0.01. Calibration explained
+  energy rose to roughly 0.97–0.98 at lag 4 while every lag-4 validation value
+  was negative; lag-4 condition numbers were approximately
+  \(4.75\times10^5\)–\(6.98\times10^5\). This rejects the current stationary
+  homogeneous exact-lag ridge protocol, not sequence-aware executors in
+  general. The ignored strict-loaded payload was approximately 56 MB with a
+  987 KB JSON report.
+- Remaining: run a representative variable-length 270M protocol, define and
+  lock acceptance criteria, establish stable ranks at every intended block
+  boundary, and retest cross-position predictability with predeclared lower
+  ranks, lag budgets, and regularization before considering factorized or
+  context-conditioned alternatives.
+- Remaining: only after those gates pass, fit and compile one joint 270M block
+  while leaving the remainder original; require local, internal-trajectory,
+  end-to-end, variable-length, causal, and fallback gates; then evaluate the
+  reserved test exactly once without further selection.
 - Remaining: move to Gemma 3 1B and expand depth only after those gates pass.
 
 ### Stage 8: add the multimodal decoder boundary

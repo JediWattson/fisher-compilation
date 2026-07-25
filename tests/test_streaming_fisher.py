@@ -16,6 +16,44 @@ def exact_fisher(scores: torch.Tensor) -> torch.Tensor:
 
 
 class StreamingActivationFisherTests(unittest.TestCase):
+    def test_full_width_no_shrink_stream_is_an_exact_eigensystem(self) -> None:
+        generator = torch.Generator().manual_seed(700)
+        scores = torch.randn(
+            29,
+            8,
+            generator=generator,
+            dtype=torch.float64,
+        )
+        estimator = StreamingActivationFisherEstimator(
+            activation_name="full",
+            rank=8,
+            width=8,
+            sketch_rows=9,
+        )
+
+        for chunk in scores.split([3, 11, 1, 14]):
+            estimator.update(chunk)
+        result = estimator.finalize()
+        expected = exact_fisher(scores)
+
+        self.assertEqual(result.vectors.shape, (8, 8))
+        torch.testing.assert_close(
+            result.vectors.T @ result.vectors,
+            torch.eye(8, dtype=torch.float64),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        torch.testing.assert_close(
+            result.approximate_matrix(),
+            expected,
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        self.assertAlmostEqual(
+            result.retained_trace,
+            result.fisher_trace,
+        )
+
     def test_low_rank_stream_matches_exact_fisher(self) -> None:
         generator = torch.Generator().manual_seed(701)
         left = torch.randn(137, 2, generator=generator, dtype=torch.float64)

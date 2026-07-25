@@ -54,10 +54,15 @@ The fused runtime and benchmark are in
 The separate Apple-Silicon accelerator measurement is in
 [`artifacts/associative_recall/mlx_metal_benchmark.md`](artifacts/associative_recall/mlx_metal_benchmark.md).
 
-Separately, the repository contains an opt-in text-only Gemma 3 adapter and a
-bounded-memory one-layer Fisher CLI. That external-model rung has synthetic
-contract coverage, but it is not part of the completed toy reference run: no
-gated Gemma checkpoint or live Gemma result is committed or claimed here.
+Separately, the repository contains an opt-in text-only Gemma 3 adapter,
+bounded-memory Fisher collection, split-stability plus exact held-out
+Rayleigh replay, multi-boundary modal-trajectory tooling, and an exact-logical-
+lag reverse-causal gradient predictor. The next diagnostic adds a full-width,
+joint keep-top-\(k\) sufficiency curve at selected layer outputs. That
+external-model rung has synthetic contract coverage, but it is not part of the
+completed toy reference run: no checkpoint or live result artifact is
+committed, and no rank, quality, or compilation result is accepted or claimed
+here.
 
 ## Optimization summary
 
@@ -109,6 +114,7 @@ fisher-graph-gemma-fisher --check-paths-only
 hf auth login
 
 fisher-graph-gemma-fisher \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
   --prompts examples/gemma3_prompts.txt \
   --layer-index 0 \
   --max-length 128 \
@@ -117,11 +123,187 @@ fisher-graph-gemma-fisher \
   --output .local-runs/gemma-3-270m/layer-0-fisher.pt
 ```
 
-The ignored output contains only pooled activation means, low-rank Fisher
-modes, exact trace accounting, and provenance—never pretrained weights or a
-model state dict. A successful opt-in smoke run checks the live integration
-path; the committed synthetic tests check the adapter and analysis contracts.
-Neither establishes compilability or model quality. See
+After that smoke path works, the next analysis-only command uses the frozen
+prompt file's two calibration halves, validation split, and reserved test
+split:
+
+```bash
+fisher-graph-gemma-stability \
+  --model google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --layer-index 0 \
+  --max-length 128 \
+  --ranks 8 16 24 32 48 64 96 128 \
+  --sketch-rows 256 \
+  --device cpu \
+  --dtype float32
+```
+
+The bundled 64-prompt split is diagnostic scaffolding, not representative
+language data. The command compares calibration A and B with principal angles,
+builds a combined A+B basis, measures exact Fisher energy on validation in one
+streaming replay, and deliberately does not evaluate the test prompts.
+
+The next diagnostic captures every unique residual boundary around Gemma
+layers 4–6, spanning sliding, global, and sliding attention. It tests whether
+important subspaces stay fixed, rotate predictably, or drift in a way that a
+small modal transport cannot reproduce:
+
+```bash
+fisher-graph-gemma-trajectory \
+  --model google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --start-layer 4 \
+  --end-layer 6 \
+  --max-length 128 \
+  --ranks 8 16 24 32 48 64 96 128 \
+  --sketch-rows 256 \
+  --causal-lags 0 1 4 \
+  --causal-relative-ridge 0.01 \
+  --device cpu \
+  --dtype float32
+```
+
+This command fits only small modal-coordinate transports on calibration A+B
+and evaluates those frozen maps on validation. In addition to the original
+same-position Procrustes diagnostic, it now fits the reverse-causal modal
+predictor
+
+\[
+\widehat g_{\mathrm{up},s}
+=
+\sum_{\delta=0}^{L} g_{\mathrm{down},s+\delta} W_\delta .
+\]
+
+The requested `--causal-lags` are nested maximum-lag windows. Lag 0 is an
+independently refit row-local ridge baseline; lags 1 and 4 ask whether adding
+exact downstream logical positions improves held-out zero-baseline explained
+energy. Missing or masked positions are not compressed into false neighbors,
+and lags outside the finite attention visibility of the analyzed segment are
+zeroed. The diagnostic runs on every adjacent boundary pair and on the whole
+block endpoint, while retaining only bounded modal sufficient statistics.
+
+It still does not fit a graph executor. The tracked diagnostic profile
+requires boundary identifiability at both ranks 96 and 128 before calling a
+low-overlap edge a rotation. A developer-local run of the earlier row-local
+artifact classified the block `inconclusive_basis_not_identifiable`: the two
+earliest boundaries cleared the rank-128 capture floor but not the rank-96
+floor. Activation transports generalized substantially better than
+same-position score-gradient transports, so that evidence is compatible with
+residual-state persistence but does not establish a reusable Fisher-mode
+trajectory.
+
+The strict-loaded version-2 causal rerun also found no held-out cross-position
+win at rank 128 with relative ridge 0.01. Every lag-1 score was below its
+independently refit lag-0 ridge baseline, and every lag-4 score was negative,
+even though calibration explained energy rose monotonically toward
+0.97–0.98. Lag-4 feature condition numbers were approximately
+\(4.75\times10^5\)–\(6.98\times10^5\). That is severe overfit for this prompt
+set, rank, ridge, and stationary exact-lag model; it is not a rejection of
+sequence-aware executors in general.
+
+Even if a future protocol explains held-out gradients, its jointly fitted
+coefficients would be predictive regression weights—not identified
+per-position Jacobian blocks—and it would not be a forward executor or
+compilation proof. The live report remains ignored and is not committed.
+
+The next analysis-only command asks a simpler causal question: how much of the
+frozen model's validation behavior survives when every selected layer output is
+restricted to its leading Fisher coordinates?
+
+```bash
+fisher-graph-gemma-ablation \
+  --model google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --start-layer 4 \
+  --end-layer 6 \
+  --max-length 128 \
+  --sketch-rows 641 \
+  --retained-ranks 640 512 384 256 192 128 96 64 32 0 \
+  --include-single-sites \
+  --device cpu \
+  --dtype float32
+```
+
+This is a top-down **sufficiency** curve, not a leading-mode ablation. For a
+retained rank \(k\), it keeps the top \(k\) coordinates of a full 640-wide
+calibration Fisher basis and removes the lowest \(640-k\). The primary curve
+applies that projection jointly at the selected layer outputs; the optional
+single-site curves are localization controls. Only valid positions are
+projected, centered on the pooled calibration activation mean. Model weights
+remain frozen, and validation is the only model-evaluated held-out split.
+
+Rank 640 must pass a full-rank identity gate against the untouched model before
+any lower-rank point is interpreted. Rank 0 is the opposite extreme: it
+replaces every valid selected-output activation with its calibration mean. A
+low-rank point that preserves NLL would support representational sufficiency
+under this intervention, but it would not yet establish an executable
+compression. The source transformer still computes every layer at full width;
+an executor, local equivalence, variable-length behavior, and runtime gates
+would still have to pass.
+
+The strict-loaded developer run passed the identity gate but found no
+lower-rank sufficiency under eigenvalue-only ordering. Baseline validation NLL
+was 4.271092 per supervised token:
+
+| Joint retained rank | Delta NLL/token | Interpretation |
+|---:|---:|---|
+| 640 | -0.000000428 | Full-rank numerical identity |
+| 512 | +3.641870 | Top-1 agreement 0.2241 despite retaining about 99.97% of calibration Fisher trace |
+| 384 | +2.954244 | Severe degradation remains |
+| 128 | +3.902732 | Severe degradation remains |
+| 0 | +4.369668 | Calibration-mean replacement |
+
+All 16 validation prompts worsened at rank 512. An explicitly posthoc
+validation refinement found that removing even the final mode at every site
+(joint rank 639) increased NLL/token by 1.783649 and reduced top-1 agreement
+to 0.3621. The rank-639 single-site deltas were +0.086312 at
+`layer.4.output`, +1.093586 at `layer.5.output`, and +1.148882 at
+`layer.6.output`. Because that refinement was chosen after seeing the coarse
+curve, it is exploratory rather than acceptance evidence.
+
+The activation-amplitude diagnostic explains why Fisher trace was misleading
+here. Low-Fisher tail coordinates carried enormous centered activation RMS on
+both calibration and validation—for example, roughly 4,257 in the final
+layer-5 mode, 8,915 in the final layer-6 mode, and 5,163 in zero-based
+layer-4 mode 638. A Fisher eigenvalue measures local score-gradient energy at
+the native activations; it does not bound the finite effect of deleting a
+huge-amplitude coordinate and sending the residual stream through RMSNorm.
+
+An additional ad hoc, read-only validation diagnostic ranked modes by Fisher
+eigenvalue times calibration modal variance. Under that crude
+displacement-aware score, joint rank 639 changed NLL/token by -0.00123 with
+0.922 top-1 agreement; ranks 638 and 636 changed it by +0.01224 and +0.05486
+with 0.825 and 0.747 agreement, and rank 632 changed it by +0.4513. For
+comparison, native Fisher ordering at rank 639 gave +1.78365 and 0.362
+agreement. Per-token norm-preserving projection did not rescue the native
+ordering and usually made it worse. These checks were posthoc, were not
+artifacted, and are not confirmatory evidence. They only motivate a
+pre-registered variance-weighted or generalized-Fisher experiment; preserving
+behavior while removing one dimension per site is not meaningful compression.
+
+Under the native eigenvalue-only curve, only rank 640 preserved behavior, so
+that ordering provides no compression candidate on this small,
+template-matched diagnostic corpus. This does not reject amplitude-aware or
+otherwise constrained modal approaches. All derived primary artifacts remain
+ignored and uncommitted, model weights stayed frozen, and the reserved test
+split was not evaluated.
+
+The ignored outputs contain only pooled activation means, derived Fisher
+modes, exact trace accounting, bounded transport moments or scalar evaluation
+curves, and provenance—never pretrained weights or a model state dict. The
+trajectory writer now emits
+artifact format version 2 with the causal payload; its strict loader still
+accepts version-1 row-local artifacts without synthesizing causal results. A
+successful opt-in smoke run checks the live integration path; the committed
+synthetic tests check the adapter and analysis contracts. Neither establishes
+compilability or model quality. See
 [`docs/gemma3-270m.md`](docs/gemma3-270m.md) for cache safeguards, precise
 Fisher semantics, device options, and the next validation gate.
 
@@ -140,6 +322,13 @@ python -m fisher_graph.mlx_benchmark \
   --output artifacts/associative_recall/mlx_metal_benchmark.json
 python -m fisher_graph.gemma3_experiment \
   --prompts examples/gemma3_prompts.txt
+python -m fisher_graph.gemma3_stability_experiment \
+  --prompt-splits examples/gemma3_stability_prompts.json
+python -m fisher_graph.gemma3_trajectory_experiment \
+  --prompt-splits examples/gemma3_stability_prompts.json
+python -m fisher_graph.gemma3_ablation_experiment \
+  --prompt-splits examples/gemma3_stability_prompts.json \
+  --retained-ranks 640 512 384 256 192 128 96 64 32 0
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```
@@ -168,11 +357,25 @@ unchanged. It derives the packed state in memory, checks that the source
 instrumentation sidecar remains unloaded, validates the exact outputs being
 timed, and compares dense compiled MLX, ordinary packed compiled MLX, and the
 custom packed Metal kernel on one GPU.
-The optional Gemma command is a separate analysis-only rung. It freezes the
-source model, differentiates each sequence independently at one layer input
-and output, and streams the resulting rows through bounded Frequent
-Directions sketches. It neither fits an executor nor changes a runtime
-manifest.
+The optional Gemma commands form a separate analysis-only rung. They freeze
+the source model, differentiate each sequence independently at selected
+residual boundaries, and stream the resulting rows through bounded Frequent
+Directions sketches. The stability command compares independently estimated
+subspaces and streams held-out gradients through frozen mode bases. The
+trajectory command plans nonduplicated boundaries for a contiguous block,
+measures adjacent Fisher geometry and cross-Rayleigh transfer, fits
+bounded-memory activation and reverse score-gradient transports on calibration,
+then evaluates those frozen maps on validation. The reverse-causal comparison
+uses exact logical-position lags, nested finite-lag windows, and the
+structurally valid visibility of each adjacent or block-endpoint segment. Its
+lag-0 ridge member is the row-local baseline for measuring the gain from later
+positions. The uncentered gradient score is zero-baseline explained energy
+rather than statistical \(R^2\). The ablation command instead extracts
+full-width calibration bases and projects the selected layer outputs jointly
+through descending keep-top-\(k\) prefixes on validation, with optional
+one-site-at-a-time localization. None of these commands identifies Jacobian
+blocks, fits an executor, evaluates the reserved test split, or changes a
+runtime manifest.
 
 ## Compiler interfaces and scaling boundary
 
@@ -200,8 +403,26 @@ contracts (the older diagonal-Fisher helper remains toy-specific):
 text-only Hugging Face Gemma 3 causal LM. `collect_streaming_fisher_modes`
 preserves the existing summed-NLL, per-sequence score definition while
 replacing retained calibration matrices with
-`O(sketch_rows * hidden_width)` state. Cache-aware decode and an authenticated
-Gemma graph replacement remain later gates.
+`O(sketch_rows * hidden_width)` state.
+`iter_activation_score_gradient_rows` exposes one transient sequence at a time
+for validation or other bounded-memory analyses. `compare_fisher_subspaces`
+and `StreamingRayleighEnergyEstimator` provide sign/rotation-invariant
+split-stability and exact frozen-basis replay metrics.
+`ModelAdapter.plan_layer_block` produces a canonical `LayerBlockBoundaryPlan`
+that omits later input aliases, while `StreamingModalTransportEstimator`
+retains only modal sums and \(k\times k\) moments. Its frozen Procrustes map is
+evaluated without retaining held-out rows.
+`StreamingCausalModalTransportEstimator` adds a sequence-scoped reverse
+gradient model over exact logical lags. It streams a feature Gram, a
+feature/target cross-moment, and a target Gram in FP64; storage depends on
+modal rank and maximum lag, not on the number or length of calibration
+sequences. The lag-0 prefix is fit separately as the nested ridge baseline,
+and larger prefixes can use downstream positions \(s+\delta\) only when that
+logical position exists and is structurally visible. This can test whether
+the cross-token omission explains a weak row-local map. It does not recover
+individual Jacobian blocks and cannot by itself authorize a sequence-aware
+modal executor. Cache-aware decode and an authenticated Gemma graph
+replacement remain later gates.
 
 The current model is exposed through `ToyTransformerAdapter`. Fisher
 collection and modal Jacobian extraction use the generic adapter path, and
