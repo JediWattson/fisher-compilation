@@ -761,6 +761,112 @@ reload Gemma to remeasure that manifest, so it does not promote the ratios
 into parameter- or MAC-reduction claims. See the
 [`full protocol`](docs/gemma3-270m.md#run-the-full-width-single-layer-replacement).
 
+The model-aware follow-up replaces that generic mini-transformer with the
+repo-owned Gemma-shaped executor. Format 5 identifies the full-width Gemma
+operators directly from calibration-A activation pairs:
+
+```bash
+fisher-graph-gemma-structured-layer \
+  --model-id google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --layer-index 4 \
+  --prompt-splits /absolute/path/structured-prompts.json \
+  --family-manifest /absolute/path/structured-families.json \
+  --corpus-audit /absolute/path/structured-corpus-audit.json \
+  --max-length 256 \
+  --tokenization-batch-size 4 \
+  --operator-bootstrap \
+  --device cpu \
+  --dtype float32 \
+  --output /absolute/path/layer-4-structured-v6.pt \
+  --calibration-b-ledger-dir /absolute/path/heldout-ledger
+```
+
+The bootstrap deterministically retains 8,192 calibration-A token rows and
+recovers Q/K/V/O, gate/up/down, Q/K norm, and four residual RMSNorm
+coefficients with active-support ridge or coordinate least squares. The
+fitter receives activations and a destination executor, not a source module
+or source parameter, and performs no optimizer or suffix-distillation
+updates. The containing experiment still runs the source model to capture
+those activations and bind model provenance, so "activation-only" describes
+the compiler interface, not an assertion that the source model is never
+loaded.
+
+The full-width format-5 layer-4 v6 parent passed both fresh calibration B and
+validation at near-numerical precision:
+
+| Split | Block-delta NRMSE / cosine | Delta NLL/token | Teacher KL/token | Top-1 |
+|---|---:|---:|---:|---:|
+| Calibration B | `9.137e-7` / `0.999999999999583` | `-1.942e-8` | `-1.762e-9` | `1.0` |
+| Validation | `9.213e-7` / `0.999999999999576` | `-3.137e-8` | `3.129e-9` | `1.0` |
+
+The attention-disabled control failed strongly (`0.652747` block NRMSE,
+`0.535714` top-1), while the strict-reloaded executor made zero source-layer
+calls. Test remains sealed. This establishes source-free execution and
+single-layer fidelity for one native-shaped Gemma layer; it is not itself a
+compression result. See the
+[`structured executor protocol`](docs/structured-layer-executor.md#learned-single-layer-fidelity-runner).
+
+The first compression rung ranks each of the 2,048 complete gated-MLP units by
+the calibration-A mean of `(activation * ground-truth-CE score-gradient)^2`,
+keeps 1,536 paired gate/up rows and down columns, and refits only the
+down-projection from activation targets. On 60,054 valid A rows it retained
+`96.4940%` of that score and passed the A gate: block NRMSE was `0.015281`,
+cosine `0.999883`, full-output NRMSE `0.006165`, and per-prompt
+p50/p90/worst block NRMSE was `0.015234/0.016619/0.019486`.
+
+```bash
+fisher-graph-gemma-structured-mlp-build \
+  --parent-artifact /absolute/path/format-5-v6-parent.pt \
+  --prompt-splits /absolute/path/v6-prompts.json \
+  --family-manifest /absolute/path/v6-families.json \
+  --corpus-audit /absolute/path/v6-corpus-audit.json \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --device cpu \
+  --dtype float32 \
+  --output /absolute/path/mlp-1536-a.pt
+
+fisher-graph-gemma-structured-mlp-heldout \
+  --candidate-artifact /absolute/path/mlp-1536-a.pt \
+  --prompt-splits /absolute/path/fresh-v7-prompts.json \
+  --family-manifest /absolute/path/fresh-v7-families.json \
+  --corpus-audit /absolute/path/fresh-v7-corpus-audit.json \
+  --calibration-b-ledger-dir /absolute/path/compression-b-ledger \
+  --device cpu \
+  --dtype float32 \
+  --output /absolute/path/mlp-1536-v7-heldout.pt
+```
+
+The heldout command must use a fresh ledger separate from the parent's ledger.
+Once it claims calibration B, never rerun that consumed split—even if the
+process later fails.
+
+The candidate removes 983,040 parameters: 5,573,632 becomes 4,590,592
+(`17.6373%` less for the layer). Its three MLP linear maps require 2,949,120
+instead of 3,932,160 MACs per valid token (`25%` less MLP-linear work).
+Including unchanged attention and norms, the fresh v7 stream analytically
+measured `17.0296%` fewer complete-layer MACs for its sequence lengths.
+These are exact structural/accounting savings for the rejected candidate,
+not a quality-qualified deployment claim.
+
+On the single allowed, source-corpus-disjoint v7 calibration-B evaluation,
+the A-selected candidate was rejected. Block NRMSE rose to `0.071745`
+(required at most `0.02`) and cosine fell to `0.997428` (required at least
+`0.999`); the feed-forward branch NRMSE was `0.064834`, although the unchanged
+attention branch remained near exact at `8.484e-7`. Delta NLL/token
+(`-0.003317`), teacher KL/token (`0.016452`), per-prompt p90 absolute NLL
+(`0.042397`), and p10 top-1 (`0.911765`) passed their gates, but aggregate
+top-1 agreement was only `0.935116` against the `0.95` minimum. Compression
+validation was therefore never tokenized and test remains sealed.
+
+This selector is a diagonal, per-token Fisher/Taylor proxy, not a full Fisher
+matrix: it does not model off-diagonal unit coupling, cross-token blocks, or
+the interaction produced by removing many units together. The v7 rejection
+means this particular one-shot `2048 -> 1536` rule is not a validated
+compression method. It supports no whole-model quality, measured latency,
+energy, fused-kernel, or model-level compression claim.
+
 The ignored outputs contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded
 transport/JVP/factor/executor state or scalar evaluation curves, and

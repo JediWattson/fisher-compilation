@@ -27,7 +27,17 @@ from pathlib import Path
 import torch
 from torch import Tensor
 
-from .adapters import Gemma3CausalLMAdapter, LayerBlockBoundaryPlan
+from .adapters import (
+    AttentionSpec,
+    FeedForwardSpec,
+    Gemma3CausalLMAdapter,
+    LayerBlockBoundaryPlan,
+    NormalizationSpec,
+    ResidualStageSpec,
+    RopeSpec,
+    StructuredOperatorSites,
+    TransformerLayerSemantics,
+)
 from .compiler.calibration import CausalLanguageModelNLL
 from .gemma3_experiment import (
     DEFAULT_MODEL_ID,
@@ -2029,6 +2039,7 @@ def _validate_layer_metadata(
         "attention",
         "source_path",
     }
+    structured_fields = expected_fields | {"transformer"}
     attention_fields = {
         "kind",
         "query_heads",
@@ -2059,7 +2070,7 @@ def _validate_layer_metadata(
             expected_input_sites.add(f"layer.{ordinal - 1}.output")
         if (
             not isinstance(raw_layer, Mapping)
-            or set(raw_layer) != expected_fields
+            or set(raw_layer) not in (expected_fields, structured_fields)
             or raw_layer["id"] != expected_ids[offset]
             or raw_layer["ordinal"] != ordinal
             or raw_layer["input_site"] not in expected_input_sites
@@ -2076,6 +2087,10 @@ def _validate_layer_metadata(
         )
         attention = raw_layer["attention"]
         if attention is None:
+            if raw_layer.get("transformer") is not None:
+                raise ValueError(
+                    "trajectory transformer metadata requires attention"
+                )
             continue
         if not isinstance(attention, Mapping) or set(
             attention
@@ -2107,28 +2122,236 @@ def _validate_layer_metadata(
                     "trajectory protocol attention metadata is invalid"
                 )
         rope = attention["rope"]
-        if rope is None:
-            continue
-        if not isinstance(rope, Mapping) or set(rope) != rope_fields:
-            raise ValueError("trajectory protocol RoPE metadata is invalid")
-        if not isinstance(rope["kind"], str) or not rope["kind"]:
-            raise ValueError("trajectory protocol RoPE metadata is invalid")
-        for name in (
-            "theta",
-            "rotary_dimension",
-            "scaling_kind",
-            "scaling_factor",
-        ):
-            value = rope[name]
-            if name == "scaling_kind":
-                _validate_optional_string(value, label="layer.rope.scaling_kind")
-            elif value is not None and (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                or value <= 0
-            ):
+        parsed_rope = None
+        if rope is not None:
+            if not isinstance(rope, Mapping) or set(rope) != rope_fields:
                 raise ValueError("trajectory protocol RoPE metadata is invalid")
+            if not isinstance(rope["kind"], str) or not rope["kind"]:
+                raise ValueError(
+                    "trajectory protocol RoPE metadata is invalid"
+                )
+            for name in (
+                "theta",
+                "rotary_dimension",
+                "scaling_kind",
+                "scaling_factor",
+            ):
+                value = rope[name]
+                if name == "scaling_kind":
+                    _validate_optional_string(
+                        value,
+                        label="layer.rope.scaling_kind",
+                    )
+                elif value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or value <= 0
+                ):
+                    raise ValueError(
+                        "trajectory protocol RoPE metadata is invalid"
+                    )
+            try:
+                parsed_rope = RopeSpec(**dict(rope))
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    "trajectory protocol RoPE metadata is invalid"
+                ) from error
+        try:
+            parsed_attention = AttentionSpec(
+                **{
+                    **dict(attention),
+                    "rope": parsed_rope,
+                }
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "trajectory protocol attention metadata is invalid"
+            ) from error
+        transformer = raw_layer.get("transformer")
+        if transformer is None:
+            continue
+        transformer_fields = {
+            "residual_layout",
+            "attention_input_norm",
+            "attention_output_norm",
+            "qk_norm",
+            "attention_projection_bias",
+            "attention_dropout",
+            "attention_logit_softcap",
+            "feed_forward_input_norm",
+            "feed_forward_output_norm",
+            "feed_forward",
+            "stages",
+        }
+        transformer_fields_with_operators = transformer_fields | {
+            "operator_sites"
+        }
+        operator_site_fields = {
+            "attention_query_projection",
+            "attention_query_normalized",
+            "attention_key_projection",
+            "attention_key_normalized",
+            "attention_value_projection",
+            "attention_context",
+            "feed_forward_gate_projection",
+            "feed_forward_up_projection",
+            "feed_forward_down_input",
+        }
+        norm_fields = {
+            "kind",
+            "width",
+            "epsilon",
+            "affine",
+            "scale_parameterization",
+            "compute_dtype",
+        }
+        feed_forward_fields = {
+            "kind",
+            "intermediate_width",
+            "activation",
+            "projection_bias",
+        }
+        stage_fields = {
+            "id",
+            "kind",
+            "input_site",
+            "normalized_input_site",
+            "operator_output_site",
+            "delta_site",
+            "output_site",
+        }
+        if (
+            not isinstance(transformer, Mapping)
+            or set(transformer)
+            not in (
+                transformer_fields,
+                transformer_fields_with_operators,
+            )
+        ):
+            raise ValueError(
+                "trajectory transformer metadata is invalid"
+            )
+        raw_operator_sites = transformer.get("operator_sites")
+        if raw_operator_sites is not None and (
+            not isinstance(raw_operator_sites, Mapping)
+            or set(raw_operator_sites) != operator_site_fields
+        ):
+            raise ValueError(
+                "trajectory transformer operator sites are invalid"
+            )
+        raw_norms = (
+            transformer["attention_input_norm"],
+            transformer["attention_output_norm"],
+            transformer["feed_forward_input_norm"],
+            transformer["feed_forward_output_norm"],
+        )
+        if any(
+            not isinstance(norm, Mapping) or set(norm) != norm_fields
+            for norm in raw_norms
+        ):
+            raise ValueError(
+                "trajectory transformer normalization metadata is invalid"
+            )
+        raw_qk_norm = transformer["qk_norm"]
+        if raw_qk_norm is not None and (
+            not isinstance(raw_qk_norm, Mapping)
+            or set(raw_qk_norm) != norm_fields
+        ):
+            raise ValueError(
+                "trajectory transformer qk normalization is invalid"
+            )
+        raw_feed_forward = transformer["feed_forward"]
+        raw_stages = transformer["stages"]
+        if (
+            not isinstance(raw_feed_forward, Mapping)
+            or set(raw_feed_forward) != feed_forward_fields
+            or not isinstance(raw_stages, (tuple, list))
+            or len(raw_stages) != 2
+            or any(
+                not isinstance(stage, Mapping)
+                or set(stage) != stage_fields
+                for stage in raw_stages
+            )
+        ):
+            raise ValueError(
+                "trajectory transformer stage metadata is invalid"
+            )
+        try:
+            parsed = TransformerLayerSemantics(
+                residual_layout=transformer[  # type: ignore[arg-type]
+                    "residual_layout"
+                ],
+                attention_input_norm=NormalizationSpec(
+                    **dict(raw_norms[0])
+                ),
+                attention_output_norm=NormalizationSpec(
+                    **dict(raw_norms[1])
+                ),
+                qk_norm=(
+                    None
+                    if raw_qk_norm is None
+                    else NormalizationSpec(**dict(raw_qk_norm))
+                ),
+                attention_projection_bias=transformer[  # type: ignore[arg-type]
+                    "attention_projection_bias"
+                ],
+                attention_dropout=transformer[  # type: ignore[arg-type]
+                    "attention_dropout"
+                ],
+                attention_logit_softcap=transformer[  # type: ignore[arg-type]
+                    "attention_logit_softcap"
+                ],
+                feed_forward_input_norm=NormalizationSpec(
+                    **dict(raw_norms[2])
+                ),
+                feed_forward_output_norm=NormalizationSpec(
+                    **dict(raw_norms[3])
+                ),
+                feed_forward=FeedForwardSpec(
+                    **dict(raw_feed_forward)
+                ),
+                stages=tuple(
+                    ResidualStageSpec(**dict(stage))
+                    for stage in raw_stages
+                ),
+                operator_sites=(
+                    None
+                    if raw_operator_sites is None
+                    else StructuredOperatorSites(
+                        **dict(raw_operator_sites)
+                    )
+                ),
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "trajectory transformer metadata is invalid"
+            ) from error
+        if any(
+            norm.width != raw_layer["residual_width"]
+            for norm in (
+                parsed.attention_input_norm,
+                parsed.attention_output_norm,
+                parsed.feed_forward_input_norm,
+                parsed.feed_forward_output_norm,
+            )
+        ):
+            raise ValueError(
+                "trajectory transformer normalization width is invalid"
+            )
+        if (
+            parsed.stages[0].input_site != raw_layer["input_site"]
+            or parsed.stages[-1].output_site != raw_layer["output_site"]
+            or (
+                parsed.qk_norm is not None
+                and parsed.qk_norm.width
+                != parsed_attention.head_dimension
+            )
+            or (parsed.qk_norm is not None) != parsed_attention.qk_norm
+        ):
+            raise ValueError(
+                "trajectory transformer layer binding is invalid"
+            )
     return expected_ids
 
 

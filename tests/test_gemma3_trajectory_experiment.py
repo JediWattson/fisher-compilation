@@ -1,16 +1,27 @@
 import json
 import tempfile
 import unittest
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
 
 import torch
 
-from fisher_graph.adapters import ToyTransformerAdapter
+from fisher_graph.adapters import (
+    AttentionSpec,
+    FeedForwardSpec,
+    NormalizationSpec,
+    ResidualStageSpec,
+    RopeSpec,
+    StructuredOperatorSites,
+    ToyTransformerAdapter,
+    TransformerLayerSemantics,
+)
 from fisher_graph.config import TransformerConfig
 from fisher_graph.gemma3_trajectory_experiment import (
     _report_sha256,
     _scientific_payload_sha256,
+    _validate_layer_metadata,
     default_gemma3_trajectory_output,
     load_gemma3_trajectory_artifact,
     run_gemma3_trajectory,
@@ -56,6 +67,141 @@ def prompt_payload() -> dict[str, object]:
 
 
 class Gemma3TrajectoryExperimentTests(unittest.TestCase):
+    def test_layer_metadata_accepts_optional_operator_sites(self) -> None:
+        residual_norm = NormalizationSpec(
+            kind="rms_norm",
+            width=4,
+            epsilon=1e-6,
+            affine=True,
+            scale_parameterization="unit_offset",
+            compute_dtype="float32",
+        )
+        qk_norm = NormalizationSpec(
+            kind="rms_norm",
+            width=2,
+            epsilon=1e-6,
+            affine=True,
+            scale_parameterization="unit_offset",
+            compute_dtype="float32",
+        )
+        stages = (
+            ResidualStageSpec(
+                id="layer.0.attention",
+                kind="attention",
+                input_site="layer.0.input",
+                normalized_input_site="layer.0.attention.normalized",
+                operator_output_site="layer.0.attention.operator",
+                delta_site="layer.0.attention.delta",
+                output_site="layer.0.attention.output",
+            ),
+            ResidualStageSpec(
+                id="layer.0.feed_forward",
+                kind="feed_forward",
+                input_site="layer.0.attention.output",
+                normalized_input_site="layer.0.feed_forward.normalized",
+                operator_output_site="layer.0.feed_forward.operator",
+                delta_site="layer.0.feed_forward.delta",
+                output_site="layer.0.output",
+            ),
+        )
+        operators = StructuredOperatorSites(
+            attention_query_projection="layer.0.operator.query",
+            attention_query_normalized="layer.0.operator.query_norm",
+            attention_key_projection="layer.0.operator.key",
+            attention_key_normalized="layer.0.operator.key_norm",
+            attention_value_projection="layer.0.operator.value",
+            attention_context="layer.0.operator.context",
+            feed_forward_gate_projection="layer.0.operator.gate",
+            feed_forward_up_projection="layer.0.operator.up",
+            feed_forward_down_input="layer.0.operator.down_input",
+        )
+        transformer = TransformerLayerSemantics(
+            residual_layout=(
+                "sequential_attention_then_feed_forward_residual"
+            ),
+            attention_input_norm=residual_norm,
+            attention_output_norm=residual_norm,
+            qk_norm=qk_norm,
+            attention_projection_bias=False,
+            attention_dropout=0.0,
+            attention_logit_softcap=None,
+            feed_forward_input_norm=residual_norm,
+            feed_forward_output_norm=residual_norm,
+            feed_forward=FeedForwardSpec(
+                kind="gated_multiplicative",
+                intermediate_width=8,
+                activation="silu",
+                projection_bias=False,
+            ),
+            stages=stages,
+            operator_sites=operators,
+        )
+        layer = {
+            "id": "layer.0",
+            "ordinal": 0,
+            "input_site": "layer.0.input",
+            "output_site": "layer.0.output",
+            "residual_width": 4,
+            "kind": "gemma3_decoder",
+            "attention": asdict(
+                AttentionSpec(
+                    kind="global_causal",
+                    query_heads=2,
+                    key_value_heads=1,
+                    head_dimension=2,
+                    query_scale=2**-0.5,
+                    qk_norm=True,
+                    window_size=None,
+                    rope=RopeSpec(
+                        kind="rotary",
+                        theta=10_000.0,
+                        rotary_dimension=2,
+                    ),
+                    cache_kind="none",
+                )
+            ),
+            "source_path": None,
+            "transformer": asdict(transformer),
+        }
+        self.assertEqual(
+            _validate_layer_metadata(
+                [layer],
+                start_layer=0,
+                end_layer=0,
+                widths=(4, 4),
+            ),
+            ("layer.0",),
+        )
+
+        legacy = {
+            **layer,
+            "transformer": dict(layer["transformer"]),
+        }
+        legacy["transformer"].pop("operator_sites")
+        self.assertEqual(
+            _validate_layer_metadata(
+                [legacy],
+                start_layer=0,
+                end_layer=0,
+                widths=(4, 4),
+            ),
+            ("layer.0",),
+        )
+        invalid = {
+            **layer,
+            "transformer": {
+                **layer["transformer"],
+                "operator_sites": {"unexpected": "layer.0.operator.bad"},
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "operator sites"):
+            _validate_layer_metadata(
+                [invalid],
+                start_layer=0,
+                end_layer=0,
+                widths=(4, 4),
+            )
+
     def test_synthetic_multi_boundary_artifact_and_loader(self) -> None:
         torch.manual_seed(1441)
         model = ToyTransformer(

@@ -257,7 +257,9 @@ D = hidden width
 A segment consumes and produces `[B, Q, D]`; it must not treat `Q` as the
 model's maximum context.
 
-`logical_positions` determine positional encoding and attention relationships.
+`logical_positions` determine positional encoding. `MaskPolicy` plus
+tensor/cache order determine causal and window visibility according to the
+model family; arbitrary RoPE IDs do not silently redefine token order.
 `cache_write_slots` identify physical storage. They are separate because a
 simple dense cache may use `slot == position`, while a sliding, ring, or paged
 cache generally does not.
@@ -1229,26 +1231,77 @@ suite before broadening scope.
   replacement. A full-causal pass with a separately trained attention-disabled
   failure is only a selection-threshold separation, not causal-edge
   identification.
-- The strict experiment artifact contains both executors plus empirical
-  score-sensitivity and audit state, but no source weights, prompts, teacher
-  logits, or captured boundaries. Candidate coefficient/MAC ratios describe
-  one logical deployed executor, not the paired experiment file. A storage
-  claim requires a selected-candidate-only export and byte measurement; the
-  self-contained loader rebuilds source denominators from exact saved
-  parameter/linear/attention geometry plus recorded valid lengths, but does
-  not reload the source checkpoint to remeasure that manifest. Reduction
-  scientific-status fields therefore remain false.
-- Remaining: run that protocol on a larger representative and
-  length-stratified wholly new corpus. No live Gemma result is recorded yet;
-  the committed synthetic test covers train, gate, fail-closed validation,
-  save, tamper rejection, and strict loading. The current one-seed protocol
-  cannot authorize promotion even if it passes; progressive compilation
-  requires a separately predeclared multi-seed replication rule.
-- Remaining: only after a candidate passes local and behavioral gates, fit and
-  authenticate one joint 270M replacement block while leaving the remainder
-  original; then require internal-trajectory, variable-length, causal,
-  fallback, storage, arithmetic, and latency gates before evaluating reserved
-  test exactly once.
+- Implemented: portable normalization, feed-forward, and ordered residual-stage
+  semantics on `LayerSpec`, plus Gemma-owned internal activation sites for
+  normalized inputs, raw branch outputs, post-normalization deltas, and the
+  post-attention residual. These semantics join attention topology in the
+  adapter fingerprint while Fisher and Jacobian code remain model agnostic.
+- Implemented: a repo-owned source-free structured layer executor with Gemma
+  RMSNorm, GQA, Q/K normalization, RoPE, native sliding/global visibility,
+  sandwich residual norms, and gated MLP. A test-only native-weight transplant
+  passes tiny sliding/global parity and refuses serialization. An additional
+  local pinned-270M float32 check measured zero boundary and suffix-logit error
+  at layer 4; this is operator parity, not a learned replacement or
+  compression result. Structured target capture and branch-separated
+  distillation losses are also implemented. See
+  [`structured-layer-executor.md`](structured-layer-executor.md).
+- Implemented: format 5 converts source-shaped fitting into deterministic,
+  activation-only operator recovery. Calibration-A internal pairs recover
+  native Q/K/V/O, paired gate/up and down MLP projections, Q/K norms, and all
+  four residual RMSNorms. The active-support ridge solver permits only the
+  preregistered structural nullity of one; no source parameter tensor enters
+  a fit, and there are no optimizer or suffix updates. The strict artifact
+  contains both full-width executors, the provenance-bound empirical
+  activation Fisher, recovered executor state, and audit evidence, but no
+  source model state dict, prompt text, teacher targets, tokenizer state, or
+  captured boundaries. Strict reload verifies zero module, parameter-object,
+  and tensor-storage aliasing with the source.
+- Passed: the pinned-270M v6 format-5 parent passed one-shot calibration B and
+  validation. Calibration-B block-delta NRMSE/cosine were
+  \(9.1370\times10^{-7}\)/0.9999999999995826; delta NLL/token was
+  \(-1.9417\times10^{-8}\), teacher KL/token was
+  \(-1.7623\times10^{-9}\), and top-1 agreement was 1.0. Validation
+  block-delta NRMSE/cosine were
+  \(9.2128\times10^{-7}\)/0.9999999999995756, with 1.0 top-1 agreement.
+  Ordinary/segmented native parity, native replay, all four length buckets,
+  and zero source-layer calls passed. The attention-disabled control failed
+  sharply at 0.652747 block NRMSE and 0.535714 top-1 agreement.
+- The format-5 result is source-independent full-width translation, not
+  compression. Its logical deployed executor still stores 5,573,632
+  coefficients, exactly 1.0x the source, and calibration B accounted the same
+  68,625,987,584 logical analytic MACs for source and executor. The artifact's
+  scientific status therefore supports single-layer structured fidelity only:
+  no parameter, MAC, latency, kernel-speed, decode, model-level, or general
+  method claim follows. Reserved test stays authenticated and hash-only.
+- Implemented and rejected: the first structured MLP compression runner ranks
+  the 2,048 intermediate units by mean valid-row
+  \((z_j\,\partial L/\partial z_j)^2\), slices paired gate/up rows and matching
+  down columns to width 1,536, and activation-refits only the down projection.
+  On the parent's 60,054 A rows it retained 96.4940% of measured score and
+  passed its same-data preflight at 0.015281 block NRMSE, with a 0.019486
+  worst prompt against the 0.02 ceiling. The strict candidate would remove
+  983,040 of 5,573,632 layer parameters (17.6373%) and 25% of MLP-linear MACs.
+- Fresh-v7 calibration B rejected that candidate. Block-delta NRMSE/cosine
+  were 0.071745/0.997428, feed-forward-delta NRMSE/cosine were
+  0.064834/0.997896, and aggregate top-1 agreement was 0.935116; all missed
+  their locked gates. Attention remained unchanged at
+  \(8.4842\times10^{-7}\) NRMSE, localizing the failure to MLP
+  selection/refit. Delta NLL/token (-0.003317) and teacher KL/token (0.016452)
+  passed, but they cannot override the direct, branch, and top-1 failures.
+  The exact v7 shapes imply 17.0296% fewer total layer analytic MACs, but those
+  are rejected-candidate arithmetic, not supported compression savings.
+  Validation was not tokenized or evaluated; test stayed sealed.
+- The next scientific rung must address the A-to-B generalization gap before
+  reducing width further. Consumed v7 B cannot select a new width or tune the
+  refit. Use a wholly fresh calibration corpus with an internal fit/guard
+  split or cross-fitting, preregister a gentler candidate such as width 1,792
+  only after that guard passes, and evaluate it once on a new B. Do not
+  continue down to width 1,024 merely because the 1,536 candidate failed.
+- Remaining: after a compressed candidate passes fresh B and validation,
+  authenticate it as one mixed-runtime 270M replacement block while leaving
+  the remainder original; then require internal-trajectory, variable-length,
+  causal, fallback, storage, arithmetic, and latency gates before evaluating
+  reserved test exactly once.
 - Remaining: move to Gemma 3 1B and expand depth only after those gates pass.
 
 ### Stage 8: add the multimodal decoder boundary

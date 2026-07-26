@@ -11,6 +11,7 @@ from fisher_graph.adapters import Gemma3CausalLMAdapter
 class FakeGemma3Config:
     model_type = "gemma3_text"
     hidden_size = 8
+    intermediate_size = 16
     vocab_size = 19
     num_hidden_layers = 2
     num_attention_heads = 4
@@ -33,6 +34,7 @@ class FakeGemma3Config:
     }
     rms_norm_eps = 1e-6
     attention_dropout = 0.0
+    attention_bias = False
     hidden_activation = "gelu_pytorch_tanh"
     final_logit_softcapping = 7.0
     attn_logit_softcapping = None
@@ -249,19 +251,101 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
         assert global_attention.rope is not None
         self.assertEqual(global_attention.rope.scaling_kind, "linear")
         self.assertEqual(global_attention.rope.scaling_factor, 2.0)
+        transformer = self.adapter.layers[0].transformer
+        assert transformer is not None
+        self.assertEqual(
+            transformer.residual_layout,
+            "sequential_attention_then_feed_forward_residual",
+        )
+        self.assertEqual(
+            transformer.attention_input_norm.kind,
+            "rms_norm",
+        )
+        self.assertEqual(
+            transformer.attention_input_norm.scale_parameterization,
+            "unit_offset",
+        )
+        self.assertEqual(
+            transformer.attention_input_norm.compute_dtype,
+            "float32",
+        )
+        self.assertEqual(transformer.qk_norm.width, 2)
+        self.assertEqual(
+            transformer.feed_forward.kind,
+            "gated_multiplicative",
+        )
+        self.assertEqual(
+            transformer.feed_forward.intermediate_width,
+            16,
+        )
+        self.assertEqual(
+            tuple(stage.kind for stage in transformer.stages),
+            ("attention", "feed_forward"),
+        )
+        operator_sites = transformer.operator_sites
+        assert operator_sites is not None
+        self.assertEqual(
+            operator_sites.values(),
+            (
+                "layer.0.attention.query_projection",
+                "layer.0.attention.query_normalized",
+                "layer.0.attention.key_projection",
+                "layer.0.attention.key_normalized",
+                "layer.0.attention.value_projection",
+                "layer.0.attention.context",
+                "layer.0.mlp.gate_projection",
+                "layer.0.mlp.up_projection",
+                "layer.0.mlp.down_input",
+            ),
+        )
 
         sites = {site.id: site for site in self.adapter.activation_sites}
         self.assertEqual(
             tuple(sites),
             (
                 "layer.0.input",
+                "layer.0.attention.normalized_input",
+                "layer.0.attention.operator_output",
+                "layer.0.attention.delta",
+                "layer.0.attention.query_projection",
+                "layer.0.attention.query_normalized",
+                "layer.0.attention.key_projection",
+                "layer.0.attention.key_normalized",
+                "layer.0.attention.value_projection",
+                "layer.0.attention.context",
+                "layer.0.post_attention",
+                "layer.0.mlp.normalized_input",
+                "layer.0.mlp.operator_output",
+                "layer.0.mlp.delta",
+                "layer.0.mlp.gate_projection",
+                "layer.0.mlp.up_projection",
+                "layer.0.mlp.down_input",
                 "layer.0.output",
                 "layer.1.input",
+                "layer.1.attention.normalized_input",
+                "layer.1.attention.operator_output",
+                "layer.1.attention.delta",
+                "layer.1.attention.query_projection",
+                "layer.1.attention.query_normalized",
+                "layer.1.attention.key_projection",
+                "layer.1.attention.key_normalized",
+                "layer.1.attention.value_projection",
+                "layer.1.attention.context",
+                "layer.1.post_attention",
+                "layer.1.mlp.normalized_input",
+                "layer.1.mlp.operator_output",
+                "layer.1.mlp.delta",
+                "layer.1.mlp.gate_projection",
+                "layer.1.mlp.up_projection",
+                "layer.1.mlp.down_input",
                 "layer.1.output",
                 "final_norm",
                 "logits",
             ),
         )
+        self.assertFalse(sites["layer.0.post_attention"].intervenable)
+        for site_id in operator_sites.values():
+            self.assertFalse(sites[site_id].intervenable)
         self.assertEqual(
             sites["layer.1.input"].alias_of,
             "layer.0.output",
@@ -416,6 +500,19 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
         )
         self.assertTrue(sequence.input_origin.attention_mask_supplied)
         self.assertTrue(sequence.input_origin.position_ids_supplied)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "provide an explicit attention_mask",
+        ):
+            self.adapter.prepare_sequence(
+                {
+                    "input_ids": self.input_ids,
+                    "position_ids": torch.tensor(
+                        [[0, 1, 0, 1]],
+                    ),
+                }
+            )
 
         with self.assertRaisesRegex(ValueError, "cached decode"):
             self.adapter.prepare_sequence(

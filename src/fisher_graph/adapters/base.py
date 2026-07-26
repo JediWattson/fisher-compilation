@@ -37,6 +37,9 @@ MaskRepresentation = Literal[
     "adapter_owned",
 ]
 ExecutionPhase = Literal["prefill", "decode"]
+NormalizationCompute = Literal["input", "float32"]
+NormalizationScale = Literal["direct", "unit_offset"]
+ResidualStageKind = Literal["attention", "feed_forward"]
 
 
 def _require_nonempty(value: str, *, field: str) -> None:
@@ -189,6 +192,282 @@ class RopeSpec:
             or self.scaling_factor <= 0
         ):
             raise ValueError("RoPE scaling_factor must be finite and positive")
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizationSpec:
+    """Portable normalization semantics for one structured layer operator."""
+
+    kind: str
+    width: int
+    epsilon: float
+    affine: bool
+    scale_parameterization: NormalizationScale = "direct"
+    compute_dtype: NormalizationCompute = "input"
+
+    def __post_init__(self) -> None:
+        _require_nonempty(self.kind, field="normalization kind")
+        if type(self.width) is not int or self.width <= 0:
+            raise ValueError("normalization width must be positive")
+        if (
+            not isinstance(self.epsilon, (float, int))
+            or isinstance(self.epsilon, bool)
+            or not torch.isfinite(torch.tensor(float(self.epsilon)))
+            or self.epsilon <= 0
+        ):
+            raise ValueError(
+                "normalization epsilon must be finite and positive"
+            )
+        if type(self.affine) is not bool:
+            raise TypeError("normalization affine must be boolean")
+        if self.scale_parameterization not in ("direct", "unit_offset"):
+            raise ValueError(
+                "unsupported normalization scale parameterization"
+            )
+        if self.compute_dtype not in ("input", "float32"):
+            raise ValueError("unsupported normalization compute dtype")
+
+
+@dataclass(frozen=True, slots=True)
+class FeedForwardSpec:
+    """Portable topology for a transformer feed-forward operator."""
+
+    kind: str
+    intermediate_width: int
+    activation: str
+    projection_bias: bool
+
+    def __post_init__(self) -> None:
+        _require_nonempty(self.kind, field="feed-forward kind")
+        if (
+            type(self.intermediate_width) is not int
+            or self.intermediate_width <= 0
+        ):
+            raise ValueError(
+                "feed-forward intermediate_width must be positive"
+            )
+        _require_nonempty(self.activation, field="feed-forward activation")
+        if type(self.projection_bias) is not bool:
+            raise TypeError(
+                "feed-forward projection_bias must be boolean"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ResidualStageSpec:
+    """Semantic activation boundaries around one residual branch."""
+
+    id: str
+    kind: ResidualStageKind
+    input_site: str
+    normalized_input_site: str
+    operator_output_site: str
+    delta_site: str
+    output_site: str
+
+    def __post_init__(self) -> None:
+        _require_nonempty(self.id, field="residual stage id")
+        if self.kind not in ("attention", "feed_forward"):
+            raise ValueError(f"unsupported residual stage kind: {self.kind!r}")
+        site_values = (
+            self.input_site,
+            self.normalized_input_site,
+            self.operator_output_site,
+            self.delta_site,
+            self.output_site,
+        )
+        for name, value in zip(
+            (
+                "input_site",
+                "normalized_input_site",
+                "operator_output_site",
+                "delta_site",
+                "output_site",
+            ),
+            site_values,
+            strict=True,
+        ):
+            _require_nonempty(value, field=f"residual stage {name}")
+        if len(set(site_values)) != len(site_values):
+            raise ValueError(
+                "residual stage activation sites must be distinct"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredOperatorSites:
+    """Capture-only sites that identify one transformer's affine operators.
+
+    These sites expose activation pairs for source-parameter-free system
+    identification.  Query and key normalization sites are pre-RoPE; the
+    attention context is the flattened value mixture immediately before the
+    output projection; and ``feed_forward_down_input`` is the activated-gate
+    and up-projection product immediately before the down projection.
+    """
+
+    attention_query_projection: str
+    attention_query_normalized: str
+    attention_key_projection: str
+    attention_key_normalized: str
+    attention_value_projection: str
+    attention_context: str
+    feed_forward_gate_projection: str
+    feed_forward_up_projection: str
+    feed_forward_down_input: str
+
+    def __post_init__(self) -> None:
+        values = tuple(
+            getattr(self, name)
+            for name in self.__dataclass_fields__
+        )
+        for name, value in zip(
+            self.__dataclass_fields__,
+            values,
+            strict=True,
+        ):
+            _require_nonempty(value, field=f"structured operator {name}")
+        if len(set(values)) != len(values):
+            raise ValueError(
+                "structured operator activation sites must be distinct"
+            )
+
+    def values(self) -> tuple[str, ...]:
+        """Return the nine sites in stable schema order."""
+
+        return tuple(
+            getattr(self, name)
+            for name in self.__dataclass_fields__
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TransformerLayerSemantics:
+    """Structured transformer grammar attached to a native layer.
+
+    Fisher and Jacobian analysis can remain model independent while this
+    record tells an executor compiler how the measured residual boundary was
+    produced.  The stage sites deliberately name normalized inputs, raw
+    operator outputs, post-normalization deltas, and residual outputs.
+    """
+
+    residual_layout: str
+    attention_input_norm: NormalizationSpec
+    attention_output_norm: NormalizationSpec
+    qk_norm: NormalizationSpec | None
+    attention_projection_bias: bool
+    attention_dropout: float
+    attention_logit_softcap: float | None
+    feed_forward_input_norm: NormalizationSpec
+    feed_forward_output_norm: NormalizationSpec
+    feed_forward: FeedForwardSpec
+    stages: tuple[ResidualStageSpec, ...]
+    operator_sites: StructuredOperatorSites | None = None
+
+    def __post_init__(self) -> None:
+        _require_nonempty(
+            self.residual_layout,
+            field="transformer residual_layout",
+        )
+        norms = (
+            self.attention_input_norm,
+            self.attention_output_norm,
+            self.feed_forward_input_norm,
+            self.feed_forward_output_norm,
+        )
+        if any(not isinstance(norm, NormalizationSpec) for norm in norms):
+            raise TypeError(
+                "transformer branch normalizations must be "
+                "NormalizationSpec values"
+            )
+        if self.qk_norm is not None and not isinstance(
+            self.qk_norm,
+            NormalizationSpec,
+        ):
+            raise TypeError("qk_norm must be a NormalizationSpec")
+        if type(self.attention_projection_bias) is not bool:
+            raise TypeError(
+                "attention_projection_bias must be boolean"
+            )
+        if (
+            not isinstance(self.attention_dropout, (float, int))
+            or isinstance(self.attention_dropout, bool)
+            or not torch.isfinite(
+                torch.tensor(float(self.attention_dropout))
+            )
+            or not 0 <= float(self.attention_dropout) < 1
+        ):
+            raise ValueError(
+                "attention_dropout must be finite in [0, 1)"
+            )
+        if self.attention_logit_softcap is not None and (
+            not isinstance(
+                self.attention_logit_softcap,
+                (float, int),
+            )
+            or isinstance(self.attention_logit_softcap, bool)
+            or not torch.isfinite(
+                torch.tensor(float(self.attention_logit_softcap))
+            )
+            or self.attention_logit_softcap <= 0
+        ):
+            raise ValueError(
+                "attention_logit_softcap must be finite and positive"
+            )
+        if not isinstance(self.feed_forward, FeedForwardSpec):
+            raise TypeError(
+                "feed_forward must be a FeedForwardSpec"
+            )
+        if (
+            type(self.stages) is not tuple
+            or len(self.stages) != 2
+            or any(
+                not isinstance(stage, ResidualStageSpec)
+                for stage in self.stages
+            )
+        ):
+            raise ValueError(
+                "structured transformer layers require two residual stages"
+            )
+        attention, feed_forward = self.stages
+        if attention.kind != "attention":
+            raise ValueError("the first residual stage must be attention")
+        if feed_forward.kind != "feed_forward":
+            raise ValueError(
+                "the second residual stage must be feed_forward"
+            )
+        if attention.output_site != feed_forward.input_site:
+            raise ValueError(
+                "attention output must feed the feed-forward stage"
+            )
+        if self.operator_sites is not None:
+            if not isinstance(
+                self.operator_sites,
+                StructuredOperatorSites,
+            ):
+                raise TypeError(
+                    "operator_sites must be StructuredOperatorSites"
+                )
+            stage_sites = {
+                site
+                for stage in self.stages
+                for site in (
+                    stage.input_site,
+                    stage.normalized_input_site,
+                    stage.operator_output_site,
+                    stage.delta_site,
+                    stage.output_site,
+                )
+            }
+            overlap = stage_sites & set(self.operator_sites.values())
+            if overlap:
+                raise ValueError(
+                    "structured operator sites must not reuse residual "
+                    f"stage sites: {sorted(overlap)}"
+                )
+            if self.qk_norm is None:
+                raise ValueError(
+                    "structured attention operator sites require qk_norm"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,6 +735,7 @@ class LayerSpec:
     kind: str
     attention: AttentionSpec | None = None
     source_path: str | None = None
+    transformer: TransformerLayerSemantics | None = None
 
     def __post_init__(self) -> None:
         _require_nonempty(self.id, field="layer id")
@@ -478,6 +758,45 @@ class LayerSpec:
             raise TypeError("attention must be an AttentionSpec when provided")
         if self.source_path is not None:
             _require_nonempty(self.source_path, field="layer source_path")
+        if self.transformer is not None:
+            if not isinstance(
+                self.transformer,
+                TransformerLayerSemantics,
+            ):
+                raise TypeError(
+                    "transformer must be TransformerLayerSemantics"
+                )
+            norms = (
+                self.transformer.attention_input_norm,
+                self.transformer.attention_output_norm,
+                self.transformer.feed_forward_input_norm,
+                self.transformer.feed_forward_output_norm,
+            )
+            if any(norm.width != self.residual_width for norm in norms):
+                raise ValueError(
+                    "branch normalization widths must match residual_width"
+                )
+            if self.transformer.qk_norm is not None:
+                if self.attention is None:
+                    raise ValueError(
+                        "qk normalization requires attention metadata"
+                    )
+                if (
+                    self.transformer.qk_norm.width
+                    != self.attention.head_dimension
+                ):
+                    raise ValueError(
+                        "qk normalization width must match head_dimension"
+                    )
+            first, second = self.transformer.stages
+            if first.input_site != self.input_site:
+                raise ValueError(
+                    "first residual stage must read the layer input"
+                )
+            if second.output_site != self.output_site:
+                raise ValueError(
+                    "last residual stage must produce the layer output"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -942,18 +1261,26 @@ __all__ = [
     "AdapterRun",
     "AttentionSpec",
     "ExecutionPhase",
+    "FeedForwardSpec",
     "LayerSpec",
     "LayerBlockBoundaryPlan",
     "LengthPolicy",
     "MaskPolicy",
     "MaskRepresentation",
     "ModelAdapter",
+    "NormalizationCompute",
+    "NormalizationScale",
+    "NormalizationSpec",
     "PaddingSide",
     "RopeSpec",
+    "ResidualStageKind",
+    "ResidualStageSpec",
     "SegmentRun",
     "SegmentSpec",
     "SequenceContext",
     "SequenceInputOrigin",
     "SequenceSpec",
+    "StructuredOperatorSites",
+    "TransformerLayerSemantics",
     "module_state_fingerprint",
 ]

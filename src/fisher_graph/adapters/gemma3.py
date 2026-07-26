@@ -28,15 +28,20 @@ from .base import (
     AdapterRun,
     AttentionSpec,
     ExecutionPhase,
+    FeedForwardSpec,
     LayerSpec,
     MaskPolicy,
     ModelAdapter,
+    NormalizationSpec,
+    ResidualStageSpec,
     RopeSpec,
     SegmentRun,
     SegmentSpec,
     SequenceContext,
     SequenceInputOrigin,
     SequenceSpec,
+    StructuredOperatorSites,
+    TransformerLayerSemantics,
 )
 
 
@@ -324,6 +329,54 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             getattr(self._config, "sliding_window", 1),
             name="sliding_window",
         )
+        intermediate_width = _positive_int(
+            getattr(self._config, "intermediate_size", None),
+            name="intermediate_size",
+        )
+        norm_epsilon = _finite_positive_float(
+            getattr(self._config, "rms_norm_eps", None),
+            name="rms_norm_eps",
+        )
+        activation = getattr(self._config, "hidden_activation", None)
+        if not isinstance(activation, str) or not activation:
+            raise TypeError(
+                "Gemma 3 config hidden_activation must be a nonempty string"
+            )
+        projection_bias = getattr(
+            self._config,
+            "attention_bias",
+            False,
+        )
+        if type(projection_bias) is not bool:
+            raise TypeError(
+                "Gemma 3 config attention_bias must be boolean"
+            )
+        attention_dropout = getattr(
+            self._config,
+            "attention_dropout",
+            0.0,
+        )
+        if (
+            not isinstance(attention_dropout, (float, int))
+            or isinstance(attention_dropout, bool)
+            or not torch.isfinite(
+                torch.tensor(float(attention_dropout))
+            )
+            or not 0 <= float(attention_dropout) < 1
+        ):
+            raise TypeError(
+                "Gemma 3 config attention_dropout must be finite in [0, 1)"
+            )
+        logit_softcap = getattr(
+            self._config,
+            "attn_logit_softcapping",
+            None,
+        )
+        if logit_softcap is not None:
+            logit_softcap = _finite_positive_float(
+                logit_softcap,
+                name="attn_logit_softcapping",
+            )
 
         layers: list[LayerSpec] = []
         for index, layer_type in enumerate(self._layer_types):
@@ -347,6 +400,92 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                 cache_kind="none",
             )
             layer_id = f"layer.{index}"
+            residual_norm = NormalizationSpec(
+                kind="rms_norm",
+                width=self._hidden_size,
+                epsilon=norm_epsilon,
+                affine=True,
+                scale_parameterization="unit_offset",
+                compute_dtype="float32",
+            )
+            qk_norm = NormalizationSpec(
+                kind="rms_norm",
+                width=head_dimension,
+                epsilon=norm_epsilon,
+                affine=True,
+                scale_parameterization="unit_offset",
+                compute_dtype="float32",
+            )
+            attention_stage = ResidualStageSpec(
+                id=f"{layer_id}.attention",
+                kind="attention",
+                input_site=f"{layer_id}.input",
+                normalized_input_site=(
+                    f"{layer_id}.attention.normalized_input"
+                ),
+                operator_output_site=(
+                    f"{layer_id}.attention.operator_output"
+                ),
+                delta_site=f"{layer_id}.attention.delta",
+                output_site=f"{layer_id}.post_attention",
+            )
+            feed_forward_stage = ResidualStageSpec(
+                id=f"{layer_id}.feed_forward",
+                kind="feed_forward",
+                input_site=attention_stage.output_site,
+                normalized_input_site=f"{layer_id}.mlp.normalized_input",
+                operator_output_site=f"{layer_id}.mlp.operator_output",
+                delta_site=f"{layer_id}.mlp.delta",
+                output_site=f"{layer_id}.output",
+            )
+            operator_sites = StructuredOperatorSites(
+                attention_query_projection=(
+                    f"{layer_id}.attention.query_projection"
+                ),
+                attention_query_normalized=(
+                    f"{layer_id}.attention.query_normalized"
+                ),
+                attention_key_projection=(
+                    f"{layer_id}.attention.key_projection"
+                ),
+                attention_key_normalized=(
+                    f"{layer_id}.attention.key_normalized"
+                ),
+                attention_value_projection=(
+                    f"{layer_id}.attention.value_projection"
+                ),
+                attention_context=f"{layer_id}.attention.context",
+                feed_forward_gate_projection=(
+                    f"{layer_id}.mlp.gate_projection"
+                ),
+                feed_forward_up_projection=(
+                    f"{layer_id}.mlp.up_projection"
+                ),
+                feed_forward_down_input=(
+                    f"{layer_id}.mlp.down_input"
+                ),
+            )
+            transformer = TransformerLayerSemantics(
+                residual_layout=(
+                    "sequential_attention_then_feed_forward_residual"
+                ),
+                attention_input_norm=residual_norm,
+                attention_output_norm=residual_norm,
+                qk_norm=qk_norm,
+                attention_projection_bias=projection_bias,
+                attention_dropout=float(attention_dropout),
+                attention_logit_softcap=logit_softcap,
+                feed_forward_input_norm=residual_norm,
+                feed_forward_output_norm=residual_norm,
+                feed_forward=FeedForwardSpec(
+                    kind="gated_multiplicative",
+                    intermediate_width=intermediate_width,
+                    activation=activation,
+                    projection_bias=False,
+                ),
+                stages=(attention_stage, feed_forward_stage),
+                operator_sites=operator_sites,
+            )
             layers.append(
                 LayerSpec(
                     id=layer_id,
@@ -357,6 +496,7 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                     kind="gemma3_decoder",
                     attention=attention,
                     source_path=f"model.layers.{index}",
+                    transformer=transformer,
                 )
             )
         return tuple(layers)
@@ -365,6 +505,17 @@ class Gemma3CausalLMAdapter(ModelAdapter):
         axes = ("batch", "sequence", "feature")
         sites: list[ActivationSite] = []
         for index, layer in enumerate(self._layers):
+            transformer = layer.transformer
+            if transformer is None:
+                raise RuntimeError(
+                    "Gemma 3 layer is missing transformer semantics"
+                )
+            attention_stage, feed_forward_stage = transformer.stages
+            operator_sites = transformer.operator_sites
+            if operator_sites is None:
+                raise RuntimeError(
+                    "Gemma 3 layer is missing structured operator sites"
+                )
             sites.append(
                 ActivationSite(
                     id=layer.input_site,
@@ -380,6 +531,111 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                     fisher_default=index == 0,
                 )
             )
+            for site_id in (
+                attention_stage.normalized_input_site,
+                attention_stage.operator_output_site,
+                attention_stage.delta_site,
+            ):
+                sites.append(
+                    ActivationSite(
+                        id=site_id,
+                        role="internal",
+                        axes=axes,
+                        width=self._hidden_size,
+                        owner_layer=layer.id,
+                    )
+                )
+            query_axes = ("batch", "sequence", "head", "feature")
+            for site_id, heads in (
+                (
+                    operator_sites.attention_query_projection,
+                    layer.attention.query_heads,
+                ),
+                (
+                    operator_sites.attention_query_normalized,
+                    layer.attention.query_heads,
+                ),
+                (
+                    operator_sites.attention_key_projection,
+                    layer.attention.key_value_heads,
+                ),
+                (
+                    operator_sites.attention_key_normalized,
+                    layer.attention.key_value_heads,
+                ),
+                (
+                    operator_sites.attention_value_projection,
+                    layer.attention.key_value_heads,
+                ),
+            ):
+                if heads <= 0:
+                    raise RuntimeError(
+                        "Gemma 3 attention head count became invalid"
+                    )
+                sites.append(
+                    ActivationSite(
+                        id=site_id,
+                        role="internal",
+                        axes=query_axes,
+                        width=layer.attention.head_dimension,
+                        owner_layer=layer.id,
+                        intervenable=False,
+                    )
+                )
+            sites.append(
+                ActivationSite(
+                    id=operator_sites.attention_context,
+                    role="internal",
+                    axes=axes,
+                    width=(
+                        layer.attention.query_heads
+                        * layer.attention.head_dimension
+                    ),
+                    owner_layer=layer.id,
+                    intervenable=False,
+                )
+            )
+            sites.append(
+                ActivationSite(
+                    id=attention_stage.output_site,
+                    role="internal",
+                    axes=axes,
+                    width=self._hidden_size,
+                    owner_layer=layer.id,
+                    intervenable=False,
+                )
+            )
+            for site_id in (
+                feed_forward_stage.normalized_input_site,
+                feed_forward_stage.operator_output_site,
+                feed_forward_stage.delta_site,
+            ):
+                sites.append(
+                    ActivationSite(
+                        id=site_id,
+                        role="internal",
+                        axes=axes,
+                        width=self._hidden_size,
+                        owner_layer=layer.id,
+                    )
+                )
+            for site_id in (
+                operator_sites.feed_forward_gate_projection,
+                operator_sites.feed_forward_up_projection,
+                operator_sites.feed_forward_down_input,
+            ):
+                sites.append(
+                    ActivationSite(
+                        id=site_id,
+                        role="internal",
+                        axes=axes,
+                        width=(
+                            transformer.feed_forward.intermediate_width
+                        ),
+                        owner_layer=layer.id,
+                        intervenable=False,
+                    )
+                )
             sites.append(
                 ActivationSite(
                     id=layer.output_site,
@@ -525,6 +781,22 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                     "position_ids must have shape [1, sequence] or "
                     "[batch, sequence]"
                 )
+        if (
+            supplied_mask is None
+            and supplied_positions is not None
+            and sequence_length > 1
+            and bool(
+                (
+                    positions[:, 1:] - positions[:, :-1]
+                    != 1
+                ).any()
+            )
+        ):
+            raise ValueError(
+                "Gemma 3 packed or gapped position_ids without an "
+                "attention_mask are not yet representable by "
+                "SequenceContext; provide an explicit attention_mask"
+            )
 
         cache_positions = model_inputs.get("cache_position")
         if cache_positions is not None:
@@ -582,7 +854,373 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             raise KeyError(
                 f"unknown activation intervention sites: {sorted(unknown)}"
             )
+        sites_by_id = {site.id: site for site in self.activation_sites}
+        nonintervenable = tuple(
+            sorted(
+                name
+                for name in intervention_map
+                if not sites_by_id[name].intervenable
+            )
+        )
+        if nonintervenable:
+            raise ValueError(
+                "activation sites are capture-only and cannot be "
+                f"intervened on: {list(nonintervenable)}"
+            )
         return requested, intervention_map
+
+    def _register_internal_layer_hooks(
+        self,
+        layer: nn.Module,
+        spec: LayerSpec,
+        trace: ActivationTrace,
+        active_sites: set[str],
+    ) -> list[Any]:
+        transformer = spec.transformer
+        if transformer is None:
+            return []
+        attention_stage, feed_forward_stage = transformer.stages
+        operator_sites = transformer.operator_sites
+        internal_sites = {
+            attention_stage.normalized_input_site,
+            attention_stage.operator_output_site,
+            attention_stage.delta_site,
+            attention_stage.output_site,
+            feed_forward_stage.normalized_input_site,
+            feed_forward_stage.operator_output_site,
+            feed_forward_stage.delta_site,
+        }
+        if operator_sites is not None:
+            internal_sites.update(operator_sites.values())
+        if not internal_sites & active_sites:
+            return []
+
+        module_names = (
+            "input_layernorm",
+            "self_attn",
+            "post_attention_layernorm",
+            "pre_feedforward_layernorm",
+            "mlp",
+            "post_feedforward_layernorm",
+        )
+        modules = {
+            name: getattr(layer, name, None)
+            for name in module_names
+        }
+        missing = tuple(
+            name
+            for name, module in modules.items()
+            if not isinstance(module, nn.Module)
+        )
+        if missing:
+            raise TypeError(
+                "Gemma 3 layer cannot expose structured activations; "
+                f"missing modules: {list(missing)}"
+            )
+
+        handles: list[Any] = []
+        active_operator_sites = (
+            set()
+            if operator_sites is None
+            else set(operator_sites.values()) & active_sites
+        )
+        operator_modules: dict[str, nn.Module] = {}
+        if active_operator_sites:
+            attention_module = modules["self_attn"]
+            feed_forward_module = modules["mlp"]
+            nested = {
+                "q_proj": getattr(attention_module, "q_proj", None),
+                "k_proj": getattr(attention_module, "k_proj", None),
+                "v_proj": getattr(attention_module, "v_proj", None),
+                "o_proj": getattr(attention_module, "o_proj", None),
+                "q_norm": getattr(attention_module, "q_norm", None),
+                "k_norm": getattr(attention_module, "k_norm", None),
+                "gate_proj": getattr(feed_forward_module, "gate_proj", None),
+                "up_proj": getattr(feed_forward_module, "up_proj", None),
+                "down_proj": getattr(feed_forward_module, "down_proj", None),
+            }
+            missing_nested = tuple(
+                name
+                for name, module in nested.items()
+                if not isinstance(module, nn.Module)
+            )
+            if missing_nested:
+                raise TypeError(
+                    "Gemma 3 layer cannot expose operator activations; "
+                    f"missing modules: {list(missing_nested)}"
+                )
+            operator_modules = {
+                name: module
+                for name, module in nested.items()
+                if isinstance(module, nn.Module)
+            }
+
+        def tensor_output_hook(
+            _module: nn.Module,
+            _args: tuple[object, ...],
+            output: object,
+            *,
+            site: str,
+        ) -> object:
+            value = _tensor_from_layer_output(output)
+            instrumented = trace.record(site, value)
+            return _replace_layer_output(output, instrumented)
+
+        def capture_projection(
+            output: object,
+            *,
+            site: str,
+            heads: int,
+            head_dimension: int,
+        ) -> object:
+            value = _tensor_from_layer_output(output)
+            expected_width = heads * head_dimension
+            if value.ndim != 3 or value.shape[-1] != expected_width:
+                raise ValueError(
+                    f"Gemma 3 projection for {site!r} has incompatible shape"
+                )
+            canonical = value.view(
+                value.shape[0],
+                value.shape[1],
+                heads,
+                head_dimension,
+            )
+            trace.record(site, canonical)
+            return output
+
+        def capture_qk_normalized(
+            output: object,
+            *,
+            site: str,
+            heads: int,
+            head_dimension: int,
+        ) -> object:
+            value = _tensor_from_layer_output(output)
+            if (
+                value.ndim != 4
+                or value.shape[1] != heads
+                or value.shape[-1] != head_dimension
+            ):
+                raise ValueError(
+                    f"Gemma 3 qk normalization for {site!r} has "
+                    "incompatible shape"
+                )
+            trace.record(site, value.transpose(1, 2))
+            return output
+
+        def capture_only_output(
+            _module: nn.Module,
+            _args: tuple[object, ...],
+            output: object,
+            *,
+            site: str,
+        ) -> object:
+            trace.record(site, _tensor_from_layer_output(output))
+            return output
+
+        def capture_only_input(
+            _module: nn.Module,
+            args: tuple[object, ...],
+            kwargs: dict[str, object],
+            *,
+            site: str,
+        ) -> tuple[tuple[object, ...], dict[str, object]]:
+            value, _ = self._extract_hidden_input(args, kwargs)
+            trace.record(site, value)
+            return args, kwargs
+
+        if active_operator_sites:
+            assert operator_sites is not None
+            attention = spec.attention
+            if attention is None:
+                raise RuntimeError(
+                    "Gemma 3 structured operator sites require attention"
+                )
+            operator_hooks = (
+                (
+                    "q_proj",
+                    operator_sites.attention_query_projection,
+                    attention.query_heads,
+                    False,
+                ),
+                (
+                    "k_proj",
+                    operator_sites.attention_key_projection,
+                    attention.key_value_heads,
+                    False,
+                ),
+                (
+                    "v_proj",
+                    operator_sites.attention_value_projection,
+                    attention.key_value_heads,
+                    False,
+                ),
+                (
+                    "q_norm",
+                    operator_sites.attention_query_normalized,
+                    attention.query_heads,
+                    True,
+                ),
+                (
+                    "k_norm",
+                    operator_sites.attention_key_normalized,
+                    attention.key_value_heads,
+                    True,
+                ),
+            )
+            for module_name, site, heads, normalized in operator_hooks:
+                if site not in active_sites:
+                    continue
+                module = operator_modules[module_name]
+                if normalized:
+                    handles.append(
+                        module.register_forward_hook(
+                            lambda _module, _args, output, *,
+                            current_site=site,
+                            current_heads=heads: capture_qk_normalized(
+                                output,
+                                site=current_site,
+                                heads=current_heads,
+                                head_dimension=attention.head_dimension,
+                            )
+                        )
+                    )
+                else:
+                    handles.append(
+                        module.register_forward_hook(
+                            lambda _module, _args, output, *,
+                            current_site=site,
+                            current_heads=heads: capture_projection(
+                                output,
+                                site=current_site,
+                                heads=current_heads,
+                                head_dimension=attention.head_dimension,
+                            )
+                        )
+                    )
+            for module_name, site in (
+                ("gate_proj", operator_sites.feed_forward_gate_projection),
+                ("up_proj", operator_sites.feed_forward_up_projection),
+            ):
+                if site in active_sites:
+                    handles.append(
+                        operator_modules[module_name].register_forward_hook(
+                            lambda module, args, output, *,
+                            current_site=site: capture_only_output(
+                                module,
+                                args,
+                                output,
+                                site=current_site,
+                            )
+                        )
+                    )
+            for module_name, site in (
+                ("o_proj", operator_sites.attention_context),
+                ("down_proj", operator_sites.feed_forward_down_input),
+            ):
+                if site in active_sites:
+                    handles.append(
+                        operator_modules[
+                            module_name
+                        ].register_forward_pre_hook(
+                            lambda module, args, kwargs, *,
+                            current_site=site: capture_only_input(
+                                module,
+                                args,
+                                kwargs,
+                                site=current_site,
+                            ),
+                            with_kwargs=True,
+                        )
+                    )
+
+        handles.append(
+            modules["input_layernorm"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=attention_stage.normalized_input_site,
+                )
+            )
+        )
+        handles.append(
+            modules["self_attn"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=attention_stage.operator_output_site,
+                )
+            )
+        )
+        handles.append(
+            modules["post_attention_layernorm"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=attention_stage.delta_site,
+                )
+            )
+        )
+
+        def feed_forward_input_hook(
+            _module: nn.Module,
+            args: tuple[object, ...],
+            kwargs: dict[str, object],
+        ) -> tuple[tuple[object, ...], dict[str, object]]:
+            hidden_states, positional = self._extract_hidden_input(
+                args,
+                kwargs,
+            )
+            captured = trace.record(
+                attention_stage.output_site,
+                hidden_states,
+            )
+            if positional:
+                return (captured, *args[1:]), kwargs
+            updated = dict(kwargs)
+            updated["hidden_states"] = captured
+            return args, updated
+
+        handles.append(
+            modules["pre_feedforward_layernorm"].register_forward_pre_hook(
+                feed_forward_input_hook,
+                with_kwargs=True,
+            )
+        )
+        handles.append(
+            modules["pre_feedforward_layernorm"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=feed_forward_stage.normalized_input_site,
+                )
+            )
+        )
+        handles.append(
+            modules["mlp"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=feed_forward_stage.operator_output_site,
+                )
+            )
+        )
+        handles.append(
+            modules["post_feedforward_layernorm"].register_forward_hook(
+                lambda module, args, output: tensor_output_hook(
+                    module,
+                    args,
+                    output,
+                    site=feed_forward_stage.delta_site,
+                )
+            )
+        )
+        return handles
 
     @staticmethod
     def _extract_hidden_input(
@@ -646,6 +1284,7 @@ class Gemma3CausalLMAdapter(ModelAdapter):
 
         handles: list[Any] = []
         if trace is not None:
+            active_sites = set(requested) | set(intervention_map)
             for layer, spec in zip(
                 self._source_layers,
                 self._layers,
@@ -693,6 +1332,14 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                     layer.register_forward_hook(
                         output_hook,
                         with_kwargs=True,
+                    )
+                )
+                handles.extend(
+                    self._register_internal_layer_hooks(
+                        layer,
+                        spec,
+                        trace,
+                        active_sites,
                     )
                 )
 
@@ -783,13 +1430,22 @@ class Gemma3CausalLMAdapter(ModelAdapter):
         *,
         window_size: int | None,
     ) -> Tensor:
-        query_positions = sequence.logical_positions.unsqueeze(2)
-        key_positions = sequence.key_logical_positions.unsqueeze(1)
-        allowed = key_positions <= query_positions
+        # RoPE position ids need not be contiguous and do not define causal
+        # or sliding-window visibility. Cache-free prefill visibility follows
+        # tensor order, matching the native Transformers mask builder.
+        query_ordinals = torch.arange(
+            sequence.query_length,
+            device=sequence.device,
+        ).view(1, sequence.query_length, 1)
+        key_ordinals = torch.arange(
+            sequence.key_length,
+            device=sequence.device,
+        ).view(1, 1, sequence.key_length)
+        allowed = key_ordinals <= query_ordinals
         allowed = allowed & sequence.key_valid_mask.unsqueeze(1)
         if window_size is not None:
             allowed = allowed & (
-                query_positions - key_positions < window_size
+                query_ordinals - key_ordinals < window_size
             )
         mask = torch.zeros(
             allowed.shape,
@@ -865,6 +1521,21 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             raise TypeError("sequence must be a SequenceContext")
         if sequence.phase != "prefill" or sequence.cache_state is not None:
             raise ValueError("Gemma 3 segments only support prefill")
+        if (
+            not sequence.input_origin.attention_mask_supplied
+            and sequence.query_length > 1
+            and bool(
+                (
+                    sequence.logical_positions[:, 1:]
+                    - sequence.logical_positions[:, :-1]
+                    != 1
+                ).any()
+            )
+        ):
+            raise ValueError(
+                "Gemma 3 segment execution cannot represent packed or "
+                "gapped position_ids without an explicit attention_mask"
+            )
         expected = (
             sequence.batch_size,
             sequence.query_length,
@@ -982,6 +1653,7 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             "num_attention_heads",
             "num_key_value_heads",
             "head_dim",
+            "intermediate_size",
             "query_pre_attn_scalar",
             "sliding_window",
             "layer_types",
@@ -990,6 +1662,7 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             "rope_theta",
             "rope_local_base_freq",
             "rms_norm_eps",
+            "attention_bias",
             "attention_dropout",
             "hidden_activation",
             "final_logit_softcapping",

@@ -39,7 +39,9 @@ It is intentionally narrow:
   selection, one locked validation intervention, and calibration A/test
   reserved hash-only;
 - a reserved test split that none of these analysis commands model-evaluate;
-- no fine-tuning, weight updates, installed Gemma graph, or compilation claim.
+- no fine-tuning or source-model weight updates; the accepted format-5 claim
+  is one full-width layer translation, not compressed or model-level
+  compilation.
 
 The checkpoint is gated on Hugging Face. Accept Google's Gemma usage terms on
 the [official model page](https://huggingface.co/google/gemma-3-270m), then
@@ -1968,6 +1970,120 @@ The default `.local-runs/` location is ignored. Derived Fisher artifacts may
 be published intentionally later, but they should pass provenance and
 validation review first.
 
+## Format-5 source-shaped layer-4 pass
+
+The model-aware follow-up uses a repo-owned Gemma-shaped executor rather than
+the generic mini-transformer. Format 5 replaces optimizer-based imitation with
+an activation-only structured operator bootstrap. From calibration-A
+activation pairs it recovers the native-shaped Q/K/V/O projections, paired
+gate/up and down MLP projections, Q/K norms, and four residual RMSNorms. Its
+active-support ridge solve permits only the preregistered one-dimensional
+structural nullspace. No source parameter tensor is passed to the fitter, no
+optimizer or suffix update is run, and the strict-loaded executor shares no
+module, parameter object, or tensor storage with the source model.
+
+The representative v6 run used 280 calibration-A prompts and 64 prompts in
+each heldout role, with eight disjoint families per role and all four required
+token-length buckets. It ran against `google/gemma-3-270m` commit
+`9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1`. Calibration B contained 11,788
+supervised positions and validation contained 11,674. Ordinary-versus-
+segmented native parity, native-boundary replay, causal/padding probes, strict
+reload, and zero source-layer calls all passed.
+
+| Locked full-width metric | Calibration B | Validation |
+|---|---:|---:|
+| Block-delta NRMSE | \(9.1370\times10^{-7}\) | \(9.2128\times10^{-7}\) |
+| Block-delta cosine | 0.9999999999995826 | 0.9999999999995756 |
+| Full-output NRMSE | \(3.7946\times10^{-7}\) | \(3.8195\times10^{-7}\) |
+| Delta NLL/token | \(-1.9417\times10^{-8}\) | \(-3.1370\times10^{-8}\) |
+| Teacher KL/token | \(-1.7623\times10^{-9}\) | \(3.1286\times10^{-9}\) |
+| Top-1 agreement | 1.0000 | 1.0000 |
+
+The calibration-B per-prompt block-NRMSE p50/p90/worst values were
+\(9.4447\times10^{-7}\), \(1.0335\times10^{-6}\), and
+\(1.2418\times10^{-6}\). The attention-output-disabled control separated
+sharply: its block NRMSE/cosine were `0.652747/0.785139`, delta NLL/token was
+`0.721448`, teacher KL/token was `0.846907`, and top-1 agreement was
+`0.535714`. This establishes that the evaluator can distinguish the recovered
+causal layer from a broken same-storage control.
+
+This is a source-independent **translation/fidelity** pass, not compression.
+The executor still has 5,573,632 parameters and a stored-coefficient ratio of
+1.0. On calibration B it used the same 68,625,987,584 logical analytic MACs as
+the source over 11,852 valid positions. The reserved test split remains
+parsed, authenticated, and hash-only: it was neither tokenized nor evaluated.
+
+## Rejected 2048-to-1536 structured MLP rung
+
+The first compression candidate started from that strict format-5 parent. On
+the v6 calibration-A stream it ranked each intermediate MLP unit by the mean
+valid-row Fisher/Taylor score
+\((z_j\,\partial L/\partial z_j)^2\), retained 1,536 of 2,048 paired gate/up
+rows and matching down columns, and refit only the down projection from
+activation targets. The 60,054 valid A rows assigned 96.4940% of the measured
+score to the retained units. The down-operator refit reduced its A-side NRMSE
+from `0.166783` to `0.038493`, while the attention tensors remained
+bit-identical.
+
+That candidate passed its A-only preflight, but narrowly:
+
+| Calibration-A metric | Result |
+|---|---:|
+| Block-delta NRMSE / cosine | `0.015281` / `0.999883` |
+| Per-prompt block-NRMSE p50 / p90 / worst | `0.015234` / `0.016619` / `0.019486` |
+| Feed-forward-delta NRMSE / cosine | `0.013725` / `0.999906` |
+| Attention-delta NRMSE | \(6.1713\times10^{-7}\) |
+
+The direct and branch NRMSE ceiling was `0.02`, so the worst A prompt had only
+about \(5.1\times10^{-4}\) of headroom. Passing this same-data A check earned
+exactly one evaluation on the wholly fresh v7 calibration-B split; it did not
+establish heldout compression.
+
+V7 supplied 64 calibration-B prompts, 10,881 supervised positions, 10,945
+valid positions, and all four required length buckets. The exclusive
+calibration-B claim was consumed before model evaluation. The candidate then
+failed the direct, feed-forward, and aggregate top-1 gates:
+
+| Fresh-v7 calibration-B metric | Result | Gate |
+|---|---:|---:|
+| Block-delta NRMSE | `0.071745` | \(\le 0.02\) |
+| Block-delta cosine | `0.997428` | \(\ge 0.999\) |
+| Per-prompt block-NRMSE p50 / p90 / worst | `0.074881` / `0.082763` / `0.085971` | diagnostic |
+| Feed-forward-delta NRMSE / cosine | `0.064834` / `0.997896` | \(\le 0.02\) / \(\ge 0.999\) |
+| Attention-delta NRMSE / cosine | \(8.4842\times10^{-7}\) / 0.9999999999996503 | pass |
+| Delta NLL/token | `-0.003317` | pass |
+| Teacher KL/token | `0.016452` | pass |
+| Per-prompt p90 absolute delta NLL | `0.042397` | pass |
+| Aggregate / p10 per-prompt top-1 | `0.935116` / `0.911765` | fail / pass |
+
+The unchanged attention branch remaining at numerical precision localizes the
+failure to MLP selection/refit rather than to the format-5 parent or attention
+executor. Relative to A, aggregate block NRMSE grew by about 4.7 times and
+feed-forward NRMSE grew by about 4.7 times. The A selection and down refit were
+both measured on the same calibration rows, so this is an A-to-B
+generalization gap, not evidence that the fresh B gate was too strict.
+
+The candidate's arithmetic savings were real properties of the proposed
+shape: 5,573,632 to 4,590,592 layer parameters removes 983,040, or 17.6373% of
+the whole layer. Its MLP weight matmuls fall from 3,932,160 to 2,949,120 MACs
+per valid token, a 25% MLP-linear reduction. Including unchanged attention,
+the exact v7 stream accounting was 63,180,451,840 source MACs versus
+52,421,079,040 candidate MACs, a 17.0296% reduction. Because fidelity failed,
+these remain hypothetical candidate savings: parameter reduction,
+analytic-MAC reduction, latency, kernel speed, model-level promotion, and
+general compression viability are all scientifically unsupported. Validation
+was not tokenized or evaluated, and the reserved test remained sealed.
+
+The correct next rung is not to continue downward to width 1,024 or tune a new
+candidate on consumed v7 B. A fresh corpus should split calibration work into
+fit and guard roles, or use cross-fitting, so unit selection and down refit
+must generalize before any heldout split opens. Only then should a gentler
+width such as 1,792 be preregistered and evaluated once on a wholly new B
+split. Width 1,920 is another possible design point, but v7 did not authorize
+either width; the next experiment must fix selection/refit generalization
+rather than merely shrink less. See the
+[`structured executor protocol`](structured-layer-executor.md#compression-ladder).
+
 ## What “Fisher” means here
 
 For sequence \(i\), the score is summed next-token negative log likelihood
@@ -2076,9 +2192,14 @@ that more than the single rotated direction can be removed. Its required
 rank-639 endpoint control then failed on an absolute float32 roundoff threshold
 before validation, so the result remains unvalidated and removes only 4/640
 dimensions at best. No viable graph executor can yet replace this layer range.
-The full-width single-layer CLI now provides the next isolated generator
-protocol, but it has no recorded Gemma run and therefore changes none of those
-conclusions.
+The format-5 source-shaped layer-4 executor has now passed fresh calibration B
+and validation at near-numerical precision, so source-independent translation
+of this one full-width prefill layer is established for the recorded revision
+and length range. It is still 1x source shape and compute. The first real width
+intervention, 2048-to-1536 MLP compression, passed its same-data A preflight
+but failed fresh-v7 B direct, feed-forward, and aggregate top-1 gates.
+Compression validation and test therefore remained sealed, so no compressed
+single-layer or multi-layer replacement is authorized.
 
 The next scientific work is:
 
@@ -2099,11 +2220,11 @@ The next scientific work is:
    its now-bitwise rank-639 endpoint, and preregister both mean and minimum
    canonical-correlation stability gates; require rank 636 or lower to validate
    before treating merged coordinates as a generator target;
-7. run the full-width layer-4 protocol with its combined
-   full-quadratic empirical-score metric and downstream CE/KL objective,
-   exact-boundary replay, and storage-matched same-position control; treat a
-   one-seed rank-640 pass as diagnostic only, then require predeclared
-   multi-seed replication before attempting another rank reduction;
+7. on a wholly fresh corpus, separate MLP unit selection/down refit from an
+   internal A guard or cross-fit them; preregister a gentler retained width
+   such as 1792 only after that guard passes, then open one new B exactly once.
+   Do not tune on consumed v7 B or continue to width 1024 after the 1536
+   rejection;
 8. require local boundary, internal modal, end-to-end NLL, sequence-length,
    causal-leakage, fallback, storage, arithmetic, and latency gates before
    replacing that block in the mixed runtime;
