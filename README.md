@@ -727,6 +727,40 @@ needs a new family-disjoint protocol. The
 records the complete curve, numerical-control postmortem, strict predecessor
 binding, and claim boundary.
 
+The next implemented rung removes compression as a confound and asks whether
+one source-independent graph can reproduce a single Gemma layer at the full
+640-wide residual boundary:
+
+```bash
+fisher-graph-gemma-full-width-layer \
+  --model-id google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --layer-index 4 \
+  --prompt-splits /absolute/path/full-width-prompts.json \
+  --family-manifest /absolute/path/full-width-families.json \
+  --max-length 256 \
+  --device cpu \
+  --dtype float32
+```
+
+Calibration A computes the complete width-by-width, width-pooled empirical
+ground-truth CE score-sensitivity matrix and trains both a small causal
+transformer and a storage-matched attention-disabled control with its full
+quadratic boundary metric plus suffix CE/KL distillation. This is not the
+expected model Fisher and does not contain cross-position Fisher blocks.
+Calibration B must pass behavior, local block-delta, exact native-boundary
+replay, source-call, structural, and resource gates before validation is
+tokenized; test remains hash-only. The prompt and family files are
+intentionally not bundled because every real run needs a newly frozen,
+representative, cross-role-family-disjoint corpus. No qualifying live Gemma
+result is claimed yet. Candidate/source ratios are live-run diagnostics; the
+self-contained loader rebuilds candidate counts and source denominators from
+recorded token lengths plus an exact source-geometry manifest. It does not
+reload Gemma to remeasure that manifest, so it does not promote the ratios
+into parameter- or MAC-reduction claims. See the
+[`full protocol`](docs/gemma3-270m.md#run-the-full-width-single-layer-replacement).
+
 The ignored outputs contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded
 transport/JVP/factor/executor state or scalar evaluation curves, and
@@ -786,6 +820,9 @@ python -m fisher_graph.gemma3_projection_ladder_experiment \
   --gated-artifact \
     .local-runs/google--gemma-3-270m/layers-4-6-gated-executor.pt \
   --prompt-splits examples/gemma3_projection_ladder_prompts.json
+python -m fisher_graph.gemma3_full_width_single_layer_experiment \
+  --prompt-splits /absolute/path/full-width-prompts.json \
+  --family-manifest /absolute/path/full-width-families.json
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```

@@ -1658,6 +1658,160 @@ The tensor artifact contains derived moments, the merged codec, scalar
 evaluation ledgers, and provenance, but no pretrained weights, prompt text, or
 tokenizer state.
 
+## Run the full-width single-layer replacement
+
+The next generator rung deliberately returns to the complete 640-dimensional
+residual boundary and replaces only one native layer. It therefore separates
+two questions that the three-layer rotated-span run combined:
+
+1. can a source-independent graph generate a behaviorally faithful Gemma
+   layer output; and
+2. after that works, how many output modes can be removed?
+
+This command addresses only the first question. The default target is layer 4.
+The student path is
+
+```text
+native layers 0-3 -> full-width mini-transformer -> native layers 5-17
+```
+
+and a forward-hook audit requires zero calls to native layer 4. The student is
+a two-block, width-128 causal transformer whose output is decoded through the
+exact 640-by-640 identity. The identity is structural rather than learned:
+`retained_rank == residual_width == 640`, and the strict loader rejects any
+reduced or non-identity decoder.
+
+The runner also trains a storage-matched same-position control. It has the
+same parameter shapes and initialization, but every attention branch output
+is zeroed before it can affect the boundary. The dense PyTorch reference still
+issues those attention kernels. A causal-student pass alongside a
+same-position-control failure is therefore recorded only as a
+**selection-threshold separation**. It is not, by itself, identification of
+the causal edges' value: the two students are optimized independently, and
+the disabled attention tensors occupy storage without supplying active
+trainable capacity. This control is neither a latency baseline nor a
+parameter-matched active-compute baseline.
+
+The current student is a global-causal, full-prefill graph. It has no KV-cache
+input or output, supports no incremental decode, and does not reproduce
+Gemma's local/global RoPE policies. Layer 4 is natively sliding-attention, so
+the student's visibility is compatible with that layer only when every
+evaluated sequence is no longer than the checkpoint's configured sliding
+window. Even in that range, visibility compatibility is not RoPE equivalence.
+The present protocol is consequently limited to the recorded zero-offset
+prefill inputs. It makes no claim for longer contexts, nonzero decode offsets,
+gapped positions, chunked prefill, or cached generation.
+
+The run requires a new prompt file and a separate family manifest:
+
+```bash
+fisher-graph-gemma-full-width-layer \
+  --model-id google/gemma-3-270m \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --local-files-only \
+  --layer-index 4 \
+  --prompt-splits /absolute/path/full-width-prompts.json \
+  --family-manifest /absolute/path/full-width-families.json \
+  --max-length 256 \
+  --hidden-width 128 \
+  --executor-layers 2 \
+  --head-count 4 \
+  --feed-forward-width 512 \
+  --device cpu \
+  --dtype float32
+```
+
+Prompt files use the existing strict
+`fisher_graph.gemma3_prompt_splits` format and must declare scientific status
+`full_width_single_layer_fresh_a_b_validation_test_hash_only`. Calibration A
+requires at least 256 prompts, 50,000 supervised token positions, 10,000 valid
+rows in the Fisher accumulation, and examples in all four declared valid-token
+length buckets: 1–32, 33–64, 65–128, and 129 or more. Calibration B and
+validation each require at least 64 prompts, 5,000 supervised token positions,
+and all four length buckets. The reserved test requires at least 64 prompts
+but remains parse-and-hash-only; model-token counts and length-bucket
+eligibility are not called verified until the final locked test opening. The
+runner rejects exact prompt reuse from tracked Gemma fixtures before model
+loading or tokenization, and every tokenized role must also have disjoint
+padding-independent content hashes. The current stream provenance does not
+retain pre-truncation token lengths, so it makes no truncation-rate claim;
+corpus construction must keep that as a separate authenticated audit.
+
+The family file has schema
+`fisher_graph.gemma3_prompt_family_manifest`, format version 1, status
+`full_width_single_layer_family_disjoint_roles`, and four arrays named
+`calibration_a`, `calibration_b`, `validation`, and `test`. Each array assigns
+one family ID to the corresponding prompt. Families may repeat within a role
+but cannot occur in two roles. This makes semantic split ownership explicit
+instead of relying only on exact text hashes.
+
+Calibration A owns:
+
+- native input/output boundary capture;
+- a full 640-by-640 width-pooled empirical ground-truth CE
+  score-sensitivity estimate;
+- per-coordinate block-delta scales and a PSD training metric derived from
+  that complete matrix;
+- full-quadratic-metric local warm-up;
+- fixed-step downstream CE and native-teacher-KL distillation.
+
+More precisely, for a valid boundary row \(t\), the command differentiates the
+sum of ground-truth cross-entropies at the preselected supervised positions
+with respect to that row, obtaining \(g_t\), and accumulates
+
+\[
+F_{\mathrm{row}}
+=
+\frac{1}{N}\sum_{t=1}^{N}g_tg_t^{\mathsf T}.
+\]
+
+This is a complete matrix over the 640 residual coordinates, but it is
+**not** the expected model Fisher, does not sample labels from the model, and
+does not retain cross-position Fisher blocks. The training loss does not
+silently reduce it to its diagonal. After standardizing delta error by
+calibration-A per-coordinate RMS, the implementation forms a symmetrized,
+eigenvalue-floored, mean-eigenvalue-one PSD metric from the full matrix and
+uses the complete quadratic form \(e^{\mathsf T}Me/640\) on the deterministic
+supervised training rows selected for suffix distillation. Ordinary
+scale-normalized MSE still covers every valid row. This bounds the dense
+quadratic's training cost without diagonalizing the objective. The diagonal
+and its trace summaries remain diagnostics only.
+
+Calibration B evaluates both frozen students, exact native-boundary replay,
+and an identity layer skip. The full causal student must pass all five
+behavior gates, block-delta NRMSE and cosine gates, the source-call audit,
+exact replay, structural causality/padding probes, and coefficient/MAC limits
+before validation is tokenized. Validation independently repeats the
+behavior, local boundary, replay, source-call, and resource gates. Test
+remains parse-and-hash-only in every outcome.
+
+The current protocol trains one declared seed. Calibration-B and validation
+passes from that seed are useful diagnostics, but a single-seed result cannot
+authorize promotion into progressive model compilation, reserved-test
+evaluation, or a general fidelity claim. Promotion requires a separately
+predeclared multi-seed replication rule and a fresh locked protocol; the
+single-seed artifact must keep that limitation explicit.
+
+The paired weights-only **experiment artifact** stores both source-free
+students, the empirical score-sensitivity matrix, its full training metric,
+fixed training statistics, metric ledgers, hashes, and provenance. It stores
+no pretrained Gemma weights, optimizer state, prompt text, tokenizer state,
+teacher logits, or captured boundary tensors. Its file size is not the
+deployed-candidate storage cost. Coefficient and analytic-MAC ratios describe
+one candidate's logical runtime state and operation count; they exclude the
+other experimental control and analysis tensors. A storage or deployment
+claim requires exporting and measuring a selected-candidate-only artifact.
+The loader reconstructs candidate logical/dense-prefix counts from the
+recorded valid lengths and tokenization batches. It also recomputes source
+parameter and analytic-MAC denominators from a hashed manifest of exact
+parameter shapes, linear-weight shapes, attention geometry, and the same
+lengths. It does not reload Gemma to remeasure that saved geometry.
+Consequently both parameter- and analytic-MAC-reduction scientific status
+fields remain false even when the live-run diagnostic ratios are below one.
+No qualifying Gemma result is recorded; the committed tests exercise
+train/gate/save/strict-load mechanics against the toy adapter and the real
+Gemma adapter ABI against a fake Gemma module.
+
 ## Useful command variations
 
 ```bash
@@ -1795,6 +1949,21 @@ and arithmetically checked offline, not independently reproduced without
 loading the source model. The artifact contains executor state but no source
 weights, prompt text, tokenizer state, or reserved-test evaluation.
 
+The full-width single-layer experiment artifact reconstructs the causal
+student and its storage-matched attention-disabled control, requires exact
+identity decoders at the complete residual rank, and authenticates each
+execution mode in its fingerprint. It saves the calibration-A width-pooled
+empirical ground-truth CE score-sensitivity matrix and the derived full
+quadratic training metric, but not training boundaries, teacher logits,
+prompts, tokenizer state, optimizer state, or source-model weights. Its loader
+recomputes the token-stream contracts, empirical matrix and training metric,
+behavior/direct aggregates, executor MACs from recorded batching, source
+parameter/MAC denominators from the saved geometry manifest, resource ratios,
+source-call audits, replay gates, selection and conditional-validation
+decisions, scientific status, and the sibling JSON report. It rejects
+causal-control, tensor, accounting, gate, or status tampering. It is an audit
+bundle, not the selected candidate's minimal deployment artifact.
+
 The default `.local-runs/` location is ignored. Derived Fisher artifacts may
 be published intentionally later, but they should pass provenance and
 validation review first.
@@ -1907,6 +2076,9 @@ that more than the single rotated direction can be removed. Its required
 rank-639 endpoint control then failed on an absolute float32 roundoff threshold
 before validation, so the result remains unvalidated and removes only 4/640
 dimensions at best. No viable graph executor can yet replace this layer range.
+The full-width single-layer CLI now provides the next isolated generator
+protocol, but it has no recorded Gemma run and therefore changes none of those
+conclusions.
 
 The next scientific work is:
 
@@ -1927,9 +2099,11 @@ The next scientific work is:
    its now-bitwise rank-639 endpoint, and preregister both mean and minimum
    canonical-correlation stability gates; require rank 636 or lower to validate
    before treating merged coordinates as a generator target;
-7. fit with a combined local and downstream-logit or KL objective, include an
-   explicit same-position-only baseline, and attribute any improvement
-   specifically to positive-lag routing before widening expert capacity;
+7. run the full-width layer-4 protocol with its combined
+   full-quadratic empirical-score metric and downstream CE/KL objective,
+   exact-boundary replay, and storage-matched same-position control; treat a
+   one-seed rank-640 pass as diagnostic only, then require predeclared
+   multi-seed replication before attempting another rank reduction;
 8. require local boundary, internal modal, end-to-end NLL, sequence-length,
    causal-leakage, fallback, storage, arithmetic, and latency gates before
    replacing that block in the mixed runtime;

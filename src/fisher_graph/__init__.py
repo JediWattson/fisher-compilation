@@ -151,6 +151,10 @@ from .full_span_accounting import (
     conditional_causal_graph_accounting,
     native_transformer_span_accounting,
 )
+from .full_width_single_layer_executor import (
+    FullWidthSingleLayerExecutor,
+    FullWidthSingleLayerExecutorConfig,
+)
 from .fused_executor import (
     FusedCompletedModalLayer,
     FusedModalLayerConfig,
@@ -433,6 +437,8 @@ __all__ = [
     "FisherSubspaceStability",
     "FisherSubspaceStabilityPoint",
     "FullWidthModalBasis",
+    "FullWidthSingleLayerExecutor",
+    "FullWidthSingleLayerExecutorConfig",
     "FrozenModalTransport",
     "FrozenModalTransportEvaluation",
     "FrozenCausalModalTransport",

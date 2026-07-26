@@ -1205,11 +1205,45 @@ suite before broadening scope.
   compute scheduling on the fixed toy format, not content-conditioned
   routing. Exact metrics and hashes are in
   [`conditional-computation.md`](conditional-computation.md).
-- Remaining: try a more expressive same-position/nonlinear generator on wholly
-  new family-disjoint B/validation/test prompts. Add an exact native-boundary
-  replay control, retain the genuine trimmed-padding probe now used by future
-  runs, and include a parameter-matched same-position-only baseline so
-  positive-lag benefit is identifiable.
+- Implemented: a full-width single-layer generator protocol that removes
+  rank-selection as a confound. It fits a source-free mini-transformer and a
+  storage-matched attention-output-disabled control on calibration A, computes
+  and saves a full-width, width-pooled empirical ground-truth CE
+  score-sensitivity matrix—not an expected model Fisher. The local objective
+  uses a scaled, PSD-floored version of the complete quadratic form rather
+  than diagonal weights, then adds suffix CE/KL distillation. The protocol
+  audits block-delta NRMSE/cosine, exact native-boundary replay, real and
+  synthetic padding, causality, and zero source-layer calls. It keeps
+  validation unopened unless the causal student passes calibration B, then
+  repeats the local, behavioral, replay, source-call, and resource gates. A
+  separate family manifest requires cross-role family disjointness; tracked
+  prior prompt hashes are excluded before model load. The strong live-data
+  contract requires 256 A prompts, 50,000 A supervised positions, 10,000
+  Fisher rows, 64 prompts and 5,000 supervised positions in each tokenized
+  held-out role, and four populated length buckets. Test stays hash-only until
+  the final locked opening.
+- The implemented candidate remains global-causal, prefill-only, cache-free,
+  and without Gemma RoPE. Its layer-4 sliding visibility is compatible only
+  while maximum evaluated length does not exceed the checkpoint window; it
+  does not support cached decode, nonzero offsets, or longer-context
+  replacement. A full-causal pass with a separately trained attention-disabled
+  failure is only a selection-threshold separation, not causal-edge
+  identification.
+- The strict experiment artifact contains both executors plus empirical
+  score-sensitivity and audit state, but no source weights, prompts, teacher
+  logits, or captured boundaries. Candidate coefficient/MAC ratios describe
+  one logical deployed executor, not the paired experiment file. A storage
+  claim requires a selected-candidate-only export and byte measurement; the
+  self-contained loader rebuilds source denominators from exact saved
+  parameter/linear/attention geometry plus recorded valid lengths, but does
+  not reload the source checkpoint to remeasure that manifest. Reduction
+  scientific-status fields therefore remain false.
+- Remaining: run that protocol on a larger representative and
+  length-stratified wholly new corpus. No live Gemma result is recorded yet;
+  the committed synthetic test covers train, gate, fail-closed validation,
+  save, tamper rejection, and strict loading. The current one-seed protocol
+  cannot authorize promotion even if it passes; progressive compilation
+  requires a separately predeclared multi-seed replication rule.
 - Remaining: only after a candidate passes local and behavioral gates, fit and
   authenticate one joint 270M replacement block while leaving the remainder
   original; then require internal-trajectory, variable-length, causal,

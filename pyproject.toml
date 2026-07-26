@@ -48,6 +48,7 @@ fisher-graph-gemma-projection-ladder = "fisher_graph.gemma3_projection_ladder_ex
 fisher-graph-gemma-codimension-rotation = "fisher_graph.gemma3_codimension_rotation_experiment:main"
 fisher-graph-gemma-rotated-span-executor = "fisher_graph.gemma3_rotated_span_executor_experiment:main"
 fisher-graph-gemma-merged-supermodes = "fisher_graph.gemma3_merged_supermode_experiment:main"
+fisher-graph-gemma-full-width-layer = "fisher_graph.gemma3_full_width_single_layer_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 
