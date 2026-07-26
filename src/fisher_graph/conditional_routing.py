@@ -34,6 +34,7 @@ from torch.nn import functional as F
 _TABLE_KIND = "fisher_graph.conditional_mode_table"
 _ROUTER_KIND = "fisher_graph.pointwise_causal_router"
 _PLAN_KIND = "fisher_graph.conditional_modal_routing_plan"
+_TOTAL_NEED_TEACHER_KIND = "fisher_graph.total_need_route_teacher"
 _FORMAT_VERSION = 1
 
 
@@ -133,6 +134,107 @@ def _normalized_need_rows(rows: Tensor) -> Tensor:
     return torch.where(totals > 0, rows / totals.clamp_min(1e-300), rows)
 
 
+def linear_codec_fisher_damage_profiles(
+    activation_deltas: Tensor,
+    output_score_gradients: Tensor,
+    *,
+    encoder: Tensor,
+    decoder: Tensor,
+    valid_mask: Tensor | None = None,
+) -> Tensor:
+    """Estimate per-mode first-order damage for a linear activation codec.
+
+    A linear codec represents an activation delta ``delta`` with coordinates
+    ``c = delta @ encoder`` and decodes them with
+    ``c @ decoder.T``.  Suppressing mode ``j`` therefore changes the decoded
+    activation by ``-c_j * decoder[:, j]``.  For output-score gradient ``g``,
+    this function reports the corresponding squared first-order score change
+
+    ``(c_j * (g @ decoder[:, j])) ** 2``.
+
+    ``encoder`` and ``decoder`` both have shape
+    ``[activation width, modes]``.  They need not be equal, orthogonal, or
+    square, which makes this definition suitable for generalized and oblique
+    codecs.  Without ``valid_mask``, the result preserves the input leading
+    dimensions and has shape ``[..., modes]``.  With a boolean
+    ``valid_mask`` matching those leading dimensions, selected rows are
+    returned flattened in deterministic row-major order with shape
+    ``[selected rows, modes]``.
+
+    This is an independent-mode, first-order removal estimate.  It does not
+    include interactions between simultaneously removed modes.
+    """
+
+    if not isinstance(activation_deltas, Tensor):
+        raise TypeError("activation_deltas must be a Tensor")
+    if not isinstance(output_score_gradients, Tensor):
+        raise TypeError("output_score_gradients must be a Tensor")
+    if (
+        activation_deltas.shape != output_score_gradients.shape
+        or activation_deltas.ndim < 2
+        or activation_deltas.shape[-1] == 0
+    ):
+        raise ValueError(
+            "activation deltas and score gradients must share shape "
+            "[..., nonzero width]"
+        )
+    for label, value in (
+        ("activation_deltas", activation_deltas),
+        ("output_score_gradients", output_score_gradients),
+        ("encoder", encoder),
+        ("decoder", decoder),
+    ):
+        if not isinstance(value, Tensor) or not value.is_floating_point():
+            raise ValueError(f"{label} must be a floating Tensor")
+        if not torch.isfinite(value).all():
+            raise ValueError(f"{label} must be finite")
+    if (
+        activation_deltas.device != output_score_gradients.device
+        or activation_deltas.dtype != output_score_gradients.dtype
+    ):
+        raise ValueError(
+            "activation deltas and score gradients must share dtype and device"
+        )
+
+    width = activation_deltas.shape[-1]
+    if (
+        encoder.ndim != 2
+        or encoder.shape[0] != width
+        or encoder.shape[1] == 0
+    ):
+        raise ValueError(
+            "encoder must have shape [activation width, nonzero modes]"
+        )
+    if decoder.shape != encoder.shape:
+        raise ValueError("decoder must have the same shape as encoder")
+
+    compute_dtype = (
+        torch.float32
+        if activation_deltas.dtype in (torch.float16, torch.bfloat16)
+        else activation_deltas.dtype
+    )
+    deltas = activation_deltas.to(dtype=compute_dtype)
+    gradients = output_score_gradients.to(dtype=compute_dtype)
+    encoding = encoder.to(device=deltas.device, dtype=compute_dtype)
+    decoding = decoder.to(device=deltas.device, dtype=compute_dtype)
+    coordinates = deltas @ encoding
+    output_sensitivities = gradients @ decoding
+    profiles = (coordinates * output_sensitivities).square()
+
+    if valid_mask is None:
+        return profiles
+    selection = _selection_mask(
+        activation_deltas.shape[:-1],
+        valid_mask,
+        label="valid_mask",
+    )
+    if not selection.any():
+        raise ValueError("activation_deltas has no selected token rows")
+    return profiles.reshape(-1, profiles.shape[-1])[
+        selection.to(device=profiles.device)
+    ]
+
+
 def fisher_projection_damage_profiles(
     output_activations: Tensor,
     output_score_gradients: Tensor,
@@ -206,9 +308,12 @@ def fisher_projection_damage_profiles(
         device=activations.device,
         dtype=compute_dtype,
     )
-    displacement = (activations - modal_center) @ modal_vectors
-    score_sensitivity = gradients @ modal_vectors
-    return (displacement * score_sensitivity).square()
+    return linear_codec_fisher_damage_profiles(
+        activations - modal_center,
+        gradients,
+        encoder=modal_vectors,
+        decoder=modal_vectors,
+    )
 
 
 def _stable_descending_indices(values: Tensor) -> tuple[int, ...]:
@@ -433,7 +538,12 @@ def cluster_fisher_need_profiles(
             break
         centroids = torch.stack(
             [
-                profiles[assignments == route].mean(dim=0)
+                _normalized_need_rows(
+                    profiles[assignments == route].mean(
+                        dim=0,
+                        keepdim=True,
+                    )
+                )[0]
                 for route in range(routes)
             ]
         )
@@ -499,7 +609,12 @@ def partition_fisher_need_profiles_by_total_need(
         cursor += count
     centroids = torch.stack(
         [
-            normalized[assignments == route].mean(dim=0)
+            _normalized_need_rows(
+                normalized[assignments == route].mean(
+                    dim=0,
+                    keepdim=True,
+                )
+            )[0]
             for route in range(routes)
         ]
     )
@@ -511,6 +626,253 @@ def partition_fisher_need_profiles_by_total_need(
         centroids=centroids,
         selected_flat_indices=selected_indices,
         route_counts=tuple(counts),
+        iterations=1,
+        objective=objective,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TotalNeedRouteTeacher:
+    """Portable A-fitted cutpoints for total Fisher-need route labels.
+
+    The teacher is useful as an unavailable-at-inference ceiling on fresh
+    data.  It sees each token's Fisher need, sums over modes, and applies only
+    the thresholds fitted on calibration A.  It never refits quantiles on the
+    evaluation split.
+    """
+
+    thresholds: Tensor
+    fit_observations: int
+    fit_quantiles: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.thresholds, Tensor)
+            or self.thresholds.device.type != "cpu"
+            or self.thresholds.dtype != torch.float64
+            or self.thresholds.ndim != 1
+            or not torch.isfinite(self.thresholds).all()
+        ):
+            raise ValueError(
+                "thresholds must be a finite CPU float64 vector"
+            )
+        if (
+            self.thresholds.numel() > 1
+            and (self.thresholds[1:] < self.thresholds[:-1]).any()
+        ):
+            raise ValueError("thresholds must be nondecreasing")
+        _require_positive_int(
+            self.fit_observations,
+            label="fit_observations",
+        )
+        if (
+            type(self.fit_quantiles) is not tuple
+            or len(self.fit_quantiles) != self.thresholds.numel()
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in self.fit_quantiles
+            )
+            or tuple(sorted(set(float(value) for value in self.fit_quantiles)))
+            != tuple(float(value) for value in self.fit_quantiles)
+            or any(not 0 < float(value) < 1 for value in self.fit_quantiles)
+        ):
+            raise ValueError(
+                "fit_quantiles must be unique ascending values in (0, 1)"
+            )
+        object.__setattr__(
+            self,
+            "thresholds",
+            self.thresholds.detach().clone(),
+        )
+        object.__setattr__(
+            self,
+            "fit_quantiles",
+            tuple(float(value) for value in self.fit_quantiles),
+        )
+
+    @property
+    def routes(self) -> int:
+        return self.thresholds.numel() + 1
+
+    def assign(
+        self,
+        need_profiles: Tensor,
+        *,
+        valid_mask: Tensor | None = None,
+        invalid_route: int = 0,
+    ) -> Tensor:
+        """Apply frozen thresholds and return a leading-shape route grid."""
+
+        if (
+            type(invalid_route) is not int
+            or not 0 <= invalid_route < self.routes
+        ):
+            raise ValueError("invalid_route exceeds the teacher route range")
+        rows = _finite_float64_rows(
+            need_profiles,
+            label="need_profiles",
+            nonnegative=True,
+        )
+        selection = _selection_mask(
+            need_profiles.shape[:-1],
+            valid_mask,
+            label="valid_mask",
+        )
+        output = torch.full(
+            (rows.shape[0],),
+            invalid_route,
+            dtype=torch.int64,
+        )
+        selected = rows[selection]
+        if selected.shape[0] == 0:
+            raise ValueError("need_profiles has no selected token rows")
+        routes = torch.bucketize(
+            selected.sum(dim=1),
+            self.thresholds,
+            right=True,
+        )
+        output[selection] = routes
+        return output.reshape(need_profiles.shape[:-1])
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "artifact_kind": _TOTAL_NEED_TEACHER_KIND,
+            "format_version": _FORMAT_VERSION,
+            "thresholds": self.thresholds.detach().clone(),
+            "fit_observations": self.fit_observations,
+            "fit_quantiles": list(self.fit_quantiles),
+        }
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        state: Mapping[str, object],
+    ) -> TotalNeedRouteTeacher:
+        expected = {
+            "artifact_kind",
+            "format_version",
+            "thresholds",
+            "fit_observations",
+            "fit_quantiles",
+        }
+        if not isinstance(state, Mapping) or set(state) != expected:
+            raise ValueError("total-need route teacher fields are invalid")
+        if state["artifact_kind"] != _TOTAL_NEED_TEACHER_KIND:
+            raise ValueError("unsupported total-need route teacher kind")
+        if (
+            type(state["format_version"]) is not int
+            or state["format_version"] != _FORMAT_VERSION
+        ):
+            raise ValueError("unsupported total-need route teacher version")
+        return cls(
+            thresholds=state["thresholds"],  # type: ignore[arg-type]
+            fit_observations=state["fit_observations"],  # type: ignore[arg-type]
+            fit_quantiles=tuple(state["fit_quantiles"]),  # type: ignore[arg-type]
+        )
+
+
+def fit_total_need_route_teacher(
+    need_profiles: Tensor,
+    *,
+    route_count: int,
+    valid_mask: Tensor | None = None,
+    quantiles: Sequence[float] | None = None,
+) -> TotalNeedRouteTeacher:
+    """Fit deterministic caller-declared total-need cutpoints on A only."""
+
+    routes = _require_positive_int(route_count, label="route_count")
+    rows, _ = _selected_float64_rows(
+        need_profiles,
+        label="need_profiles",
+        valid_mask=valid_mask,
+        nonnegative=True,
+    )
+    if routes > rows.shape[0]:
+        raise ValueError("route_count cannot exceed selected token rows")
+    if quantiles is None:
+        fitted_quantiles = tuple(
+            index / routes for index in range(1, routes)
+        )
+    else:
+        if not isinstance(quantiles, Sequence) or isinstance(
+            quantiles,
+            (str, bytes),
+        ):
+            raise TypeError("quantiles must be a numeric sequence")
+        fitted_quantiles = tuple(float(value) for value in quantiles)
+        if (
+            len(fitted_quantiles) != routes - 1
+            or tuple(sorted(set(fitted_quantiles))) != fitted_quantiles
+            or any(not math.isfinite(value) or not 0 < value < 1 for value in fitted_quantiles)
+        ):
+            raise ValueError(
+                "quantiles must contain route_count - 1 unique ascending "
+                "values in (0, 1)"
+            )
+    if routes == 1:
+        thresholds = torch.empty(0, dtype=torch.float64)
+    else:
+        totals = rows.sum(dim=1)
+        thresholds = torch.quantile(
+            totals,
+            torch.tensor(fitted_quantiles, dtype=torch.float64),
+            interpolation="midpoint",
+        )
+    return TotalNeedRouteTeacher(
+        thresholds=thresholds,
+        fit_observations=rows.shape[0],
+        fit_quantiles=fitted_quantiles,
+    )
+
+
+def partition_fisher_need_profiles_by_teacher(
+    need_profiles: Tensor,
+    teacher: TotalNeedRouteTeacher,
+    *,
+    valid_mask: Tensor | None = None,
+) -> FisherNeedClustering:
+    """Build a deterministic A partition from frozen total-need cutpoints."""
+
+    if not isinstance(teacher, TotalNeedRouteTeacher):
+        raise TypeError("teacher must be a TotalNeedRouteTeacher")
+    rows, selected_indices = _selected_float64_rows(
+        need_profiles,
+        label="need_profiles",
+        valid_mask=valid_mask,
+        nonnegative=True,
+    )
+    assignments = torch.bucketize(
+        rows.sum(dim=1),
+        teacher.thresholds,
+        right=True,
+    )
+    counts = torch.bincount(assignments, minlength=teacher.routes)
+    if (counts == 0).any():
+        raise ValueError(
+            "teacher cutpoints leave an empty route on the partition data"
+        )
+    normalized = _normalized_need_rows(rows)
+    centroids = torch.stack(
+        [
+            _normalized_need_rows(
+                normalized[assignments == route].mean(
+                    dim=0,
+                    keepdim=True,
+                )
+            )[0]
+            for route in range(teacher.routes)
+        ]
+    )
+    objective = float(
+        (normalized - centroids[assignments]).square().sum().item()
+    )
+    return FisherNeedClustering(
+        assignments=assignments,
+        centroids=centroids,
+        selected_flat_indices=selected_indices,
+        route_counts=tuple(int(value) for value in counts.tolist()),
         iterations=1,
         objective=objective,
     )
@@ -797,7 +1159,9 @@ def build_conditional_mode_table(
     centroids = torch.empty_like(clustering.centroids)
     for route in range(clustering.routes):
         route_rows = normalized[clustering.assignments == route]
-        centroid = route_rows.mean(dim=0)
+        centroid = _normalized_need_rows(
+            route_rows.mean(dim=0, keepdim=True)
+        )[0]
         centroids[route] = centroid
         masks[route] = common_mask
         route_mean_need = rows[clustering.assignments == route].mean(dim=0)
@@ -1376,6 +1740,7 @@ def fit_conditional_modal_routing(
     route_budgets: int | Sequence[int],
     common_modes: int = 0,
     valid_mask: Tensor | None = None,
+    sample_weights: Tensor | None = None,
     max_iterations: int = 100,
     ridge: float = 1e-3,
     route_assignment: str = "pattern_clusters",
@@ -1433,6 +1798,7 @@ def fit_conditional_modal_routing(
         teacher_full,
         route_count=route_count,
         valid_mask=valid_mask,
+        sample_weights=sample_weights,
         ridge=ridge,
     )
     plan = ConditionalModalRoutingPlan(
@@ -1473,6 +1839,7 @@ __all__ = [
     "FisherNeedClustering",
     "PointwiseCausalRouter",
     "RouterClassificationMetrics",
+    "TotalNeedRouteTeacher",
     "assign_need_profiles_to_routes",
     "build_conditional_mode_table",
     "cluster_fisher_need_profiles",
@@ -1480,5 +1847,8 @@ __all__ = [
     "fisher_projection_damage_profiles",
     "fit_conditional_modal_routing",
     "fit_pointwise_causal_router",
+    "fit_total_need_route_teacher",
+    "linear_codec_fisher_damage_profiles",
     "partition_fisher_need_profiles_by_total_need",
+    "partition_fisher_need_profiles_by_teacher",
 ]

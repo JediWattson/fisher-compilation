@@ -28,6 +28,10 @@ gemma = [
 [project.scripts]
 fisher-graph-experiment = "fisher_graph.associative_experiment:main"
 fisher-graph-conditional-rank = "fisher_graph.associative_conditional_rank_experiment:main"
+fisher-graph-variable-associative-train = "fisher_graph.variable_associative_training:main"
+fisher-graph-variable-conditional = "fisher_graph.variable_conditional_experiment:main"
+fisher-graph-variable-full-span = "fisher_graph.variable_full_span_experiment:main"
+fisher-graph-variable-static-full-span = "fisher_graph.variable_static_full_span_experiment:main"
 fisher-graph-intervene = "fisher_graph.intervention_experiment:main"
 fisher-graph-modal-executor = "fisher_graph.modal_executor_experiment:main"
 fisher-graph-modal-completion = "fisher_graph.modal_completion_experiment:main"

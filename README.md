@@ -22,6 +22,15 @@ This repository now contains a complete reference run:
 - a Fisher-need conditional-budget routing milestone with route-specific mode
   masks, hard token grouping, static/position/shuffle controls, and an
   explicit native-output-oracle boundary;
+- a variable-layout, variable-length routing gate plus a source-free
+  hard-routed block-executor interface that is deliberately left unfitted when
+  the gate fails;
+- a query-sparse full-transformer-span gate with causal-prefix routing,
+  pointwise/metadata/shuffle controls, exact native-versus-graph accounting,
+  and fail-closed model-fitting escalation;
+- a source-independent static mini-transformer that replaces that complete
+  three-block span behind a fixed rank-14 Fisher decoder, with multi-seed
+  selection, zero-source-call audits, and ideal-versus-dense accounting;
 - a position-conditioned modal bottleneck and standalone causal modal executor;
 - causal conditional completion of discarded boundary modes;
 - independently compiled layer-0 and layer-1 executors composed into a frozen
@@ -90,16 +99,72 @@ spend a different modal budget and route-specific mode subset on each token.
 Its first rung deliberately projects a native layer output, so it can isolate
 conditional representation value before a specialist generator bank is
 trained; it is not yet a layer replacement or a FLOP/latency result. The
-strict-loaded exploratory layer-0 run retained 100% validation accuracy with
-11.535 active modes per token, while its matched static rank 12 failed and the
-smallest B-viable static rank was 16. A cheaper position-only schedule also
-retained 100% accuracy and trailed the learned router by only 0.000936 NLL, so
-the current evidence supports position-conditioned specialist allocation, not
-content-conditioned routing. The
-Fisher-need teacher, five-role
-A-basis/A-router/B/validation/test protocol, hard grouped routes, mandatory
-controls, and source-independent Gemma path are described in
+strict-loaded fixed-format layer-0 run retained 100% validation accuracy with
+11.535 active modes per token, but a position-only schedule nearly matched it.
+
+The new variable-format middle-block gate removes that shortcut. Its Fisher
+teacher preserved 100% calibration-B behavior, and one aggressive schedule
+showed statistically significant hidden-state signal beyond the strongest
+metadata control. But no learned policy passed behavior and compute gates at
+the same time: the canonical router averaged 17.053 modes versus a passing
+static rank 9, while the cheapest teacher-compatible schedule cut ideal
+router-plus-selective-projection MACs to 0.749x static but reduced learned paired
+accuracy to 45.83%. The run therefore failed closed before compiler validation
+or model-level generator fitting. A source-free hard-routed executor interface
+is implemented and tested, but remains unfitted. The Fisher-need teacher,
+six-role A-basis/A-mask/A-router/B/validation/test protocol, controls, exact
+results, and blocked Gemma escalation are described in
 [`docs/conditional-computation.md`](docs/conditional-computation.md).
+
+The full-span follow-up targets all three blocks together and routes only the
+one demanded answer row while allowing the router to read every causal-prefix
+row. Its A-selected Fisher teacher again preserved 100% calibration-B
+behavior, but averaged 17.156 modes versus a passing static rank 14. The
+learned causal router averaged 14.302 modes, narrowly missed the p90 NLL gate
+(`0.101778 > 0.10`), and cost `1.49479x` the static projection after its causal
+state and ideal selective projection were counted. Its NLL advantage over the
+pointwise embedding ablation was only `0.002975`, with a semantic-context
+bootstrap interval crossing zero. The full-span gate therefore also failed
+closed: validation/test were untouched and no graph was fitted. The command is
+gate-only even on a pass; fitting remains a separate step. Small hypothetical
+shared graphs have large analytic headroom versus three native blocks, but
+those envelopes are explicitly untrained and do not establish compression.
+
+The next static-generator experiment tests that headroom directly. It excludes
+all 120 semantic contexts consumed by the routing predecessor, fits graph
+weights on 512 predecessor-fresh contexts, selects checkpoints and architecture
+on two disjoint 128-context roles, and leaves a fourth 128-context calibration role
+unopened *within the artifacted run* until the rank, architecture, seed, and
+checkpoint are frozen. A post-run provenance audit found that an earlier
+interactive prototype had already inspected 83 of those 128 nominal
+calibration contexts, so this panel is exploratory rather than clean
+confirmation. A one-layer width-32 control stayed near chance in all three
+seeds. The two-layer width-16 graph passed the strong selection gate in only
+one seed; the two-layer width-32 graph passed in two of three and was selected.
+
+On nominal calibration C, that source-independent rank-14 graph made zero
+calls to all three native blocks and retained 100% answer, paired-context, and
+minimum-stratum accuracy. Its NLL was 0.058821 versus 0.049715 native
+(`+0.009105`), teacher KL was 0.005243, p90 absolute per-example delta NLL was
+0.024399, and top-1 agreement was exact. Thus every preregistered strong
+behavior gate passed. The joint gate still failed for two reasons:
+semantic-context bootstrap resampling put the 95% upper bound on mean NLL
+degradation at 0.010323, just above the locked 0.010000 limit, and the
+provenance audit found the prior-probe overlap. Official validation and test
+therefore remained untouched. Only 75 train contexts are now clean relative
+to the predecessor, interactive probe, and artifacted run; consuming them
+needs a separately frozen confirmation protocol.
+
+The deployable executor stores 19,118 floating coefficients versus 25,632
+parameters in the replaced source span (`0.745865x`). Ideal valid-prefix
+matrix work, including the shared answer head, is `0.711426x` native. The
+current dense PyTorch reference trunk is much less sparse: its issued matrix
+shapes are estimated at `0.964746x` native. These are coefficient and MAC
+counts, not a latency or kernel-speed measurement. The result establishes
+that the missing second relational stage can generate a high-fidelity
+whole-span answer delta inside the Fisher subspace. Because the panel is
+exploratory and its bootstrap gate also failed, it is not yet a
+validation-backed compression result.
 
 ## Optimization summary
 
@@ -119,6 +184,19 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 fisher-graph-experiment
+fisher-graph-conditional-rank
+fisher-graph-variable-associative-train \
+  --output .local-runs/variable-associative/checkpoint.pt
+fisher-graph-variable-conditional \
+  --checkpoint .local-runs/variable-associative/checkpoint.pt \
+  --output .local-runs/variable-associative/layer-1-variable-conditional.pt
+fisher-graph-variable-full-span \
+  --checkpoint .local-runs/variable-associative/checkpoint.pt \
+  --output .local-runs/variable-associative/full-span-conditional.pt
+fisher-graph-variable-static-full-span \
+  --checkpoint .local-runs/variable-associative/checkpoint.pt \
+  --predecessor .local-runs/variable-associative/full-span-conditional.pt \
+  --output .local-runs/variable-associative/static-transformer-full-span.pt
 fisher-graph-intervene
 fisher-graph-modal-executor
 fisher-graph-modal-completion
@@ -672,6 +750,11 @@ The equivalent module commands are:
 
 ```bash
 python -m fisher_graph.associative_experiment
+python -m fisher_graph.associative_conditional_rank_experiment
+python -m fisher_graph.variable_associative_training
+python -m fisher_graph.variable_conditional_experiment
+python -m fisher_graph.variable_full_span_experiment
+python -m fisher_graph.variable_static_full_span_experiment
 python -m fisher_graph.intervention_experiment
 python -m fisher_graph.modal_executor_experiment
 python -m fisher_graph.modal_completion_experiment

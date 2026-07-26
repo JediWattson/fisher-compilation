@@ -169,6 +169,42 @@ class ConditionalRoutingTests(unittest.TestCase):
         )
         self.assertEqual(arbitrary.route_budgets, (0, 2))
 
+    def test_total_need_bins_normalize_centroids_when_zero_need_is_mixed(
+        self,
+    ) -> None:
+        profiles = torch.tensor(
+            [
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 2.0],
+                [3.0, 1.0],
+            ]
+        )
+        clustering = partition_fisher_need_profiles_by_total_need(
+            profiles,
+            route_count=2,
+        )
+        sums = clustering.centroids.sum(dim=1)
+        self.assertTrue(
+            torch.all(
+                (sums == 0)
+                | torch.isclose(sums, torch.ones_like(sums))
+            )
+        )
+        table = build_conditional_mode_table(
+            profiles,
+            clustering,
+            route_budgets=(1, 2),
+        )
+        table_sums = table.need_centroids.sum(dim=1)
+        self.assertTrue(
+            torch.all(
+                (table_sums == 0)
+                | torch.isclose(table_sums, torch.ones_like(table_sums))
+            )
+        )
+
     def test_end_to_end_fit_routes_and_masks_modal_coordinates(self) -> None:
         inputs = torch.tensor(
             [
