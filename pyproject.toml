@@ -55,6 +55,7 @@ fisher-graph-gemma-structured-mlp-build = "fisher_graph.gemma3_structured_mlp_co
 fisher-graph-gemma-structured-mlp-heldout = "fisher_graph.gemma3_structured_mlp_compression_heldout_experiment:main"
 fisher-graph-gemma-dense-supermode-dev = "fisher_graph.gemma3_structured_mlp_dense_supermode_dev_experiment:main"
 fisher-graph-gemma-full-model-merge-dev = "fisher_graph.gemma3_full_model_merge_dev_experiment:main"
+fisher-graph-gemma-modal-generator-dev = "fisher_graph.gemma3_modal_generator_dev_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 

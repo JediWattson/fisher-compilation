@@ -1014,6 +1014,51 @@ not opened by this development run.
 fisher-graph-gemma-full-model-merge-dev
 ```
 
+The new modal-generator compiler implements the complete typed, checksummed
+recipe from natural MLP weight groups through prompt-conditioned Fisher
+coupling, cross-layer parameter clusters, exact per-layer fragments, affine
+computational-mode bases, coordinate generators, causal generator interactions,
+and incremental graph traversal. See
+[`docs/modal-generator-compiler.md`](docs/modal-generator-compiler.md).
+Checksums authenticate artifact contents and declared lineage, but the
+numerical extraction and split membership used in this development rung are
+caller-declared and self-attested; they do not independently authenticate
+dataset membership or disjointness.
+
+Its first live Gemma development rung selected a 54-channel fragment in
+layer 17 from a 64-cluster whole-model Fisher fit. A predeclared rank-32
+computational basis retained `99.1153%` of centered Fisher-weighted energy and
+reconstructed the caller-declared, overlap-checked development rows at
+`0.029680` weighted NRMSE. A
+rank-16 generator predicted those 32 coordinates at `0.201444` weighted NRMSE
+and `0.979509` weighted cosine. Primary graph lowering replaced 103,680 native
+parameters with a 31,904-parameter graph node: 71,776 net parameters
+(`69.23%` of the fragment, `0.0268%` of the model) and 72,448 logical linear
+MACs per token (`69.88%` of the fragment) were removed. The graph executes
+31,232 matrix MACs plus 672 elementwise additions per valid token. A separately
+reported static fusion of that isolated node uses 21,120 parameters, 20,480
+matrix MACs, and 640 bias additions per token, raising the local storage
+reduction to `79.63%` and matrix-MAC reduction to `80.25%`; fusion is not the
+primary graph result.
+
+Across 10,200 supervised development positions drawn from 10,240 valid
+tokens, generated execution had NLL `2.816920` versus native `2.819802`,
+native-to-generated KL/token `0.001819`, and `97.8137%` native top-1
+agreement. Matched deletion had NLL `2.893494`, KL/token `0.172642`, and
+`83.8529%` top-1 agreement. This is strong evidence
+that the learned generator is compensating rather than merely hiding a
+low-impact deletion. The graph has one node and no possible interaction edge,
+so it validates traversal and physical compaction but not yet learned fan-out
+or fan-in. It remains a single-fragment, same-family, development-only result:
+no calibration-A guard, calibration B, validation, or test data was opened,
+and the logical MAC count is not a measured kernel-latency claim. A physical
+end-to-end mean-only control is also still required.
+
+```bash
+fisher-graph-gemma-modal-generator-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -1079,6 +1124,8 @@ python -m fisher_graph.gemma3_projection_ladder_experiment \
 python -m fisher_graph.gemma3_full_width_single_layer_experiment \
   --prompt-splits /absolute/path/full-width-prompts.json \
   --family-manifest /absolute/path/full-width-families.json
+python -m fisher_graph.gemma3_modal_generator_dev_experiment \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```

@@ -40,6 +40,20 @@ Two scopes are deliberately separate:
   it is executor-breadth evidence, not a useful model-level compression
   result. See
   [whole-model selective mode bundling](cross-block-selective-bundling.md#all-mode-full-model-development-run).
+- **Implemented modal-generator compiler path:** natural gated-MLP parameter
+  groups, prompt-conditioned grouped Fisher coupling, axial parameter
+  clustering, exact per-layer fragment lowering, Fisher-weighted affine
+  computational-mode bases, coordinate generators, selected causal
+  interactions, a checksummed end-to-end manifest, and all-at-once or
+  incremental graph traversal are separate strict artifacts. Artifact hashes
+  authenticate contents and declared lineage, while numerical extraction and
+  split membership remain caller-declared and self-attested. The first live
+  Gemma run physically replaced one 54-channel layer-17 fragment and recovered
+  far more fidelity than matched deletion. The primary graph form saved 71,776
+  net parameters; the separately fused isolated-node comparison saved 82,560.
+  This is development-only single-fragment, edgeless-graph evidence, not
+  whole-model compression. See
+  [modal-generator compiler](modal-generator-compiler.md).
 - **Conditional-computation reference:** per-token Fisher-need labels, a
   causal hard budget router, route-specific exact-cardinality mode masks,
   grouped modal execution, and static, position-only, and histogram-matched
@@ -54,9 +68,9 @@ The fixed backend remains the numerical regression oracle. Stages 1 and the
 mixed-runtime core of stage 3 are implemented. Stage 4 now has an executable,
 prefill-only trainable scaffold and adversarial sequence/runtime tests, but no
 real transformer-layer dynamic artifact has passed end-to-end acceptance.
-Compiler orchestration, the symbolic IR, efficient dynamic kernels, cache
-ownership, and a validated source-fitted external-model executor remain
-targets.
+The modal-generator pipeline now supplies one concrete compiler orchestration
+and executable graph IR. Efficient dynamic kernels, cache ownership, and a
+validated multi-fragment external-model graph remain targets.
 
 ## Goals
 
