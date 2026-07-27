@@ -582,22 +582,244 @@ generators \(0,\ldots,k-1\). The gap between good native-trajectory fits and
 weaker end-to-end fidelity therefore points to compounded trajectory shift,
 not loss in the full-rank computational-mode basis.
 
-The next controlled diagnostic is a frozen replacement trajectory:
+### Frozen prefix/suffix trajectory result
 
-1. assess native-prefix/generated-suffix and generated-prefix/native-suffix
-   ladders without refitting;
-2. locate the first layers where end-to-end NLL and KL accelerate;
-3. recollect teachers at the physically compiled prefix trajectory;
-4. compare sequentially refit generators with causal Jacobian/message
-   corrections; and
-5. only then descend a rank ladder and open a fresh family-disjoint guard.
+The next diagnostic kept all 18 rank-640 generators frozen and evaluated two
+cumulative paths on the exact same assessment20 membership:
+
+- prefix depth \(d\) generates layers \(0,\ldots,d-1\) and leaves the
+  remaining layers native;
+- suffix depth \(d\) leaves the earlier layers native and generates layers
+  \(18-d,\ldots,17\).
+
+The executor compiles the generator catalog once. It streams one native and
+35 unique mixed-stack conditions per batch; the depth-18 prefix and suffix
+share one physical full-stack endpoint. There was no refit, rank selection,
+or assessment-conditioned execution.
+
+| depth | whole params saved | prefix delta NLL | prefix KL | prefix top-1 | suffix delta NLL | suffix KL | suffix top-1 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1.16% | -0.000733 | 0.003736 | 97.00% | +0.013940 | 0.011846 | 94.59% |
+| 3 | 3.48% | -0.003139 | 0.010526 | 95.04% | +0.044756 | 0.061464 | 88.92% |
+| 5 | 5.80% | +0.018543 | 0.036561 | 91.55% | +0.057590 | 0.092302 | 87.78% |
+| 10 | 11.61% | +0.037989 | 0.101191 | 85.43% | +0.217152 | 0.232221 | 80.75% |
+| 11 | 12.77% | +0.076826 | 0.149141 | 83.18% | +0.186681 | 0.246120 | 79.61% |
+| 12 | 13.93% | +0.100916 | 0.201109 | 81.06% | +0.199047 | 0.261539 | 78.92% |
+| 18 | 20.90% | +0.348476 | 0.456653 | 74.06% | +0.348476 | 0.456653 | 74.06% |
+
+The negative prefix delta at depth 3 is slice-level NLL variation, not
+evidence that the compiled model is better: KL is nonzero and native top-1
+agreement is 95.04%. More usefully, the prefix depth-10 point saves
+31,123,200 parameters, or 11.61% of the whole model, while increasing
+perplexity by a factor of only `exp(0.037989) = 1.039`. It removes 43.97% of
+native MLP-stack parameters and 43.98% of native MLP matrix MACs per token.
+It remains a mixed model with the last eight native MLPs intact, and no
+downstream-task accuracy has been measured.
+
+The direction asymmetry is substantial. At identical depth 10, the generated
+prefix has delta NLL `+0.037989`; the generated suffix has `+0.217152`.
+Native downstream blocks can therefore absorb or repair much of the early
+generator error, while output-proximal generator error has less native
+computation left to correct it.
+
+The marginal curve also isolates trajectory interaction. Adding zero-based
+layer 17 after a generated 0-through-16 prefix is the largest final cliff:
+delta NLL grows by `+0.086901` and KL by `+0.103565`. Replacing layer 17
+alone on the native trajectory is much milder: delta NLL `+0.013940` and KL
+`0.011846`. The last generator is therefore not simply intrinsically bad;
+its error expands after it receives a state shifted by the preceding 17
+generators.
+
+The first sustained prefix acceleration begins at zero-based layer 10:
+depth 10 to 11 adds `+0.038837` NLL and `+0.047949` KL, followed by another
+`+0.024089` NLL and `+0.051968` KL at layer 11. The next controlled rung is
+therefore a sequential compiled-trajectory refit:
+
+1. freeze the current generators for layers 0 through 9;
+2. replay fit40 and selection20 through that physical generated prefix;
+3. at layer 10, fit the generator to the native MLP teacher evaluated on the
+   shifted compiled-prefix input;
+4. freeze the refit layer and repeat through layer 17;
+5. compare this sequential refit with causal Jacobian/message corrections;
+   and
+6. only then descend a rank ladder and open a fresh family-disjoint guard.
+
+Because assessment20 exposed the breakpoint used to choose layer 10, the next
+assessment on this membership remains adaptive open-development evidence. A
+fresh family-disjoint guard is required for confirmation.
+
+### Sequential compiled-trajectory refit result
+
+The direct refit rung kept layers 0 through 9 frozen and rebuilt layers 10
+through 17 in increasing order. For each layer \(k\), the current generator
+prefix \(0,\ldots,k-1\) supplied the physical input, layer \(k\) remained
+native as the teacher, and the native suffix supplied the downstream
+language-model loss. Fit40 and selection20 were consumed under separate
+authenticated overlays. The current normalized MLP input was used as the
+detached leaf, preserving the exact current-layer and suffix derivative while
+discarding unused prefix backpropagation.
+
+The old and rebuilt plans were scored on the same ephemeral rows before the
+new plan was frozen into the next prefix. All eight layers retained mode rank
+640, generator rank 640, 819,840 learned parameters, and 819,200 matrix MACs
+per token. Assessment20 was materialized only after all eight refits froze.
+
+| condition | whole params saved | delta NLL | native KL/token | native top-1 | perplexity multiplier |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prefix 0-9, native suffix | 11.61% | +0.037989 | 0.101191 | 85.43% | 1.039x |
+| original generated 0-17 | 20.90% | +0.348476 | 0.456653 | 74.06% | 1.417x |
+| sequentially refit 0-17 | 20.90% | +0.149649 | 0.203246 | 81.02% | 1.161x |
+
+Against the original full generated stack, the sequential refit reduces
+excess NLL by `57.1%` and KL by `55.5%`, while increasing native top-1
+agreement by `6.96` percentage points. It preserves the exact logical
+candidate:
+
+- 212,076,416 learned parameters;
+- 56,021,760 parameters saved, or `20.90%` of the whole model and `79.15%`
+  of the native MLP stack;
+- 14,745,600 generator matrix MACs per token plus 11,520 bias additions; and
+- 56,033,280 native MLP matrix MACs saved per token, or `79.17%`.
+
+The local selection diagnostics agree with the end-to-end movement. Every
+refitted layer improves Fisher-weighted NRMSE on its actual compiled-prefix
+rows. Reductions range from `11.8%` to `19.5%`, averaging `16.0%`; weighted
+cosine improves for all eight layers.
+
+This result supports the trajectory-shift diagnosis, but it does not close
+the fidelity question. Replacing the last eight native MLPs still adds
+`+0.111660` NLL and reduces top-1 agreement by `4.41` points relative to the
+ten-layer mixed prefix, in exchange for another 24,898,560 saved parameters.
+The breakpoint and the refit rule were both chosen using this development
+family, so a fresh family-disjoint guard is required before treating the gain
+as confirmation.
+
+No explicit Jacobian correction was used here. The clean next comparison is
+to add JVP-derived correction edges at the remaining cliffs while holding the
+rank and resource budget explicit, then compare that result with an
+alternating refit sweep. Only after that comparison should the compiler
+descend the rank ladder.
+
+```bash
+fisher-graph-gemma-full-mlp-refit-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+### Full-stack generator causal fingerprints
+
+The follow-up freezes the sequential refit and replays 19 conditions for each
+assessment prompt: one generated baseline and one exact singleton suppression
+for each of the 18 generators. Suppression installs a zero residual at the
+target layer; it does not restore that native MLP. All other generators remain
+active, and the original stack is restored after every sweep.
+
+The baseline is the sequentially refit full stack at NLL `2.973636`. Every
+singleton mute increases NLL on every one of the 20 prompts. Mean increases
+range from `+0.199468` at layer 16 to `+9.083467` at layer 3. This rejects a
+simple removal or route-off interpretation: even the least sensitive
+generator changes KL by `0.287000` per token and preserves only `79.76%` of
+the compiled baseline's top-1 outputs.
+
+All 153 unordered pairs are compared in the same bounded output frame. The
+frozen observational policy produces 50 mixed-family edges, 103
+distinct-effect edges, and zero aligned-family edges. No pair reaches the
+required `0.90` centered anchor-effect cosine; the maximum is `0.699731`.
+The best balanced sharing candidate is layers 3-4:
+
+| pair | centered effect cosine | prompt NLL Spearman | top-five overlap |
+| --- | ---: | ---: | ---: |
+| layers 3-4 | 0.656025 | 0.729323 | 0.60 |
+| layers 2-4 | 0.624596 | 0.747368 | 0.60 |
+| layers 1-2 | 0.606814 | 0.625564 | 0.60 |
+
+Adjacent pairs average `0.404318` cosine, versus `0.205512` for nonadjacent
+pairs, so there is a genuine local-continuity signal. It is not a merge rule:
+layers 13-14 have the highest prompt NLL Spearman (`0.882707`) but only
+`0.230381` output-effect cosine.
+
+This promotes layers 3-4 into the multiplex causal-map rung; singleton
+similarity alone does not select a shared-core mutation. The fingerprint
+itself authorizes no mutation or compression.
+
+```bash
+fisher-graph-gemma-generator-fingerprint-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The metric and transaction contracts are detailed in
+[`generator-causal-fingerprints.md`](generator-causal-fingerprints.md).
+
+### Full-stack multiplex causal map
+
+The map replays one baseline, all 18 singleton suppressions, and all 153 exact
+double suppressions for every assessment prompt: 3,440 forwards in total.
+Singleton runs additionally trace every later generator's response, so the
+result has three complete, separately typed pair planes:
+
+- singleton final-effect similarity;
+- symmetric joint suppression interaction; and
+- directed earlier-to-later generator response.
+
+The singleton fingerprint replayed exactly and every earlier-generator
+negative control remained bit-identical.
+
+The map validates layers 3-4 as a serial/fused-composition hypothesis rather
+than interchangeable computation:
+
+| metric | layers 3-4 |
+| --- | ---: |
+| centered singleton-effect cosine | `0.656025` |
+| joint NLL second difference | `-4.185928` |
+| normalized logit interaction | `0.677071` |
+| directed response-to-baseline ratio | `0.802304` |
+| directed response cosine | `-0.622848` |
+
+Jointly muting the pair raises NLL by `7.909090` per token, so neither
+generator can be deleted or averaged away. The reversible topology probe is a
+serial L3-to-L4 supermode with an intermediate port, layer-4 correction branch,
+zero-initialized gate, and exact original fallback.
+
+The first dense-packing proposal is deliberately different: layers 12 and 15
+feed a shared low-rank basis or codebook through separate endpoint heads and
+residual corrections. Their NLL effects co-vary (`0.756391` Spearman), their
+joint NLL term is nearly additive (`+0.016218`), and their directed response
+ratio is lower (`0.411872`). The proposal must demonstrate realized savings
+after every head and correction is counted.
+
+The current declared cohorts do not authorize routing. Their layer-importance
+profiles are nearly invariant and the cohort sizes are only one to four
+prompts. Both mutation proposals are now frozen discovery outputs and require
+disjoint new fit/selection data plus a fresh family-disjoint guard.
+
+```bash
+fisher-graph-gemma-generator-causal-map-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The exact metrics and mutation handoff are detailed in
+[`generator-causal-map.md`](generator-causal-map.md).
 
 The ignored exhaustive artifact is:
 
 ```text
 .local-runs/google--gemma-3-270m/
   modal-generator-full-mlp-stack-dev-v1.{pt,json}
+  modal-generator-full-mlp-stack-trajectory-dev-v1.json
+  modal-generator-full-mlp-stack-refit-dev-v1.{pt,json}
+  modal-generator-causal-fingerprint-dev-v1.json
+  modal-generator-causal-map-dev-v1.json
 ```
 
-Its scientific payload digest is
-`babed58e93ff09bd65a7ce0062eb8e1f657672f3cc8bcf4e9fb03f446a48f5ec`.
+The exhaustive artifact scientific payload digest is
+`babed58e93ff09bd65a7ce0062eb8e1f657672f3cc8bcf4e9fb03f446a48f5ec`;
+the tensor-free trajectory digest is
+`e3778866ce58828c7b329999b3d5aa3bebb116652840e05d8003eca486b6cbc1`;
+and the refit overlay scientific payload digest is
+`4c04775672f74204d1d3176c05780e97107f3edf57fac54d35b1c06ab96d36b1`.
+The causal-fingerprint scientific payload digest is
+`754d31b333a35208e7bc434a48a2f6ebed99951b0088871dbce5388b6e5c4b17`.
+The causal-map scientific payload digest is
+`1a25859340cd4772730fc631cdd7d7b859dda73c81d2447bed33c025d1e73afa`.
+The refit tensor is about 200 MB because it stores the eight complete
+float64 analysis states; its tensor-free JSON report is about 51 KB. Neither
+size is a packed deployment-footprint claim.

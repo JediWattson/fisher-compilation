@@ -1150,6 +1150,128 @@ fisher-graph-gemma-full-mlp-stack-dev \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 ```
 
+The frozen follow-up replays those same 18 generators as cumulative prefixes
+and suffixes without refitting. It evaluates one native plus 35 unique
+mixed-stack conditions per assessment batch and shares the full-stack
+depth-18 endpoint between both paths.
+
+| generated layers | whole params saved | delta NLL | native KL/token | native top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| prefix 0-2 | 3.48% | -0.003139 | 0.010526 | 95.0392% |
+| prefix 0-4 | 5.80% | +0.018543 | 0.036561 | 91.5490% |
+| prefix 0-9 | 11.61% | +0.037989 | 0.101191 | 85.4314% |
+| suffix 8-17 | 11.61% | +0.217152 | 0.232221 | 80.7451% |
+| all 0-17 | 20.90% | +0.348476 | 0.456653 | 74.0588% |
+
+This materially sharpens the diagnosis. A generated ten-layer prefix removes
+31,123,200 whole-model parameters and 43.98% of native MLP matrix work with
+only a `1.039x` perplexity multiplier on this open slice. The equally sized
+suffix is much worse, showing that native downstream blocks repair early
+generator error while output-proximal error persists. The largest final
+prefix cliff comes from adding layer 17 after layers 0-16 are already
+generated (`+0.086901` marginal NLL), even though layer 17 alone costs only
+`+0.013940`. That contrast is direct evidence of compiled-trajectory
+interaction.
+
+The next rung freezes layers 0-9, then sequentially refits layers 10-17
+against native MLP teachers evaluated on their actual compiled-prefix inputs.
+Each refit keeps rank 640 and the exact original parameter/MAC budget.
+Because this assessment revealed the breakpoint, the result remains adaptive
+open-development work until it passes a fresh family-disjoint guard. No
+downstream-task accuracy or latency claim is made here. See the
+[`frozen trajectory result`](docs/modal-generator-compiler.md#frozen-prefixsuffix-trajectory-result).
+
+```bash
+fisher-graph-gemma-full-mlp-trajectory-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The sequential compiled-trajectory refit recovers a substantial part of the
+full-stack fidelity without adding parameters or compute:
+
+| condition | whole params saved | delta NLL | native KL/token | native top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| prefix 0-9, native suffix | 11.61% | +0.037989 | 0.101191 | 85.43% |
+| original generated 0-17 | 20.90% | +0.348476 | 0.456653 | 74.06% |
+| sequentially refit 0-17 | 20.90% | +0.149649 | 0.203246 | 81.02% |
+
+At the same 212,076,416-parameter logical candidate and 14,745,600 generated
+matrix MACs per token, refitting reduces excess NLL by `57.1%`, KL by `55.5%`,
+and raises top-1 agreement by `6.96` percentage points. The perplexity
+multiplier relative to native falls from `1.417x` to `1.161x`. Every refitted
+layer also improves selection weighted NRMSE on its own compiled-prefix rows;
+the reductions range from `11.8%` to `19.5%` and average `16.0%`.
+
+This is positive evidence that trajectory-conditioned fitting is a real
+missing component, but it is not the endpoint: the rebuilt full stack still
+trails the ten-layer mixed prefix. The next confirmation gate is a fresh
+family-disjoint assessment. After that, explicit JVP correction edges can be
+compared at the same rank/resource budget before descending the rank ladder.
+
+```bash
+fisher-graph-gemma-full-mlp-refit-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The next analysis rung keeps that full refit stack frozen and mutes exactly one
+generator at a time. It records prompt-conditioned NLL, full-vocabulary KL,
+top-1 agreement, and a bounded centered output-logit effect, then compares all
+153 unordered generator pairs.
+
+All 18 singleton mutes worsened NLL on all 20 development prompts, so this
+sample contains no removal candidate. The causal graph has 50 mixed-family
+edges and 103 distinct-effect edges, but no pair passes the frozen aligned
+family policy. The strongest causal-map lead is layers 3-4
+(effect cosine `0.6560`, NLL Spearman `0.7293`, top-five overlap `0.60`).
+That supports exact joint and directed mapping, not deletion, direct
+substitution, pruning, or a compression claim by itself.
+
+```bash
+fisher-graph-gemma-generator-fingerprint-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The output is a source-safe JSON artifact under the ignored `.local-runs/`
+tree; it contains no prompt text, token IDs, logits, tensors, generator
+weights, or model weights. Its scientific payload digest is
+`754d31b333a35208e7bc434a48a2f6ebed99951b0088871dbce5388b6e5c4b17`.
+See the
+[`causal fingerprint and mutation protocol`](docs/generator-causal-fingerprints.md).
+
+The completed causal-map rung keeps the singleton plane intact and adds all
+153 exact double-suppression interactions plus all 153 forward directed
+generator responses. Its 3,440-forward run passed strict singleton replay,
+causal-order invariance, artifact authentication, and stack restoration.
+
+The map rejects a one-score notion of a mode family. Layers 3-10 have weak
+singleton similarity (`0.140828`) but the strongest superadditive joint term
+(`+8.619503` NLL/token). Layers 3-4, the predeclared lead, instead form a
+robust serial/fused-composition hypothesis: effect cosine `0.656025`, joint
+term `-4.185928`, and a layer-3-to-layer-4 response equal to `0.802304` of
+layer 4's ordinary output RMS. Jointly muting them is catastrophic, so this is
+not deletion or averaging evidence.
+
+The next two handoffs stay separate:
+
+- a reversible L3-to-L4 serial-supermode probe tests whether the causal edge
+  can reproduce the two-stage computation; and
+- a reversible L12-and-L15 two-head shared-basis probe tests dense packing at
+  local resource ratios `0.90`, `0.75`, and `0.50`.
+
+Both retain the original generators as exact fallbacks and require disjoint
+fit/selection data plus a fresh family-disjoint guard. The current cohort
+profiles are too similar and too small to authorize semantic routing.
+
+```bash
+fisher-graph-gemma-generator-causal-map-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The ignored tensor-free map has scientific payload digest
+`1a25859340cd4772730fc631cdd7d7b859dda73c81d2447bed33c025d1e73afa`.
+See the [`generator causal map`](docs/generator-causal-map.md) for the edge
+definitions, complete result, and mutation boundary.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
