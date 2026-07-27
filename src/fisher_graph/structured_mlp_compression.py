@@ -29,6 +29,9 @@ from .structured_transformer_layer_executor import (
 STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM = (
     "valid_row_squared_activation_score_gradient_stable_topk_v1"
 )
+STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM = (
+    "authenticated_explicit_plan_bound_unit_selection_v1"
+)
 STRUCTURED_MLP_COMPRESSION_SCHEMA = (
     "fisher_graph.structured_mlp_width_compression"
 )
@@ -201,6 +204,8 @@ class StructuredMLPFisherTaylorBatch:
 
 def _selection_payload(
     *,
+    algorithm: str,
+    selection_basis_sha256: str | None,
     provenance: StructuredLayerProvenance,
     calibration_split_sha256: str,
     activation_site: str,
@@ -214,8 +219,20 @@ def _selection_payload(
     ranked_indices: tuple[int, ...],
     selected_indices: tuple[int, ...],
 ) -> dict[str, object]:
-    return {
-        "algorithm": STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM,
+    if algorithm == STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM:
+        score_semantics = (
+            "mean_valid_row_squared_activation_times_score_gradient"
+        )
+        tie_break = "stable_source_unit_index"
+    elif algorithm == STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM:
+        score_semantics = (
+            "authenticated_reference_scores_not_used_as_a_topk_rule"
+        )
+        tie_break = "explicit_indices_authenticated_by_selection_basis"
+    else:
+        raise ValueError("unsupported MLP unit selection algorithm")
+    payload: dict[str, object] = {
+        "algorithm": algorithm,
         "provenance": _provenance_dict(provenance),
         "calibration_split_sha256": calibration_split_sha256,
         "activation_site": activation_site,
@@ -228,18 +245,21 @@ def _selection_payload(
         "unit_scores_sha256": unit_scores_sha256,
         "ranked_indices": ranked_indices,
         "selected_indices": selected_indices,
-        "score_semantics": (
-            "mean_valid_row_squared_activation_times_score_gradient"
-        ),
-        "tie_break": "stable_source_unit_index",
+        "score_semantics": score_semantics,
+        "tie_break": tie_break,
         "construction_order": "ascending_source_unit_index",
     }
+    if selection_basis_sha256 is not None:
+        payload["selection_basis_sha256"] = selection_basis_sha256
+    return payload
 
 
 @dataclass(frozen=True, slots=True)
 class StructuredMLPUnitSelection:
     """Authenticated deterministic selection of complete gated MLP units."""
 
+    algorithm: str
+    selection_basis_sha256: str | None
     provenance: StructuredLayerProvenance
     calibration_split_sha256: str
     activation_site: str
@@ -256,6 +276,22 @@ class StructuredMLPUnitSelection:
     selection_sha256: str
 
     def __post_init__(self) -> None:
+        if self.algorithm not in {
+            STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM,
+            STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM,
+        }:
+            raise ValueError("unsupported MLP unit selection algorithm")
+        if self.algorithm == STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM:
+            if self.selection_basis_sha256 is not None:
+                raise ValueError(
+                    "Fisher/Taylor top-k selections cannot have an "
+                    "explicit selection basis"
+                )
+        else:
+            _require_sha256(
+                self.selection_basis_sha256,
+                label="selection_basis_sha256",
+            )
         if not isinstance(self.provenance, StructuredLayerProvenance):
             raise TypeError(
                 "provenance must be StructuredLayerProvenance"
@@ -326,19 +362,31 @@ class StructuredMLPUnitSelection:
                 stable=True,
             ).tolist()
         )
-        expected_selected = tuple(
-            sorted(expected_ranked[: self.retained_width])
+        expected_selected = (
+            tuple(sorted(expected_ranked[: self.retained_width]))
+            if self.algorithm == STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM
+            else self.selected_indices
         )
         if (
             self.ranked_indices != expected_ranked
             or self.selected_indices != expected_selected
             or len(self.ranked_indices) != self.source_width
             or len(self.selected_indices) != self.retained_width
+            or tuple(sorted(self.selected_indices))
+            != self.selected_indices
+            or len(set(self.selected_indices))
+            != len(self.selected_indices)
+            or any(
+                index < 0 or index >= self.source_width
+                for index in self.selected_indices
+            )
         ):
             raise ValueError(
                 "ranked or selected MLP unit indices are invalid"
             )
         payload = _selection_payload(
+            algorithm=self.algorithm,
+            selection_basis_sha256=self.selection_basis_sha256,
             provenance=self.provenance,
             calibration_split_sha256=self.calibration_split_sha256,
             activation_site=self.activation_site,
@@ -377,6 +425,8 @@ class StructuredMLPUnitSelection:
 
     def metadata(self) -> dict[str, object]:
         payload = _selection_payload(
+            algorithm=self.algorithm,
+            selection_basis_sha256=self.selection_basis_sha256,
             provenance=self.provenance,
             calibration_split_sha256=self.calibration_split_sha256,
             activation_site=self.activation_site,
@@ -510,6 +560,8 @@ def select_fisher_taylor_mlp_units(
         domain=_BATCH_SET_DOMAIN,
     )
     payload = _selection_payload(
+        algorithm=STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM,
+        selection_basis_sha256=None,
         provenance=provenance,
         calibration_split_sha256=calibration_split_sha256,
         activation_site=activation_site,
@@ -524,6 +576,8 @@ def select_fisher_taylor_mlp_units(
         selected_indices=selected,
     )
     return StructuredMLPUnitSelection(
+        algorithm=STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM,
+        selection_basis_sha256=None,
         provenance=provenance,
         calibration_split_sha256=calibration_split_sha256,
         activation_site=activation_site,
@@ -537,6 +591,92 @@ def select_fisher_taylor_mlp_units(
         unit_scores_sha256=scores_sha256,
         ranked_indices=ranked,
         selected_indices=selected,
+        selection_sha256=_json_sha256(
+            payload,
+            domain=_SELECTION_DOMAIN,
+        ),
+    )
+
+
+def build_authenticated_explicit_mlp_unit_selection(
+    *,
+    provenance: StructuredLayerProvenance,
+    calibration_split_sha256: str,
+    activation_site: str,
+    parent_executor_fingerprint: str,
+    valid_rows: int,
+    batch_ids: tuple[str, ...],
+    input_batches_sha256: str,
+    unit_scores: Tensor,
+    selected_indices: tuple[int, ...],
+    selection_basis_sha256: str,
+) -> StructuredMLPUnitSelection:
+    """Authenticate a plan-bound unit set without relabeling it as top-k.
+
+    ``unit_scores`` remain truthful reference importance scores.  The
+    explicitly selected indices are authenticated separately by the supplied
+    plan digest, so callers cannot accidentally claim that a structural
+    control is ordinary Fisher/Taylor pruning.
+    """
+
+    if not isinstance(unit_scores, Tensor) or unit_scores.ndim != 1:
+        raise ValueError("unit_scores must be a rank-one tensor")
+    scores = unit_scores.detach().to(
+        device="cpu",
+        dtype=torch.float64,
+    ).contiguous()
+    source_width = int(scores.shape[0])
+    if (
+        type(selected_indices) is not tuple
+        or not 0 < len(selected_indices) < source_width
+    ):
+        raise ValueError(
+            "selected_indices must be a nonempty proper source subset"
+        )
+    ranked = tuple(
+        int(index)
+        for index in torch.argsort(
+            scores,
+            descending=True,
+            stable=True,
+        ).tolist()
+    )
+    scores_sha256 = _tensor_mapping_sha256(
+        {"unit_scores": scores},
+        domain=_SCORE_DOMAIN,
+    )
+    payload = _selection_payload(
+        algorithm=STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM,
+        selection_basis_sha256=selection_basis_sha256,
+        provenance=provenance,
+        calibration_split_sha256=calibration_split_sha256,
+        activation_site=activation_site,
+        parent_executor_fingerprint=parent_executor_fingerprint,
+        source_width=source_width,
+        retained_width=len(selected_indices),
+        valid_rows=valid_rows,
+        batch_ids=batch_ids,
+        input_batches_sha256=input_batches_sha256,
+        unit_scores_sha256=scores_sha256,
+        ranked_indices=ranked,
+        selected_indices=selected_indices,
+    )
+    return StructuredMLPUnitSelection(
+        algorithm=STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM,
+        selection_basis_sha256=selection_basis_sha256,
+        provenance=provenance,
+        calibration_split_sha256=calibration_split_sha256,
+        activation_site=activation_site,
+        parent_executor_fingerprint=parent_executor_fingerprint,
+        source_width=source_width,
+        retained_width=len(selected_indices),
+        valid_rows=valid_rows,
+        batch_ids=batch_ids,
+        input_batches_sha256=input_batches_sha256,
+        unit_scores=scores,
+        unit_scores_sha256=scores_sha256,
+        ranked_indices=ranked,
+        selected_indices=selected_indices,
         selection_sha256=_json_sha256(
             payload,
             domain=_SELECTION_DOMAIN,
@@ -777,7 +917,7 @@ def build_width_compressed_structured_executor(
     report: dict[str, object] = {
         "schema": STRUCTURED_MLP_COMPRESSION_SCHEMA,
         "format_version": STRUCTURED_MLP_COMPRESSION_FORMAT_VERSION,
-        "algorithm": STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM,
+        "algorithm": selection.algorithm,
         "rung": {
             "source_intermediate_width": selection.source_width,
             "retained_intermediate_width": selection.retained_width,
@@ -962,9 +1102,11 @@ __all__ = [
     "GEMMA_MLP_FIRST_RUNG_SOURCE_WIDTH",
     "STRUCTURED_MLP_COMPRESSION_FORMAT_VERSION",
     "STRUCTURED_MLP_COMPRESSION_SCHEMA",
+    "STRUCTURED_MLP_EXPLICIT_PLAN_SELECTION_ALGORITHM",
     "STRUCTURED_MLP_FISHER_TAYLOR_ALGORITHM",
     "StructuredMLPFisherTaylorBatch",
     "StructuredMLPUnitSelection",
+    "build_authenticated_explicit_mlp_unit_selection",
     "build_width_compressed_structured_executor",
     "prepare_width_compressed_mlp_refit_targets",
     "select_fisher_taylor_mlp_units",

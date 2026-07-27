@@ -15,6 +15,7 @@ from fisher_graph.structured_mlp_cross_block_bundling import (
     CrossBlockLayerSpec,
     CrossBlockSketchConfig,
     build_cross_block_discovery_sketch,
+    rescreen_cross_block_discovery_sketch,
     replay_cross_block_discovery_shortlist,
 )
 
@@ -541,6 +542,56 @@ def test_zero_qualifying_edges_is_a_valid_discovery_result() -> None:
     assert result.evidence == ()
     assert result.selected_hypotheses == ()
     assert result.metadata()["selected_pair_count"] == 0
+
+
+def test_rescreen_broadens_pool_without_reopening_the_row_stream() -> None:
+    specs = _specs((2, 2))
+    site0, site1 = (spec.activation_site for spec in specs)
+    rows = tuple(
+        _sequence(
+            f"sequence-{index}",
+            {
+                site0: (
+                    torch.tensor([[value, 2.0 * value]]),
+                    torch.ones(1, 2),
+                ),
+                site1: (
+                    torch.tensor([[value, 2.0 * value]]),
+                    torch.ones(1, 2),
+                ),
+            },
+        )
+        for index, value in enumerate((1.0, -1.0, 2.0, -2.0))
+    )
+    narrow = build_cross_block_discovery_sketch(
+        rows,
+        layer_specs=specs,
+        provenance=_provenance(),
+        config=_config(pool=1, neighbors=1),
+    )
+    broad = rescreen_cross_block_discovery_sketch(
+        narrow,
+        config=_config(pool=2, neighbors=2),
+    )
+
+    assert len(narrow.pool_mode_keys) == 2
+    assert len(broad.pool_mode_keys) == 4
+    assert len(narrow.proxy_edges) == 1
+    assert len(broad.proxy_edges) == 4
+    assert broad.row_stream_sha256 == narrow.row_stream_sha256
+    assert broad.provenance == narrow.provenance
+    assert tuple(mode.metadata() for mode in broad.modes) == tuple(
+        mode.metadata() for mode in narrow.modes
+    )
+    assert broad.artifact_sha256 != narrow.artifact_sha256
+    assert CrossBlockDiscoverySketch.from_state_dict(
+        broad.state_dict()
+    ).metadata() == broad.metadata()
+    with pytest.raises(ValueError, match="sketch size and seed"):
+        rescreen_cross_block_discovery_sketch(
+            narrow,
+            config=_config(sketch_size=64, pool=2, neighbors=2),
+        )
 
 
 def test_family_fold_mapping_is_strict_and_can_reject_instability() -> None:

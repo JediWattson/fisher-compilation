@@ -1275,6 +1275,69 @@ def build_cross_block_discovery_sketch(
     )
 
 
+def rescreen_cross_block_discovery_sketch(
+    sketch: CrossBlockDiscoverySketch,
+    *,
+    config: CrossBlockSketchConfig,
+) -> CrossBlockDiscoverySketch:
+    """Rebuild only the proxy shortlist from authenticated mode sketches.
+
+    The expensive activation/score-gradient stream is unchanged.  This is
+    useful when a development run broadens the eligible per-layer pool or the
+    proxy neighborhood while preserving the original CountSketch basis and
+    exact replay digest.  Changing the sketch width or seed would change that
+    basis and therefore requires a new first pass.
+    """
+
+    if not isinstance(sketch, CrossBlockDiscoverySketch):
+        raise TypeError("sketch must be a CrossBlockDiscoverySketch")
+    if not isinstance(config, CrossBlockSketchConfig):
+        raise TypeError("config must be a CrossBlockSketchConfig")
+    if (
+        config.sketch_size != sketch.config.sketch_size
+        or config.sketch_seed != sketch.config.sketch_seed
+    ):
+        raise ValueError(
+            "rescreening must preserve the authenticated sketch size and seed"
+        )
+    pool, edges = _shortlist_edges(
+        sketch.modes,
+        sketch.layer_specs,
+        config,
+    )
+    temporary = {
+        "artifact_kind": _SKETCH_KIND,
+        "format_version": _FORMAT_VERSION,
+        "contains_corpus_rows": False,
+        "discovery_only": True,
+        "authorizes_execution": False,
+        "authorizes_b": False,
+        "provenance": sketch.provenance.metadata(),
+        "layer_specs": tuple(
+            spec.metadata() for spec in sketch.layer_specs
+        ),
+        "config": config.metadata(),
+        "sequences": sketch.sequences,
+        "observations": sketch.observations,
+        "row_stream_sha256": sketch.row_stream_sha256,
+        "modes": tuple(mode.metadata() for mode in sketch.modes),
+        "pool_mode_keys": tuple(key.metadata() for key in pool),
+        "proxy_edges": tuple(edge.metadata() for edge in edges),
+    }
+    return CrossBlockDiscoverySketch(
+        provenance=sketch.provenance,
+        layer_specs=sketch.layer_specs,
+        config=config,
+        sequences=sketch.sequences,
+        observations=sketch.observations,
+        row_stream_sha256=sketch.row_stream_sha256,
+        modes=sketch.modes,
+        pool_mode_keys=pool,
+        proxy_edges=edges,
+        artifact_sha256=_json_sha256(temporary),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CrossBlockExactCriteria:
     """Fit-split criteria for retaining discovery hypotheses.
@@ -2632,5 +2695,6 @@ __all__ = [
     "CrossBlockSketchConfig",
     "ModeKey",
     "build_cross_block_discovery_sketch",
+    "rescreen_cross_block_discovery_sketch",
     "replay_cross_block_discovery_shortlist",
 ]

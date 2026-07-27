@@ -402,6 +402,68 @@ cross-domain activation-relation stability before selecting an edge, or use a
 richer/conditional multi-source predictor. The consumed guard cannot be used
 to choose that design.
 
+## All-mode full-model development run
+
+The next development run removed three artificial restrictions independently:
+
+- the mode pool expanded from 96 to all 2,048 MLP coordinates in every one of
+  the 18 layers;
+- every earlier/later layer pair remained eligible, with no adjacency or
+  maximum-span restriction; and
+- the planner imposed no accepted-merge count and allowed one retained native
+  root to fan out to arbitrarily many later consumers.
+
+This is not an exhaustive materialized pair graph. Eighteen 2,048-wide layers
+have 641,728,512 cross-layer pairs. The runner instead recomputes a top-eight
+proxy neighborhood for every mode from the authenticated CountSketch, then
+exactly replays every shortlisted edge. That nearest-neighbor step is a
+recorded recall-unknown search approximation, not a merge quota.
+
+The fit role was v9 calibration-A fit positions 0–39. The runner evaluated the
+frozen graph on positions 40–79, which are prompt-disjoint but use the same
+eight family identities. Calibration-A guard, calibration B, validation, and
+test remained unopened. This makes the result a development comparison, not a
+new scientific guard.
+
+The wider search produced 10,645 exact-replay edges:
+
+| Classification | Edges |
+|---|---:|
+| proxy/activation dissimilar | 9,407 |
+| activation pair not rank one | 869 |
+| Fisher energy imbalanced | 228 |
+| negative signed influence | 135 |
+| family-fold unstable | 5 |
+| strict static-merge hypothesis | 1 |
+
+The only strict hypothesis was again layer-6 unit 1202 to layer-15 unit 651.
+The generalized executor did run the complete 18-layer Gemma prefill and can
+overlay many consumers at once, but this plan exercised only two overlaid
+MLPs because no other edge passed the frozen evidence rule.
+
+For this development run the unweighted activation fit
+\(\widehat z_{15,651}=-0.506844z_{6,1202}\) was compared with deleting exactly
+the same later generator:
+
+| Condition | Final-logit NRMSE | Teacher KL/token | Top-1 agreement | Delta NLL/token |
+|---|---:|---:|---:|---:|
+| matched deletion | 0.010538 | 0.00022291 | 99.8235% | -0.000950 |
+| directed merge | 0.002891 | 0.00005786 | 99.6569% | -0.000526 |
+
+The merge is closer in continuous logit space and KL, and its NLL displacement
+is closer to zero. Deletion changes fewer argmaxes. The worst-family top-1
+agreement is `99.2941%` for the merge versus `99.4510%` for deletion. This
+same-family improvement is compatible with the earlier fresh-family failure:
+the core problem is that the fitted relationship does not remain stable when
+the topic families change.
+
+The physical savings are real but negligible at model scale: 1,280 learned
+parameters and 1,279 net stored coefficients/MACs per valid token after the
+scale, or `0.000477%` of 268,098,176 model parameters. Across all Gemma MLP
+linear maps it is only `0.001808%`. Thus unrestricted eligibility did not
+uncover a hidden compression reservoir. The limiting step is now the
+generalization and admission of merge relations, not graph-executor breadth.
+
 ## Cross-block execution: anchor and carry
 
 Weights from different blocks cannot be averaged directly. Normalization,

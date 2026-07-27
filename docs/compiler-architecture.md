@@ -22,6 +22,24 @@ Two scopes are deliberately separate:
 - **Implemented external-model analysis diagnostic:** canonical multi-layer
   boundaries, bounded Fisher/transport moments, and frozen exact-logical-lag
   reverse-gradient prediction over adjacent edges and the block endpoint.
+- **Implemented dense MLP-compaction primitive:** authenticated groupwise
+  Fisher/output-aware \(K\rightarrow R\) coordinates, direct nonlinear
+  generator distillation, exact singleton preservation, a strict
+  source-free reduced-width executor, and raw rate-distortion/Pareto data
+  structures. Its first Gemma layer-4 development run rejected direct
+  synthesis on a reused nonconfirmatory guard, while its structure-aware
+  native-pivot pruning control nearly met the strict margin at the same
+  1,920-wide resource point. No fresh heldout or model-level quality result is
+  implied. See
+  [dense supermode compaction](dense-supermode-compaction.md).
+- **Implemented full-model merge overlay:** all 36,864 Gemma MLP coordinates
+  can enter the cross-block proxy search, retained native roots may fan out
+  without an accepted-edge quota, and every selected consumer can be
+  physically row-pruned in one complete native prefill. The first all-mode
+  development run still found only one strict edge, saving 1,280 parameters;
+  it is executor-breadth evidence, not a useful model-level compression
+  result. See
+  [whole-model selective mode bundling](cross-block-selective-bundling.md#all-mode-full-model-development-run).
 - **Conditional-computation reference:** per-token Fisher-need labels, a
   causal hard budget router, route-specific exact-cardinality mode masks,
   grouped modal execution, and static, position-only, and histogram-matched

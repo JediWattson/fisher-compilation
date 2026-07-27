@@ -13,6 +13,9 @@ This repository now contains a complete reference run:
 - activation-covariance-aware native, variance-weighted, and generalized
   Fisher codecs with distinct dual encoder/decoder bases;
 - a position-conditioned Fisher-mode intervention "equalizer";
+- a groupwise Fisher/output-aware dense-supermode compiler that rewrites
+  \(K\) gated-MLP units as \(R<K\) ordinary contiguous units, omits every
+  analysis codec from deployment, and records raw rate-distortion points;
 - held-out necessity, control, localization, and sufficiency sweeps;
 - position-coupled modal layer Jacobians;
 - a bounded true-forward-JVP probe plus causal Fisher-weighted prefix SVD and
@@ -925,6 +928,48 @@ means this particular one-shot `2048 -> 1536` rule is not a validated
 compression method. It supports no whole-model quality, measured latency,
 energy, fused-kernel, or model-level compression claim.
 
+The new dense-supermode rung addresses that missing off-diagonal interaction
+without retaining sparse slots or runtime references. It chooses a group of
+\(K\) modes, derives a Fisher/output-aware dual coordinate system, rotates the
+retained subspace toward rank-revealing native pivots, and trains \(R<K\)
+actual gated generators. Every nonpooled unit remains exact. The deployment
+executor contains only a normal dense MLP of width \(W-K+R\); the analysis
+encoder, decoder, source pool, and indices are absent from executable state.
+An outer experiment bundle may retain plan metadata for audit.
+
+Its deterministic six-to-two synthetic fixture reaches roughly
+`8.08e-7` MLP-output NRMSE, while redundancy-blind equal-width
+diagonal-Fisher deletion plus down refit has `0.370075` NRMSE. A
+structure-aware oracle deletion that keeps one representative from each
+duplicate family is also nearly exact (`1.66e-7`). The test therefore proves
+nonlinear grouped synthesis, strict artifact replay, exact parameter/MAC
+removal, and a failure mode for scalar ranking on a constructed redundant
+system; it does not establish superiority over the best pruning rule.
+
+The first Gemma development rung then compiled a 512-to-384 pool inside the
+2,048-wide layer-4 MLP, producing an ordinary 1,920-wide runtime and removing
+245,760 parameters and linear MACs/token for \(d=640\). On the reused,
+nonconfirmatory v9 A-guard, direct dense synthesis failed with `0.049127`
+block NRMSE versus `0.021758` for equal-width diagonal-Fisher deletion and
+`0.015359` for a new equal-width native-pivot pruning control. The dense
+candidate was therefore rejected without a tensor artifact, and no fresh
+heldout role was opened. The same analysis nevertheless improved
+structure-aware pruning by 29.4% over diagonal deletion at identical resource
+cost; that control passed ordinary gates but missed the stricter `0.015`
+development margin by `0.000359`. See
+[`dense supermode compaction`](docs/dense-supermode-compaction.md).
+
+Compression quality is now represented as a raw rate-distortion curve rather
+than a universal 100%-fidelity gate. The curve retains dominated candidates
+and can compute Pareto views over parameters, runtime bytes, logical MACs, or
+measured latency against downstream score, NLL, KL, top-1 agreement, or
+operator NRMSE. It binds points to one evaluation split, task suite, candidate
+fingerprint, resource scope, dtype/runtime, and—when applicable—latency
+protocol so unlike measurements cannot share a frontier. A representative
+Gemma development runner now freezes the candidate and both equal-width
+controls before its reused A-guard. A scientific result still requires a newly
+frozen protocol and a genuinely fresh family-disjoint guard.
+
 The whole-model cross-block follow-up also reached a decisive boundary. It
 found one development pair, layer-6 MLP unit 1202 to layer-15 unit 651, and
 implemented it as a directed merged supermode: compute the earlier generator
@@ -941,6 +986,33 @@ no-intercept scale explained only `2.49%` of deletion error. This proves the
 merge/executor mechanism but not a viable compression edge; calibration B,
 validation, and test remain unopened. See the
 [`cross-block guard postmortem`](docs/cross-block-selective-bundling.md#physically-merged-executor-and-fresh-family-guard).
+
+The full-model follow-up removes the earlier executor bottleneck. All 36,864
+MLP coordinates across all 18 blocks are eligible, every layer pair may
+propose an edge, roots may fan out without a quota, and every qualifying
+consumer can be compiled into one native Gemma prefill. A sparse top-eight
+proxy neighborhood remains an explicitly recorded search approximation;
+materializing all 641,728,512 cross-layer pairs would not be a practical
+analysis artifact.
+
+On A-fit positions 0–39, the all-mode proxy scan shortlisted 10,645 edges.
+Exact Fisher/activation replay still qualified only the original
+layer-6:1202 to layer-15:651 edge. On disjoint A-fit positions 40–79, its
+unweighted fit scale produced final-logit NRMSE `0.002891`, teacher KL/token
+`0.00005786`, top-1 agreement `99.6569%`, and delta NLL/token `-0.000526`.
+Matched deletion had `0.010538` NRMSE, `0.00022291` KL, `99.8235%` top-1, and
+`-0.000950` delta NLL/token. The merge therefore improved continuous logit
+fidelity on this same-family development slice while losing some discrete
+top-1 agreement. It does not overturn the earlier fresh-family rejection.
+Most importantly, unrestricted eligibility found no additional strict edges
+and still removed only 1,280 parameters (`0.000477%` of the model). The
+current limitation is discovery/generalization, not the ability to execute a
+multi-edge full-model graph. Calibration-A guard, B, validation, and test were
+not opened by this development run.
+
+```bash
+fisher-graph-gemma-full-model-merge-dev
+```
 
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor

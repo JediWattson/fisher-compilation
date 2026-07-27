@@ -21,6 +21,9 @@ from fisher_graph.gemma3_cross_block_row_pruned_executor import (
     Gemma3CrossBlockModelExecutor,
     Gemma3CrossBlockRowPrunedExecutor,
 )
+from fisher_graph.gemma3_global_cross_block_merge_executor import (
+    Gemma3GlobalCrossBlockMergeExecutor,
+)
 from fisher_graph.streaming_analysis import ActivationScoreGradientRows
 from fisher_graph.structured_mlp_cross_block_bundling import (
     CrossBlockDiscoveryProvenance,
@@ -31,6 +34,9 @@ from fisher_graph.structured_mlp_cross_block_bundling import (
 )
 from fisher_graph.structured_mlp_cross_block_plan import (
     plan_structured_mlp_cross_block_carries,
+)
+from fisher_graph.structured_mlp_global_cross_block_merge import (
+    plan_global_cross_block_merges,
 )
 
 
@@ -571,6 +577,71 @@ def test_directed_supermode_physically_skips_source_rows_in_full_model() -> None
         adapter.source_module(proposal.consumer.layer_id).mlp
         is source_consumer
     )
+    assert adapter.model_fingerprint() == source_fingerprint
+
+
+def test_global_executor_runs_the_complete_uncapped_plan_and_restores_model() -> None:
+    adapter = _adapter()
+    discovery, _, proposal = _plan(adapter)
+    global_plan = plan_global_cross_block_merges(discovery)
+    executor = Gemma3GlobalCrossBlockMergeExecutor(adapter, global_plan)
+    batch = _batch(
+        ("global-a", "global-b"),
+        offset=5,
+        valid_lengths=(4, 2),
+    )
+    valid = batch.valid_positions
+    observed: dict[str, Tensor] = {}
+    merge = next(
+        value
+        for value in global_plan.merges
+        if value.anchor.mode_index == proposal.anchor_source_index
+        and value.consumer.mode_index == proposal.consumer_source_index
+    )
+
+    def observe_anchor(values: Tensor) -> Tensor:
+        observed["root"] = values[..., merge.anchor.mode_index].clone()
+        return values
+
+    def replace_consumer(values: Tensor) -> Tensor:
+        updated = values.clone()
+        updated[..., merge.consumer.mode_index] = torch.where(
+            valid,
+            observed["root"] * merge.activation_scale,
+            values[..., merge.consumer.mode_index],
+        )
+        return updated
+
+    oracle = adapter.forward(
+        batch.model_inputs,
+        interventions={
+            merge.anchor.activation_site: observe_anchor,
+            merge.consumer.activation_site: replace_consumer,
+        },
+    )
+    source_mlps = tuple(layer.mlp for layer in adapter.module.model.layers)
+    source_fingerprint = adapter.model_fingerprint()
+    compiled = executor.run(batch.model_inputs, condition="merged")
+    deletion = executor.run(batch.model_inputs, condition="deletion")
+
+    torch.testing.assert_close(
+        compiled.model_output.logits[valid],
+        oracle.logits[valid],
+    )
+    assert not torch.equal(
+        deletion.model_output.logits[valid],
+        oracle.logits[valid],
+    )
+    assert compiled.merge_count == global_plan.merge_count == 1
+    assert compiled.native_root_count == 1
+    assert compiled.removed_learned_parameters == 8
+    assert compiled.net_stored_coefficient_savings == 7
+    assert compiled.net_logical_macs_saved == (
+        7 * int(valid.sum().item())
+    )
+    assert tuple(
+        layer.mlp for layer in adapter.module.model.layers
+    ) == source_mlps
     assert adapter.model_fingerprint() == source_fingerprint
 
 
