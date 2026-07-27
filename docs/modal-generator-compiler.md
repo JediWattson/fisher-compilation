@@ -307,3 +307,134 @@ This first graph contains one node and therefore no interaction edge. It
 validates checksummed lowering, physical source compaction, coordinate-state
 lifetime, traversal, and resource accounting. It does not yet validate learned
 fan-out or fan-in; that requires compiling multiple fragments together.
+
+## Multi-fragment terminal fan-in development rung
+
+The next rung reused the strict single-fragment v3 artifact's fit-only prompt
+trace, parameter catalog, grouped Fisher, cluster plan, and fragment plan.
+It did not recompute or select clusters from the evaluation export. From the
+fit Fisher ordering it selected the top four eligible fragments on distinct
+layers:
+
+| causal layer | cluster | native channels | native parameters/MACs |
+| ---: | ---: | ---: | ---: |
+| 10 | 28 | 72 | 138,240 |
+| 11 | 28 | 76 | 145,920 |
+| 16 | 0 | 46 | 88,320 |
+| 17 | 0 | 54 | 103,680 |
+| **total** |  | **248** | **476,160** |
+
+Every node used the predeclared rank-32 computational basis and rank-16
+coordinate generator. Mode-rate ladders were clipped to each fragment's
+structural rank, so layers 16 and 17 stop at rank 32 rather than inventing a
+rank-64 numerical null-space completion.
+
+The source evaluation export contained 40 prompts. A content-hashed,
+deterministic rule split it into:
+
+- 20 open-development selection prompts used for node curves, ridge choice,
+  and greedy edge acceptance; and
+- 20 disjoint open-development assessment prompts that were not evaluated
+  until the graph was frozen.
+
+The artifact authenticates the source export, raw partition plan, both
+partition memberships, tokenized content hashes, and their exact union. Prompt
+text is not stored. This is still caller-declared, self-attested
+calibration-A development data. The two halves overlap in semantic families,
+so the assessment is not a fresh-family guard.
+
+### Physical interaction fitting
+
+The edgeless four-node overlay was executed before fitting edges. Temporary
+compact-MLP pre-hooks captured:
+
+1. each generator's actual modal state on the shifted compiled trajectory; and
+2. the removed native gate/up/down contribution recomputed at that exact
+   shifted normalized input, then encoded in the frozen target basis.
+
+Rows were aligned by exact `(prompt SHA-256, logical position)` keys. The
+interaction target was the remaining layer-17 coordinate residual. Restricting
+all candidates to the terminal node makes the fitted source states invariant
+to edge acceptance:
+
+```text
+layer 10 state ─┐
+layer 11 state ─┼─> layer 17 modal residual
+layer 16 state ─┘
+```
+
+Greedy Fisher-weighted selection accepted every candidate:
+
+| accepted order | edge | ridge | selection weighted-NRMSE improvement |
+| ---: | --- | ---: | ---: |
+| 1 | layer 16 → layer 17 | 0 | 0.153661 |
+| 2 | layer 10 → layer 17 | 0.0001 | 0.028802 |
+| 3 | layer 11 → layer 17 | 0.0001 | 0.013093 |
+
+The cumulative selection weighted NRMSE fell from `1.000000` with no messages
+to `0.804444` with all three. These numbers selected the graph; they are not
+the final quality measurement.
+
+### Frozen assessment result
+
+The final comparison held node weights and physical replacement scope
+identical between the interacting and edgeless graphs:
+
+| condition | NLL/token | delta NLL | native KL/token | native top-1 agreement |
+| --- | ---: | ---: | ---: | ---: |
+| native | 2.823914 | 0 | 0 | 100% |
+| interacting graph | 2.834824 | +0.010909 | 0.038655 | 91.8824% |
+| identical edgeless graph | 2.839795 | +0.015880 | 0.040344 | 91.3333% |
+| dense-fused edgeless | 2.839795 | +0.015880 | 0.040344 | 91.3333% |
+| matched deletion | 3.551284 | +0.727369 | 0.675984 | 66.4314% |
+
+The assessment contains 5,100 supervised positions and 5,120 valid tokens.
+Relative to the edgeless graph, interactions recover `0.004971` NLL/token,
+reduce native KL by `0.001688` (`4.18%`), and improve native top-1 agreement
+by `0.549` percentage points. They reduce the edgeless NLL penalty by `31.30%`.
+The dense-fused and edgeless graph controls agree within a maximum absolute
+supervised-logit difference of `7.25e-5` under a recorded `1e-4`,
+absolute-only float32 tolerance.
+
+This establishes that cross-layer modal messages add measurable fidelity on
+an assessment partition that did not select them. It does not establish
+generalization beyond the same prompt families.
+
+### Resource result
+
+| physical candidate | replacement parameters | matrix MACs/token | local parameter savings | local MAC savings |
+| --- | ---: | ---: | ---: | ---: |
+| interacting graph | 130,784 | 128,000 | 72.53% | 73.12% |
+| identical edgeless graph | 127,616 | 124,928 | 73.20% | 73.76% |
+| dense-fused edgeless | 84,480 | 81,920 | 82.26% | 82.79% |
+
+The three interaction matrices add 3,168 parameters and 3,072 matrix MACs per
+token. The interacting graph also performs 2,880 separately reported
+elementwise additions per token. Its 345,376 saved parameters are only
+`0.1288%` of the 268,098,176-parameter source model; breadth, not local rate,
+is now the dominant compression limitation. No kernel-latency claim is made.
+
+The result artifact remains ignored at:
+
+```text
+.local-runs/google--gemma-3-270m/
+  modal-generator-multifragment-fanin-dev-v1.{pt,json}
+```
+
+Its scientific payload digest is
+`682e68278cdd1d56a6bca2d4b427d3c868fa861c6d6b65da25086bc2016f17e0`.
+
+### What this rung does not settle
+
+The layer-16 edge selected ridge zero and has a very large coefficient scale
+(maximum absolute entry about `4.19e7`). The corresponding source modal
+coordinates are small enough that runtime messages remain useful, and the
+edge improves both selection and assessment behavior, but the coefficient
+scale signals poor conditioning. It is unsafe to treat this graph as
+quantization-ready or robust under distribution shift.
+
+The immediate stability rung should whiten or variance-normalize node states,
+exclude zero ridge, and compare full-rank with low-rank interaction messages.
+Only after the edge advantage survives that frozen sensitivity check should
+the graph be opened on a genuinely fresh, family-disjoint guard. Calibration
+B, validation, and test remain unopened.

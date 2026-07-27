@@ -1489,11 +1489,60 @@ def _canonical_basis_from_projector(
     )
 
 
+def _canonical_orthogonal_complement_basis(
+    supported_basis: Tensor,
+    *,
+    dimension: int,
+) -> Tensor:
+    """Choose coordinate-ordered directions orthogonal to a fixed basis."""
+
+    if (
+        supported_basis.ndim != 2
+        or supported_basis.dtype != torch.float64
+        or supported_basis.device.type != "cpu"
+        or dimension <= 0
+        or supported_basis.shape[1] + dimension
+        > supported_basis.shape[0]
+    ):
+        raise ValueError("canonical complement basis inputs are invalid")
+    width = supported_basis.shape[0]
+    tolerance = (
+        64.0
+        * torch.finfo(torch.float64).eps
+        * max(width, 1)
+    )
+    vectors: list[Tensor] = []
+    for coordinate in range(width):
+        candidate = torch.zeros(width, dtype=torch.float64)
+        candidate[coordinate] = 1.0
+        for _ in range(2):
+            if supported_basis.shape[1]:
+                candidate -= supported_basis @ (
+                    supported_basis.T @ candidate
+                )
+            for prior in vectors:
+                candidate -= prior * torch.dot(prior, candidate)
+        norm = float(torch.linalg.vector_norm(candidate).item())
+        if norm <= tolerance:
+            continue
+        vectors.append(candidate / norm)
+        if len(vectors) == dimension:
+            break
+    if len(vectors) != dimension:
+        raise RuntimeError(
+            "could not derive the requested deterministic complement basis"
+        )
+    return _canonicalize_basis_signs(
+        torch.stack(vectors, dim=1).contiguous()
+    )
+
+
 def _canonicalize_svd_basis(
     basis: Tensor,
     singular_values: Tensor,
     *,
     matrix_shape: tuple[int, int],
+    requested_count: int | None = None,
 ) -> Tensor:
     """Remove arbitrary rotations from tied and numerically null SVD spaces."""
 
@@ -1510,6 +1559,9 @@ def _canonicalize_svd_basis(
     count = singular_values.numel()
     if count == 0:
         return basis.clone().contiguous()
+    retained = count if requested_count is None else requested_count
+    if type(retained) is not int or not 0 < retained <= count:
+        raise ValueError("requested SVD basis count is invalid")
 
     eps = torch.finfo(torch.float64).eps
     size = max(*matrix_shape, 1)
@@ -1518,7 +1570,14 @@ def _canonicalize_svd_basis(
     supported = int((singular_values > zero_tolerance).sum().item())
     blocks: list[Tensor] = []
     start = 0
-    while start < supported:
+    # Only materialize the prefix used by the declared rate curve.  Native MLP
+    # fragment residuals are often highly rank-deficient (for example, 72
+    # removed channels decoded into a 640-wide residual).  Constructing an
+    # arbitrary 568-vector numerical null-space completion is unnecessary and
+    # can accumulate enough roundoff to fail a strict full-basis Gram check.
+    # A tied block that crosses the requested boundary is canonicalized as one
+    # subspace and sliced only after its deterministic basis is constructed.
+    while start < supported and start < retained:
         stop = start + 1
         while stop < supported:
             left = float(singular_values[start].item())
@@ -1545,24 +1604,25 @@ def _canonicalize_svd_basis(
         if blocks
         else basis.new_empty((basis.shape[0], 0))
     )
-    null_count = count - supported
+    null_count = max(retained - supported, 0)
     if null_count:
-        null_projector = torch.eye(
-            basis.shape[0],
-            dtype=torch.float64,
-        )
-        if supported:
-            null_projector -= supported_basis @ supported_basis.T
         blocks.append(
-            _canonical_basis_from_projector(
-                null_projector,
+            _canonical_orthogonal_complement_basis(
+                supported_basis,
                 dimension=null_count,
             )
         )
-    result = torch.cat(blocks, dim=1).contiguous()
+    result = torch.cat(blocks, dim=1)[:, :retained].contiguous()
+    # Projector-derived tied blocks and near-null complements are individually
+    # canonical, but concatenating many numerically estimated subspaces can
+    # accumulate a small cross-block Gram error.  Ordered reduced QR preserves
+    # the span of every column prefix (and therefore every declared ladder
+    # point); sign canonicalization then removes QR's diagonal-sign freedom.
+    result, _ = torch.linalg.qr(result, mode="reduced")
+    result = _canonicalize_basis_signs(result)
     if not torch.allclose(
         result.T @ result,
-        torch.eye(count, dtype=torch.float64),
+        torch.eye(retained, dtype=torch.float64),
         rtol=1e-10,
         atol=1e-11,
     ):
@@ -1777,6 +1837,7 @@ def fit_computational_mode_rate_curve(
         vh.T.contiguous(),
         singular_values,
         matrix_shape=tuple(weighted_centered.shape),
+        requested_count=config.ranks[-1],
     )
     total_centered_energy = float(
         (weighted_centered.square().sum() / weight_sum_tensor).item()

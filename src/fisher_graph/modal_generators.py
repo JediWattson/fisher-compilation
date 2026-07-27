@@ -1740,6 +1740,12 @@ def _canonicalize_eigenbasis(
             )
         )
     result = torch.cat(blocks, dim=1).contiguous()
+    # Canonical projector bases are deterministic, but concatenating tied and
+    # numerically null blocks can retain a small cross-block Gram error.
+    # Ordered reduced QR preserves every prefix span used by the rank ladder;
+    # canonical signs remove QR's remaining diagonal-sign freedom.
+    result, _ = torch.linalg.qr(result, mode="reduced")
+    result = _canonicalize_basis_signs(result)
     if not torch.allclose(
         result.T @ result,
         torch.eye(count, dtype=torch.float64),

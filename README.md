@@ -1059,6 +1059,45 @@ fisher-graph-gemma-modal-generator-dev \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 ```
 
+The next development rung compiled four distinct-layer fragments at layers
+10, 11, 16, and 17, then allowed only causal fan-in from the first three
+nodes to the terminal layer-17 node. The original 40-prompt development
+evaluation export was deterministically split before fitting: 20 prompts
+selected node/edge details and the other 20 assessed the frozen graph. All
+three candidate edges were selected.
+
+On the untouched open-development assessment half, the interacting graph
+improved over the exact same four nodes with no edges:
+
+| condition | NLL/token | delta NLL | native KL/token | native top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| interacting graph | 2.834824 | +0.010909 | 0.038655 | 91.8824% |
+| identical edgeless graph | 2.839795 | +0.015880 | 0.040344 | 91.3333% |
+| matched deletion | 3.551284 | +0.727369 | 0.675984 | 66.4314% |
+| native | 2.823914 | 0 | 0 | 100% |
+
+This is the first direct evidence here that learned cross-layer modal
+messages add model-level fidelity rather than merely adding graph machinery.
+The effect is real on this slice but small: edges recover `0.004971`
+NLL/token, reduce KL by `0.001688`, and add `0.549` percentage points of
+native top-1 agreement relative to the edgeless control.
+
+The graph replaces 476,160 native fragment parameters/MACs per token with
+130,784 parameters and 128,000 matrix MACs, saving `72.53%` of local storage
+and `73.12%` of local matrix work. That is only `0.1288%` of whole-model
+parameters because this rung replaces 248 channels across four MLPs. The
+three edges cost 3,168 parameters and 3,072 MACs per token. This remains
+same-family, self-attested, open-development evidence—not a heldout
+compression claim—and the strongest edge used an unregularized,
+poorly-scaled interaction matrix. State whitening/ridge stability and a
+fresh family-disjoint guard are required next. See the
+[`multi-fragment terminal fan-in result`](docs/modal-generator-compiler.md#multi-fragment-terminal-fan-in-development-rung).
+
+```bash
+fisher-graph-gemma-modal-generator-multifragment-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -1125,6 +1164,8 @@ python -m fisher_graph.gemma3_full_width_single_layer_experiment \
   --prompt-splits /absolute/path/full-width-prompts.json \
   --family-manifest /absolute/path/full-width-families.json
 python -m fisher_graph.gemma3_modal_generator_dev_experiment \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+python -m fisher_graph.gemma3_modal_generator_multifragment_dev_experiment \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall

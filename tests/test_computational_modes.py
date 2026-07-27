@@ -153,6 +153,55 @@ def test_ladder_is_nested_orthonormal_sign_canonical_and_deterministic() -> None
         )
 
 
+def test_canonical_svd_materializes_only_the_requested_rank_prefix() -> None:
+    width = 640
+    requested = 64
+    basis = torch.eye(width, dtype=torch.float64)
+    singular_values = torch.cat(
+        (
+            torch.linspace(72.0, 1.0, 72, dtype=torch.float64),
+            torch.zeros(width - 72, dtype=torch.float64),
+        )
+    )
+    result = computational_modes._canonicalize_svd_basis(
+        basis,
+        singular_values,
+        matrix_shape=(10_200, width),
+        requested_count=requested,
+    )
+    assert result.shape == (width, requested)
+    torch.testing.assert_close(
+        result.T @ result,
+        torch.eye(requested, dtype=torch.float64),
+        rtol=1e-10,
+        atol=1e-11,
+    )
+
+    generator = torch.Generator().manual_seed(17)
+    supported, _ = torch.linalg.qr(
+        torch.randn(
+            width,
+            46,
+            generator=generator,
+            dtype=torch.float64,
+        ),
+        mode="reduced",
+    )
+    complement = (
+        computational_modes._canonical_orthogonal_complement_basis(
+            supported,
+            dimension=requested - supported.shape[1],
+        )
+    )
+    combined = torch.cat((supported, complement), dim=1)
+    torch.testing.assert_close(
+        combined.T @ combined,
+        torch.eye(requested, dtype=torch.float64),
+        rtol=1e-10,
+        atol=1e-11,
+    )
+
+
 def test_fit_distortion_and_tail_energy_are_monotonic() -> None:
     curve = _curve()
 
