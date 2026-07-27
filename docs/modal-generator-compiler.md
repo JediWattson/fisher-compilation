@@ -438,3 +438,166 @@ exclude zero ridge, and compare full-rank with low-rank interaction messages.
 Only after the edge advantage survives that frozen sensitivity check should
 the graph be opened on a genuinely fresh, family-disjoint guard. Calibration
 B, validation, and test remain unopened.
+
+## All-layer breadth development rung
+
+The first breadth experiment selected one top-Fisher fragment on each of the
+18 native Gemma MLP layers. It compiled 1,183 channels and 2,271,360 native
+MLP parameters. This was deliberately a coverage test, not exhaustive MLP
+replacement.
+
+| condition | NLL/token | delta NLL | native KL/token | native top-1 agreement |
+| --- | ---: | ---: | ---: | ---: |
+| native | 2.823914 | 0 | 0 | 100% |
+| 12-edge terminal fan-in graph | 2.846954 | +0.023039 | 0.121558 | 85.8235% |
+| identical edgeless graph | 2.839176 | +0.015261 | 0.122093 | 85.7647% |
+| dense-fused edgeless | 2.839176 | +0.015261 | 0.122093 | 85.7647% |
+| matched deletion | 5.431380 | +2.607466 | 2.372614 | 44.7451% |
+
+All 12 accepted edges used nonzero ridge and had bounded coefficient scales.
+They slightly improved KL and top-1 agreement over the edgeless graph, but
+worsened NLL. The exhaustive rung therefore used the simpler edgeless
+executor so a weak interaction fit could not obscure the layer-replacement
+question.
+
+| physical candidate | replacement parameters | matrix MACs/token | local parameter savings | whole-model parameter savings |
+| --- | ---: | ---: | ---: | ---: |
+| interacting graph | 586,944 | 574,464 | 74.16% | 0.6283% |
+| identical edgeless graph | 574,272 | 562,176 | 74.72% | 0.6330% |
+| dense-fused edgeless | 380,160 | 368,640 | 83.26% | 0.7054% |
+
+This resolved the breadth bottleneck only structurally: one fragment per layer
+still touches too little of the source model to produce material whole-model
+compression.
+
+The ignored artifact is:
+
+```text
+.local-runs/google--gemma-3-270m/
+  modal-generator-all-layer-fanin-dev-v1.{pt,json}
+```
+
+Its scientific payload digest is
+`23075f88fd926b1de5fd82c37b873e2f5cd5a8d980dcec31281890d625c45842`.
+
+## Exhaustive full native MLP-stack development rung
+
+The exhaustive runner aggregates the 64 Fisher-cluster fragments on each
+layer into one authenticated layer superfragment before fitting
+computational modes. The resulting plan proves exact, disjoint coverage of:
+
+- 18 transformer MLP layers;
+- 1,152 source Fisher fragments;
+- all 36,864 intermediate channels; and
+- 70,778,880 native gate/up/down parameters.
+
+This is a full **MLP-stack** replacement. It is not a whole-transformer
+replacement: embeddings, attention, normalization, and the language-model
+head remain native.
+
+### Frozen protocol
+
+Fit40 and a deterministic selection20 partition were materialized first. One
+native gradient replay per split collected aligned normalized MLP inputs,
+complete MLP residual contributions, and summed Fisher row weights for all 18
+layers. There were 5,711 fit rows and 5,120 selection rows per layer.
+
+Each layer used:
+
+- a predeclared rank-640 computational-mode basis;
+- a predeclared rank-640 coordinate generator;
+- ridge `1e-6`; and
+- a dense residual plan that is executable without a singular-fragment
+  lowering.
+
+Rank 640 is the complete residual width, so the mode basis reconstructs every
+native layer contribution at numerical precision. It intentionally removes
+rank truncation as an explanation for failure. The remaining approximation is
+the affine generator from normalized layer input to the native nonlinear MLP
+residual.
+
+After all 18 generators and the physical executor were frozen, the other 20
+prompts were tokenized as open-development assessment data. Generated and
+matched-deletion conditions replaced the exact same 18 MLPs; deletion merely
+skipped generator work.
+
+### Full-stack assessment
+
+| condition | NLL/token | delta NLL | perplexity | native KL/token | native top-1 agreement |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| native | 2.823987 | 0 | 16.84 | 0 | 100% |
+| generated full MLP stack | 3.172463 | +0.348476 | 23.87 | 0.456653 | 74.0588% |
+| matched deletion | 13.902236 | +11.078248 | 1,090,597 | 11.108717 | 0.2353% |
+
+The assessment contains 5,100 supervised positions and 5,120 valid tokens.
+Relative to matched deletion, the generators recover `96.85%` of the NLL
+penalty, `95.89%` of the native-to-candidate KL, and 73.82 percentage points
+of native top-1 agreement. That is strong evidence that the fitted generators
+carry real MLP computation.
+
+It is not yet sufficient fidelity for compression. The generated model's
+perplexity is `1.417x` native, and native top-1 agreement is not downstream
+task accuracy. No calibration B, family-disjoint guard, validation, test, or
+downstream benchmark has been opened.
+
+### Storage and logical compute
+
+| quantity | native/source | generated candidate | savings |
+| --- | ---: | ---: | ---: |
+| whole-model learned parameters | 268,098,176 | 212,076,416 | 56,021,760 (`20.90%`) |
+| replaced MLP-stack parameters | 70,778,880 | 14,757,120 | 56,021,760 (`79.15%`) |
+| MLP matrix MACs / valid token | 70,778,880 | 14,745,600 | 56,033,280 (`79.17%`) |
+| generator bias additions / valid token | 0 | 11,520 | -11,520 |
+
+Across assessment20, generated execution performs 75,497,472,000 generator
+matrix MACs in place of 362,387,865,600 native MLP matrix MACs. Attention,
+the vocabulary head, and other retained work are not included in this local
+MLP comparison. These are algebraic operation counts, not measured latency or
+a custom-kernel result.
+
+The logical candidate excludes the removed native MLP stack. The development
+process does not: it keeps all 268,098,176 source parameters resident beside
+14,757,120 compiled parameters so it can compare native and generated
+conditions safely. The 452 MB `.pt` artifact is also not a packed model; it
+stores duplicated float64 analysis curves and authenticated bases while
+excluding all source weights.
+
+At rank 640, the runtime's two square generator factors can be multiplied into
+one affine `640 x 640` matrix per layer without changing the mathematical
+function. That derived optimization would use 7,384,320 generator parameters
+and 7,372,800 MLP matrix MACs per token, raising the potential whole-model
+parameter reduction to `23.65%`. It has not yet been implemented or checked
+for float32 execution equivalence, so it is not part of the measured result.
+
+### What the full-stack loss localizes
+
+The local selection fits are much stronger than the end-to-end result:
+
+- weighted NRMSE ranges from `0.1146` to `0.2979` across layers; and
+- weighted cosine ranges from `0.9553` to `0.9934`.
+
+Each generator was fit against a native layer input. In the simultaneous
+18-layer executor, layer \(k\) instead receives states already shifted by
+generators \(0,\ldots,k-1\). The gap between good native-trajectory fits and
+weaker end-to-end fidelity therefore points to compounded trajectory shift,
+not loss in the full-rank computational-mode basis.
+
+The next controlled diagnostic is a frozen replacement trajectory:
+
+1. assess native-prefix/generated-suffix and generated-prefix/native-suffix
+   ladders without refitting;
+2. locate the first layers where end-to-end NLL and KL accelerate;
+3. recollect teachers at the physically compiled prefix trajectory;
+4. compare sequentially refit generators with causal Jacobian/message
+   corrections; and
+5. only then descend a rank ladder and open a fresh family-disjoint guard.
+
+The ignored exhaustive artifact is:
+
+```text
+.local-runs/google--gemma-3-270m/
+  modal-generator-full-mlp-stack-dev-v1.{pt,json}
+```
+
+Its scientific payload digest is
+`babed58e93ff09bd65a7ce0062eb8e1f657672f3cc8bcf4e9fb03f446a48f5ec`.

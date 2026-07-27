@@ -57,6 +57,7 @@ fisher-graph-gemma-dense-supermode-dev = "fisher_graph.gemma3_structured_mlp_den
 fisher-graph-gemma-full-model-merge-dev = "fisher_graph.gemma3_full_model_merge_dev_experiment:main"
 fisher-graph-gemma-modal-generator-dev = "fisher_graph.gemma3_modal_generator_dev_experiment:main"
 fisher-graph-gemma-modal-generator-multifragment-dev = "fisher_graph.gemma3_modal_generator_multifragment_dev_experiment:main"
+fisher-graph-gemma-full-mlp-stack-dev = "fisher_graph.gemma3_full_mlp_stack_dev_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 

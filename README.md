@@ -1098,6 +1098,58 @@ fisher-graph-gemma-modal-generator-multifragment-dev \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 ```
 
+The breadth follow-up selected one top-Fisher fragment in every one of the 18
+MLP layers. Its separately fused edgeless path replaced 2,271,360 native
+parameters with 380,160 generator parameters, saving `83.26%` locally but
+only `0.7054%` of the whole model. On assessment20 it reached NLL `2.839176`
+versus `2.823914` native and `85.7647%` native top-1 agreement. Twelve
+regularized terminal fan-in edges slightly improved KL and top-1, but worsened
+NLL to `2.846954`, so the exhaustive rung kept the first full-stack graph
+edgeless.
+
+That exhaustive development run aggregates all 64 Fisher fragments in each
+layer before fitting modes. It physically replaces all 2,048 MLP channels in
+all 18 blocks—36,864 channels and 70,778,880 native MLP parameters—with one
+rank-640 residual generator per block. Attention, embeddings, normalization,
+and the language-model head remain native; this is the full native MLP stack,
+not the whole transformer.
+
+| condition | NLL/token | delta NLL | native KL/token | native top-1 |
+| --- | ---: | ---: | ---: | ---: |
+| native | 2.823987 | 0 | 0 | 100% |
+| generated full MLP stack | 3.172463 | +0.348476 | 0.456653 | 74.0588% |
+| matched deletion | 13.902236 | +11.078248 | 11.108717 | 0.2353% |
+
+The generators therefore recover `96.85%` of deletion's NLL penalty and
+`95.89%` of its KL penalty, showing that they learned substantial computation
+rather than merely identifying expendable MLPs. They still miss the current
+fidelity target: perplexity rises from `16.84` to `23.87`, and `74.06%`
+native top-1 agreement is not a downstream-accuracy result.
+
+The logical deployable candidate has 212,076,416 parameters: 14,757,120
+generator parameters plus 197,319,296 retained native non-MLP parameters. It
+saves 56,021,760 parameters (`79.15%` of the MLP stack, `20.90%` of the whole
+model). MLP linear work falls from 70,778,880 to 14,745,600 matrix MACs per
+valid token, a `79.17%` local reduction, plus 11,520 bias additions. These are
+logical counts, not a measured kernel-latency claim. The live experiment keeps
+the source and compiled overlay resident together, while the ignored
+452 MB tensor artifact also stores float64 analysis curves; neither is the
+packed deployment footprint.
+
+Local generator fits remain strong—selection weighted NRMSE ranges from
+`0.1146` to `0.2979`, with weighted cosine from `0.9553` to `0.9934`—so the
+full-stack loss is evidence of compounded trajectory shift: each generator
+was fit on native layer inputs but receives earlier generated states at
+runtime. The next diagnostic is a frozen prefix/suffix replacement ladder,
+followed by compiled-trajectory refitting or causal correction edges. This
+remains same-family, self-attested open-development evidence and is not a
+compression or heldout claim.
+
+```bash
+fisher-graph-gemma-full-mlp-stack-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -1166,6 +1218,8 @@ python -m fisher_graph.gemma3_full_width_single_layer_experiment \
 python -m fisher_graph.gemma3_modal_generator_dev_experiment \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 python -m fisher_graph.gemma3_modal_generator_multifragment_dev_experiment \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+python -m fisher_graph.gemma3_full_mlp_stack_dev_experiment \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
