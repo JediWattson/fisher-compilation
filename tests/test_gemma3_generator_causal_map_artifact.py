@@ -17,6 +17,10 @@ from fisher_graph.gemma3_generator_causal_map_artifact import (
     gemma3_generator_causal_map_cohort_membership_sha256,
     load_gemma3_generator_causal_map_artifact,
     save_gemma3_generator_causal_map_artifact,
+    validate_gemma3_generator_causal_map_payload,
+)
+from fisher_graph.gemma3_generator_hierarchy_nomination import (
+    nominate_known_v1_gemma3_generator_hierarchy,
 )
 
 
@@ -554,6 +558,29 @@ def test_builds_complete_non_authoritative_map() -> None:
     assert "prompt_text" not in keys
     assert "token_ids" not in keys
     assert "raw_activation_rows" not in keys
+
+
+def test_public_payload_validator_authenticates_complete_mapping() -> None:
+    payload = _build(_arguments())
+
+    validate_gemma3_generator_causal_map_payload(payload)
+    nomination = nominate_known_v1_gemma3_generator_hierarchy(payload)
+    assert len(nomination.parents) == 17
+    assert nomination.internal_edge_count == 1
+    assert nomination.surfaced_cut_edge_count == 152
+
+    tampered = copy.deepcopy(payload)
+    tampered["directed_edges"][0]["mean_directed_response_rms"] += 1.0
+    with pytest.raises(
+        ValueError,
+        match="scientific payload hash mismatch",
+    ):
+        validate_gemma3_generator_causal_map_payload(tampered)
+    with pytest.raises(
+        ValueError,
+        match="scientific payload hash mismatch",
+    ):
+        nominate_known_v1_gemma3_generator_hierarchy(tampered)
 
 
 def test_build_is_deterministic_and_binds_interaction_hash() -> None:

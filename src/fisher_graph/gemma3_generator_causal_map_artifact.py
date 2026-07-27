@@ -32,6 +32,7 @@ __all__ = [
     "gemma3_generator_causal_map_cohort_membership_sha256",
     "load_gemma3_generator_causal_map_artifact",
     "save_gemma3_generator_causal_map_artifact",
+    "validate_gemma3_generator_causal_map_payload",
 ]
 
 
@@ -1828,6 +1829,16 @@ def _validate_payload(raw: Mapping[str, object]) -> None:
         nodes=nodes,
         cohorts=cohorts,
     )
+
+
+def validate_gemma3_generator_causal_map_payload(
+    payload: Mapping[str, object],
+) -> None:
+    """Strictly authenticate an already materialized causal-map mapping."""
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("causal-map payload must be a mapping")
+    _validate_payload(payload)
 
 
 def build_gemma3_generator_causal_map_payload(

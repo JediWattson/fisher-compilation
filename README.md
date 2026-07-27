@@ -1272,6 +1272,54 @@ The ignored tensor-free map has scientific payload digest
 See the [`generator causal map`](docs/generator-causal-map.md) for the edge
 definitions, complete result, and mutation boundary.
 
+The recursive hierarchy rung now wraps that flat map without treating finite
+suppression responses as Jacobians. It nominates 17 level-1 parents: one
+causally contiguous L3-L4 parent plus 16 singleton passthrough parents. All
+152 relations crossing a parent boundary remain surfaced. L12/L15 is recorded
+separately as a nonlocal parameter-sharing family, not as causal containment.
+The authenticated nomination digest is
+`49a334abdd5e6e09e1fdb77cc5d823d651ad0df6e8fe4f7e43888f56eed62ffc`.
+
+The model-agnostic reference core can exactly contract a signed affine
+multi-port child DAG, independently factor each legal output prefix into
+balanced Fisher-weighted restriction/prolongation modes, lower each retained
+mode into a fine-compatible `R`/`P` graph, and separately publish a fine-to-mode
+encoder plus a mode-to-mode recursive core. The emitted core is currently a
+zero-storage, zero-MAC identity handoff: it proves that the next rung consumes
+the preceding modal coordinates and authenticated moments, but it does not
+claim a new interaction structure or compression result.
+
+The v1 factorization explicitly records block-diagonal cross-port input
+covariance and independently factored block-diagonal output Fisher; a
+multi-input prefix fails closed unless independence is declared. Projected
+\(K_{ji}=R_jJ_{ji}P_i\) edges now carry their factors, fine Jacobian, evidence,
+and projected matrix for replay, while `MeasuredModalCore` requires fresh
+input/output moments and remains analysis-only with no replacement authority.
+Internal child edges still require edge tearing or node-local factorization to
+avoid double-counting the already-composed transfer, and parallel-path
+aggregation is not implemented. Extracted boundary offsets are preserved once
+through a deterministic readout owner.
+
+The prepared hierarchy runtime now authenticates once, copies execution state
+once, folds centering into the output bias, and benchmarks an exact dense
+source against both a materialized dense candidate and the compact `R -> P`
+candidate. On the checked Apple M5 shape probe at width 640, low rank produces
+a real local crossover: an 18-stage MLX traversal at 512 rows measured `1.28x`
+at rank 80 and `1.23x` at rank 160, while row-1 decode remained slower and
+rank 320 remained a loss. Rank 80 stores `25.12%` of the dense boundary state;
+rank 160 stores `50.08%`. These are synthetic kernel-shape results, not Gemma
+quality or end-to-end model speed. The full raw report, dense-candidate
+control, CPU results, and reproduction command are in the
+[`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
+
+The reference executor falls back exactly only to its immediate child, never
+transitively to the original fine leaf. The next live rung therefore needs
+joint modal statistics, an edge-torn composer, authenticated parallel-edge
+aggregation, and a transitive fine fallback before assessment. This establishes
+a guarded recursive compiler boundary; it does not make the Gemma nomination
+executable and makes no Gemma compression claim. See the
+[`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -1312,6 +1360,10 @@ python -m fisher_graph.modal_composition_experiment
 python -m fisher_graph.fused_executor_experiment
 python -m fisher_graph.mlx_benchmark \
   --output artifacts/associative_recall/mlx_metal_benchmark.json
+python -m fisher_graph.hierarchy_speed_benchmark \
+  --backend both \
+  --mlx-chain-depths 1 18 \
+  --output artifacts/hierarchy_speed/width640_prepared_benchmark.json
 python -m fisher_graph.gemma3_experiment \
   --prompts examples/gemma3_prompts.txt
 python -m fisher_graph.gemma3_stability_experiment \
