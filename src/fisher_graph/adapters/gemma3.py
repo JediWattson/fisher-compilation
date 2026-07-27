@@ -622,7 +622,6 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             for site_id in (
                 operator_sites.feed_forward_gate_projection,
                 operator_sites.feed_forward_up_projection,
-                operator_sites.feed_forward_down_input,
             ):
                 sites.append(
                     ActivationSite(
@@ -636,6 +635,17 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                         intervenable=False,
                     )
                 )
+            sites.append(
+                ActivationSite(
+                    id=operator_sites.feed_forward_down_input,
+                    role="internal",
+                    axes=axes,
+                    width=(
+                        transformer.feed_forward.intermediate_width
+                    ),
+                    owner_layer=layer.id,
+                )
+            )
             sites.append(
                 ActivationSite(
                     id=layer.output_site,
@@ -1018,16 +1028,20 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             trace.record(site, _tensor_from_layer_output(output))
             return output
 
-        def capture_only_input(
+        def instrument_input(
             _module: nn.Module,
             args: tuple[object, ...],
             kwargs: dict[str, object],
             *,
             site: str,
         ) -> tuple[tuple[object, ...], dict[str, object]]:
-            value, _ = self._extract_hidden_input(args, kwargs)
-            trace.record(site, value)
-            return args, kwargs
+            value, positional = self._extract_hidden_input(args, kwargs)
+            instrumented = trace.record(site, value)
+            if positional:
+                return (instrumented, *args[1:]), kwargs
+            updated = dict(kwargs)
+            updated["hidden_states"] = instrumented
+            return args, updated
 
         if active_operator_sites:
             assert operator_sites is not None
@@ -1124,7 +1138,7 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                             module_name
                         ].register_forward_pre_hook(
                             lambda module, args, kwargs, *,
-                            current_site=site: capture_only_input(
+                            current_site=site: instrument_input(
                                 module,
                                 args,
                                 kwargs,

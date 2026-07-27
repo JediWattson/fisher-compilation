@@ -31,6 +31,7 @@ _CHECKPOINT_VERSION = 1
 DEFAULT_VARIABLE_ASSOCIATIVE_CHECKPOINT = Path(
     ".local-runs/variable-associative/checkpoint.pt"
 )
+_DEFAULT_TASK_CONFIG = VariableAssociativeRecallTaskConfig()
 
 
 @dataclass(frozen=True, slots=True)
@@ -600,6 +601,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_VARIABLE_ASSOCIATIVE_CHECKPOINT,
     )
+    parser.add_argument(
+        "--n-keys",
+        type=int,
+        default=_DEFAULT_TASK_CONFIG.n_keys,
+        help=(
+            "number of distinct key tokens "
+            f"(default: {_DEFAULT_TASK_CONFIG.n_keys})"
+        ),
+    )
+    parser.add_argument(
+        "--n-values",
+        type=int,
+        default=_DEFAULT_TASK_CONFIG.n_values,
+        help=(
+            "number of distinct value tokens "
+            f"(default: {_DEFAULT_TASK_CONFIG.n_values})"
+        ),
+    )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=_DEFAULT_TASK_CONFIG.split_seed,
+        help=(
+            "seed for the semantic-context train/validation/test split "
+            f"(default: {_DEFAULT_TASK_CONFIG.split_seed})"
+        ),
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--max-steps", type=int, default=4_000)
     parser.add_argument("--evaluation-interval", type=int, default=100)
@@ -610,7 +638,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    task_config = VariableAssociativeRecallTaskConfig(
+        n_keys=arguments.n_keys,
+        n_values=arguments.n_values,
+        split_seed=arguments.split_seed,
+    )
     result = run_variable_associative_training(
+        task_config=task_config,
         training_config=VariableAssociativeTrainingConfig(
             device=arguments.device,
             max_steps=arguments.max_steps,
@@ -628,6 +662,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "final_step": result.final_step,
                 "best_step": result.best_checkpoint.step,
                 "dataset_sha256": result.splits.dataset_sha256,
+                "task": {
+                    "n_keys": result.task_config.n_keys,
+                    "n_values": result.task_config.n_values,
+                    "split_seed": result.task_config.split_seed,
+                    "semantic_contexts": (
+                        result.task_config.semantic_context_count
+                    ),
+                    "variants_per_context": (
+                        result.task_config.variants_per_context
+                    ),
+                    "train_contexts": result.splits.train.contexts,
+                    "validation_contexts": result.splits.validation.contexts,
+                    "test_contexts": result.splits.test.contexts,
+                },
                 "train": asdict(result.best_checkpoint.train_metrics),
                 "validation": asdict(
                     result.best_checkpoint.validation_metrics

@@ -828,11 +828,12 @@ class _FakeTextModel(nn.Module):
         **_: object,
     ) -> SimpleNamespace:
         hidden = self.embed_tokens(input_ids)
-        hidden = self.layers[0](
-            hidden,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-        )
+        for layer in self.layers:
+            hidden = layer(
+                hidden,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+            )
         return SimpleNamespace(last_hidden_state=self.norm(hidden))
 
 
@@ -909,3 +910,69 @@ def test_gemma_adapter_captures_nine_operator_sites_in_canonical_shapes() -> Non
                 sites.attention_context: torch.zeros_like,
             },
         )
+
+    zeroed = adapter.forward(
+        {
+            "input_ids": input_ids,
+            "attention_mask": torch.ones_like(input_ids, dtype=torch.bool),
+        },
+        capture_sites=(sites.feed_forward_down_input,),
+        interventions={
+            sites.feed_forward_down_input: torch.zeros_like,
+        },
+    )
+    torch.testing.assert_close(
+        zeroed.activations[sites.feed_forward_down_input],
+        torch.zeros_like(
+            zeroed.activations[sites.feed_forward_down_input]
+        ),
+    )
+    assert not torch.allclose(zeroed.logits, run.logits)
+
+
+def test_gemma_adapter_can_carry_a_down_input_across_layers() -> None:
+    model = _FakeCausalLM().eval()
+    model.config.num_hidden_layers = 2
+    model.config.layer_types = ["full_attention", "full_attention"]
+    model.model.config.num_hidden_layers = 2
+    model.model.config.layer_types = [
+        "full_attention",
+        "full_attention",
+    ]
+    model.model.layers.append(_FakeLayer())
+    adapter = Gemma3CausalLMAdapter(model)
+    first = adapter.layers[0].transformer
+    second = adapter.layers[1].transformer
+    assert first is not None and first.operator_sites is not None
+    assert second is not None and second.operator_sites is not None
+    anchor_site = first.operator_sites.feed_forward_down_input
+    consumer_site = second.operator_sites.feed_forward_down_input
+    state: dict[str, Tensor] = {}
+
+    def capture_anchor(value: Tensor) -> Tensor:
+        state["anchor"] = value
+        return value
+
+    def replace_consumer(value: Tensor) -> Tensor:
+        anchor = state.get("anchor")
+        if anchor is None:
+            raise RuntimeError("consumer ran before anchor")
+        return anchor
+
+    input_ids = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    run = adapter.forward(
+        {
+            "input_ids": input_ids,
+            "attention_mask": torch.ones_like(input_ids, dtype=torch.bool),
+        },
+        capture_sites=(anchor_site, consumer_site),
+        interventions={
+            anchor_site: capture_anchor,
+            consumer_site: replace_consumer,
+        },
+    )
+
+    torch.testing.assert_close(
+        run.activations[consumer_site],
+        run.activations[anchor_site],
+    )

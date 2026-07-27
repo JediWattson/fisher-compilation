@@ -28,9 +28,10 @@ This repository now contains a complete reference run:
 - a query-sparse full-transformer-span gate with causal-prefix routing,
   pointwise/metadata/shuffle controls, exact native-versus-graph accounting,
   and fail-closed model-fitting escalation;
-- a source-independent static mini-transformer that replaces that complete
-  three-block span behind a fixed rank-14 Fisher decoder, with multi-seed
-  selection, zero-source-call audits, and ideal-versus-dense accounting;
+- a source-independent static mini-transformer progression from the
+  exploratory rank-14 result to a clean rank-24 V2 executor that replaces the
+  complete three-block span, passes five-seed selection and fresh validation,
+  records zero source calls, and separates ideal from dense-reference work;
 - a position-conditioned modal bottleneck and standalone causal modal executor;
 - causal conditional completion of discarded boundary modes;
 - independently compiled layer-0 and layer-1 executors composed into a frozen
@@ -166,6 +167,48 @@ whole-span answer delta inside the Fisher subspace. Because the panel is
 exploratory and its bootstrap gate also failed, it is not yet a
 validation-backed compression result.
 
+The clean V2 replication expands the source task from eight to ten keys and
+values, then excludes every semantic context that appeared anywhere in the
+original task. This leaves 1,986 fresh train contexts, 246 fresh validation
+contexts, and 250 fresh test contexts. The development projection ladder
+rejected rank 14 and 18 despite exact top-1 behavior: their NLL degradations
+were +0.047595 and +0.020099, while rank 24 reduced the degradation to
++0.001793 and passed every ceiling gate.
+
+The frozen executor has three causal layers, hidden width 24, four heads, and
+feed-forward width 48 behind a rank-24 Fisher decoder. It trains for at most
+3,200 steps with modal-MSE/cross-entropy/teacher-KL weights
+0.05/0.25/4.0, no label smoothing, and a 0.995 learned-parameter EMA.
+Checkpoints are ranked after strong/minimum pass by teacher KL, p90 absolute
+NLL error, absolute mean NLL degradation, and a later-step tie-break. All five
+declared seeds passed the strong selection gate.
+
+On 256-context confirmatory calibration B, the replacement was exact across
+answer, paired-context, layout, length, query, order, new-key/new-value, and
+identity strata. Its NLL was 0.045733 versus 0.049742 native
+(`-0.004009`), teacher KL was 0.003536, and p90 absolute delta NLL was
+0.013739. The 10,000-sample semantic-context bootstrap interval for mean NLL
+degradation was [-0.004472, -0.003568]. On the one allowed evaluation of 246
+fresh validation contexts, behavior remained exact: NLL was 0.045992 versus
+0.050580 native (`-0.004588`), KL was 0.004506, p90 was 0.015021, and the
+bootstrap interval was [-0.005271, -0.003967].
+
+The direct and reloaded executor made zero calls to all three source blocks.
+Artifact replay, direct-versus-boundary execution, future invariance, and
+rank-24 span-membership audits passed. The executor stores 16,824 runtime
+coefficients, `0.656367x` the replaced span. Including the shared model shell,
+the compiled deployment is 19,064 parameters versus 27,872 native
+(`0.683984x`). Ideal valid-prefix complete MACs are `0.607037x` native; the
+dense-reference shape estimate is `0.834063x`.
+
+Fresh executor test remains hash-only and was not evaluated. The source-model
+training checkpoint separately records a prior native test evaluation on its
+ordinary 405-context split: 100% accuracy and NLL 0.050810. That disclosure is
+not an executor test result. V2 is therefore a validation-backed structural
+compression result for this query-sparse associative-recall task, not a
+general language-model result. Neither MAC estimate is a measured latency,
+energy, or sparse-kernel speedup.
+
 ## Optimization summary
 
 [![Three-panel optimization summary comparing arithmetic, CPU latency, and resident tensor storage](docs/images/fused-executor-optimization.svg)](docs/images/fused-executor-optimization.svg)
@@ -197,6 +240,17 @@ fisher-graph-variable-static-full-span \
   --checkpoint .local-runs/variable-associative/checkpoint.pt \
   --predecessor .local-runs/variable-associative/full-span-conditional.pt \
   --output .local-runs/variable-associative/static-transformer-full-span.pt
+fisher-graph-variable-associative-train \
+  --n-keys 10 \
+  --n-values 10 \
+  --split-seed 26071 \
+  --output .local-runs/variable-associative-v2/checkpoint.pt
+fisher-graph-variable-static-full-span-v2 \
+  --checkpoint .local-runs/variable-associative-v2/checkpoint.pt \
+  --hypothesis-artifact \
+    .local-runs/variable-associative/static-transformer-full-span.pt \
+  --output \
+    .local-runs/variable-associative-v2/static-transformer-full-span-v2.pt
 fisher-graph-intervene
 fisher-graph-modal-executor
 fisher-graph-modal-completion
@@ -208,6 +262,10 @@ fisher-graph-plot-optimizations
 fisher-graph-verify
 python -m pytest -W error
 ```
+
+The V2 entry point is fail-closed: its scientific recipe is fixed, existing
+outputs are never overwritten, and exclusive receipts guard calibration and
+validation access.
 
 On Apple Silicon, install the optional MLX backend and run its separate
 same-device benchmark with:
@@ -867,11 +925,30 @@ means this particular one-shot `2048 -> 1536` rule is not a validated
 compression method. It supports no whole-model quality, measured latency,
 energy, fused-kernel, or model-level compression claim.
 
-The ignored outputs contain only pooled activation means/covariances, derived
-Fisher modes and codecs, exact trace accounting, bounded
-transport/JVP/factor/executor state or scalar evaluation curves, and
-provenance—never pretrained weights or a model state dict. The gated artifact
-defaults to the ignored local path
+The whole-model cross-block follow-up also reached a decisive boundary. It
+found one development pair, layer-6 MLP unit 1202 to layer-15 unit 651, and
+implemented it as a directed merged supermode: compute the earlier generator
+once, carry its signed scalar through native layers 7–14, remove the later
+gate/up rows, and retain the later decoder. The physical executor is bit-exact
+to its activation oracle and removes exactly 1,280 learned parameters plus
+1,279 net arithmetic MACs per valid token after its scalar multiply.
+
+The preregistered 64-prompt fresh-family guard rejected the pair. The merge was
+worse than deletion at the consumer MLP, layer-15 output, logits, and
+native-teacher KL in every one of eight new families and all four length
+bands. Fresh-data correlation fell to `-0.12935`, and the best retrospective
+no-intercept scale explained only `2.49%` of deletion error. This proves the
+merge/executor mechanism but not a viable compression edge; calibration B,
+validation, and test remain unopened. See the
+[`cross-block guard postmortem`](docs/cross-block-selective-bundling.md#physically-merged-executor-and-fresh-family-guard).
+
+The analysis reports contain only pooled activation means/covariances, derived
+Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
+state or scalar evaluation curves, and provenance. The strict cross-block
+candidate round-trip is the exception: it materializes the two affected
+candidate MLPs, including cloned pretrained tensors, exclusively under the
+ignored `.local-runs/` tree and must never be committed. The gated artifact
+defaults to the same ignored local tree at
 `.local-runs/google--gemma-3-270m/layers-4-6-gated-executor.pt`, with a
 tensor-free JSON report beside it. The locked candidate's deployable FP32
 state accounts for about 2.17 MB; the roughly 16 MB diagnostic tensor artifact
@@ -895,6 +972,7 @@ python -m fisher_graph.variable_associative_training
 python -m fisher_graph.variable_conditional_experiment
 python -m fisher_graph.variable_full_span_experiment
 python -m fisher_graph.variable_static_full_span_experiment
+python -m fisher_graph.variable_static_full_span_v2_experiment
 python -m fisher_graph.intervention_experiment
 python -m fisher_graph.modal_executor_experiment
 python -m fisher_graph.modal_completion_experiment

@@ -344,8 +344,11 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
             ),
         )
         self.assertFalse(sites["layer.0.post_attention"].intervenable)
-        for site_id in operator_sites.values():
+        for site_id in operator_sites.values()[:-1]:
             self.assertFalse(sites[site_id].intervenable)
+        self.assertTrue(
+            sites[operator_sites.feed_forward_down_input].intervenable
+        )
         self.assertEqual(
             sites["layer.1.input"].alias_of,
             "layer.0.output",

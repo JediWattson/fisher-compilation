@@ -2084,6 +2084,170 @@ either width; the next experiment must fix selection/refit generalization
 rather than merely shrink less. See the
 [`structured executor protocol`](structured-layer-executor.md#compression-ladder).
 
+## Rejected 2048-to-1920 pseudo-unit bundling rung
+
+The next experiment tested actual merging rather than deletion. It selected
+the 256 lowest diagonal Fisher/Taylor units in layer 4, matched them into 128
+pairs, and replaced every pair with one learned gated pseudo-unit. Pair
+selection minimized the worst of three A-fit quantities: the Fisher residual
+of the encoder/decoder that would actually execute, output-weighted rank-one
+loss, and lack of activation correlation. The direct primary used the
+algebraic merged down projection \(D R\). A global down-refit variant and a
+matched-width Fisher deletion plus down-refit were frozen as diagnostics and
+could not authorize heldout evaluation.
+
+The clean v9 protocol used 256 family-disjoint A-fit prompts and 256 A-guard
+prompts, eight topic families per side. Fit supplied 60,751 supervised
+positions and 61,007 valid positions; guard supplied 61,042 and 61,298. The
+candidate fingerprints froze before guard tokenization. The direct bundle
+needed every standard gate plus block-delta NRMSE at most `0.015`; the normal
+structural ceiling remained `0.02`.
+
+The pair generator did learn its A-fit objective. Its normalized three-term
+loss fell from `1.627640` to `0.226407`, and latent normalized RMSE fell from
+`1.280810` to `0.193289`. That did not make the source units strongly
+mergeable. Across the 128 forced pairs, median executed Fisher residual
+fraction was `0.414485`, median output-loss fraction was `0.270464`, and
+median activation decorrelation was `0.870353`. The decorrelation term
+dominated the minimax priority: only 13 pairs had total priority at most
+`0.7`, while the perfect matching forced all 128 pairs to merge. Low
+individual Fisher score therefore did not imply pairwise redundancy.
+
+Every candidate passed execution, cosine, branch, NLL, KL, aggregate top-1,
+and per-prompt behavior gates. Every candidate failed block-delta NRMSE:
+
+| Fresh-v9 A-guard metric | Direct bundle | Bundle + down refit | Deletion + down refit |
+|---|---:|---:|---:|
+| Block-delta NRMSE | `0.023124` | `0.020681` | `0.021758` |
+| Block-delta cosine | `0.999733` | `0.999786` | `0.999764` |
+| Feed-forward-delta NRMSE | `0.019409` | `0.017358` | `0.018262` |
+| Delta NLL/token | `0.000190` | `-0.000021` | `0.000403` |
+| Teacher KL/token | `0.000671` | `0.000406` | `0.000373` |
+| Aggregate top-1 agreement | `0.988942` | `0.992137` | `0.991776` |
+| p10 per-prompt top-1 | `0.980392` | `0.984314` | `0.982456` |
+| Standard structural pass | no | no | no |
+| May authorize calibration B | no | diagnostic only | diagnostic only |
+
+The direct bundle was 6.28% worse than matched deletion on block NRMSE. Global
+down refitting improved the bundle by 10.56% and beat refit deletion by 4.95%,
+but still missed the ordinary `0.02` structural gate and was not the
+preregistered primary. Its A-fit operator NRMSE was `0.008915` after refit
+but guard block NRMSE was `0.020681`, so compensation also retained a material
+fit-to-guard gap. The result does not establish viable pure bundling at this
+width.
+
+The proposed shape would remove 245,760 parameters: 4.4093% of this layer but
+only about 0.0917% of the 268,098,176-parameter model. MLP linear MACs would
+fall by 6.25%; including unchanged layer-4 attention, the measured guard
+analytic-MAC reduction was 4.2176%. These remain hypothetical because
+fidelity failed. The runner wrote diagnostic JSON only and no executable
+artifact. Calibration B, validation, and test remained untokenized and
+unevaluated.
+
+This result favors a selective frontier over another forced perfect matching:
+merge only pairs that independently clear executed-Fisher, output, and
+generator-redundancy thresholds, leave the other units intact, and evaluate
+that variable-width plan on a wholly fresh fit/guard corpus. Another viable
+direction is a richer \(k\)-to-\(r\) group with \(r>1\), which can preserve
+multiple nonlinear directions but must still demonstrate net parameter and
+MAC savings. Reusing v9 guard to choose either design would be tuning on a
+consumed split.
+
+The selective search should not remain confined to layer 4. A mode's Fisher
+rank is a node property, while redundancy is an edge property; two
+functionally similar modes may occur at very different ranks and in different
+blocks. The whole-model follow-up therefore streams signed
+\(z\,\partial L/\partial z\) influence sketches for every MLP unit, searches a
+bounded low-density pool from every block, and replays only a sparse,
+authenticated cross-block shortlist for exact fit-side moments. It does not
+force a pair count, and a graph with zero qualifying edges is valid.
+
+A cross-block edge begins as a discovery hypothesis. Native rows from
+different depths cannot be averaged across intervening normalization,
+attention, residual, and nonlinear operations. The direct executor design
+uses an earlier anchor coordinate as a token-aligned carried graph value,
+removes a later gate/up generator, and applies the later depth's decoder to
+the carried scalar. This saves only the later gate/up row, not its decoder.
+Selected edges are compiled as bounded contiguous windows and must pass both
+worst-window and composed whole-model gates on a fresh guard. See
+[`Whole-model selective mode bundling`](cross-block-selective-bundling.md) for
+the graph, density, execution, and data protocol.
+
+A development-only whole-model scan now exercises this path across all 18
+MLPs. On 40 v9 A-fit prompts spanning eight families and all four length
+bands, it streamed 36,864 nodes, replayed 2,870 sparse cross-block edges, and
+retained exactly one endpoint-disjoint hypothesis: native unit 1202 at layer
+6 to unit 651 at layer 15. The pair has fit-side row/sequence signed-influence
+correlations of `0.9281`/`0.9342`.
+
+A subsequent native intervention fitted a signed scalar on A-fit positions
+0–39 and evaluated it on disjoint A-fit positions 40–79. The fitted
+Fisher-weighted scale was `-0.450315`, with the same negative sign in all four
+family-disjoint scale folds. Replacing layer-15 unit 651 with that scaled,
+token-aligned layer-6 unit recovered `79.70%` of deletion's coordinate
+squared error, `83.89%` at the ten-block window output, `92.72%` at final
+logits, and `76.58%` of native-teacher KL. A family-deranged carry was worse
+than deletion at the coordinate, MLP, and window surfaces. The correct carry
+had lower KL than deletion in all eight evaluation families and beat the
+shuffled control in seven.
+
+That intervention remains a development-only diagnostic. It used
+token-disjoint subsets of calibration-A fit drawn from the same eight
+synthetic families; every evaluation prompt reached the 256-token cap. It
+applied no pass/fail threshold. A matched unweighted-scale intervention recovered
+`79.64%` of coordinate error, `84.65%` at the window, and `92.47%` at logits.
+Fisher weighting lowered native-teacher KL by `10.24%` relative to that
+unweighted carry and was `0.24` points better at final-logit recovery, while
+the unweighted carry was `0.76` points better at the intermediate window.
+This is a modest, mixed Fisher advantage rather than a general superiority
+result. The native oracle overwrites the coordinate after the original
+generator runs, so it saves no compute itself.
+
+The physical follow-up now implements that merge. The candidate retains the
+layer-6 generator, carries its signed scalar through native layers 7–14, omits
+the layer-15 consumer gate/up rows, and retains the complete layer-15 down
+projection. Deletion is only the ablation control. A strict local artifact
+round trip binds model weights, execution configuration, plan, oracle,
+topology, and candidate tensors. The compiled overlay was bit-exact to the
+activation replacement at every measured internal and behavioral boundary,
+including padded batches on valid query positions, and recorded zero calls to
+the original affected MLP projections.
+
+The preregistered fresh guard then **failed**. It contained 64 previously
+unopened synthetic prompts, eight new topic families, four length bands,
+10,778 valid positions, and 10,714 supervised next-token positions. The
+compiled path again matched the activation oracle with zero observed error,
+but both were worse than deletion:
+
+| Condition | Consumer-MLP NRMSE | Layer-15 output NRMSE | Final-logit NRMSE | Teacher KL/token | Top-1 |
+|---|---:|---:|---:|---:|---:|
+| delete consumer coordinate | 0.002996 | 0.001258 | 0.001904 | 0.00001589 | 99.7760% |
+| merged supermode | 0.004940 | 0.002316 | 0.003030 | 0.00005765 | 99.7480% |
+
+The merge's recovery relative to deletion was `-171.80%` at the consumer MLP,
+`-239.21%` at the layer-15 output, `-153.25%` at logits, and `-262.82%` in
+native-teacher KL. All eight families and all four length bands were negative
+at those surfaces. The guard therefore rejects this pair; calibration B,
+validation, and test remain unopened.
+
+Post-hoc analysis on the consumed guard found the core generalization failure.
+The frozen Fisher scale was `-0.450315`, whereas the fresh-data unweighted
+no-intercept optimum was `-0.048076` and could explain only `2.49%` of
+deletion error. Centered correlation fell to `-0.12935`; an affine diagnostic
+had slope `-0.02555`, intercept `0.01402`, and \(R^2=0.01673\). The discovered
+coordinates were not a stable shared mode outside the development families.
+Those post-hoc values cannot be used to retune this candidate.
+
+Mechanically, the rejected candidate does omit 1,280 learned parameters and
+1,280 linear MACs per valid token. Its fixed signed carry costs one coefficient
+and multiply, so the net arithmetic saving is 1,279 MACs per valid token,
+about `0.000477%` of model parameters for this single edge. The evaluation
+overlay retains the complete base model for comparison, and no end-to-end
+serialized-size, resident-memory, latency, or kernel-speed saving is claimed.
+See
+[`Whole-model selective mode bundling`](cross-block-selective-bundling.md#physically-merged-executor-and-fresh-family-guard)
+for the executor contract, guard protocol, and full postmortem.
+
 ## What “Fisher” means here
 
 For sequence \(i\), the score is summed next-token negative log likelihood
@@ -2199,7 +2363,13 @@ and length range. It is still 1x source shape and compute. The first real width
 intervention, 2048-to-1536 MLP compression, passed its same-data A preflight
 but failed fresh-v7 B direct, feed-forward, and aggregate top-1 gates.
 Compression validation and test therefore remained sealed, so no compressed
-single-layer or multi-layer replacement is authorized.
+single-layer or multi-layer replacement is authorized. The later
+2048-to-1920 pseudo-unit experiment replaced 128 pairs with learned merged
+units and tested a family-disjoint internal A guard. Its behavior metrics were
+strong, but the direct bundle, bundle-plus-refit diagnostic, and matched
+deletion diagnostic all missed block-delta NRMSE. The low-Fisher pool was not
+strongly pair-redundant, so calibration B remained sealed and no bundled
+replacement is authorized either.
 
 The next scientific work is:
 
@@ -2220,11 +2390,13 @@ The next scientific work is:
    its now-bitwise rank-639 endpoint, and preregister both mean and minimum
    canonical-correlation stability gates; require rank 636 or lower to validate
    before treating merged coordinates as a generator target;
-7. on a wholly fresh corpus, separate MLP unit selection/down refit from an
-   internal A guard or cross-fit them; preregister a gentler retained width
-   such as 1792 only after that guard passes, then open one new B exactly once.
-   Do not tune on consumed v7 B or continue to width 1024 after the 1536
-   rejection;
+7. treat the failed layer-6-to-layer-15 fresh guard as a rejection, not a scale
+   tuning set. Require activation-relation and fitted-edge stability across
+   multiple fit-side content domains before selecting another cross-block
+   edge; compare a richer \(k\)-to-\(r\) predictor and a genuinely conditional
+   route against deletion, then freeze one design for an entirely new guard.
+   Do not tune on consumed v7 B, v9 A, or the consumed cross-block guard, and
+   open a new B exactly once only after a direct physical executor passes;
 8. require local boundary, internal modal, end-to-end NLL, sequence-length,
    causal-leakage, fallback, storage, arithmetic, and latency gates before
    replacing that block in the mixed runtime;

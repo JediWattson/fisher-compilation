@@ -25,10 +25,11 @@ generate the selected modal output directly from the layer or block input,
 with zero calls to the native segment. Only that later executor can enter the
 mixed compiled runtime.
 
-The latest full-span rung remains a representation oracle. Its causal-prefix
-router and complete accounting are implemented below, but its calibration-B
-joint gate failed against a static rank-14 comparator. Validation, test, and
-graph fitting therefore remained untouched.
+The conditional-routing full-span rung remains a representation oracle and
+failed its joint gate against a static rank-14 comparator. The separate static
+generator line now has a clean V2 result: a source-independent rank-24 graph
+replaced all three blocks, passed five-seed selection, confirmatory calibration,
+and one fresh-validation evaluation, and recorded zero source-block calls.
 
 Run the reference protocol with:
 
@@ -725,6 +726,144 @@ hash-audited clean train contexts—not all 238 nominal reserve contexts—remai
 available without constructing a fresh dataset. Consuming that small reserve
 is an irreversible protocol decision.
 
+## V2 clean expanded-task replication
+
+V2 passed its confirmatory calibration and one locked fresh-validation
+evaluation. It is the first validation-backed source-independent full-span
+replacement in this repository. The scope remains narrow: one demanded answer
+row in the controlled variable-layout associative-recall task, with every
+causal-prefix row available to the graph. It is not a general language-model
+or all-token prefill result.
+
+The new source checkpoint uses ten keys and ten values. The compiler protocol
+excludes every semantic context that occurred anywhere in the original
+eight-key/eight-value task. This novelty filter leaves 1,986 fresh train
+contexts, 246 fresh validation contexts, and 250 fresh test contexts.
+Source-model training used the expanded task's ordinary split; Fisher fitting
+and replacement evaluation used only the fresh-context protocol.
+
+Whole fresh train contexts were assigned by the frozen salted SHA-256 order:
+
+| V2 role | Contexts | Access policy |
+|---|---:|---|
+| `basis_fit_a` | 128 | estimate the new checkpoint's answer-row Fisher basis |
+| `graph_fit_a` | 1,024 | update executor weights |
+| `graph_stop_a` | 192 | choose a checkpoint within each seed |
+| `graph_select_a` | 192 | apply the five-seed stability rule |
+| `calibration_b` | 256 | opened after every development choice was frozen |
+| reserve | 194 | unused by this experiment |
+| fresh validation | 246 | evaluated once after joint calibration passed |
+| fresh executor test | 250 | retained as hashes and never evaluated |
+
+The V1 result supplied the two-stage relational hypothesis, but its rank-14
+decoder did not transfer to the expanded source checkpoint. A
+development-only native-projection ladder diagnosed the required span before
+graph fitting:
+
+| Rank | Delta NLL | Teacher KL | p90 absolute delta NLL | Exact top-1 behavior | Strong ceiling |
+|---:|---:|---:|---:|---:|---:|
+| 14 | +0.047595 | 0.027043 | 0.048045 | yes | fail |
+| 18 | +0.020099 | 0.008521 | 0.025891 | yes | fail |
+| 24 | +0.001793 | 0.000155 | 0.003760 | yes | **pass** |
+
+This is an important failure diagnosis: ranks 14 and 18 did not fail by
+changing the answer token. They failed the distribution-fidelity gates, so
+training a graph behind either decoder could not have met the locked V2
+thresholds.
+
+The frozen executor has three causal layers, hidden width 24, four attention
+heads, feed-forward width 48, and a rank-24 Fisher decoder. Its objective uses
+modal-MSE/cross-entropy/teacher-KL weights of `0.05/0.25/4.0`, learning rate
+0.003, no label smoothing, and at most 3,200 steps. A 0.995 exponential moving
+average covers learned parameters only; the fixed decoder is unchanged.
+After strong and minimum pass, checkpoint selection orders EMA states by
+teacher KL, p90 absolute NLL degradation, absolute mean NLL degradation, and
+later step. Every one of five declared seeds passed the strong
+`graph_select_a` gate; seed 129102 was the frozen deployed seed.
+
+The confirmatory and validation results are:
+
+| Quantity | Calibration B (256 contexts) | Fresh validation (246 contexts) |
+|---|---:|---:|
+| Native NLL | 0.049742 | 0.050580 |
+| Replacement NLL | 0.045733 | 0.045992 |
+| Delta NLL | -0.004009 | -0.004588 |
+| Answer / paired / minimum-stratum accuracy | 100% / 100% / 100% | 100% / 100% / 100% |
+| Native top-1 agreement | 100% | 100% |
+| Native-teacher KL | 0.003536 | 0.004506 |
+| p90 absolute per-example delta NLL | 0.013739 | 0.015021 |
+| Context-bootstrap 95% interval | [-0.004472, -0.003568] | [-0.005271, -0.003967] |
+| Source-block calls | 0 / 0 / 0 | 0 / 0 / 0 |
+
+All new-key, new-value, key-only, value-only, combined-novelty, queried-key,
+and answer-value strata were nonempty and 100% accurate on both panels. The
+10,000-sample bootstrap resampled whole semantic contexts. Its upper bound is
+below both zero and the preregistered +0.0085 limit on each panel.
+
+Calibration also passed every ownership and artifact audit:
+
+- direct replacement and strict-reloaded execution each called the three
+  source blocks zero times;
+- strict reload reproduced outputs exactly, with maximum absolute difference
+  0;
+- direct token-boundary and compiler-boundary paths agreed exactly;
+- changing 176 future tensor slots across 64 examples changed the answer by
+  0;
+- the generated delta stayed in the rank-24 Fisher span, with maximum
+  orthogonal residual `3.81e-6` under a `2e-5` tolerance; and
+- the saved executor is source-free and bound to its authenticated report.
+
+Train the ignored local source checkpoint with:
+
+```bash
+fisher-graph-variable-associative-train \
+  --n-keys 10 \
+  --n-values 10 \
+  --split-seed 26071 \
+  --output .local-runs/variable-associative-v2/checkpoint.pt
+```
+
+Then run the V2 compiler experiment:
+
+```bash
+fisher-graph-variable-static-full-span-v2 \
+  --checkpoint .local-runs/variable-associative-v2/checkpoint.pt \
+  --hypothesis-artifact \
+    .local-runs/variable-associative/static-transformer-full-span.pt \
+  --output \
+    .local-runs/variable-associative-v2/static-transformer-full-span-v2.pt
+```
+
+This command is deliberately a confirmatory runner, not a sweep interface:
+rank, architecture, seeds, loss, EMA, bootstrap count, and promotion
+thresholds are frozen in code. It refuses to overwrite an artifact or report
+and creates exclusive access receipts beside the source checkpoint immediately
+before opening calibration B and fresh validation. An existing output or
+receipt fails closed, so tuning must remain in development-only tooling rather
+than silently reusing a protected panel.
+
+Both `.pt` files remain under the ignored `.local-runs` tree; the source model
+does not enter the repository. The V1 artifact supplies hypothesis provenance,
+not reusable V1 training examples or source weights.
+
+The selected executor stores 16,824 runtime coefficients versus 25,632 in the
+replaced source span, a `0.656367x` ratio. Including the shared embedding,
+position, norm, and vocabulary-head shell gives 19,064 deployed parameters
+versus 27,872 in the source model, or `0.683984x`. Ideal valid-prefix complete
+matrix work is `0.607037x` native. The current dense-reference shape estimate
+is `0.834063x` native.
+
+These are authenticated coefficient and matrix-MAC counts, not measured
+latency, energy, or kernel throughput. The PyTorch implementation remains a
+dense correctness reference. Converting the ideal sparsity into a speed claim
+still requires a lowered kernel and same-device benchmark.
+
+Fresh executor test remains hash-only. There is one explicit disclosure: the
+source-model training checkpoint already contains native-model metrics from
+its ordinary 405-context test split—100% answer and paired accuracy with NLL
+0.050810. That source-training evaluation is not a compiled-executor test and
+does not open the 250-context fresh executor-test panel.
+
 ## Claim boundary
 
 The positive statement below applies to the fixed-format result:
@@ -743,16 +882,16 @@ fidelity and compute savings.
 The full-span routing result adds that query-sparse execution exposes a large
 possible whole-model envelope, but the tested Fisher policy does not allocate
 less work than a static rank-14 answer projection. The static-generator
-follow-up turns part of that envelope into a real source-independent graph:
-two causal stages, unlike one, generated a high-fidelity rank-14 answer delta
-with lower parameter and ideal-MAC counts. Its frozen calibration point
-passed every strong point-estimate gate but missed the context-bootstrap gate
-by 0.000323 and overlapped an earlier development probe, so it remains
-exploratory pre-validation evidence.
+line turns part of that envelope into a real source-independent graph. V1
+showed that at least two relational stages were necessary but remained
+exploratory. Clean V2 used a three-layer rank-24 graph, passed all five
+development seeds, confirmatory calibration, and fresh validation with exact
+behavior and zero native-block calls. It therefore establishes
+validation-backed structural compression for the tested query-sparse
+associative-recall boundary.
 
-It does not establish:
+V2 does not establish:
 
-- a validation-backed source-layer replacement;
 - end-to-end model-file compression;
 - measured source-block FLOP or energy reduction;
 - kernel or wall-clock speedup;
@@ -760,14 +899,14 @@ It does not establish:
 - stability of the learned specialist masks on another split or checkpoint;
 - generalization from controlled variable layouts to natural variable-length
   text;
+- all-token prefill or decoding replacement;
 - generalization to another checkpoint or model family; or
 - that Fisher need is the unique or optimal routing teacher.
 
-The static graph now generates the selected modal delta without running the
-native segment and has lower structural coefficient and ideal-MAC counts. A
-compression claim still requires a fresh confirmatory pass and locked
-validation; a speed claim additionally requires a sparse lowered kernel and
-same-device benchmark.
+The parameter and MAC result is structural: it counts the selected executor
+and deployed shared shell, while the authenticated PyTorch reference still
+uses dense shapes. A speed claim additionally requires a sparse lowered kernel
+and same-device benchmark.
 
 ## From specialist masks to a specialist generator bank
 
@@ -807,13 +946,13 @@ experts on every legal edge and mixes their outputs. It remains useful as a
 state-conditioned transport reference, but soft expert probabilities alone do
 not skip expert computation.
 
-## Gemma variable-sequence escalation remains blocked
+## Gemma variable-sequence escalation after V2
 
-The static graph is materially stronger than the earlier variable-format and
-full-span routing gates, but its nominal calibration was exploratory, its
-bootstrap also failed, and official validation remained untouched. It does
-not yet authorize a new conditional Gemma fit. After a clean toy confirmation
-and locked validation, the first larger-model rung should:
+V2 removes the specific clean-toy-confirmation blocker for a static
+query-sparse full-span graph. It does not validate the method on Gemma or
+natural text, and the conditional router itself still failed. A bounded
+larger-model experiment may now test the hypothesis, but must begin with new
+data roles and the same fail-closed ownership and fidelity checks:
 
 1. strict-bind the model revision, layer range, codec/span predecessors, and
    all prior prompt hashes;
