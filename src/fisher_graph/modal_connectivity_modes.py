@@ -315,22 +315,62 @@ def _canonicalize_svd_subspaces(
                 canonical_right.T @ canonical_right,
                 torch.eye(block_width, dtype=torch.float64),
             ):
-                raise RuntimeError(
-                    "canonical tied SVD basis lost right orthonormality"
+                # The tolerance above deliberately groups numerically
+                # inseparable values.  A block can still contain values that
+                # are close rather than mathematically identical, in which
+                # case rotating the left subspace while replacing every
+                # singular value by its mean does not produce an orthonormal
+                # paired right basis.  Keep the original valid SVD block
+                # instead of rejecting a rank-deficient measured operator.
+                # Exact tied blocks still take the deterministic projector
+                # path.
+                left_blocks.append(left[:, start:stop].clone())
+                right_blocks.append(right[:, start:stop].clone())
+                value_blocks.append(singular_values[start:stop].clone())
+            else:
+                left_blocks.append(canonical_left)
+                right_blocks.append(canonical_right)
+                value_blocks.append(
+                    torch.full(
+                        (block_width,),
+                        representative,
+                        dtype=torch.float64,
+                    )
                 )
-            left_blocks.append(canonical_left)
-            right_blocks.append(canonical_right)
-            value_blocks.append(
-                torch.full(
-                    (block_width,),
-                    representative,
-                    dtype=torch.float64,
-                )
-            )
         start = stop
     canonical_left = torch.cat(left_blocks, dim=1).contiguous()
     canonical_values = torch.cat(value_blocks, dim=0).contiguous()
     canonical_right_h = torch.cat(right_blocks, dim=1).T.contiguous()
+    identity = torch.eye(rank, dtype=torch.float64)
+    if (
+        not _close(canonical_left.T @ canonical_left, identity)
+        or not _close(
+            canonical_right_h @ canonical_right_h.T,
+            identity,
+        )
+        or not _close(
+            (canonical_left * canonical_values.unsqueeze(0))
+            @ canonical_right_h,
+            weighted,
+            scale=float(weighted.abs().max().item()),
+        )
+    ):
+        # Mixed exact-tie, near-tie, and numerical-null blocks can make
+        # individually valid projector orientations lose mutual
+        # orthogonality once concatenated.  The original SVD is still a
+        # complete valid factorization, so preserve it and remove only the
+        # ordinary sign ambiguity.  This keeps measured rank-deficient
+        # operators executable while exact tied subspaces continue to use the
+        # deterministic projector path above.
+        fallback_left, fallback_right_h = _canonicalize_svd_signs(
+            left,
+            right_h,
+        )
+        return (
+            fallback_left,
+            singular_values.clone(),
+            fallback_right_h,
+        )
     canonical_left, canonical_right_h = _canonicalize_svd_signs(
         canonical_left,
         canonical_right_h,

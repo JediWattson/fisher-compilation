@@ -64,6 +64,7 @@ fisher-graph-gemma-full-mlp-refit-dev = "fisher_graph.gemma3_full_mlp_stack_refi
 fisher-graph-gemma-full-model-runtime-dev = "fisher_graph.gemma3_full_model_runtime_analysis:main"
 fisher-graph-gemma-generator-fingerprint-dev = "fisher_graph.gemma3_generator_causal_fingerprint_experiment:main"
 fisher-graph-gemma-generator-causal-map-dev = "fisher_graph.gemma3_generator_causal_map_experiment:main"
+fisher-graph-gemma-l3-l4-hierarchy-dev = "fisher_graph.gemma3_l3_l4_hierarchy_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 

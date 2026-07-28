@@ -1360,13 +1360,55 @@ quality or end-to-end model speed. The full raw report, dense-candidate
 control, CPU results, and reproduction command are in the
 [`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
 
+The first live L3/L4 measurement rung keeps the frozen 18-generator refit
+unchanged and replaces nomination proxies with local linear evidence. It
+streams joint activation covariance and valid-position score-gradient Fisher
+induced by summed prompt NLL at the L3/L4 generator inputs and outputs, factors
+the two affine generators, measures both the literal-zero topology tear and
+the prompt-conditioned mean-source reference path at the L3-to-L4 boundary,
+and fits signed projected JVP kernels by logical causal lag on separate probe
+prompts. The ordinary L4 input is never used as the reference base: it already
+contains L3's varying effect,
+so adding the measured edge there would double-count that interaction.
+
+```bash
+fisher-graph-gemma-l3-l4-hierarchy-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The command writes executable low-rank tensors only under the ignored
+`.local-runs/` tree and a source-safe JSON report beside them. Its rank curve
+is logical shape accounting. A prompt-local pair plan now binds the two modal
+factors, logical grid, mean-source point, and exact JVP artifact, then checks
+factorized execution against a dense control while the frozen transformer
+supplies the reference-base tensor. This remains an analysis control, not a
+Gemma replacement executor.
+
+On the 40-fit-sequence/four-probe development comparison, rank 64 reached
+`0.763` mean local pair-output cosine and `1.187` relative error. Rank 128
+improved source/target reconstruction and lowered the in-sample JVP residual
+from `0.323` to `0.257`, but its finite pair-output cosine fell to `0.600` and
+relative error rose to `1.771`. Higher rank therefore exposes a
+finite-displacement failure in the stationary first-order edge rather than
+fixing it. Positive-lag energy remains nonzero (`21.6%` at rank 64), so the
+fan-out signal is real, but it is not yet accurate transport.
+
+The corrected rank-64 shape curve represents `11.4%` of the flat pair
+parameters and `11.25%` of its linear MACs, but only a nominal `0.685%`
+whole-model parameter reduction—and it omits the reference provider. These are
+not achieved compression or speedups. The run is content-disjoint but not
+family-disjoint, and its randomized JVP residual is in-sample.
+
 The reference executor falls back exactly only to its immediate child, never
-transitively to the original fine leaf. The next live rung therefore needs
-joint modal statistics, an edge-torn composer, authenticated parallel-edge
-aggregation, and a transitive fine fallback before assessment. This establishes
-a guarded recursive compiler boundary; it does not make the Gemma nomination
-executable and makes no Gemma compression claim. See the
-[`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
+transitively to the original fine leaf. The next gate is to validate unseen
+JVP directions, add a conditional/nonlinear finite-displacement correction,
+compile and authenticate the prompt-conditioned mean-source reference
+provider, freeze architecture and rank on a disjoint selection split, add a
+transitive fine fallback, and run a source-authoritative family-disjoint
+shadow assessment. Parallel-edge aggregation remains a separate requirement
+when more than this single L3-to-L4 edge is admitted. This establishes a
+guarded recursive compiler boundary; it does not yet make the Gemma nomination
+executable. See the [`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
 
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor

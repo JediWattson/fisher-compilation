@@ -388,32 +388,139 @@ over generator messages. The adapter rejects requests to reinterpret them as
 such and grants no merge, prune, route, compile, execute, or mutation
 authority.
 
-## Next live rung
+## First live L3/L4 measurement rung
 
-The next experiment must collect the missing executable measurements from the
-frozen full-stack generator overlay:
+`gemma3_l3_l4_hierarchy_experiment.py` advances the structural nomination to
+development-only local evidence on the frozen full-stack refit. It:
 
-1. Expose selected generated residuals as retained autograd leaves while all
-   model and generator parameters remain frozen.
-2. Accumulate prompt-conditioned NLL score gradients with respect to those
-   residual messages to estimate their activation Fisher and moments.
-3. Measure joint modal input statistics, including cross-port covariance, and
-   joint output score gradients when a whole-core Fisher metric is required.
-4. Build an edge-torn, node-local L3–L4 composer that exposes the intermediate
-   L3 source and L4 target without retaining the same interaction in the
-   already-composed base transfer.
-5. Measure signed local boundary JVPs for every torn edge and outgoing cut,
-   project them into proof-carrying \(K_{ji}=R_jJ_{ji}P_i\) edges, and
-   authenticate any parallel-path aggregation.
-6. Execute that analysis-only modal core and collect fresh input and output
-   mean, covariance, and Fisher on the exact graph.
-7. Fit the next connectivity basis on a fit split, choose ranks on a disjoint
-   selection split, and freeze it.
-8. Add a transitive fallback that reaches the original fine leaf, then run
-   source-authoritative shadow execution on a fresh family-disjoint assessment
-   split.
-9. Publish the full rank/error/parameter/MAC/resident-byte rate curve.
+1. retains the L3 normalized MLP input as an autograd leaf while keeping every
+   source-model and generator parameter frozen;
+2. streams joint activation covariance and valid-position score-gradient
+   Fisher induced by summed prompt NLL at the L3 input/output and L4
+   input/output, including measured L3-output/L4-input cross blocks;
+3. Fisher-balances the two exact affine generators into local restriction and
+   prolongation factors;
+4. checks that replaying L3's generated residual through the intervening
+   native boundary exactly reproduces the observed ordinary L4 input;
+5. evaluates both the literal-zero topology tear and the prompt-conditioned L4
+   reference produced by the fitted mean L3 residual; and
+6. linearizes around that mean-source reference, then uses exact randomized
+   JVP probes to fit a signed matrix for each nonnegative logical lag on
+   content-disjoint probe prompts.
 
-Until those pieces and gates exist, L3–L4 remains a structural hierarchy
-nomination. The current work is neither an executable Gemma replacement nor a
-compression result.
+The distinction between the ordinary and torn L4 inputs is essential:
+
+```text
+topology diagnostic = f_prompt(0)
+centered edge base  = f_prompt(mean_L3_source)
+ordinary L4 input  = f_prompt(native_L3_source)
+candidate modal L4 = R4(centered edge base - mean_x4) + K * m3
+```
+
+Here `m3` is centered, so `m3 = 0` corresponds to the fitted mean L3 source.
+That makes `f_prompt(mean_L3_source)`, not `f_prompt(0)`, the compatible
+execution reference. The literal-zero path remains valuable topology evidence,
+but using it directly would omit the large zero-to-mean affine response.
+Adding the modal edge to the ordinary input would instead restore the varying
+L3 interaction a second time.
+
+`EdgeTornModalPairBoundaryContract` therefore makes both wrong states
+inexpressible in the artifact declaration: the base must explicitly be named
+as a `mean_source_reference_torn_base` bound to the L3 mean, and the artifact
+grants neither ordinary-path nor source-replacement authority. That declaration
+does not prove the provenance of a runtime tensor.
+`CausalModalPairPlan` and its prepared runtime provide dense-control,
+factorized, and staged execution for a supplied reference base, but remain
+analysis infrastructure rather than a Gemma executor. The plan binder now
+authenticates both factors, the mean-source linearization point, logical
+positions, validity mask, and exact JVP artifact. It cannot authenticate the
+external function that produced the supplied reference-base tensor. A plain
+tensor name is not live provider provenance.
+
+Run the development measurement with:
+
+```bash
+fisher-graph-gemma-l3-l4-hierarchy-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The command writes a tensor artifact and source-safe JSON report under the
+ignored `.local-runs/` tree. The report includes raw joint-moment summaries,
+factor spectra, prompt-local edge diagnostics, logical-lag energy, and a
+rank/parameter/MAC curve. That resource curve is **shape-only accounting**:
+the local analysis plan still calls the frozen transformer boundary to obtain
+its mean-source reference base.
+
+The first full development comparison used 40 fit sequences and four
+content-disjoint probe sequences, with eight exact randomized JVP directions
+per probe and logical lags 0 through 4. The split was not family-disjoint. Each
+row below is the mean across the same four probes:
+
+| retained rank | source / target reconstruction error | in-sample JVP residual | oracle-base pair vs local-control cosine | oracle-base pair vs local-control relative error | pair parameter fraction | whole-model parameter fraction |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64 | 0.291 / 0.229 | 0.323 | 0.763 | 1.187 | 0.114 | 0.99315 |
+| 128 | 0.125 / 0.131 | 0.257 | 0.600 | 1.771 | 0.251 | 0.99421 |
+
+The parameter columns use the corrected runtime-consistent count for all four
+stored means. The two ignored reports below predate that correction and omit
+two width-640 mean vectors, so their original candidate count is lower by
+1,280 scalars.
+
+The rank-128 run is the useful negative control. It reconstructs substantially
+more of both generators and lowers the in-sample directional residual, yet
+every finite pair-output probe gets worse. The denser modal state exposes more
+of the finite displacement that a single stationary first-order edge does not
+model. Increasing rank alone is therefore not the next rung.
+
+The prepared factorized and dense pair executors agree within
+`6.68e-6`, and the stage-3 factor binding agrees exactly. Those are
+implementation controls, not fidelity results. The rank-64 pair still has
+relative error above 1, so its error norm exceeds the local factor-control
+output norm. Positive logical lags carry about 21.6% of rank-64 kernel energy
+and 17.1% at rank 128, which supports nonlocal fan-out but not accurate
+transport.
+
+The two local reports remain ignored artifacts. Their report digests are
+`4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016`
+at rank 64 and
+`313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672`
+at rank 128.
+
+Interpret the Fisher summaries narrowly. Gradients at these adjacent sites are
+derived from the same scalar sequence NLL and are chain-related, so a near-one
+normalized cross-Fisher block is evidence against an independent/block-
+diagonal approximation, not semantic equivalence or replacement fidelity.
+The report also separates empirical rank upper bounds from support ranks after
+isotropic metric regularization, and explicitly marks weighted modal energy as
+not being a fidelity metric.
+
+This rung proves that joint Fisher/covariance and signed causal transport can
+be measured on the frozen compiled stack, bound into a prompt-local analysis
+plan, and executed consistently against a frozen-boundary oracle. It does
+**not** prove that one prompt-independent edge is adequate, choose a deployment
+rank, execute a replacement Gemma model, preserve cached decoding, pass
+downstream fidelity, compress the deployed model, or improve latency.
+
+## Next validation gate
+
+The next rung must:
+
+1. validate the JVP fit on held-out directions;
+2. replace or augment the stationary first-order edge with a
+   finite-displacement correction, such as a prompt-conditioned residual or a
+   path-integrated Jacobian;
+3. compile and authenticate a provider for the prompt-conditioned mean-source
+   L4 reference base;
+4. execute that self-contained graph and collect fresh moments on its exact
+   runtime path;
+5. choose and freeze both architecture and rank on a disjoint selection split;
+6. add a transitive fallback to the original fine leaf;
+7. run source-authoritative shadow execution on a fresh family-disjoint
+   assessment split; and
+8. replace logical shape accounting with measured fidelity, resident storage,
+   active compute, and latency results.
+
+Parallel-path aggregation must also be authenticated before a later rung
+admits multiple fine edges with the same modal endpoints. Until those gates
+pass, L3/L4 is a measured development hypothesis, not an executable Gemma
+replacement or a compression result.
