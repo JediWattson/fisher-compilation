@@ -61,6 +61,7 @@ fisher-graph-gemma-modal-generator-multifragment-dev = "fisher_graph.gemma3_moda
 fisher-graph-gemma-full-mlp-stack-dev = "fisher_graph.gemma3_full_mlp_stack_dev_experiment:main"
 fisher-graph-gemma-full-mlp-trajectory-dev = "fisher_graph.gemma3_full_mlp_stack_trajectory_experiment:main"
 fisher-graph-gemma-full-mlp-refit-dev = "fisher_graph.gemma3_full_mlp_stack_refit_experiment:main"
+fisher-graph-gemma-full-model-runtime-dev = "fisher_graph.gemma3_full_model_runtime_analysis:main"
 fisher-graph-gemma-generator-fingerprint-dev = "fisher_graph.gemma3_generator_causal_fingerprint_experiment:main"
 fisher-graph-gemma-generator-causal-map-dev = "fisher_graph.gemma3_generator_causal_map_experiment:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"

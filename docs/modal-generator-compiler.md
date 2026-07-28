@@ -668,7 +668,7 @@ per token. Assessment20 was materialized only after all eight refits froze.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | prefix 0-9, native suffix | 11.61% | +0.037989 | 0.101191 | 85.43% | 1.039x |
 | original generated 0-17 | 20.90% | +0.348476 | 0.456653 | 74.06% | 1.417x |
-| sequentially refit 0-17 | 20.90% | +0.149649 | 0.203246 | 81.02% | 1.161x |
+| base generators 0-9 + sequential refit 10-17 | 20.90% | +0.149649 | 0.203246 | 81.02% | 1.161x |
 
 Against the original full generated stack, the sequential refit reduces
 excess NLL by `57.1%` and KL by `55.5%`, while increasing native top-1
@@ -702,6 +702,116 @@ descend the rank ladder.
 
 ```bash
 fisher-graph-gemma-full-mlp-refit-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+### Prepared full-model runtime result
+
+The refit artifact previously established logical parameter and MAC savings,
+but its defensive executor deliberately hashes the model and temporarily
+installs/restores every MLP on each call. Timing that transaction would
+measure artifact validation rather than a deployable hot path.
+
+`PreparedGemma3FullMLPStackSwitcher` now separates those phases. It
+authenticates the complete catalog through the strict executor once, prepares
+the replacement modules once, switches a complete MLP stack outside timing,
+and delegates the timed forward directly to the live Hugging Face model. The
+benchmark rotates the exact three-system order over nine rounds after three
+untimed warmups:
+
+1. native Gemma;
+2. the authenticated composite catalog—base generators for layers 0-9 and
+   sequentially refit generators for layers 10-17—retaining their two
+   rank-640 projections; and
+3. the same affine generators precomposed into one 640-by-640 projection.
+
+The third system is important because rank 640 is full residual rank. Its two
+640-wide factors occupy 819,840 parameters and execute 819,200 MACs per layer,
+while a precomposed affine map occupies 410,240 parameters and executes
+409,600 MACs. Materialization uses a float64 CPU matrix product and casts once
+to the runtime dtype before any assessment or timing.
+
+#### Fidelity replay
+
+All 5,100 supervised tokens in the exact recorded assessment20 were replayed.
+The factorized hot path matched the authenticated refit metrics to `1e-6`.
+The fused map was then evaluated as a distinct candidate:
+
+| system | logical params | whole saved | MLP MACs/token | delta NLL | native KL | native top-1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| native | 268,098,176 | 0 | 70,778,880 | 0 | 0 | 100% |
+| factorized refit | 212,076,416 | 20.90% | 14,745,600 | +0.149649 | 0.203246 | 81.02% |
+| fused refit | 204,703,616 | 23.65% | 7,372,800 | +0.181979 | 0.249480 | 78.65% |
+
+The fusion adds `+0.032330` NLL/token relative to the factorized source.
+Factorized-to-fused top-1 agreement is `90.57%`, full-logit NRMSE is
+`0.126312`, logit cosine is `0.992122`, and maximum absolute logit error is
+`15.3701`. The mathematical maps are the same over real arithmetic, but
+changing from two float32 GEMMs to one changes operation order and rounding
+at every layer. The observed end-to-end divergence is consistent with local
+rounding differences being amplified through 18 blocks; this run did not
+separately measure that local amplification. Consequently the fused result
+is a legitimate rate-distortion point, not a numerically exact deployment
+rewrite. Here `fused` means only per-layer `W_out @ W_in` materialization; it
+does not fuse cross-layer generator interactions or instantiate a recursive
+parent.
+
+#### Full-model latency
+
+The run used PyTorch 2.13 on the local arm64 macOS CPU, float32, batch one,
+fixed-shape padded physical positions, one retained last-token logit for
+prefill, and a real KV cache for single-token decode. Hashing, module
+switching, device movement, cache construction, and warmup were excluded from
+the measured forward:
+
+| path | context | native ms | factorized ms | factorized speedup | fused ms | fused speedup |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| prefill | 32 | 24.403 | 17.156 | 1.422x | 16.323 | 1.495x |
+| prefill | 128 | 47.058 | 31.812 | 1.479x | 30.078 | 1.565x |
+| prefill | 256 | 72.502 | 44.766 | 1.620x | 41.822 | 1.734x |
+| cached decode | 32 | 16.117 | 13.004 | 1.239x | 12.573 | 1.282x |
+| cached decode | 128 | 16.247 | 13.305 | 1.221x | 12.796 | 1.270x |
+| cached decode | 256 | 16.928 | 13.942 | 1.214x | 13.464 | 1.257x |
+
+The gap between prefill and decode is expected. During prefill, the MLP
+savings apply to every context position while the 262,144-way language head
+is evaluated for only the last position. During cached decode, the full
+language head is paid for every new token, so the linear-MAC reference ratios
+are `1.264x` for the factorized refit and `1.310x` for the fused refit. These
+are accounting references, not formal latency bounds: they omit attention
+products, normalization, native gating work, cache traffic, allocations, and
+framework/kernel effects.
+
+This is the first batch-one CPU whole-model speed measurement for the Gemma
+rung, but its scope remains narrow:
+
+- it measures the current flat 18-generator composite stack—base layers 0-9
+  plus refit layers 10-17—not the nominated L3-to-L4 recursive hierarchy;
+- it is a local CPU/PyTorch result, not a GPU or MLX result;
+- it is one nine-round run on one repeated batch-one assessment prompt at
+  each fixed shape, not a prompt-mixture study or confidence interval;
+- the benchmark runtime retains native, factorized, and fused scopes
+  together, whereas logical deployment accounting retains only one;
+- assessment20 is open development and not family-disjoint confirmation;
+- no downstream-task accuracy was measured; and
+- the hierarchy nomination still lacks the real joint activation-Fisher and
+  JVP measurements needed to lower a causal L3-to-L4 candidate.
+
+The source-safe runtime report stores aggregate metrics, raw timing rounds,
+output hashes, and source artifact bindings without prompt text, token IDs, or
+model tensors. A checked snapshot lives at
+[`artifacts/gemma3_runtime/full_model_runtime_analysis_dev_v1.json`](../artifacts/gemma3_runtime/full_model_runtime_analysis_dev_v1.json);
+its embedded canonical report digest is
+`b46bb8869c5bf5ec331d261ab0304aa3320b020e2f0950f7f4f46670c588c2a7`
+and its raw JSON SHA-256 is
+`2d95f39176952530e2819e4fba4eebcc312c9cf756183f1f7c1c330f1abdeb64`.
+The report binds the listed primary runtime source files and the base/refit
+tensor hashes.
+The default command writes a new, non-overwriting local report under
+`.local-runs/google--gemma-3-270m/`.
+
+```bash
+fisher-graph-gemma-full-model-runtime-dev \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 ```
 

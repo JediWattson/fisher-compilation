@@ -1193,7 +1193,7 @@ full-stack fidelity without adding parameters or compute:
 | --- | ---: | ---: | ---: | ---: |
 | prefix 0-9, native suffix | 11.61% | +0.037989 | 0.101191 | 85.43% |
 | original generated 0-17 | 20.90% | +0.348476 | 0.456653 | 74.06% |
-| sequentially refit 0-17 | 20.90% | +0.149649 | 0.203246 | 81.02% |
+| base generators 0-9 + sequential refit 10-17 | 20.90% | +0.149649 | 0.203246 | 81.02% |
 
 At the same 212,076,416-parameter logical candidate and 14,745,600 generated
 matrix MACs per token, refitting reduces excess NLL by `57.1%`, KL by `55.5%`,
@@ -1212,6 +1212,54 @@ compared at the same rank/resource budget before descending the rank ladder.
 fisher-graph-gemma-full-mlp-refit-dev \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 ```
+
+The prepared-runtime follow-up finally measures that composite stack as a
+complete model rather than projecting local MAC counts into a speed claim. It
+authenticates the frozen base generators for layers 0-9 plus the sequentially
+refit generators for layers 10-17 once, moves all hashing and MLP-stack
+switching outside the timed region, and compares native Gemma with the current
+two-projection stack and a one-projection materialization.
+
+On the local arm64 macOS CPU in float32, batch-one last-logit prefill
+speedups for fixed shapes of 32, 128, and 256 physical token positions are
+respectively:
+
+| system | 32 | 128 | 256 | cached decode |
+| --- | ---: | ---: | ---: | ---: |
+| factorized refit | 1.422x | 1.479x | 1.620x | 1.214x-1.239x |
+| fused refit | 1.495x | 1.565x | 1.734x | 1.257x-1.282x |
+
+The authenticated factorized endpoint replays its four published aggregate
+fidelity metrics within `1e-6`: NLL `2.973636`, delta NLL `+0.149649`, KL
+`0.203246`, and `81.02%` native top-1 agreement. The fused scope is not
+bit-identical. It reduces the logical model from 212,076,416 to 204,703,616
+parameters and halves generated MLP matrix work, but NLL rises to `3.005967`
+and native top-1 agreement falls to `78.65%`. It is therefore a second
+rate-distortion point, not a free optimization. Here `fused` means only that
+each independent layer materializes `W_out @ W_in`; it does not fuse
+cross-layer generator interactions or instantiate a recursive parent.
+
+These are real PyTorch whole-model CPU timings, not MLX timings. For Gemma,
+MLX support stops at local modal boundaries; an end-to-end MLX claim requires
+a Gemma attention/RoPE/KV-cache and checkpoint-loading shell. The assessment
+is still the same open-development family and supplies no heldout or
+downstream-task claim. It is one nine-round run on one repeated batch-one
+assessment prompt at each fixed shape, not a prompt-mixture study or
+confidence interval. This establishes the first batch-one CPU whole-model
+measurement for the current flat 18-generator composite stack; it does not
+yet benchmark the nominated L3-to-L4 recursive hierarchy.
+
+```bash
+fisher-graph-gemma-full-model-runtime-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+```
+
+The source-safe report stores aggregate metrics, raw timing rounds, output
+hashes, and the base/refit artifact bindings without prompt text, token IDs,
+or model tensors. The checked snapshot is
+[`artifacts/gemma3_runtime/full_model_runtime_analysis_dev_v1.json`](artifacts/gemma3_runtime/full_model_runtime_analysis_dev_v1.json);
+its embedded canonical report digest is
+`b46bb8869c5bf5ec331d261ab0304aa3320b020e2f0950f7f4f46670c588c2a7`.
 
 The next analysis rung keeps that full refit stack frozen and mutes exactly one
 generator at a time. It records prompt-conditioned NLL, full-vocabulary KL,

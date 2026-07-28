@@ -1,0 +1,1211 @@
+{
+  "assessment": {
+    "content_sha256": [
+      "defd4201d7b7b196bfe91d3849a1bef01d5955befb29d6bad4e44f6e9c67d5f8",
+      "722b100cc9426bb21ba5c07f05a9e6738699b842add05017b7fe60a960d77f7a",
+      "08379038e97ebf027e51dabb88b600b3ce44473cfa466a3cabae499ed97613a0",
+      "95c8a4e88b35e4cd4a4c6a7d0163dd3861c774c4de0ddda4ddec2f4678af30f2",
+      "1eeb9c9c9a2d3748bf373baa9b62d5668be9bd86f6b8ca0f9af03ebe7bd299df",
+      "722c3c1590501811e2eddb328f55d75d98a19df4123292e7aab344505fe4687b",
+      "8775793389cfcc4c9e57d8c4c80f103fcb3d9290e4ba037779d74bd600ddd0ce",
+      "5aa0a069210940f1136daab8e42a9b3eeebc5d6122ee8ed109d37ead8cfa9cdb",
+      "70ea80b69ff68d73cb8846a51ac807f2f420b1566363752f33f31ed69ff40f0c",
+      "9b7cbc11b1653baa52087959231e58b5e472995fc5f138a1f30f22d112cda5d8",
+      "bf51aea2243384eaa3563b996119a7efd22d072007ad9310c2bdfdb1edb10bc7",
+      "367289e33c900ff6281278dc513ecb1116c62a81be1a4426346806e35d61584f",
+      "1999f535e5ad30eca5169560f993e5172708dd4765920a1d17be5f2c0da0702d",
+      "0de289bec3fc034ae47411816319258456f8ed8751ce321678084f9a751780c4",
+      "8a97eaef2df07a81f5796f91f13388772fbd720a862971394b7d73a2ba455c6b",
+      "1887b6f87ea748d4b1901c72b40a7ac722368677137c99a6ea07621685f8b0cc",
+      "bbc17efe3da694c31c34a9d8f10a827dff3642a1fd6b2acbd9558f460a7006a4",
+      "92ce5c0ec45da2687653e94ec5c17d72bcf4b98a32704c00143c85663ef9d507",
+      "483e2003a54f682427837a7c45b76401d0702df0b622d4f5da1ad5bb57316cfb",
+      "e3a5fc4a519ba502a5cbd326c59c255f5602f3ff9f87ffdc5056d6fa726ecce7"
+    ],
+    "example_count": 20,
+    "family_disjoint_confirmation": false,
+    "prompt_text_stored": false,
+    "serialized_sha256": "42b1cba805deac685ea4b8ad0bc21ec2032cfba61a3e96b4dd757d044194560a",
+    "token_ids_stored": false
+  },
+  "benchmark_environment": {
+    "device": "cpu",
+    "dtype": "float32",
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.14.4",
+    "run_started_unix_seconds": 1785197030.052903,
+    "synchronization": "eager_cpu",
+    "torch": "2.13.0",
+    "torch_interop_threads": 10,
+    "torch_threads": 4,
+    "wall_clock": "time.perf_counter"
+  },
+  "benchmarks": [
+    {
+      "batch_size": 1,
+      "context_length": 32,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 2.1324503311258276,
+        "fused_refit": 2.5058365758754864
+      },
+      "kind": "prefill_last_logit",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "fd5d3ca07a970ee2353a805e2260155b62520bc1589e536a5e8da45536b61525",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "caa0bc4d26c03703e7d95af02c86003d95ae95c629b9753209d82bd0d8116ae4",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "6b691f093446826a0c17dae1ee83056cb5959d4933897ba7aec99863f392957c",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 32,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.422426037079985,
+        "fused_refit": 1.4949522388395096,
+        "fused_vs_factorized": 1.0509876787044825
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.017226083000423387,
+          "median_seconds": 0.017155665998870973,
+          "p10_seconds": 0.01702866699779406,
+          "p90_seconds": 0.01746750039892504,
+          "p95_seconds": 0.017481583198241425,
+          "processed_token_count": 32,
+          "raw_round_seconds": [
+            0.01703754199843388,
+            0.017460458999266848,
+            0.017135625006631017,
+            0.017155665998870973,
+            0.017191374994581565,
+            0.01741029100230662,
+            0.01705858400237048,
+            0.017495665997557808,
+            0.016993166995234787
+          ],
+          "tokens_per_second": 1865.2729659172628
+        },
+        "fused_refit": {
+          "cold_seconds": 0.01609091700083809,
+          "median_seconds": 0.01632337499904679,
+          "p10_seconds": 0.01624671719619073,
+          "p90_seconds": 0.017289616000198293,
+          "p95_seconds": 0.01756476599985035,
+          "processed_token_count": 32,
+          "raw_round_seconds": [
+            0.016347541997674853,
+            0.01624983399960911,
+            0.0162362499977462,
+            0.016250915999989957,
+            0.016249333995801862,
+            0.01783991599950241,
+            0.016385375005484093,
+            0.01632337499904679,
+            0.017152041000372265
+          ],
+          "tokens_per_second": 1960.3789045996095
+        },
+        "native": {
+          "cold_seconds": 0.026703790994361043,
+          "median_seconds": 0.02440266600024188,
+          "p10_seconds": 0.02421559999929741,
+          "p90_seconds": 0.025305558598483914,
+          "p95_seconds": 0.025362341798609123,
+          "processed_token_count": 32,
+          "raw_round_seconds": [
+            0.02417099999729544,
+            0.02440266600024188,
+            0.024226749999797903,
+            0.02426579199527623,
+            0.02468524999858346,
+            0.025419124998734333,
+            0.024464499998430256,
+            0.025277166998421308,
+            0.02429025000310503
+          ],
+          "tokens_per_second": 1311.332130664855
+        }
+      },
+      "warmup_calls": 3
+    },
+    {
+      "batch_size": 1,
+      "context_length": 32,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 1.2642967542503865,
+        "fused_refit": 1.3098478783026422
+      },
+      "kind": "cached_single_token_decode",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "2cb048ba96ff237cded7c5544777fe8316951ed2be0a60599299adf420669ceb",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "956ec537e0f03ec4b27435075ac555d7e52be6c90ec90d43026f35bf3cf5383a",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "b7c386144e89dacb22b72e40ba571661b065330f633ec2617c08d1b25352408e",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 1,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.2393922326195423,
+        "fused_refit": 1.281811862509262,
+        "fused_vs_factorized": 1.0342261543789595
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.012948040995979682,
+          "median_seconds": 0.013003583997488022,
+          "p10_seconds": 0.012972891805111431,
+          "p90_seconds": 0.013203175000671762,
+          "p95_seconds": 0.013272524999047164,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.013341874997422565,
+            0.013168500001484063,
+            0.012990333001653198,
+            0.013014374999329448,
+            0.013003583997488022,
+            0.012939791005919687,
+            0.012981167004909366,
+            0.013071416004095227,
+            0.013001042003452312
+          ],
+          "tokens_per_second": 76.90187568236387
+        },
+        "fused_refit": {
+          "cold_seconds": 0.012550999999803025,
+          "median_seconds": 0.012573250001878478,
+          "p10_seconds": 0.012520883801335004,
+          "p90_seconds": 0.012623300403356554,
+          "p95_seconds": 0.012655317204189487,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.012687334005022421,
+            0.012571708000905346,
+            0.012565167002321687,
+            0.012528209001175128,
+            0.012491583001974504,
+            0.012573250001878478,
+            0.01258337499893969,
+            0.012581249997310806,
+            0.012607292002940085
+          ],
+          "tokens_per_second": 79.5339311515
+        },
+        "native": {
+          "cold_seconds": 0.016207499997108243,
+          "median_seconds": 0.016116541002702434,
+          "p10_seconds": 0.016069400003470947,
+          "p90_seconds": 0.016256575200532097,
+          "p95_seconds": 0.01627464160119416,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.016133375000208616,
+            0.016247542000201065,
+            0.016148082999279723,
+            0.016081624999060296,
+            0.01604850000148872,
+            0.016105458002130035,
+            0.016292708001856226,
+            0.016116541002702434,
+            0.016074625003966503
+          ],
+          "tokens_per_second": 62.048053601099596
+        }
+      },
+      "warmup_calls": 3
+    },
+    {
+      "batch_size": 1,
+      "context_length": 128,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 2.2302158273381294,
+        "fused_refit": 2.6609442060085837
+      },
+      "kind": "prefill_last_logit",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "37ad8b7ba7bcafdab014e66fb66a5b595a37417293366553793394518f848e93",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "405bb76f4a9e94a3fda73bdef51d8b6bdf2b4d6bef85200a16bb19f0903ba7ec",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "0fad8c79d8e577671d9f994163c3fcbe2d40aaafa23c855f009126605e5fe8a8",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 128,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.479234354589758,
+        "fused_refit": 1.5645394550179987,
+        "fused_vs_factorized": 1.0576684148549935
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.03200345799996285,
+          "median_seconds": 0.03181237500393763,
+          "p10_seconds": 0.031763874596799725,
+          "p90_seconds": 0.03201694220188074,
+          "p95_seconds": 0.032118658599210904,
+          "processed_token_count": 128,
+          "raw_round_seconds": [
+            0.03194783399521839,
+            0.03222037499654107,
+            0.03177216599578969,
+            0.03191466700081946,
+            0.03180770900507923,
+            0.03173070900083985,
+            0.03181237500393763,
+            0.03178758300055051,
+            0.031966084003215656
+          ],
+          "tokens_per_second": 4023.59144779843
+        },
+        "fused_refit": {
+          "cold_seconds": 0.03009195900085615,
+          "median_seconds": 0.030077833995164838,
+          "p10_seconds": 0.02996110060048522,
+          "p90_seconds": 0.030128233606228603,
+          "p95_seconds": 0.030131366805289873,
+          "processed_token_count": 128,
+          "raw_round_seconds": [
+            0.029965708999952767,
+            0.03010533299675444,
+            0.03011704099480994,
+            0.030077833995164838,
+            0.030066625004110392,
+            0.03012666700669797,
+            0.029942667002615053,
+            0.02997124999819789,
+            0.03013450000435114
+          ],
+          "tokens_per_second": 4255.625588617074
+        },
+        "native": {
+          "cold_seconds": 0.04806804200052284,
+          "median_seconds": 0.04705795800691703,
+          "p10_seconds": 0.04693225799564971,
+          "p90_seconds": 0.047194633401522884,
+          "p95_seconds": 0.047195150201150685,
+          "processed_token_count": 128,
+          "raw_round_seconds": [
+            0.04705795800691703,
+            0.047131708000961225,
+            0.047195667000778485,
+            0.04697312499774853,
+            0.047113083994190674,
+            0.046976582998468075,
+            0.04681795799842803,
+            0.04719437500170898,
+            0.046960832994955126
+          ],
+          "tokens_per_second": 2720.0500281203304
+        }
+      },
+      "warmup_calls": 3
+    },
+    {
+      "batch_size": 1,
+      "context_length": 128,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 1.2642967542503865,
+        "fused_refit": 1.3098478783026422
+      },
+      "kind": "cached_single_token_decode",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "5d725f794dab28d7d49e0269c4a400a9d5d59112a97a6ccdc5f5e8456ae927fa",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "892dd86c00adcc13b6ef058851bff82aa83a1e4315df61f0d921d3ed1be108c1",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "861f7006ec1c7bbbd9e7beabb118ca671dd9ce51843d79794d37518e856e798d",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 1,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.2211157248947995,
+        "fused_refit": 1.2697297631540942,
+        "fused_vs_factorized": 1.0398111638956111
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.013347166997846216,
+          "median_seconds": 0.013305250002304092,
+          "p10_seconds": 0.013276666600722818,
+          "p90_seconds": 0.01333438279980328,
+          "p95_seconds": 0.0133358163991943,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.013318624995008577,
+            0.013291040995682124,
+            0.013305250002304092,
+            0.013304000000061933,
+            0.013337249998585321,
+            0.013316917000338435,
+            0.013277250000101048,
+            0.013333666000107769,
+            0.013274333003209904
+          ],
+          "tokens_per_second": 75.1583021609386
+        },
+        "fused_refit": {
+          "cold_seconds": 0.01301308300025994,
+          "median_seconds": 0.012795832997653633,
+          "p10_seconds": 0.012755999997898471,
+          "p90_seconds": 0.012850434001302346,
+          "p95_seconds": 0.012872134003555403,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.012893834005808458,
+            0.012795832997653633,
+            0.012839584000175819,
+            0.012783416001184378,
+            0.012776957999449223,
+            0.01274800000101095,
+            0.012797832998330705,
+            0.012798708004993387,
+            0.01275799999712035
+          ],
+          "tokens_per_second": 78.1504416463836
+        },
+        "native": {
+          "cold_seconds": 0.016381541005102918,
+          "median_seconds": 0.016247250001470093,
+          "p10_seconds": 0.01623229999822797,
+          "p90_seconds": 0.016336541800410487,
+          "p95_seconds": 0.016339625400723888,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.016342709001037292,
+            0.016223499995248858,
+            0.016250750006292947,
+            0.016328208999766503,
+            0.016238167001574766,
+            0.01624370799981989,
+            0.01623449999897275,
+            0.016335000000253785,
+            0.016247250001470093
+          ],
+          "tokens_per_second": 61.54887749677745
+        }
+      },
+      "warmup_calls": 3
+    },
+    {
+      "batch_size": 1,
+      "context_length": 256,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 2.2481751824817517,
+        "fused_refit": 2.6899563318777293
+      },
+      "kind": "prefill_last_logit",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "32741008c20f8349839ff1b5f0655f952d1e22d8f568ce95fca407c6e7593a34",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "baeef79d1f6f79f4fadd83cfa5dc22a571eab35a2f0d9943664eec4a88501294",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "4e02ab2975cc35320c41f5ff47d8a2bda96be4d8b72c088fc548ae2ff750e0b8",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 256,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.6195701296459402,
+        "fused_refit": 1.7335897875006976,
+        "fused_vs_factorized": 1.0704011859490663
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.044846125005278736,
+          "median_seconds": 0.04476591700222343,
+          "p10_seconds": 0.04465685839822981,
+          "p90_seconds": 0.04490458339714678,
+          "p95_seconds": 0.04491100019804435,
+          "processed_token_count": 256,
+          "raw_round_seconds": [
+            0.044901374996697996,
+            0.044811540996306576,
+            0.04491741699894192,
+            0.04471820800245041,
+            0.04476591700222343,
+            0.04465787499793805,
+            0.04465279199939687,
+            0.04466512499493547,
+            0.04483825000352226
+          ],
+          "tokens_per_second": 5718.636345308977
+        },
+        "fused_refit": {
+          "cold_seconds": 0.0419417910015909,
+          "median_seconds": 0.04182162500364939,
+          "p10_seconds": 0.04170599140052218,
+          "p90_seconds": 0.04185677519853925,
+          "p95_seconds": 0.04188774160138564,
+          "processed_token_count": 256,
+          "raw_round_seconds": [
+            0.04184129199711606,
+            0.04182162500364939,
+            0.04183287499472499,
+            0.04174545900605153,
+            0.041824332998658065,
+            0.0417749999978696,
+            0.04172995800036006,
+            0.04161012500117067,
+            0.04191870800423203
+          ],
+          "tokens_per_second": 6121.235126030164
+        },
+        "native": {
+          "cold_seconds": 0.07466766699508298,
+          "median_seconds": 0.0725015420030104,
+          "p10_seconds": 0.07238345880323323,
+          "p90_seconds": 0.07291679140325869,
+          "p95_seconds": 0.0730054582018056,
+          "processed_token_count": 256,
+          "raw_round_seconds": [
+            0.07287245800398523,
+            0.07251145899499534,
+            0.07246491700061597,
+            0.0725015420030104,
+            0.07232545800070511,
+            0.0724559579975903,
+            0.07239795900386525,
+            0.0730941250003525,
+            0.07252433400572045
+          ],
+          "tokens_per_second": 3530.959382758651
+        }
+      },
+      "warmup_calls": 3
+    },
+    {
+      "batch_size": 1,
+      "context_length": 256,
+      "ideal_linear_only_speedup_vs_native": {
+        "factorized_refit": 1.2642967542503865,
+        "fused_refit": 1.3098478783026422
+      },
+      "kind": "cached_single_token_decode",
+      "output_validation": {
+        "factorized_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "5b9ff49a7960786fbeb37f3dfa4ed21db4003a2d5ac0d623981c6ee1c71f08d9",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "fused_refit": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "66fc1d27fd22e760ce46b5f9769253ff8daf6393f5f9702234df450c526a33e6",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        },
+        "native": {
+          "dtype": "torch.float32",
+          "finite": true,
+          "sha256": "cdcba39d02e1f816c9e9797d43e011cf9e1dfc26a03aa704a9ee57580f7ab6f8",
+          "shape": [
+            1,
+            1,
+            262144
+          ]
+        }
+      },
+      "processed_token_count": 1,
+      "round_orders": [
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ],
+        [
+          "native",
+          "factorized_refit",
+          "fused_refit"
+        ],
+        [
+          "factorized_refit",
+          "fused_refit",
+          "native"
+        ],
+        [
+          "fused_refit",
+          "native",
+          "factorized_refit"
+        ]
+      ],
+      "rounds": 9,
+      "speedup_vs_native": {
+        "factorized_refit": 1.2141375150017077,
+        "fused_refit": 1.2572608097239772,
+        "fused_vs_factorized": 1.0355176363380956
+      },
+      "system_names": [
+        "native",
+        "factorized_refit",
+        "fused_refit"
+      ],
+      "timings": {
+        "factorized_refit": {
+          "cold_seconds": 0.013758000000962056,
+          "median_seconds": 0.013942167002824135,
+          "p10_seconds": 0.01380849140114151,
+          "p90_seconds": 0.01412094200059073,
+          "p95_seconds": 0.014364241999282967,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.013867166999261826,
+            0.013999292001244612,
+            0.013815958001941908,
+            0.013958624993392732,
+            0.014607541997975204,
+            0.013904749997891486,
+            0.013942167002824135,
+            0.013990999999805354,
+            0.013778624997939914
+          ],
+          "tokens_per_second": 71.72486169455863
+        },
+        "fused_refit": {
+          "cold_seconds": 0.013434959000733215,
+          "median_seconds": 0.013463959003274795,
+          "p10_seconds": 0.01330460000608582,
+          "p90_seconds": 0.013999065998359584,
+          "p95_seconds": 0.014143365997006186,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.013495125000190455,
+            0.013463959003274795,
+            0.013550708994443994,
+            0.01336220799566945,
+            0.014287665995652787,
+            0.013317250006366521,
+            0.013254000004963018,
+            0.013926915999036282,
+            0.013391250002314337
+          ],
+          "tokens_per_second": 74.27235924862615
+        },
+        "native": {
+          "cold_seconds": 0.016928165998251643,
+          "median_seconds": 0.016927707998547703,
+          "p10_seconds": 0.01686455880117137,
+          "p90_seconds": 0.017083741803071463,
+          "p95_seconds": 0.017150975402910263,
+          "processed_token_count": 1,
+          "raw_round_seconds": [
+            0.016996792001009453,
+            0.0169159170036437,
+            0.017218209002749063,
+            0.01691937499708729,
+            0.016870209001353942,
+            0.016927707998547703,
+            0.01705012500315206,
+            0.016982583998469636,
+            0.016841958000441082
+          ],
+          "tokens_per_second": 59.074743024028656
+        }
+      },
+      "warmup_calls": 3
+    }
+  ],
+  "claim_scope": {
+    "downstream_accuracy_claim": false,
+    "fused_scope_is_a_rate_distortion_point": true,
+    "fused_scope_is_bit_exact_to_factorized": false,
+    "heldout_compression_claim": false,
+    "logical_parameter_and_linear_mac_counts": true,
+    "mlx_full_model_latency_measured": false,
+    "torch_full_model_latency_measured": true
+  },
+  "fidelity": {
+    "assessment_role": "open_development_assessment",
+    "conditions": {
+      "factorized_refit": {
+        "delta_nll_per_token": 0.14964874417174068,
+        "native_to_candidate_kl_per_token": 0.20324609175609262,
+        "nll_per_token": 2.9736361145505716,
+        "prompt_tails": {
+          "delta_nll_p50": 0.16030850503958916,
+          "delta_nll_p90": 0.20493607689352597,
+          "delta_nll_worst": 0.24691582474054075,
+          "prompt_count": 20,
+          "top1_agreement_p10": 0.78,
+          "top1_agreement_worst": 0.7725490196078432
+        },
+        "top1_agreement_to_native": 0.8101960784313725
+      },
+      "fused_refit": {
+        "delta_nll_per_token": 0.18197924118415987,
+        "native_to_candidate_kl_per_token": 0.2494799138752458,
+        "nll_per_token": 3.005966611562991,
+        "prompt_tails": {
+          "delta_nll_p50": 0.19645301313961272,
+          "delta_nll_p90": 0.23082704151377964,
+          "delta_nll_worst": 0.2702921923469095,
+          "prompt_count": 20,
+          "top1_agreement_p10": 0.7603921568627451,
+          "top1_agreement_worst": 0.7529411764705882
+        },
+        "top1_agreement_to_native": 0.7864705882352941
+      },
+      "native": {
+        "delta_nll_per_token": 0.0,
+        "native_to_candidate_kl_per_token": 0.0,
+        "nll_per_token": 2.823987370378831,
+        "top1_agreement_to_native": 1.0
+      }
+    },
+    "control_validation": {
+      "assessment_used_for_runtime_selection": false,
+      "complete_assessment_membership_replayed": true,
+      "factorized_matches_authenticated_refit_metrics": true,
+      "fused_materialization_selected_before_replay": true
+    },
+    "fused_vs_factorized": {
+      "delta_nll_per_token": 0.03233049701241919,
+      "factorized_to_fused_kl_per_token": 0.057756563532268844,
+      "logit_cosine": 0.992121995144842,
+      "logit_max_absolute_error": 15.370060920715332,
+      "logit_nrmse": 0.12631208763187737,
+      "top1_agreement_to_factorized": 0.9056862745098039
+    },
+    "heldout_confirmation": false,
+    "logical_valid_tokens": 5120,
+    "supervised_tokens": 5100
+  },
+  "format_version": 1,
+  "model": {
+    "adapter_model_fingerprint": "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9",
+    "device": "cpu",
+    "dtype": "float32",
+    "local_files_only": true,
+    "model_id": "google/gemma-3-270m",
+    "requested_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "resolved_commit": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1"
+  },
+  "protocol": {
+    "assessment_role": "open_development_assessment",
+    "batch_sizes": [
+      1
+    ],
+    "context_lengths": [
+      32,
+      128,
+      256
+    ],
+    "decode_uses_kv_cache": true,
+    "deterministic_rotating_system_order": true,
+    "device_transfer_outside_timing": true,
+    "downstream_task_accuracy_measured": false,
+    "factorized_scope": "authenticated base L0-9 plus sequential-refit L10-17 rank-640 generators",
+    "full_model_runtime_measured": true,
+    "fused_scope": "one float64-materialized then runtime-dtype affine residual map per independent layer",
+    "hashing_outside_timing": true,
+    "heldout_confirmation": false,
+    "mlx_boundary_kernel_result_is_separate": true,
+    "mlx_full_model_runtime_measured": false,
+    "prefill_logits_to_keep": 1,
+    "prepared_outside_timing": true,
+    "rounds": 9,
+    "scope_switching_outside_timing": true,
+    "systems": [
+      "native",
+      "factorized_refit",
+      "fused_refit"
+    ],
+    "warmup_calls": 3
+  },
+  "report_sha256": "b46bb8869c5bf5ec331d261ab0304aa3320b020e2f0950f7f4f46670c588c2a7",
+  "resources": {
+    "active_non_mlp_linear_macs": {
+      "attention_projection_macs_per_token": 29491200,
+      "lm_head_macs_per_emitted_logit": 167772160,
+      "other_linear_macs_per_token": 0
+    },
+    "experimental_benchmark_resident_learned_parameters": 290239616,
+    "experimental_runtime_retains_all_scopes": true,
+    "linear_only_ideal_speedups_exclude": "attention score/value products, normalization, activations, cache traffic, allocation, and framework overhead",
+    "logical_deployment_retains_only_selected_scope": true,
+    "retained_native_non_mlp_learned_parameters": 197319296,
+    "source_whole_model_learned_parameters": 268098176,
+    "systems": {
+      "factorized_refit": {
+        "implementation": "factorized",
+        "layer_count": 18,
+        "learned_parameter_count": 14757120,
+        "linear_bias_additions_per_token": 11520,
+        "linear_macs_per_token": 14745600,
+        "logical_whole_model_learned_parameters": 212076416,
+        "logical_whole_model_parameter_reduction_fraction": 0.2089598699843448,
+        "logical_whole_model_parameter_savings": 56021760,
+        "native_mlp_linear_mac_reduction_fraction": 0.7916666666666666,
+        "native_mlp_linear_macs_saved_per_token": 56033280,
+        "scope": "factorized_refit"
+      },
+      "fused_refit": {
+        "implementation": "fused",
+        "layer_count": 18,
+        "learned_parameter_count": 7384320,
+        "linear_bias_additions_per_token": 11520,
+        "linear_macs_per_token": 7372800,
+        "logical_whole_model_learned_parameters": 204703616,
+        "logical_whole_model_parameter_reduction_fraction": 0.2364602435788299,
+        "logical_whole_model_parameter_savings": 63394560,
+        "native_mlp_linear_mac_reduction_fraction": 0.8958333333333334,
+        "native_mlp_linear_macs_saved_per_token": 63406080,
+        "scope": "fused_refit"
+      },
+      "native": {
+        "implementation": "native",
+        "layer_count": 18,
+        "learned_parameter_count": 70778880,
+        "linear_bias_additions_per_token": 0,
+        "linear_macs_per_token": 70778880,
+        "logical_whole_model_learned_parameters": 268098176,
+        "logical_whole_model_parameter_reduction_fraction": 0.0,
+        "logical_whole_model_parameter_savings": 0,
+        "native_mlp_linear_mac_reduction_fraction": 0.0,
+        "native_mlp_linear_macs_saved_per_token": 0,
+        "scope": "native"
+      }
+    }
+  },
+  "schema": "fisher_graph.gemma3_full_model_runtime_analysis_development",
+  "scientific_status": "self_attested_open_development_runtime_analysis",
+  "source_artifacts": {
+    "base_scientific_payload_sha256": "babed58e93ff09bd65a7ce0062eb8e1f657672f3cc8bcf4e9fb03f446a48f5ec",
+    "base_tensor_file": ".local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-dev-v1.pt",
+    "base_tensor_file_sha256": "272af3fa25992aefa6fa12b3aae6da64c836be0a3d616a1780444bde0caf95d3",
+    "refit_scientific_payload_sha256": "4c04775672f74204d1d3176c05780e97107f3edf57fac54d35b1c06ab96d36b1",
+    "refit_tensor_file": ".local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.pt",
+    "refit_tensor_file_sha256": "48b51412ff552950bad3794833d9313e4f384231bcdb3590e460a28f10aff655"
+  },
+  "source_code": {
+    "binding": "sha256_of_listed_primary_runtime_sources",
+    "files_sha256": {
+      "pyproject.toml": "cd5aa6d9df55a625367a2b18f52f4cb8fd5e2836b3b7128dacf31cf1738dac3d",
+      "src/fisher_graph/adapters/__init__.py": "8a455309cc7a82a592a5e73aec2478f74331958221d611a5243ad3ccb9220359",
+      "src/fisher_graph/adapters/base.py": "6f8753da109d67a8adb825f54d500384899f713a2cd4e0c59bde2a980836c3b4",
+      "src/fisher_graph/adapters/gemma3.py": "fd74316319bfec55441ecaa6833d782c60dc303c033e252660ed83c5ba085783",
+      "src/fisher_graph/gemma3_full_mlp_stack_executor.py": "d823cbaee98b4f6cf88a05b2f7e98329c53070b1c791a4187056a3d3593158c5",
+      "src/fisher_graph/gemma3_full_mlp_stack_refit_runtime.py": "5dff8bb75aa93fc4af9108d67021dd997402a9a4afe92f2334a452d2daa16e88",
+      "src/fisher_graph/gemma3_full_model_runtime_analysis.py": "72104c741a5f68a75027ac8357b90277fb95a6eea4966c2025dd58dc784ca84f",
+      "src/fisher_graph/model_runtime_benchmark.py": "b4eb8f4971386069b83d94412c45d0dc020953a3f251778be423263ce558d310",
+      "src/fisher_graph/prepared_gemma3_full_mlp_stack.py": "a7a673f04cb448bc2f8711a17212045fa76b300c859d84a06292fd77979b3952"
+    }
+  }
+}
