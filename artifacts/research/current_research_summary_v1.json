@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "schema": "fisher_graph.current_research_summary",
+  "claim_scope": "source-safe summary for deterministic documentation figures; it does not authorize compilation, compression, or latency claims",
+  "sources": [
+    {
+      "id": "toy_fused_executor",
+      "path": "artifacts/associative_recall/fused_executor_report.json",
+      "sha256": "722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6",
+      "sha256_kind": "file_sha256",
+      "source_status": "committed_authenticated_report"
+    },
+    {
+      "id": "gemma_structured_layer_v6",
+      "path": ".local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json",
+      "sha256": "38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0",
+      "sha256_kind": "file_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_flat_generator_refit",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json",
+      "sha256": "7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_l3_l4_rank_64",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json",
+      "sha256": "4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_l3_l4_rank_128",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json",
+      "sha256": "313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    }
+  ],
+  "research_ladder": [
+    {
+      "id": "toy_reference",
+      "title": "Toy graph executor",
+      "status": "verified_reference",
+      "resource": "35.3% of estimated source-block multiplies",
+      "fidelity": "Exact validation argmax; test result is exploratory",
+      "claim": "Authenticated replacement proof on the toy task"
+    },
+    {
+      "id": "gemma_layer",
+      "title": "Gemma layer parity",
+      "status": "fidelity_parent",
+      "resource": "Native shape; no parameter or compute reduction",
+      "fidelity": "Validation block NRMSE 9.21e-7; top-1 100%",
+      "claim": "Source-free single-layer interface proven"
+    },
+    {
+      "id": "flat_generators",
+      "title": "Flat generator stack",
+      "status": "open_development",
+      "resource": "20.90% logical whole-model parameters saved",
+      "fidelity": "81.02% native top-1; delta NLL +0.149649",
+      "claim": "Rate-distortion point, not validated compression"
+    },
+    {
+      "id": "recursive_transport",
+      "title": "Recursive L3 to L4",
+      "status": "analysis_only",
+      "resource": "Rank-64 pair uses 11.4% of flat-pair parameters",
+      "fidelity": "Oracle-local cosine 0.763; relative L2 1.187",
+      "claim": "Stationary first-order local transport fails fidelity"
+    },
+    {
+      "id": "conditional_transport",
+      "title": "Conditional transport",
+      "status": "next_experiment",
+      "resource": "No resource claim until the provider is compiled",
+      "fidelity": "Held-out JVP and finite-displacement tests pending",
+      "claim": "Next: conditional or path-integrated Jacobian"
+    }
+  ],
+  "l3_l4_diagnostic": {
+    "fit_sequences": 40,
+    "probe_sequences": 4,
+    "jvp_probes_per_sequence": 8,
+    "logical_lags": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "content_disjoint": true,
+    "family_disjoint": false,
+    "reference_provider_compiled": false,
+    "pair_control_scope": "oracle_reference_local_factor_control",
+    "reported_probe_statistic": "mean_across_four_prompt_local_controls",
+    "accounting_status": "logical_shape_only_until_reference_base_executor_is_built",
+    "accounting_correction": "Pair and whole-model fractions include all four stored width-640 means; the ignored raw reports predate this correction.",
+    "rank_results": [
+      {
+        "rank": 64,
+        "source_reconstruction_relative_l2": 0.2911029334366325,
+        "target_reconstruction_relative_l2": 0.2290740597055826,
+        "in_sample_jvp_relative_residual": 0.3226633141461419,
+        "pair_output_cosine": 0.7633875906308878,
+        "pair_output_relative_l2": 1.1867917924590743,
+        "positive_lag_energy_fraction": 0.2159652714285386,
+        "pair_parameter_fraction_of_flat": 0.11397345823575332,
+        "whole_model_parameter_fraction_of_source": 0.9931496390433154
+      },
+      {
+        "rank": 128,
+        "source_reconstruction_relative_l2": 0.1253992516767284,
+        "target_reconstruction_relative_l2": 0.1311348111849064,
+        "in_sample_jvp_relative_residual": 0.2573207079237517,
+        "pair_output_cosine": 0.5995991389752001,
+        "pair_output_relative_l2": 1.7710422189550394,
+        "positive_lag_energy_fraction": 0.17113919881863354,
+        "pair_parameter_fraction_of_flat": 0.25136612021857924,
+        "whole_model_parameter_fraction_of_source": 0.994211897658625
+      }
+    ],
+    "interpretation": "More modal capacity improves reconstruction and the local tangent fit, but worsens finite transport; rank alone is not the missing ingredient.",
+    "not_proven": "No family-disjoint guard, compiled mean-source reference provider, replacement Gemma model, compression, or latency result exists at this rung."
+  }
+}

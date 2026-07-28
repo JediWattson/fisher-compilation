@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="figure-title figure-description">
+<title id="figure-title">Gemma L3-to-L4 rank diagnostic</title>
+<desc id="figure-description">Two panels compare ranks 64 and 128. Reconstruction and the in-sample local JVP residual improve at rank 128, while finite oracle-backed local pair-control cosine, relative error, and logical parameter cost all move in the wrong direction. Values are means across four prompt-local controls.</desc>
+<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=82015bce328856d953181c814c37135ab121850adcc1ccc633504dab63ecd459;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672</metadata>
+<style>
+            .background { fill: #f1f5f9; }
+            .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+            .track { fill: #e2e8f0; }
+            .callout { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.5; }
+            .divider { stroke: #cbd5e1; stroke-width: 1; }
+            .connector { stroke: #94a3b8; stroke-width: 3;
+                         stroke-linecap: round; }
+            text { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", sans-serif; fill: #0f172a; }
+            .figure-title { font-size: 34px; font-weight: 750; }
+            .figure-subtitle { font-size: 18px; fill: #475569; }
+            .panel-title { font-size: 22px; font-weight: 700; }
+            .stage-number { font-size: 13px; font-weight: 800; fill: #64748b;
+                            letter-spacing: 1.2px; }
+            .stage-title { font-size: 22px; font-weight: 750; }
+            .status { font-size: 12px; font-weight: 800; letter-spacing: .6px; }
+            .section-label { font-size: 12px; font-weight: 800; fill: #64748b;
+                             letter-spacing: .8px; }
+            .body { font-size: 16px; font-weight: 550; }
+            .claim { font-size: 15px; fill: #475569; }
+            .metric-label { font-size: 16px; font-weight: 700; }
+            .metric-scale { font-size: 12px; fill: #64748b; }
+            .verdict-good { fill: #047857; }
+            .verdict-bad { fill: #b91c1c; }
+            .rank-label { font-size: 13px; font-weight: 750; }
+            .metric-value { font-size: 14px; font-weight: 750; }
+            .footer { font-size: 14px; fill: #475569; }
+            .footer-strong { font-size: 15px; font-weight: 700; }
+            @media (prefers-color-scheme: dark) {
+                .background { fill: #0b1220; }
+                .panel { fill: #111827; stroke: #334155; }
+                .track { fill: #334155; }
+                .callout { fill: #3b2616; stroke: #c2410c; }
+                .divider { stroke: #334155; }
+                .connector { stroke: #64748b; }
+                text { fill: #f8fafc; }
+                .figure-subtitle, .claim, .metric-scale, .footer {
+                    fill: #cbd5e1;
+                }
+                .verdict-good { fill: #6ee7b7; }
+                .verdict-bad { fill: #fca5a5; }
+                .stage-number, .section-label { fill: #94a3b8; }
+            }
+        </style>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+<rect class="background" width="1600" height="980" rx="24"/>
+<text class="figure-title" x="50.0" y="58.0">Gemma L3→L4 — rank is not the missing ingredient</text>
+<text class="figure-subtitle" x="50.0" y="91.0">40 fit sequences · 4 content-disjoint probes · 8 exact JVP directions each · logical lags 0–4</text>
+<rect class="panel" x="50.0" y="135.0" width="735.0" height="660.0" rx="18"/>
+<rect class="panel" x="815.0" y="135.0" width="735.0" height="660.0" rx="18"/>
+<text class="panel-title" x="78.0" y="181.0">What improves locally</text>
+<text class="panel-title" x="843.0" y="181.0">Oracle-backed local pair control</text>
+<text class="figure-subtitle" x="78.0" y="209.0">Lower is better · same relative-L2 scale</text>
+<text class="figure-subtitle" x="843.0" y="209.0">Four-probe means · provider is not compiled</text>
+<text class="metric-label" x="78.0" y="255.0">L3 reconstruction</text>
+<text class="metric-scale" x="757.0" y="255.0" text-anchor="end">0–0.35 · lower is better</text>
+<text class="rank-label" x="78.0" y="290.0">R64</text>
+<rect class="track" x="155.0" y="276.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="276.0" width="436.7" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="757.0" y="291.0" text-anchor="end">0.291</text>
+<text class="rank-label" x="78.0" y="327.0">R128</text>
+<rect class="track" x="155.0" y="313.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="313.0" width="188.1" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="757.0" y="328.0" text-anchor="end">0.125</text>
+<text class="metric-scale verdict-good" x="78.0" y="358.0">Improves with rank</text>
+<text class="metric-label" x="78.0" y="425.0">L4 reconstruction</text>
+<text class="metric-scale" x="757.0" y="425.0" text-anchor="end">0–0.35 · lower is better</text>
+<text class="rank-label" x="78.0" y="460.0">R64</text>
+<rect class="track" x="155.0" y="446.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="446.0" width="343.6" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="757.0" y="461.0" text-anchor="end">0.229</text>
+<text class="rank-label" x="78.0" y="497.0">R128</text>
+<rect class="track" x="155.0" y="483.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="483.0" width="196.7" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="757.0" y="498.0" text-anchor="end">0.131</text>
+<text class="metric-scale verdict-good" x="78.0" y="528.0">Improves with rank</text>
+<text class="metric-label" x="78.0" y="595.0">In-sample JVP residual</text>
+<text class="metric-scale" x="757.0" y="595.0" text-anchor="end">0–0.35 · lower is better</text>
+<text class="rank-label" x="78.0" y="630.0">R64</text>
+<rect class="track" x="155.0" y="616.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="616.0" width="484.0" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="757.0" y="631.0" text-anchor="end">0.323</text>
+<text class="rank-label" x="78.0" y="667.0">R128</text>
+<rect class="track" x="155.0" y="653.0" width="525.0" height="20.0" rx="10"/>
+<rect x="155.0" y="653.0" width="386.0" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="757.0" y="668.0" text-anchor="end">0.257</text>
+<text class="metric-scale verdict-good" x="78.0" y="698.0">Improves with rank</text>
+<text class="metric-label" x="843.0" y="255.0">Local pair cosine</text>
+<text class="metric-scale" x="1522.0" y="255.0" text-anchor="end">-1–1 · higher is better</text>
+<text class="rank-label" x="843.0" y="290.0">R64</text>
+<rect class="track" x="920.0" y="276.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="276.0" width="462.9" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="1522.0" y="291.0" text-anchor="end">0.763</text>
+<text class="rank-label" x="843.0" y="327.0">R128</text>
+<rect class="track" x="920.0" y="313.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="313.0" width="419.9" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="1522.0" y="328.0" text-anchor="end">0.600</text>
+<text class="metric-scale verdict-bad" x="843.0" y="358.0">Higher is better · worsens</text>
+<text class="metric-label" x="843.0" y="425.0">Local pair relative L2</text>
+<text class="metric-scale" x="1522.0" y="425.0" text-anchor="end">0–2 · lower is better</text>
+<text class="rank-label" x="843.0" y="460.0">R64</text>
+<rect class="track" x="920.0" y="446.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="446.0" width="311.5" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="1522.0" y="461.0" text-anchor="end">1.187</text>
+<text class="rank-label" x="843.0" y="497.0">R128</text>
+<rect class="track" x="920.0" y="483.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="483.0" width="464.9" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="1522.0" y="498.0" text-anchor="end">1.771</text>
+<text class="metric-scale verdict-bad" x="843.0" y="528.0">Lower is better · worsens</text>
+<text class="metric-label" x="843.0" y="595.0">Flat-pair parameters</text>
+<text class="metric-scale" x="1522.0" y="595.0" text-anchor="end">0–30% · lower is smaller</text>
+<text class="rank-label" x="843.0" y="630.0">R64</text>
+<rect class="track" x="920.0" y="616.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="616.0" width="199.5" height="20.0" rx="10" fill="#7c3aed"/>
+<text class="metric-value" x="1522.0" y="631.0" text-anchor="end">11.4%</text>
+<text class="rank-label" x="843.0" y="667.0">R128</text>
+<rect class="track" x="920.0" y="653.0" width="525.0" height="20.0" rx="10"/>
+<rect x="920.0" y="653.0" width="439.9" height="20.0" rx="10" fill="#0891b2"/>
+<text class="metric-value" x="1522.0" y="668.0" text-anchor="end">25.1%</text>
+<text class="metric-scale verdict-bad" x="843.0" y="698.0">Lower is smaller · cost increases</text>
+<rect class="callout" x="50.0" y="824.0" width="1500.0" height="94.0" rx="16"/>
+<text class="footer-strong" x="76.0" y="855.0">
+<tspan x="76.0" dy="0.0">More modal capacity improves reconstruction and the local tangent fit, but worsens finite transport; rank alone is not the missing ingredient.</tspan>
+</text>
+<text class="footer" x="76.0" y="901.0">Nonlocal fan-out remains: positive-lag kernel energy is (21.6% at rank 64; 17.1% at rank 128), a topology signal—not a fidelity result.</text>
+<text class="footer" x="50.0" y="936.0">Accounting: Pair and whole-model fractions include all four stored width-640 means; the ignored raw reports predate this correction.</text>
+<text class="footer" x="50.0" y="963.0">Development-only: probes are content-disjoint but not family-disjoint; reference-base provider is not compiled.</text>
+</svg>
