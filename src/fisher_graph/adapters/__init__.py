@@ -29,7 +29,7 @@ from .base import (
     TransformerLayerSemantics,
     module_state_fingerprint,
 )
-from .gemma3 import Gemma3CausalLMAdapter
+from .gemma3 import Gemma3AttentionPrefixRun, Gemma3CausalLMAdapter
 from .toy import ToyTransformerAdapter, as_model_adapter
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "AttentionSpec",
     "ExecutionPhase",
     "FeedForwardSpec",
+    "Gemma3AttentionPrefixRun",
     "Gemma3CausalLMAdapter",
     "LayerBlockBoundaryPlan",
     "LayerSpec",

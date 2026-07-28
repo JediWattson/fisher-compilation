@@ -501,26 +501,629 @@ plan, and executed consistently against a frozen-boundary oracle. It does
 rank, execute a replacement Gemma model, preserve cached decoding, pass
 downstream fidelity, compress the deployed model, or improve latency.
 
+## Prompt-free spectral mapping rung
+
+`gemma3_l3_l4_spectral_mapping_experiment.py` measures the same frozen
+L3-to-L4 boundary without loading a tokenizer, prompt text, or token IDs. The
+Fisher bases and means remain data-conditioned upstream artifacts. The new
+run constructs a deterministic internal reference by inverting the stored L3
+normalized-input mean through the live unit-offset RMSNorm, applies controlled
+modal impulses around the stored L3 output mean, runs only the L3
+post-feedforward norm and exact L4 attention prefix, and projects the result
+into the frozen L4 modal basis.
+
+The full development run used all 64 source modes, a 40-position causal
+sequence, impulse origins 0 and 8, logical lags 0 through 31, and a 64-point
+rFFT. It measured both `0.05σ` local central secants and `1σ` operating
+central secants:
+
+| measurement | `0.05σ` local | `1σ` operating |
+|---|---:|---:|
+| unweighted joint rank at 90% / 95% / 99% spectral energy | `11 / 15 / 24` | `11 / 15 / 24` |
+| source-σ-weighted joint rank at 90% / 95% / 99% energy | `11 / 18 / 34` | `12 / 18 / 35` |
+| energy after logical lag 4 | `10.72%` | `10.98%` |
+| even/nonlinear residual relative to odd response | `0.00714` | `0.13707` |
+| mean / minimum two-origin spectral similarity | `0.672 / 0.310` | `0.679 / 0.294` |
+| connected components at similarity `0.90` | `62` | `62` |
+
+The local and operating source signatures have mean cosine `0.99956` and
+minimum cosine `0.99014`. Their low-rank topology is therefore stable across
+amplitude even though the full-`1σ` response has a material nonlinear
+component. Source-mode standard deviations span about `103x`, so the weighted
+ranks—not the more aggressive unweighted ranks—are the compression-facing
+numbers. Pairwise clustering is sparse: the only non-singleton components are
+modes `(15, 16)` and `(29, 58)`. The lower joint rank is consequently a
+distributed subspace result, not evidence that most modes can be deleted or
+merged pairwise.
+
+The lag profile is causal and long-tailed: lag 0 carries `64.52%` of local
+energy, lags 0 through 4 carry `89.58%`, and lags 0 through 8 carry `95.04%`.
+The zero precausal response validates the mask path. The substantial
+origin dependence rejects a shift-invariant-convolution interpretation and
+points toward a position- or state-conditioned spectral generator family.
+
+As a descriptive cross-estimator check, the origin-pooled local finite secant
+has cosine `0.791` to the existing mean prompt-probe JVP kernel over lags 0
+through 4, but relative difference `3.749`. These estimators use different
+reference states and amplitudes; the comparison is neither ground truth nor
+an accuracy validation.
+
+The analysis executed 642 L4 attention prefixes and no L3 or L4 MLP bodies.
+Its counted linear work is `44.17B` MACs, excluding attention-score products,
+softmax, normalization, RoPE, and elementwise work. That is experiment cost,
+not inference cost or a speedup. The ignored tensor artifact is `49,812,769`
+bytes with SHA-256
+`b88201f33210c8cd5be0d28f144b1963de84f51ba065959391aad3ce496c59d3`;
+the source-safe JSON report-payload SHA-256 is
+`00ac238e9867f001aa8b0926f2f05087b151d39e0cacf6f92d6192c50ac56165`.
+
+## Position-conditioned spectral executor rung
+
+The follow-up measurement moved away from the causal boundary. It used all 64
+source modes, origins `8, 16, 24, 32, 40`, 32 causal lag bins, and a 64-point
+rFFT. Across these interior origins, mean source-signature similarity was
+`0.9832` locally (`0.9827` at `1σ`), compared with `0.672` in the earlier
+origin-0/8 run. This changes the interpretation: the map is not stationary,
+but most of the apparent instability came from origin 0. A small
+position-conditioned family is a plausible representation of the interior.
+
+`conditional_spectral_generator.py` compiles that family without reading any
+non-fit response during factorization. For source scale vector \(\sigma\), it
+factors
+
+\[
+B_o[s,\ell,t]=\sigma_s H_o[s,\ell,t]
+\approx U_s C_o[\ell]U_t^\top .
+\]
+
+The real source and target bases come from Parseval-correct one-sided rFFT
+unfoldings over declared fit origins only. Runtime input coordinates are
+standardized by \(\sigma\), projected through \(U_s\), transported through a
+piecewise-linear source-position core, accumulated causally by lag, and
+decoded through \(U_t\) once per target row. A dense materialization path is
+retained as an algebraic control. The prepared runtime supports variable
+logical positions and masks; source origins cannot extrapolate beyond the fit
+knots, while causal target rows may extend past the last knot.
+
+The model-specific protocol preregistered these roles:
+
+| role | origins | authority |
+|---|---|---|
+| fit knots | `8, 24, 40` | shared bases and knot cores |
+| opened selection | `16, 32` | rank and correction choice |
+| fresh assessment | `20` | no fitting or architecture changes |
+
+The linear ladder selected source/target ranks `20×18`, the smallest declared
+pair with worst selection relative error at most `0.20` and worst cosine at
+least `0.98`:
+
+| metric | origin 16 | origin 32 | fresh origin 20 |
+|---|---:|---:|---:|
+| local weighted relative error | `0.19766` | `0.17916` | `0.18962` |
+| local cosine | `0.98028` | `0.98382` | `0.98186` |
+
+The finite correction is deliberately narrower than a general quadratic
+edge. The available single-mode `+/-` probes identify only diagonal
+self-curvature. The correction therefore uses
+
+\[
+\phi_s(m)=(m_s/\sigma_s)^2
+\]
+
+with its own shared source/target bases and no cross-mode products, linear
+term, or bias. It is zero at the reference and has zero Jacobian there. A
+`4×4` factor retained `0.84599` of fit even-response energy and failed the
+preregistered `0.85` gate without rounding. The next `4×6` factor retained
+`0.85597` and passed:
+
+| metric | origin 16 | origin 32 | fresh origin 20 |
+|---|---:|---:|---:|
+| linear-only finite relative error | `0.23742` | `0.21458` | `0.22775` |
+| corrected finite relative error | `0.20929` | `0.18939` | `0.20065` |
+| relative error reduction | `11.85%` | `11.74%` | `11.90%` |
+| corrected finite cosine | `0.97844` | `0.98231` | `0.98013` |
+
+The candidate was frozen before the origin-20 tensor existed. Assessment
+strictly loaded its candidate and measurement hashes, performed no refit, and
+did not expose a fitting API.
+
+### Resource interpretation
+
+The linear factor stores `36,992` coefficients and the diagonal-square factor
+stores `2,944`, for `39,936` total. A deduplicated prepared runtime additionally
+needs the 64 shared source scales: `40,000` floats, or `160,000` bytes in
+float32. A matched dense two-branch family at three knots, 32 lags, and
+`64×64` modal width contains `786,432` coefficients, so the factor state is
+`5.078%` of that edge-only comparator (`94.922%` fewer).
+
+For an illustrative 72-target traversal whose 33 emitting source rows are
+restricted to the supported origins 8 through 40, there are 1,056 admitted
+causal pairs. Once the position cores are prepared, the fused factorized
+branches require `566,784` modal matrix MACs versus `8,650,752` for the
+matched two-dense-branch control (`6.55%`). This analytic count is not measured
+latency or full-model compute. It excludes core interpolation, normalization
+and squaring, accumulation, masks, memory traffic, kernel launches, the
+missing base provider, and every surrounding native model operation.
+
+The ignored artifacts are bound as follows:
+
+- interior measurement tensor:
+  `a80b9ce1a5e433724e74cb7c29143d18442805a7b05fcb419ede6ad1e23686b3`;
+- frozen candidate tensor:
+  `9be7c0345acfaef8d77c273b1b69e3d83c930b807fd33756f955b5eef3fe2d2a`;
+- candidate payload:
+  `ce0649eb1d4559524243e8ad7b10dd9482dea31ca9ace35bde4e8568f2f49abc`;
+- fresh origin-20 measurement tensor:
+  `b31047899eb29a4f20efc69f2b55e9aa343cecd69260c90696db523e8a923987`;
+- assessment payload:
+  `ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671`.
+
+These are modal-edge development artifacts outside Git. They contain no
+tokenizer, prompt text, token IDs, or source model state.
+
+## Mixed-mode falsification rung
+
+The axis-only measurement cannot identify cross-mode curvature. The next
+assessment therefore froze a chord panel before loading the live model:
+
+- source origin `28`, sequence length `60`, and causal lags `0–31`;
+- 24 canonical unordered pairs spanning 16 modes;
+- radial standardized magnitudes `0.5` and `1.0`, with each chord component
+  equal to \(\rho\sigma_i/\sqrt{2}\);
+- four signs `(++,+-,-+,--)`; and
+- matching `(+,-)` singleton controls for every participating mode.
+
+The first 12 pairs use exactly the top eight rows by
+\(\sum_r U_{q,ir}^2\) leverage in the frozen diagonal-square source basis.
+The other 12 are a balanced rank-coverage control. Every selected mode has
+degree three. The pair order, radii, signs, source grid, candidate and
+hierarchy hashes, decision thresholds, and runner code hashes were fixed
+before the origin-28 response was opened.
+
+For one shared measured zero response \(Y_{00}\), define
+
+\[
+D_{ab}=Y(a u+b v)-Y_{00},\quad
+D_{a0}=Y(a u)-Y_{00},\quad
+D_{0b}=Y(b v)-Y_{00}.
+\]
+
+The complete interaction is
+
+\[
+I_{ab}=D_{ab}-D_{a0}-D_{0b}.
+\]
+
+This singleton subtraction is necessary: the odd-odd Walsh component \(C_{11}\)
+alone can miss constant, odd-even, and even-odd interaction. The generic
+artifact reconstructs all four parities \(C_{00},C_{10},C_{01},C_{11}\) and
+checks the decomposition exactly.
+
+At the preregistered operating radius, the result was decisive:
+
+| metric | `0.5σ` diagnostic | `1σ` decision |
+|---|---:|---:|
+| frozen corrected relative error | `0.14606` | `0.18634` |
+| frozen corrected cosine | `0.98934` | `0.98339` |
+| full nonadditivity \(e_{\mathrm{add}}=\lVert I\rVert/\lVert D\rVert\) | `0.05338` | `0.11266` |
+| truth-leaking full-interaction oracle error gain | `7.07%` | `23.10%` |
+| \(C_{11}\) share of interaction energy | `93.51%` | `80.74%` |
+| \(C_{11}\) share of full response energy | `0.266%` | `1.025%` |
+
+The support band required pooled nonadditivity below `5%`, each family below
+`7.5%`, no reliable pair at or above `10%`, and oracle gain below `5%`.
+Material failure required pooled nonadditivity or oracle gain at least `10%`,
+either family at least `15%`, or a reliable energetic pair at least `20%`.
+The run crossed three material gates:
+
+- pooled nonadditivity was `11.27%`;
+- oracle error gain was `23.10%`; and
+- pairs `(0,2)` and `(1,2)` reached `21.87%` and `20.85%`.
+
+The stress family reached `14.17%` nonadditivity and `31.88%` oracle gain,
+while the rank-coverage family reached only `3.89%` and `3.30%`. The
+interaction is therefore concentrated around modes emphasized by the frozen
+diagonal branch rather than spread uniformly across the rank.
+
+The frozen candidate's own nonadditivity was only
+`2.28e-7` relative to its response, so the result is not leakage from a
+hidden cross term in the candidate. The measured zero response and the
+start/end repeat difference were both exactly zero. Candidate, model,
+protocol, and source-code hashes were unchanged across the run.
+
+### What the failure nominates
+
+The result falsifies the cross-free linear-plus-diagonal architecture on this
+specific panel, but it also identifies a narrow repair. Scaling the `0.5σ`
+\(C_{11}\) response by four predicts the `1σ` \(C_{11}\) response with cosine
+`0.99560` and relative error `0.10395`. Those pass the frozen bilinear gates
+of cosine at least `0.95` and scale defect at most `0.25`; the `80.74%`
+interaction-energy share also passes the `75%` parity gate.
+
+A low-rank bilinear chord generator is therefore the next justified branch.
+It should use an explicit channel for every one of the 28 unordered products
+among the eight nominated sensitive modes. Withholding one of those pairs
+would leave its channel unidentified, so selection is origin-disjoint rather
+than pair-disjoint: fit at origins `8/24/40`, select at `16/32`, and assess the
+already-frozen branch on fresh mixed directions at origin `20`. Origin `28`
+is architecture-development evidence only and is never reused for fitting.
+The remaining `19.26%` non-`C11` interaction stays explicit: if it remains
+material after the bilinear branch, it requires a conditional residual or
+path-integrated JVP rather than being silently attributed to a Hessian.
+
+The assessment made 259 structural-map calls plus one baseline attention
+prefix. Its partial analytic live-model accounting is `26.832B` MACs,
+excluding attention-score/value matmuls, normalization, RoPE, softmax,
+elementwise work, and memory traffic. The frozen candidate controls used
+`27.132M` factorized modal MACs across 256 calls. These are experiment costs,
+not deployed inference costs or latency measurements.
+
+The ignored output bindings are:
+
+- tensor file:
+  `d76feac5e13a7e8f8f8d76bac97926f1d66131059337c987cfc43fb72d15f56b`;
+- logical artifact:
+  `37e79c582c9e83f3c45182f924a148a032b1b7baefc9bb08452feaf20bb6761c`;
+- source-safe report:
+  `931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d`;
+- frozen protocol:
+  `c82dceb96ac3e6dbd400cceaf00700df026ecb754ae427de5a071044e8d8c8d8`;
+- generic mixed-interaction artifact:
+  `d1446f89ed57820287371df3735808b479486624204436ca8ae24a159fe5277a`.
+
+The tensor file is 30,248,885 bytes and remains under `.local-runs/`. The JSON
+contains aggregate metrics and hashes but no response tensors, prompt text,
+token IDs, tokenizer, or model state.
+
+## Bilinear modal-generator rung
+
+The nominated repair is now implemented, compiled, and independently assessed.
+It does not learn an arbitrary nonlinear map. The feature ABI is the complete,
+authenticated upper triangle among the eight nominated modes
+`(0,1,2,7,15,28,42,43)`:
+
+\[
+z_i=\Delta m_i/\sigma_i,\qquad
+\phi_{ij}=2z_i z_j,\quad i<j.
+\]
+
+There are exactly 28 lexicographically ordered feature channels. A chord whose
+two components are
+\(\operatorname{sign}_i\rho\sigma_i/\sqrt{2}\) and
+\(\operatorname{sign}_j\rho\sigma_j/\sqrt{2}\) therefore emits
+\(\operatorname{sign}_i\operatorname{sign}_j\rho^2\) in its matching channel.
+A singleton axis and every declared control pair emit exact zero. The prepared
+runtime authenticates this feature map before composing it with a
+position-conditioned spectral generator.
+
+The compiler used a positional firewall:
+
+- fit origins `8/24/40`;
+- selection origins `16/32`;
+- assessment origin `20`;
+- sequence length `72`, causal lags `0–31`, radii `0.5σ/1σ`, and all four
+  chord signs; and
+- six separate negative-control pairs in selection and six new controls in
+  assessment.
+
+Every candidate rank was fit from the same fit panel. The selection responses
+were opened only after the complete rate ladder existed, and the assessment
+command authenticated the candidate file, source-safe report, model,
+hierarchy, base candidate, feature map, selected plan, compile evidence, and
+runner code before opening origin `20`. Assessment exposes no fitting path and
+does not reuse origin `28`.
+
+The smallest candidate satisfying every frozen gate was the rank-`8×8`
+spectral plan:
+
+| plan | stored coefficients | selection error | selection cosine | \(C_{11}\) error | passes |
+|---|---:|---:|---:|---:|:---:|
+| no bilinear branch | `0` | `0.20726` | `0.97987` | `1.00000` | no |
+| rank `4×6` | `2,800` | `0.17142` | `0.98679` | `0.34436` | no |
+| rank `8×8` | `6,880` | `0.16852` | `0.98729` | `0.23339` | yes |
+| rank `12×12` | `14,928` | `0.16721` | `0.98751` | `0.16154` | yes |
+| rank `28×64` dense | `172,032` | `0.16625` | `0.98767` | `0.07140` | yes |
+
+The selected branch reduced pooled selection error by `18.69%`, recovered
+`93.92%` of the measured \(C_{11}\) oracle headroom, and reached \(C_{11}\)
+cosine `0.97330`. The direct dense branch improves full-response error by only
+another `0.00227`; most of the useful interaction correction is therefore
+present at the first passing compact rank.
+
+The sealed origin-20 assessment also passed:
+
+| metric | frozen base | base + bilinear |
+|---|---:|---:|
+| full mixed relative error | `0.20901` | `0.16937` |
+| full mixed cosine | — | `0.98710` |
+| relative error reduction | — | `18.96%` |
+| \(C_{11}\) relative error | `1.00000` | `0.22976` |
+| \(C_{11}\) cosine | — | `0.97406` |
+| \(C_{11}\) oracle recovery | `0%` | `94.10%` |
+
+The truth retained the expected quadratic scaling (`0.99565` cosine,
+`0.10294` scale defect). Assessment negative controls had pooled leakage
+`0.05622` against the strict `<0.075` gate and worst reliable-pair leakage
+`0.08223` against `<0.15`; all six were reliable. The branch and the base
+candidate both produced exact-zero \(C_{11}\) on their declared structural
+controls. The executed float32 prepared graph matched the analytic branch to
+`1.47e-7` relative error with maximum absolute difference `2.58e-4`.
+
+### Bilinear resource interpretation
+
+The selected branch stores `6,880` coefficients, `3.999%` of the matched
+`172,032`-coefficient dense bilinear family (`96.001%` fewer). Adding it to the
+existing `39,936`-coefficient linear-plus-diagonal executor gives `46,816`
+edge coefficients. The corresponding matched dense three-branch family has
+`958,464`, so the complete modal edge state is `4.884%` of that comparator
+(`95.116%` fewer).
+
+This accounting is edge-local. It excludes the reference/base provider, Gemma
+weights, embeddings, attention, normalization, and the language-model head.
+It is not a whole-model parameter reduction.
+
+For one active source row, the selected bilinear transport uses `39,136`
+factorized linear MACs versus `57,344` for its direct dense convolution
+(`31.75%` fewer), before counting the 28 feature products, normalization,
+position interpolation, accumulation, masks, memory traffic, and launches.
+Across all three branches, the analogous factorized linear count is `163,552`
+versus `319,488` for the matched dense main convolution (`48.81%` fewer).
+These are analytic operator counts, not measured latency or end-to-end Gemma
+compute.
+
+The live compile made `1,231` structural evaluations plus one baseline
+prefix; assessment made `275` structural evaluations plus one baseline
+prefix. Their deliberately partial source-model accounting totals
+`186.774B` MACs and excludes attention score/value matmuls, normalization,
+RoPE, softmax, elementwise work, memory traffic, and the compiled branch. That
+number describes the experiment used to collect evidence, not deployed
+inference.
+
+Reproduction is deliberately split into compilation and sealed assessment:
+
+```bash
+fisher-graph-gemma-l3-l4-bilinear-spectral-dev compile \
+  --device cpu \
+  --dtype float32
+
+fisher-graph-gemma-l3-l4-bilinear-spectral-dev assess \
+  --candidate \
+    .local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.pt \
+  --candidate-file-sha256 \
+    631006014eaf092a27a72d2918ab61d144fe925896a4ccb812094e10d1200cf7 \
+  --candidate-report-sha256 \
+    856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a \
+  --device cpu \
+  --dtype float32
+```
+
+The ignored artifacts are bound as follows:
+
+- candidate file:
+  `631006014eaf092a27a72d2918ab61d144fe925896a4ccb812094e10d1200cf7`;
+- candidate logical artifact:
+  `660830a57acda7777756d5053556c4bf185cffb3302cda55f11d7c605cfdefaa`;
+- compile report:
+  `856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a`;
+- compile evidence file:
+  `26e6683ab2de2fec6ef80c36d41b5aed62e72c4eb3fd6e75db38022f1af4bad5`;
+- selected spectral plan:
+  `51aebc23ed730a6512686e7586581a25e055d076099f9970ab39b9a6d2f8acb7`;
+- assessment file:
+  `7252086053899895716765f1531221a31559aef26f6971cc1fa7d5aab2b8de5b`;
+- assessment logical artifact:
+  `26540cb0b44044673ab58673780be6046ffe091cca7b26e7d9e0d7b12c14dae8`;
+- assessment report:
+  `6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab`.
+
+The positive claim is narrow but new: a compact bilinear generator transports
+all 28 known sensitive-mode edge identities across held-out interior
+positions without refitting. This is position generalization for known edges,
+not unseen-pair generalization, a full Hessian, a prompt-conditioned
+replacement, downstream fidelity, or model compression.
+
+## Prompt-blind state-conditioned reference provider
+
+The next rung removes the fixed mean-reference tensor from the modal-delta
+experiment and asks whether a causal provider can predict the 64-mode L4
+reference state from the current L3 modal state. It is prompt-blind only after
+the Fisher basis package has been frozen: the provider protocol loads no
+prompt text, token IDs, tokenizer, natural activation rows, score-gradient
+rows, or prompt-local kernel, but the upstream basis was originally estimated
+from prompts.
+
+The frozen synthetic protocol separates three roles:
+
+- 80 Rademacher, AR(1), and axis probes fit every candidate;
+- 32 seed-disjoint Rademacher and AR(1) probes select the smallest passing
+  candidate; and
+- 88 sparse, chirp, axis, radial-collision, and null-collision probes are
+  available only to a one-shot assessment command.
+
+V2 preserves all 80 fit identities and all 88 assessment identities from v1,
+while sharing zero selection hashes and zero direction seeds with v1. The
+assessment panel has a protocol-independent identity so changing fit or
+selection metadata cannot reopen it.
+
+### Source-normalized causal generator
+
+The v1 executor chose an expert independently for each causal pair, then
+summed every earlier source contribution:
+
+\[
+y_t = y_t^{\mathrm{local}}+
+\sum_{s<t}\sum_e p(e\mid t,s)V_eU_ex_s.
+\]
+
+Its largest errors appeared after synthetic source activity began, especially
+for long active suffixes and doubled radial scale. V2 makes the smallest
+structural change consistent with attention-like causal transport:
+
+\[
+y_t = y_t^{\mathrm{local}}+
+\sum_{s<t}p(s\mid t)
+\sum_e p(e\mid t,s)V_eU_ex_s.
+\]
+
+One learned projection of the existing pair-hidden state produces a scalar
+source score. A masked softmax normalizes those scores only across eligible
+earlier positions. Empty rows remain exact zero, future positions have zero
+forward and gradient influence, sparse padding matches compact execution, and
+the legacy summed-source artifact remains loadable. At router width 16 this
+adds exactly 16 stored scalars per candidate.
+
+### Fresh selection result
+
+Five of six rate points passed the unchanged selection gates:
+
+| candidate | stored scalars | Fisher error | cosine | max p90 | worst family | passes |
+|---|---:|---:|---:|---:|---:|:---:|
+| dense `64→64` | `15,046` | `0.03336` | `0.99945` | `0.17051` | `0.03385` | yes |
+| spectral `8→8` | `910` | `0.08263` | `0.99659` | `0.28775` | `0.09940` | **yes, selected** |
+| spectral `16→16` | `2,422` | `0.06060` | `0.99817` | `0.38113` | `0.06814` | no: p90 |
+| spectral `24→24` | `3,886` | `0.03845` | `0.99927` | `0.19883` | `0.04141` | yes |
+| spectral `32→32` | `5,606` | `0.05279` | `0.99861` | `0.34165` | `0.05539` | yes |
+| spectral `48→48` | `9,814` | `0.04555` | `0.99896` | `0.31216` | `0.04772` | yes |
+
+The rank-8 p90 fell from `0.83766` in v1 to `0.28775` in v2. Matching-rank
+p90 improvements ranged from `38.76%` to `65.65%`; delayed-onset, doubled
+radial-scale, and long-active-suffix groups also improved strongly. Because
+v2 intentionally uses fresh direction seeds, this is a geometry-matched
+replication rather than an identical-input ablation.
+
+The selected provider stores `93.95%` fewer scalars than the full-width
+provider. Including feature encoding and output scaling, its declared ideal
+provider MAC savings versus that full-width provider are `87.16%`, `79.54%`,
+`71.28%`, and `58.65%` at lengths `32`, `72`, `128`, and `256`. These counts
+exclude activation, softmax, masking, additions, memory traffic, launches, and
+all surrounding Gemma operations. The full-width comparator also retains
+rank-16 experts; it is not a literal dense edge matrix. These are
+provider-relative analytic counts, not full-model FLOPs or latency.
+
+### Sealed assessment: fidelity passed, panel control failed
+
+The one-shot command authenticated the compiled file, report, code bundle,
+basis, source model, protocol, assessment-panel identity, metric gauge, frozen
+selection, and selected rank-8 plan before recording its irreversible claim
+and materializing any assessment target. It performed no refit or reselection.
+
+Every candidate-fidelity and structural gate passed:
+
+| assessment metric | result |
+|---|---:|
+| Fisher-weighted relative error | `0.05900` |
+| reference cosine | `0.998261` |
+| reduction versus constant / position-only | `47.80%` / `47.92%` |
+| maximum per-probe p90 error | `0.28970` |
+| worst family relative error | `0.09502` |
+| prepared float32 parity error | `3.27e-8` |
+| support fraction | `1.0` |
+| causality / padding / repeat violations | `0 / 0 / 0` |
+
+Family errors were axis `0.03236`, chirp `0.09502`, null collision `0.01972`,
+radial collision `0.03785`, and sparse `0.04673`.
+
+The preregistered composite result is nevertheless **failed** because its
+teacher-panel identifiability gate did not pass. For two measured,
+Fisher-weighted target variants \(Z_i,Z_j\), the gate computes
+
+\[
+d(i,j)=
+\frac{\lVert Z_i-Z_j\rVert_2}
+{\max((\lVert Z_i\rVert_2+\lVert Z_j\rVert_2)/2,10^{-12})},
+\]
+
+keeps the minimum pairwise value inside each collision group, then requires
+the minimum across every group to be at least `0.01`. The metric contains no
+candidate prediction.
+
+| collision family | groups at or above `0.01` | observed range |
+|---|---:|---:|
+| radial scale | `4 / 4` | `0.01516–0.03652` |
+| axis sign | `0 / 8` | `0.000105–0.002329` |
+| gain-null coordinate | `0 / 4` | `0.00000924–0.0000531` |
+
+The global minimum was `9.2393e-6` for null mode 63. Thus the provider did not
+fail to predict collision targets; rather, the frozen teacher panel did not
+demonstrate a 1% effect for every tagged variable. Radial residual magnitude
+is identifiable under this construct. Axis-sign effects are small relative to
+the full-sequence target norm, and the exact RMSNorm gain-null coordinate is
+nearly invariant downstream.
+
+The result remains permanently recorded as a composite-control failure. Its
+independent positive evidence is narrower: a frozen 910-scalar provider
+generalized across all five sealed synthetic families on every prediction and
+execution-structure gate.
+
+Reproduction remains split between compilation and the already-consumed
+one-shot assessment:
+
+```bash
+fisher-graph-gemma-l3-l4-reference-provider-dev compile \
+  --device cpu \
+  --dtype float32
+
+fisher-graph-gemma-l3-l4-reference-provider-dev assess \
+  --candidate \
+    .local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.pt \
+  --candidate-file-sha256 \
+    37bd6fbda9b3660777f0388561e4e8d7d1a28e3958bcb98c69ca302cd1f77ae1 \
+  --candidate-report-sha256 \
+    1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9 \
+  --device cpu \
+  --dtype float32
+```
+
+The ignored outputs are bound by:
+
+- compiled tensor:
+  `37bd6fbda9b3660777f0388561e4e8d7d1a28e3958bcb98c69ca302cd1f77ae1`;
+- compiled logical artifact:
+  `973bab7c72d456247a535137fd3bbfa8fd064b4710718dc905dea94963144f46`;
+- compiled report:
+  `1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9`;
+- selected plan:
+  `7ab42890daece95eeedbf08ba0e5727f2bccfd7be20e00a4e404539cd1bf9cee`;
+- assessment tensor:
+  `a4175def42020f1b13a370e7ee9308dcc2be3b3439960987418573ba4379b2dd`;
+- assessment logical artifact:
+  `21500080aed580e91b605a6fdd01984dcc41676c0dea96a7813ee0ec4a8cc57d`;
+- assessment report:
+  `613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e`;
+- assessment panel specification:
+  `c690e9f85f5629ab2701fc5db487aea1404864256f5fe24034e35143047af102`;
+- assessment score:
+  `510e7f406e1e9fb18f33a3b24cda90aee44ed5a6508ccd6a8c577016549c82ae`;
+- frozen basis payload:
+  `b2217153911436673f2ff7475c658c928112e802f5999619393287d2b0803c01`;
+- v2 synthetic protocol:
+  `82b6d07830c3410a89f24233fc0d2ddfb0f3c1972739b6fe55144183485b3fb3`;
+  and
+- v2 training protocol:
+  `4eb3bc860539683802355bd156dd59ff6007e4de86c1b98558f51d45b798fbaf`.
+
 ## Next validation gate
 
-The next rung must:
+The v2 assessment panel is consumed and must not be rerun or rescued by
+lowering its threshold. The next rung must preregister a genuinely fresh v3
+panel and split the overloaded collision decision into:
 
-1. validate the JVP fit on held-out directions;
-2. replace or augment the stationary first-order edge with a
-   finite-displacement correction, such as a prompt-conditioned residual or a
-   path-integrated Jacobian;
-3. compile and authenticate a provider for the prompt-conditioned mean-source
-   L4 reference base;
-4. execute that self-contained graph and collect fresh moments on its exact
-   runtime path;
-5. choose and freeze both architecture and rank on a disjoint selection split;
-6. add a transitive fallback to the original fine leaf;
-7. run source-authoritative shadow execution on a fresh family-disjoint
-   assessment split; and
-8. replace logical shape accounting with measured fidelity, resident storage,
-   active compute, and latency results.
+1. teacher-construct sensitivity gates for variables expected to matter;
+2. teacher-construct invariance ceilings for intended null controls;
+3. a panel-inconclusive state for effects too weak to test;
+4. candidate contrast recovery on sufficiently identified groups, comparing
+   \((\hat T_i-\hat T_j)\) directly with \((T_i-T_j)\); and
+5. fresh modes, positions, lengths, seeds, hashes, and a new one-shot ledger
+   identity.
+
+If that frozen provider gate passes, the rank-8 provider can be composed with
+the frozen linear, diagonal, and bilinear branches in one self-contained
+L3→L4 graph with transitive native fallback. The following rung is then
+source-authoritative shadow execution on a family-disjoint natural-prompt
+split, scoring NLL, full-vocabulary KL, and top-1 agreement. Resident storage,
+active compute, and measured latency remain downstream of that fidelity gate.
 
 Parallel-path aggregation must also be authenticated before a later rung
 admits multiple fine edges with the same modal endpoints. Until those gates
-pass, L3/L4 is a measured development hypothesis, not an executable Gemma
-replacement or a compression result.
+pass, the provider is strong synthetic evidence rather than an executable
+Gemma replacement or a compression result.

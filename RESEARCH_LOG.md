@@ -1413,6 +1413,155 @@ when more than this single L3-to-L4 edge is admitted. This establishes a
 guarded recursive compiler boundary; it does not yet make the Gemma nomination
 executable. See the [`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
 
+The prompt-free spectral follow-up isolated the causal-boundary pathology and
+compiled a position-conditioned interior executor. Across origins
+`8/16/24/32/40`, mean local source-signature similarity was `0.9832`. A
+rank-`20×18` linear branch fit at `8/24/40` and selected at `16/32` reached
+fresh origin-20 relative error `0.18962` and cosine `0.98186`. A separate
+rank-`4×6` diagonal-square branch reduced finite `±1σ` error from `0.22775` to
+`0.20065`, an `11.90%` relative improvement. Together they store 39,936
+modal-edge coefficients, `94.92%` fewer than the matched two-branch dense
+three-knot comparator. This remains an edge-only fixed-reference result, not
+model compression or a block replacement.
+
+The next no-refit assessment froze 24 two-mode chords over 16 modes at the
+previously unopened source origin `28`, with radial magnitudes `0.5σ/1σ` and
+matching singleton controls. It measured the complete interaction
+\(I_{ab}=D_{ab}-D_{a0}-D_{0b}\), not only the odd-odd Walsh term. At `1σ`,
+the frozen candidate retained relative error `0.18634` and cosine `0.98339`,
+but pooled nonadditivity was `0.11266` and a truth-leaking interaction oracle
+reduced its error by `23.10%`. Pairs `(0,2)` and `(1,2)` reached `21.87%` and
+`20.85%`. These crossed the preregistered pooled, oracle, and reliable-pair
+material-failure gates, falsifying the cross-free diagonal architecture on
+the panel.
+
+The failure is sufficiently structured to nominate a narrow repair. `C11`
+contains `80.74%` of interaction energy; after the required fourfold scaling,
+the `0.5σ` and `1σ` `C11` responses have cosine `0.99560` and relative defect
+`0.10395`. All frozen bilinear-suitability gates pass. The next compiler rung
+is therefore a low-rank bilinear chord generator over all 28 explicit
+off-diagonal products among the eight nominated sensitive modes. Because
+withholding a pair leaves that explicit channel unidentified, the frozen
+split is positional: fit origins `8/24/40`, selection origins `16/32`, and a
+no-refit mixed-direction assessment at origin `20`. The non-`C11` remainder
+stays reserved for a conditional residual or path-integrated JVP. Origin 28
+remains architecture-development evidence only.
+
+The mixed-mode run made 259 structural-map calls plus one baseline prefix.
+Its partial analytic live-model work was `26.832B` MACs, while the frozen
+factorized candidate controls used `27.132M` modal MACs across 256 calls.
+These are assessment costs. The ignored tensor/report SHA-256 values are
+`d76feac5e13a7e8f8f8d76bac97926f1d66131059337c987cfc43fb72d15f56b`
+and `931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d`.
+The full protocol and parity breakdown are in the
+[`recursive modal hierarchy`](docs/recursive-modal-hierarchy.md).
+
+The nominated bilinear rung then compiled the complete 28-channel
+off-diagonal feature map
+\(\phi_{ij}=2(\Delta m_i/\sigma_i)(\Delta m_j/\sigma_j)\) over sensitive modes
+`(0,1,2,7,15,28,42,43)`. It measured fit origins `8/24/40`, constructed the
+entire frozen rate ladder, and only then opened selection origins `16/32`.
+The smallest passing plan was rank `8×8`, with 6,880 coefficients versus
+172,032 in the direct dense bilinear family (`96.00%` fewer). On selection it
+reduced full mixed-response error from `0.20726` to `0.16852` (`18.69%`) at
+cosine `0.98729`, reached `0.23339` \(C_{11}\) relative error, and recovered
+`93.92%` of the \(C_{11}\) oracle headroom.
+
+The independent assessment authenticated the frozen candidate and all
+evidence before opening origin `20`, exposed no fitting API, and passed every
+preregistered gate. Full mixed-response error fell from `0.20901` to `0.16937`
+(`18.96%`) at cosine `0.98710`; \(C_{11}\) relative error was `0.22976`,
+cosine was `0.97406`, and oracle recovery was `94.10%`. Six fresh negative
+controls had pooled leakage `0.05622` and worst reliable-pair leakage
+`0.08223`, below their strict `0.075` and `0.15` ceilings. Singleton and
+declared control outputs were exactly zero. The actual prepared float32 graph
+matched the analytic branch to `1.47e-7` relative error.
+
+The dense rate point reached selection error `0.16625`, just `0.00227` below
+the selected compact plan. Adding the bilinear branch to the prior linear and
+diagonal branches gives 46,816 edge coefficients versus 958,464 for the
+matched dense three-branch family (`95.12%` fewer). This excludes the missing
+prompt-conditioned reference provider and all surrounding Gemma weights, so
+it is not a whole-model parameter result. Analytically, the selected bilinear
+transport uses 39,136 factorized linear MACs per active source row versus
+57,344 for the direct dense convolution; the three branches use 163,552
+versus 319,488. These counts exclude feature formation, interpolation,
+accumulation, masks, memory traffic, and kernel launches and are not latency
+measurements.
+
+Compilation made 1,231 structural evaluations plus one baseline prefix, and
+assessment made 275 plus one. Their partial evidence-collection accounting
+totals `186.774B` live-model MACs, not deployment compute. The ignored
+candidate file/report SHA-256 values are
+`631006014eaf092a27a72d2918ab61d144fe925896a4ccb812094e10d1200cf7` and
+`856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a`;
+the assessment file/report values are
+`7252086053899895716765f1531221a31559aef26f6971cc1fa7d5aab2b8de5b` and
+`6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab`.
+The positive claim is known-edge position generalization under a fixed
+reference—not unseen-pair generalization, a full Hessian, prompt fidelity,
+model compression, or speed.
+
+The first prompt-blind reference-provider compiler is now implemented. It
+uses the frozen L3/L4 Fisher basis, but loads no prompt text, token IDs,
+tokenizer, natural activation rows, score-gradient rows, or prompt-local
+kernel while fitting the provider. The basis remains upstream
+prompt-conditioned, so this tests prompt-blind relation mapping after basis
+discovery rather than prompt-independent basis discovery.
+
+The v1 causal executor summed every eligible earlier source. On its held-out
+selection split, all six ranks passed global Fisher and cosine gates but none
+passed the per-probe p90 gate; the errors turned on after source activity and
+grew most clearly on long active suffixes and doubled radial scale. V2 adds
+one scalar source score from the existing pair-hidden state, masked-softmaxes
+those scores over eligible earlier positions, and multiplies the result by
+the expert distribution. This adds only 16 parameters per candidate.
+
+V2 held the 80 fit probes fixed and used 32 selection probes sharing zero
+hashes and zero direction seeds with v1. Five of six ranks passed. The
+smallest was `spectral-r08-t08`, storing 910 scalars versus 15,046 for the
+full-width provider (`93.95%` fewer). Selection Fisher-weighted relative
+error was `0.08263`, cosine was `0.99659`, maximum probe p90 was `0.28775`,
+and worst-family error was `0.09940`. The matching v1 rank-8 p90 was
+`0.83766`. Every candidate retained exact causality, padding, and repeat
+behavior.
+
+The one-shot assessment then opened 88 unchanged sparse, chirp, axis,
+radial-collision, and null-collision probes after authenticating the frozen
+candidate and recording an account-level claim. The rank-8 provider passed
+all 11 prediction and structural gates: Fisher error `0.05900`, cosine
+`0.998261`, p90 `0.28970`, worst-family error `0.09502`, control-error
+reductions `47.80%/47.92%`, support `1.0`, prepared parity `3.27e-8`, and
+zero causal, padding, or repeat violation.
+
+The preregistered composite assessment is nevertheless formally failed. Its
+only false flag was a target-only identifiability control. The metric compared
+Fisher-weighted Gemma targets between every collision variant and required
+the minimum group contrast to be at least `0.01`; it did not inspect candidate
+predictions. All four radial groups passed (`0.01516–0.03652`), but all eight
+axis-sign groups (`0.000105–0.002329`) and all four gain-null groups
+(`9.24e-6–5.31e-5`) were below threshold. The executor predicted those
+near-invariant families accurately; the panel did not establish that every
+tagged variable has a 1% teacher effect.
+
+The v2 result stays recorded as a composite-control failure with independently
+positive sealed fidelity evidence. The next protocol must use a new panel,
+not reopen v2 or lower its threshold. It should separate teacher sensitivity
+requirements from intended-invariance ceilings, admit an explicit
+panel-inconclusive outcome, and score candidate recovery of the measured
+within-group contrast. Only after a fresh provider gate passes should the
+provider and modal-delta branches enter a natural-prompt shadow test of NLL,
+full-vocabulary KL, and top-1 agreement.
+
+The v2 compiled tensor/report hashes are
+`37bd6fbda9b3660777f0388561e4e8d7d1a28e3958bcb98c69ca302cd1f77ae1`
+and `1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9`.
+The assessment tensor/report hashes are
+`a4175def42020f1b13a370e7ee9308dcc2be3b3439960987418573ba4379b2dd`
+and `613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e`.
+The selected plan is
+`7ab42890daece95eeedbf08ba0e5727f2bccfd7be20e00a4e404539cd1bf9cee`.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block

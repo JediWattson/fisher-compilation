@@ -17,6 +17,7 @@ import inspect
 import json
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -105,6 +106,34 @@ def _replace_layer_output(output: object, hidden_states: Tensor) -> object:
     raise TypeError(
         "Gemma 3 decoder layers must return a Tensor, tuple, or list"
     )
+
+
+@dataclass(slots=True)
+class Gemma3AttentionPrefixRun:
+    """Result of executing a Gemma 3 layer through its MLP input."""
+
+    post_attention_hidden_states: Tensor
+    normalized_mlp_input: Tensor
+    sequence: SequenceContext
+    raw_attention_output: object | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.post_attention_hidden_states, Tensor):
+            raise TypeError(
+                "post_attention_hidden_states must be a Tensor"
+            )
+        if not isinstance(self.normalized_mlp_input, Tensor):
+            raise TypeError("normalized_mlp_input must be a Tensor")
+        if not isinstance(self.sequence, SequenceContext):
+            raise TypeError("sequence must be a SequenceContext")
+        if (
+            self.post_attention_hidden_states.shape
+            != self.normalized_mlp_input.shape
+        ):
+            raise ValueError(
+                "post-attention hidden states and normalized MLP input "
+                "must have the same shape"
+            )
 
 
 class Gemma3CausalLMAdapter(ModelAdapter):
@@ -1519,14 +1548,12 @@ class Gemma3CausalLMAdapter(ModelAdapter):
             if name in parameters
         }
 
-    def run_segment(
+    def _validate_segment_execution(
         self,
         segment: SegmentSpec,
         hidden_states: Tensor,
         sequence: SequenceContext,
-        *,
-        trace: ActivationTrace | None = None,
-    ) -> SegmentRun:
+    ) -> LayerSpec:
         if not isinstance(segment, SegmentSpec):
             raise TypeError("segment must be a SegmentSpec")
         if segment != self.segment(segment.id):
@@ -1577,9 +1604,14 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                 "standalone Gemma 3 segment execution currently supports "
                 "eager or SDPA attention"
             )
+        return self.layer(segment.layer_ids[0])
 
-        layer_spec = self.layer(segment.layer_ids[0])
-        hidden_states = record(trace, layer_spec.input_site, hidden_states)
+    def _segment_attention_candidates(
+        self,
+        layer_spec: LayerSpec,
+        hidden_states: Tensor,
+        sequence: SequenceContext,
+    ) -> tuple[nn.Module, str, dict[str, object]]:
         attention = layer_spec.attention
         assert attention is not None
         attention_mask = self._additive_attention_mask(
@@ -1603,6 +1635,176 @@ class Gemma3CausalLMAdapter(ModelAdapter):
         if sequence.cache_positions is not None:
             candidates["cache_position"] = sequence.cache_positions
         layer = self.source_module(layer_spec.id)
+        return layer, layer_type, candidates
+
+    @staticmethod
+    def _attention_position_embedding_kwargs(
+        candidates: Mapping[str, object],
+        *,
+        layer_type: str,
+    ) -> dict[str, object]:
+        if "position_embeddings" in candidates:
+            return {
+                "position_embeddings": candidates["position_embeddings"],
+            }
+        position_name = (
+            "position_embeddings_local"
+            if layer_type == "sliding_attention"
+            else "position_embeddings_global"
+        )
+        try:
+            position_embeddings = candidates[position_name]
+        except KeyError as error:
+            raise RuntimeError(
+                "Gemma 3 RoPE preparation did not expose position embeddings"
+            ) from error
+        return {"position_embeddings": position_embeddings}
+
+    @staticmethod
+    def _attention_prefix_modules(
+        layer: nn.Module,
+    ) -> tuple[nn.Module, nn.Module, nn.Module, nn.Module]:
+        module_names = (
+            "input_layernorm",
+            "self_attn",
+            "post_attention_layernorm",
+            "pre_feedforward_layernorm",
+        )
+        modules = tuple(getattr(layer, name, None) for name in module_names)
+        missing = tuple(
+            name
+            for name, module in zip(module_names, modules, strict=True)
+            if not isinstance(module, nn.Module)
+        )
+        if missing:
+            raise TypeError(
+                "Gemma 3 layer cannot execute its attention prefix; "
+                f"missing modules: {list(missing)}"
+            )
+        input_norm, self_attention, post_attention_norm, pre_ff_norm = modules
+        assert isinstance(input_norm, nn.Module)
+        assert isinstance(self_attention, nn.Module)
+        assert isinstance(post_attention_norm, nn.Module)
+        assert isinstance(pre_ff_norm, nn.Module)
+        return input_norm, self_attention, post_attention_norm, pre_ff_norm
+
+    def run_attention_prefix(
+        self,
+        segment: SegmentSpec,
+        hidden_states: Tensor,
+        sequence: SequenceContext,
+        *,
+        trace: ActivationTrace | None = None,
+    ) -> Gemma3AttentionPrefixRun:
+        """Run one Gemma 3 layer through its normalized MLP input.
+
+        This is cache-free prefill execution of input RMSNorm, self-attention,
+        post-attention RMSNorm and residual addition, followed by the
+        pre-feedforward RMSNorm. The MLP and post-feedforward normalization
+        are intentionally not invoked.
+        """
+
+        layer_spec = self._validate_segment_execution(
+            segment,
+            hidden_states,
+            sequence,
+        )
+        hidden_states = record(trace, layer_spec.input_site, hidden_states)
+        layer, layer_type, candidates = self._segment_attention_candidates(
+            layer_spec,
+            hidden_states,
+            sequence,
+        )
+        (
+            input_norm,
+            self_attention,
+            post_attention_norm,
+            pre_ff_norm,
+        ) = self._attention_prefix_modules(layer)
+
+        transformer = layer_spec.transformer
+        if transformer is None:
+            raise RuntimeError(
+                "Gemma 3 layer is missing transformer semantics"
+            )
+        attention_stage, feed_forward_stage = transformer.stages
+
+        residual = hidden_states
+        normalized_attention_input = record(
+            trace,
+            attention_stage.normalized_input_site,
+            input_norm(hidden_states),
+        )
+        attention_candidates = {
+            name: value
+            for name, value in candidates.items()
+            if name
+            not in (
+                "position_embeddings",
+                "position_embeddings_global",
+                "position_embeddings_local",
+            )
+        }
+        attention_candidates.update(
+            self._attention_position_embedding_kwargs(
+                candidates,
+                layer_type=layer_type,
+            )
+        )
+        attention_kwargs = self._filtered_layer_kwargs(
+            self_attention,
+            attention_candidates,
+        )
+        raw_attention_output = self_attention(
+            hidden_states=normalized_attention_input,
+            **attention_kwargs,
+        )
+        attention_output = record(
+            trace,
+            attention_stage.operator_output_site,
+            _tensor_from_layer_output(raw_attention_output),
+        )
+        attention_delta = record(
+            trace,
+            attention_stage.delta_site,
+            post_attention_norm(attention_output),
+        )
+        post_attention_hidden_states = record(
+            trace,
+            attention_stage.output_site,
+            residual + attention_delta,
+        )
+        normalized_mlp_input = record(
+            trace,
+            feed_forward_stage.normalized_input_site,
+            pre_ff_norm(post_attention_hidden_states),
+        )
+        return Gemma3AttentionPrefixRun(
+            post_attention_hidden_states=post_attention_hidden_states,
+            normalized_mlp_input=normalized_mlp_input,
+            sequence=sequence,
+            raw_attention_output=raw_attention_output,
+        )
+
+    def run_segment(
+        self,
+        segment: SegmentSpec,
+        hidden_states: Tensor,
+        sequence: SequenceContext,
+        *,
+        trace: ActivationTrace | None = None,
+    ) -> SegmentRun:
+        layer_spec = self._validate_segment_execution(
+            segment,
+            hidden_states,
+            sequence,
+        )
+        hidden_states = record(trace, layer_spec.input_site, hidden_states)
+        layer, _layer_type, candidates = self._segment_attention_candidates(
+            layer_spec,
+            hidden_states,
+            sequence,
+        )
         kwargs = self._filtered_layer_kwargs(layer, candidates)
         output = layer(hidden_states, **kwargs)
         result = record(
@@ -1774,4 +1976,4 @@ class Gemma3CausalLMAdapter(ModelAdapter):
                 self._source_layers[ordinal] = originals[ordinal]
 
 
-__all__ = ["Gemma3CausalLMAdapter"]
+__all__ = ["Gemma3AttentionPrefixRun", "Gemma3CausalLMAdapter"]

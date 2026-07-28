@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="figure-title figure-description">
+<title id="figure-title">Gemma L3-to-L4 bilinear spectral assessment</title>
+<desc id="figure-description">Three panels show compact branch coefficient accounting, selection-split fidelity, and response-unopened origin-20 assessment fidelity. The frozen rank-8 by rank-8 branch uses 6,880 stored coefficients and passes its assessment gates, within fixed-reference modal-delta scope only.</desc>
+<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=253274f79fac9f15700a37c0f2b2f5c7dc8ec39911337a7e60f051a9596cb051;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672,gemma_conditional_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json:report_payload_sha256:ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671,gemma_mixed_falsification:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json:report_payload_sha256:931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d,gemma_bilinear_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json:report_payload_sha256:856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a,gemma_bilinear_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json:report_payload_sha256:6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab,gemma_reference_provider_v2_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json:report_payload_sha256:1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9,gemma_reference_provider_v2_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json:report_payload_sha256:613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e</metadata>
+<style>
+            .background { fill: #f1f5f9; }
+            .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+            .track { fill: #e2e8f0; }
+            .callout { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.5; }
+            .divider { stroke: #cbd5e1; stroke-width: 1; }
+            .connector { stroke: #94a3b8; stroke-width: 3;
+                         stroke-linecap: round; }
+            text { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", sans-serif; fill: #0f172a; }
+            .figure-title { font-size: 34px; font-weight: 750; }
+            .figure-subtitle { font-size: 18px; fill: #475569; }
+            .panel-title { font-size: 22px; font-weight: 700; }
+            .stage-number { font-size: 13px; font-weight: 800; fill: #64748b;
+                            letter-spacing: 1.2px; }
+            .stage-title { font-size: 22px; font-weight: 750; }
+            .status { font-size: 12px; font-weight: 800; letter-spacing: .6px; }
+            .section-label { font-size: 12px; font-weight: 800; fill: #64748b;
+                             letter-spacing: .8px; }
+            .body { font-size: 16px; font-weight: 550; }
+            .claim { font-size: 15px; fill: #475569; }
+            .metric-label { font-size: 16px; font-weight: 700; }
+            .metric-scale { font-size: 12px; fill: #64748b; }
+            .verdict-good { fill: #047857; }
+            .verdict-bad { fill: #b91c1c; }
+            .rank-label { font-size: 13px; font-weight: 750; }
+            .metric-value { font-size: 14px; font-weight: 750; }
+            .footer { font-size: 14px; fill: #475569; }
+            .footer-strong { font-size: 15px; font-weight: 700; }
+            @media (prefers-color-scheme: dark) {
+                .background { fill: #0b1220; }
+                .panel { fill: #111827; stroke: #334155; }
+                .track { fill: #334155; }
+                .callout { fill: #3b2616; stroke: #c2410c; }
+                .divider { stroke: #334155; }
+                .connector { stroke: #64748b; }
+                text { fill: #f8fafc; }
+                .figure-subtitle, .claim, .metric-scale, .footer {
+                    fill: #cbd5e1;
+                }
+                .verdict-good { fill: #6ee7b7; }
+                .verdict-bad { fill: #fca5a5; }
+                .stage-number, .section-label { fill: #94a3b8; }
+            }
+        </style>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+<rect class="background" width="1600" height="900" rx="24"/>
+<text class="figure-title" x="50.0" y="58.0">Bilinear spectral branch — compact correction holds out</text>
+<text class="figure-subtitle" x="50.0" y="91.0">Explicit cross-mode products · position-conditioned spectral kernel · frozen assessment at origin 20</text>
+<rect class="panel" x="50.0" y="135.0" width="480.0" height="560.0" rx="18"/>
+<rect class="panel" x="560.0" y="135.0" width="480.0" height="560.0" rx="18"/>
+<rect class="panel" x="1070.0" y="135.0" width="480.0" height="560.0" rx="18"/>
+<text class="panel-title" x="78.0" y="181.0">What was frozen</text>
+<text class="figure-subtitle" x="78.0" y="211.0">Spectral rank 8 × 8</text>
+<text class="metric-label" x="78.0" y="263.0">Bilinear branch</text>
+<rect class="track" x="78.0" y="284.0" width="424.0" height="24.0" rx="12"/>
+<rect x="78.0" y="284.0" width="17.0" height="24.0" rx="12" fill="#0d9488"/>
+<text class="body" x="78.0" y="337.0">6,880 / 172,032 coefficients</text>
+<text class="metric-scale verdict-good" x="78.0" y="371.0">96.0007% fewer than direct dense</text>
+<text class="metric-label" x="78.0" y="434.0">Base + bilinear branch</text>
+<rect class="track" x="78.0" y="455.0" width="424.0" height="24.0" rx="12"/>
+<rect x="78.0" y="455.0" width="20.7" height="24.0" rx="12" fill="#0d9488"/>
+<text class="body" x="78.0" y="508.0">46,816 / 958,464 coefficients</text>
+<text class="metric-scale verdict-good" x="78.0" y="542.0">95.1155% fewer than matched dense</text>
+<text class="section-label" x="78.0" y="630.0">Coefficient accounting only</text>
+<text class="claim" x="78.0" y="658.0">No parameter or latency claim</text>
+<text class="panel-title" x="588.0" y="181.0">Frozen selection</text>
+<text class="figure-subtitle" x="588.0" y="211.0">Origins 16 and 32 · pooled</text>
+<text class="metric-label" x="588.0" y="263.0">Relative error</text>
+<text class="metric-scale" x="1012.0" y="263.0" text-anchor="end">0–0.25 · lower is better</text>
+<text class="rank-label" x="588.0" y="303.0">Base</text>
+<rect class="track" x="700.0" y="288.0" width="274.0" height="22.0" rx="11"/>
+<rect x="700.0" y="288.0" width="227.2" height="22.0" rx="11" fill="#64748b"/>
+<text class="metric-value" x="1012.0" y="304.0" text-anchor="end">0.2073</text>
+<text class="rank-label" x="588.0" y="353.0">+ branch</text>
+<rect class="track" x="700.0" y="338.0" width="274.0" height="22.0" rx="11"/>
+<rect x="700.0" y="338.0" width="184.7" height="22.0" rx="11" fill="#0d9488"/>
+<text class="metric-value" x="1012.0" y="354.0" text-anchor="end">0.1685</text>
+<text class="metric-scale verdict-good" x="588.0" y="409.0">18.693% error reduction</text>
+<text class="metric-label" x="588.0" y="467.0">Augmented cosine</text>
+<text class="metric-value" x="1012.0" y="467.0" text-anchor="end">0.987288</text>
+<text class="section-label" x="588.0" y="521.0">Selected as minimal passing row</text>
+<text class="claim" x="588.0" y="558.0">Rate-first rule stopped at the</text>
+<text class="claim" x="588.0" y="591.0">minimal passing rank 8 × 8 row</text>
+<text class="panel-title" x="1098.0" y="181.0">Fresh assessment</text>
+<text class="figure-subtitle" x="1098.0" y="211.0">Response-unopened origin 20</text>
+<text class="metric-label" x="1098.0" y="263.0">Relative error</text>
+<text class="metric-scale" x="1522.0" y="263.0" text-anchor="end">0–0.25 · lower is better</text>
+<text class="rank-label" x="1098.0" y="303.0">Base</text>
+<rect class="track" x="1210.0" y="288.0" width="274.0" height="22.0" rx="11"/>
+<rect x="1210.0" y="288.0" width="229.1" height="22.0" rx="11" fill="#64748b"/>
+<text class="metric-value" x="1522.0" y="304.0" text-anchor="end">0.2090</text>
+<text class="rank-label" x="1098.0" y="353.0">+ branch</text>
+<rect class="track" x="1210.0" y="338.0" width="274.0" height="22.0" rx="11"/>
+<rect x="1210.0" y="338.0" width="185.6" height="22.0" rx="11" fill="#0d9488"/>
+<text class="metric-value" x="1522.0" y="354.0" text-anchor="end">0.1694</text>
+<text class="metric-scale verdict-good" x="1098.0" y="409.0">18.963% error reduction</text>
+<text class="metric-label" x="1098.0" y="467.0">Augmented cosine</text>
+<text class="metric-value" x="1522.0" y="467.0" text-anchor="end">0.987103</text>
+<text class="section-label" x="1098.0" y="521.0">Cross term C11</text>
+<text class="claim" x="1098.0" y="558.0">relative error 0.229762</text>
+<text class="claim" x="1098.0" y="591.0">cosine 0.974062</text>
+<text class="metric-scale verdict-good" x="1098.0" y="647.0">PASSES FROZEN ASSESSMENT</text>
+<rect class="callout" x="50.0" y="728.0" width="1500.0" height="104.0" rx="16"/>
+<text class="footer-strong" x="76.0" y="762.0">
+<tspan x="76.0" dy="0.0">The minimal passing rank-8 by rank-8 spectral branch preserves most of the dense bilinear correction and repeats its selection gain at a</tspan>
+<tspan x="76.0" dy="22.0">response-unopened origin.</tspan>
+</text>
+<text class="footer" x="76.0" y="813.0">Boundary: fixed-reference modal-delta component only; provider, NLL, model compression, and latency remain open.</text>
+<text class="footer" x="50.0" y="869.0">Scope: source-safe synthetic prompt-blind state-conditioned provider evidence after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim</text>
+</svg>

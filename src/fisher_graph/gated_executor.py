@@ -7,7 +7,8 @@ provides the next deliberately small reference executor:
 
 ```
 y_t = skip(x_t) + x_t W_same + b
-      + sum_(s < t) sum_e router(x_t, x_s, log(1 + lag))[e] V_e U_e x_s
+      + sum_(s < t) source_router(t, s)
+          * sum_e expert_router(t, s)[e] V_e U_e x_s
 ```
 
 The lag-zero path is explicit and independent of the causal experts.  Expert
@@ -17,6 +18,9 @@ future-edge parameter slots.  A shared low-width router chooses among shared
 low-rank experts for every allowed positive-lag edge.  Relative lag enters
 through one learned router-width vector, so the parameter shapes remain
 independent of runtime sequence length and absolute position offsets.
+Optionally, one learned projection of the same pair-hidden state normalizes
+those allowed edges over source positions.  The default leaves every allowed
+source weight at one, preserving the original summed-source behavior.
 
 This is a trainable modal-coordinate primitive.  Codecs, teacher fitting, and
 nonlinear residual reconstruction intentionally live outside this module.
@@ -36,7 +40,7 @@ from torch.nn import functional as F
 RouterActivation = Literal["tanh", "silu"]
 
 _ARTIFACT_KIND = "fisher_graph.residual_gated_causal_modal_executor"
-_FORMAT_VERSION = 1
+_FORMAT_VERSION = 2
 _CONFIG_FIELDS = {
     "input_modes",
     "output_modes",
@@ -46,7 +50,9 @@ _CONFIG_FIELDS = {
     "same_position_skip",
     "max_positive_lag",
     "router_activation",
+    "source_normalized_routing",
 }
+_LEGACY_CONFIG_FIELDS = _CONFIG_FIELDS - {"source_normalized_routing"}
 _ARTIFACT_FIELDS = {
     "artifact_kind",
     "format_version",
@@ -87,6 +93,7 @@ class GatedCausalModalExecutorConfig:
     same_position_skip: bool = True
     max_positive_lag: int | None = None
     router_activation: RouterActivation = "tanh"
+    source_normalized_routing: bool = False
 
     def __post_init__(self) -> None:
         for label in (
@@ -115,22 +122,28 @@ class GatedCausalModalExecutorConfig:
             raise ValueError(
                 "router_activation must be either 'tanh' or 'silu'"
             )
+        if type(self.source_normalized_routing) is not bool:
+            raise TypeError("source_normalized_routing must be boolean")
 
 
 @dataclass(frozen=True, slots=True)
 class GatedCausalModalComponents:
     """Inspectable decomposition of one executor call.
 
-    ``router_probabilities`` and ``positive_lag_mask`` have shapes
-    ``[batch, query, key, expert]`` and ``[batch, query, key]``.  Probabilities
-    are exactly zero outside the positive-lag mask and sum to one over experts
-    on each allowed edge.
+    ``router_probabilities`` has shape ``[batch, query, key, expert]``;
+    ``source_probabilities`` and ``positive_lag_mask`` have shape
+    ``[batch, query, key]``.  Expert probabilities are exactly zero outside
+    the positive-lag mask and sum to one over experts on each allowed edge.
+    Source probabilities are one on every allowed edge in the default summed
+    mode.  In source-normalized mode they sum to one over eligible keys for
+    every query that has at least one, and remain exactly zero otherwise.
     """
 
     output: Tensor
     same_position_output: Tensor
     positive_lag_output: Tensor
     router_probabilities: Tensor
+    source_probabilities: Tensor
     positive_lag_mask: Tensor
 
 
@@ -141,7 +154,10 @@ class GatedCausalExecutionAccounting:
     MAC counts describe an ideal sparse implementation of the mathematical
     graph.  They exclude additions, bias application, masking, router
     activation, and softmax.  They are therefore an analytic comparison, not a
-    claim about the speed of the dense PyTorch reference kernel.
+    claim about the speed of the dense PyTorch reference kernel.  When source
+    normalization is enabled, router-edge MACs include the scalar source-score
+    projection and expert-mixture MACs include combining source and expert
+    probabilities.
     """
 
     batch_size: int
@@ -201,6 +217,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             raise ValueError("executor dtype must be floating point")
         _dtype_name(dtype)
         self.config = config
+        self._artifact_format_version = _FORMAT_VERSION
 
         factory = {"dtype": dtype, "device": device}
         self.same_position_weight = nn.Parameter(
@@ -256,6 +273,12 @@ class ResidualGatedCausalModalExecutor(nn.Module):
         self.router_lag_weight = nn.Parameter(
             torch.empty(config.router_width, **factory)
         )
+        if config.source_normalized_routing:
+            self.source_score_weight = nn.Parameter(
+                torch.empty(config.router_width, **factory)
+            )
+        else:
+            self.register_parameter("source_score_weight", None)
         self.reset_parameters()
 
     @property
@@ -289,6 +312,10 @@ class ResidualGatedCausalModalExecutor(nn.Module):
         nn.init.xavier_uniform_(self.router_output_weight)
         nn.init.zeros_(self.router_bias)
         nn.init.zeros_(self.router_lag_weight)
+        if self.source_score_weight is not None:
+            # Uniform source attention is the neutral normalized starting
+            # point; training can then move mass using the shared pair state.
+            nn.init.zeros_(self.source_score_weight)
 
     @property
     def same_position_parameter_count(self) -> int:
@@ -311,6 +338,11 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             + config.router_width * config.expert_count
             + config.expert_count
             + config.router_width
+            + (
+                config.router_width
+                if config.source_normalized_routing
+                else 0
+            )
         )
 
     @property
@@ -501,6 +533,24 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             return torch.tanh(values)
         return F.silu(values)
 
+    @staticmethod
+    def _masked_source_softmax(logits: Tensor, allowed: Tensor) -> Tensor:
+        """Normalize over allowed sources without producing empty-row NaNs."""
+
+        has_allowed_source = allowed.any(dim=-1, keepdim=True)
+        masked_logits = logits.masked_fill(~allowed, -torch.inf)
+        safe_logits = torch.where(
+            has_allowed_source,
+            masked_logits,
+            torch.zeros_like(masked_logits),
+        )
+        probabilities = torch.softmax(safe_logits, dim=-1)
+        return torch.where(
+            allowed,
+            probabilities,
+            torch.zeros_like(probabilities),
+        )
+
     def _execute(
         self,
         coordinates: Tensor,
@@ -510,7 +560,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
         logical_positions: Tensor | None,
         key_logical_positions: Tensor | None,
         collect_router: bool,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
         (
             query_valid_mask,
             key_valid_mask,
@@ -572,6 +622,11 @@ class ResidualGatedCausalModalExecutor(nn.Module):
                 sequence_length,
                 self.config.expert_count,
             )
+            source_probabilities = coordinates.new_zeros(
+                batch_size,
+                sequence_length,
+                sequence_length,
+            )
         else:
             # This tensor is not returned by ``forward``; a zero-width key axis
             # avoids allocating the full quadratic inspection buffer.
@@ -580,6 +635,11 @@ class ResidualGatedCausalModalExecutor(nn.Module):
                 sequence_length,
                 0,
                 self.config.expert_count,
+            )
+            source_probabilities = coordinates.new_zeros(
+                batch_size,
+                sequence_length,
+                0,
             )
 
         # Every target explicitly slices only earlier source slots.  The
@@ -610,9 +670,28 @@ class ResidualGatedCausalModalExecutor(nn.Module):
                 probabilities,
                 torch.zeros_like(probabilities),
             )
+            if self.config.source_normalized_routing:
+                source_score_weight = self.source_score_weight
+                if source_score_weight is None:
+                    raise RuntimeError(
+                        "source-normalized routing weight is missing"
+                    )
+                source_weights = self._masked_source_softmax(
+                    pair_hidden @ source_score_weight,
+                    allowed,
+                )
+                mixture_probabilities = (
+                    probabilities * source_weights.unsqueeze(-1)
+                )
+            else:
+                source_weights = allowed.to(dtype=coordinates.dtype)
+                # Keep the original einsum input untouched in the default mode
+                # so enabling the new implementation cannot perturb legacy
+                # floating-point behavior.
+                mixture_probabilities = probabilities
             expert_state = torch.einsum(
                 "bse,bser->ber",
-                probabilities,
+                mixture_probabilities,
                 source_latent[:, :target],
             )
             cross = torch.einsum(
@@ -623,6 +702,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             positive_lag[:, target] = cross
             if collect_router:
                 router_probabilities[:, target, :target] = probabilities
+                source_probabilities[:, target, :target] = source_weights
 
         positive_lag = torch.where(
             query_valid_mask.unsqueeze(-1),
@@ -635,6 +715,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             same_position,
             positive_lag,
             router_probabilities,
+            source_probabilities,
             positive_lag_mask,
         )
 
@@ -649,7 +730,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
     ) -> Tensor:
         """Execute modal coordinates without allocating router diagnostics."""
 
-        output, _, _, _, _ = self._execute(
+        output, _, _, _, _, _ = self._execute(
             coordinates,
             query_valid_mask=query_valid_mask,
             key_valid_mask=key_valid_mask,
@@ -675,6 +756,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             same_position,
             positive_lag,
             router_probabilities,
+            source_probabilities,
             positive_lag_mask,
         ) = self._execute(
             coordinates,
@@ -689,6 +771,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             same_position_output=same_position,
             positive_lag_output=positive_lag,
             router_probabilities=router_probabilities,
+            source_probabilities=source_probabilities,
             positive_lag_mask=positive_lag_mask,
         )
 
@@ -793,10 +876,20 @@ class ResidualGatedCausalModalExecutor(nn.Module):
         )
         router_edge_macs = (
             edge_count * config.router_width * config.expert_count
+            + (
+                edge_count * config.router_width
+                if config.source_normalized_routing
+                else 0
+            )
         )
         router_lag_macs = edge_count * config.router_width
         expert_mixture_macs = (
             edge_count * config.expert_count * config.expert_rank
+            + (
+                edge_count * config.expert_count
+                if config.source_normalized_routing
+                else 0
+            )
         )
         expert_output_macs = (
             query_count
@@ -861,10 +954,17 @@ class ResidualGatedCausalModalExecutor(nn.Module):
     def artifact_state_dict(self) -> dict[str, object]:
         """Return a deterministic, weights-only-safe executor artifact."""
 
+        config_state = asdict(self.config)
+        if self._artifact_format_version == 1:
+            if self.config.source_normalized_routing:
+                raise RuntimeError(
+                    "version-one artifacts cannot encode source normalization"
+                )
+            config_state.pop("source_normalized_routing")
         return {
             "artifact_kind": _ARTIFACT_KIND,
-            "format_version": _FORMAT_VERSION,
-            "config": asdict(self.config),
+            "format_version": self._artifact_format_version,
+            "config": config_state,
             "dtype": _dtype_name(self.dtype),
             "model_state_dict": self._validated_cpu_state(),
         }
@@ -879,25 +979,37 @@ class ResidualGatedCausalModalExecutor(nn.Module):
         """Strictly restore a deterministic artifact.
 
         Unknown or missing fields, noncanonical config types, state key/shape
-        drift, dtype drift, and nonfinite values are rejected.
+        drift, dtype drift, and nonfinite values are rejected.  Version-one
+        artifacts are restored as the original summed-source mode; version two
+        authenticates the explicit source-normalization choice.
         """
 
         if not isinstance(state, Mapping) or set(state) != _ARTIFACT_FIELDS:
             raise ValueError("gated executor artifact fields are invalid")
         if state["artifact_kind"] != _ARTIFACT_KIND:
             raise ValueError("unsupported gated executor artifact kind")
+        format_version = state["format_version"]
         if (
-            type(state["format_version"]) is not int
-            or state["format_version"] != _FORMAT_VERSION
+            type(format_version) is not int
+            or format_version not in (1, _FORMAT_VERSION)
         ):
             raise ValueError("unsupported gated executor format version")
 
         raw_config = state["config"]
-        if (
-            not isinstance(raw_config, Mapping)
-            or set(raw_config) != _CONFIG_FIELDS
-        ):
+        if not isinstance(raw_config, Mapping):
             raise ValueError("gated executor config fields are invalid")
+        expected_config_fields = (
+            _LEGACY_CONFIG_FIELDS
+            if format_version == 1
+            else _CONFIG_FIELDS
+        )
+        if set(raw_config) != expected_config_fields:
+            raise ValueError("gated executor config fields are invalid")
+        source_normalized_routing = (
+            False
+            if format_version == 1
+            else raw_config["source_normalized_routing"]
+        )
         config = GatedCausalModalExecutorConfig(
             input_modes=raw_config["input_modes"],
             output_modes=raw_config["output_modes"],
@@ -907,6 +1019,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
             same_position_skip=raw_config["same_position_skip"],
             max_positive_lag=raw_config["max_positive_lag"],
             router_activation=raw_config["router_activation"],
+            source_normalized_routing=source_normalized_routing,
         )
         dtype_name = state["dtype"]
         if not isinstance(dtype_name, str) or dtype_name not in _DTYPES:
@@ -949,6 +1062,7 @@ class ResidualGatedCausalModalExecutor(nn.Module):
                 )
             restored[name] = value.detach().to(device=device).clone()
         executor.load_state_dict(restored, strict=True)
+        executor._artifact_format_version = format_version
         return executor
 
 

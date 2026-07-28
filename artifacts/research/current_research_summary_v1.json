@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "schema": "fisher_graph.current_research_summary",
-  "claim_scope": "source-safe summary for deterministic documentation figures; it does not authorize compilation, compression, or latency claims",
+  "claim_scope": "source-safe synthetic prompt-blind state-conditioned provider evidence after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim",
   "sources": [
     {
       "id": "toy_fused_executor",
@@ -35,6 +35,48 @@
       "id": "gemma_l3_l4_rank_128",
       "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json",
       "sha256": "313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_conditional_assessment",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json",
+      "sha256": "ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_mixed_falsification",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json",
+      "sha256": "931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_bilinear_compile",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json",
+      "sha256": "856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_bilinear_assessment",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json",
+      "sha256": "6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_reference_provider_v2_compile",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json",
+      "sha256": "1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_reference_provider_v2_assessment",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json",
+      "sha256": "613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e",
       "sha256_kind": "report_payload_sha256",
       "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
     }
@@ -73,12 +115,28 @@
       "claim": "Stationary first-order local transport fails fidelity"
     },
     {
-      "id": "conditional_transport",
-      "title": "Conditional transport",
-      "status": "next_experiment",
-      "resource": "No resource claim until the provider is compiled",
-      "fidelity": "Held-out JVP and finite-displacement tests pending",
-      "claim": "Next: conditional or path-integrated Jacobian"
+      "id": "conditional_mixed_test",
+      "title": "Conditional + mixed test",
+      "status": "analysis_only",
+      "resource": "No model-level resource claim",
+      "fidelity": "Fresh correction gain 11.90%; missing cross terms falsified",
+      "claim": "Prompt-free diagonal correction is useful but incomplete"
+    },
+    {
+      "id": "bilinear_spectral",
+      "title": "Bilinear spectral branch",
+      "status": "frozen_assessment",
+      "resource": "6,880 vs 172,032 branch coefficients; 96.0% fewer",
+      "fidelity": "Fresh error 0.2090 to 0.1694; cosine 0.9871",
+      "claim": "Frozen fixed-reference component passed held-out-origin gates"
+    },
+    {
+      "id": "prompt_blind_reference_provider",
+      "title": "Prompt-blind reference provider",
+      "status": "open_development",
+      "resource": "910 vs 15,046 provider scalars; 93.95% fewer",
+      "fidelity": "Sealed error 0.0590; cosine 0.9983; p90 0.2897",
+      "claim": "All fidelity gates passed; collision-panel control failed"
     }
   ],
   "l3_l4_diagnostic": {
@@ -125,5 +183,76 @@
     ],
     "interpretation": "More modal capacity improves reconstruction and the local tangent fit, but worsens finite transport; rank alone is not the missing ingredient.",
     "not_proven": "No family-disjoint guard, compiled mean-source reference provider, replacement Gemma model, compression, or latency result exists at this rung."
+  },
+  "bilinear_diagnostic": {
+    "protocol_scope": "prompt_free_fixed_reference_modal_delta_component",
+    "assessment_origin": 20,
+    "assessment_refit_performed": false,
+    "selected_plan_kind": "spectral",
+    "selected_source_rank": 8,
+    "selected_target_rank": 8,
+    "selected_plan_stored_coefficient_count": 6880,
+    "direct_dense_branch_coefficient_count": 172032,
+    "selected_fraction_of_direct_dense": 0.03999255952380952,
+    "branch_coefficient_reduction_fraction": 0.9600074404761905,
+    "base_plus_branch_stored_coefficient_count": 46816,
+    "matched_dense_three_branch_coefficient_count": 958464,
+    "combined_fraction_of_matched_dense": 0.0488448183760684,
+    "combined_coefficient_reduction_fraction": 0.9511551816239316,
+    "selection_base_relative_error": 0.2072601933625187,
+    "selection_augmented_relative_error": 0.1685161246715486,
+    "selection_error_reduction_fraction": 0.18693444246287494,
+    "selection_augmented_cosine": 0.9872879962098491,
+    "assessment_base_relative_error": 0.20900929122427236,
+    "assessment_augmented_relative_error": 0.1693739874258058,
+    "assessment_error_reduction_fraction": 0.1896341716021459,
+    "assessment_augmented_cosine": 0.9871028249581452,
+    "assessment_c11_relative_error": 0.22976163514361414,
+    "assessment_c11_cosine": 0.9740618920255555,
+    "decision": "passes_frozen_assessment",
+    "prompt_conditioned_reference_provider_compiled": false,
+    "nll_measured": false,
+    "model_parameter_compression_claim": false,
+    "latency_measured": false,
+    "positive_pair_identity_generalization_claim": false,
+    "interpretation": "The minimal passing rank-8 by rank-8 spectral branch preserves most of the dense bilinear correction and repeats its selection gain at a response-unopened origin.",
+    "not_proven": "This is a fixed-reference modal-delta component result, not a prompt-conditioned provider, full-model replacement, NLL, model-parameter compression, task-accuracy, compute, or latency result."
+  },
+  "reference_provider_diagnostic": {
+    "protocol_scope": "prompt_blind_after_frozen_upstream_prompt_conditioned_fisher_basis",
+    "fit_probe_count": 80,
+    "selection_probe_count": 32,
+    "assessment_probe_count": 88,
+    "selected_candidate_id": "spectral-r08-t08",
+    "selected_source_rank": 8,
+    "selected_target_rank": 8,
+    "selected_stored_scalar_count": 910,
+    "dense_provider_stored_scalar_count": 15046,
+    "selected_fraction_of_dense_provider": 0.06048119101422305,
+    "provider_scalar_reduction_fraction": 0.939518808985777,
+    "selection_fisher_weighted_relative_error": 0.08263388580864124,
+    "selection_reference_cosine": 0.9965873312385173,
+    "selection_maximum_per_probe_p90_relative_error": 0.2877493917753824,
+    "assessment_fisher_weighted_relative_error": 0.0590016349601739,
+    "assessment_reference_cosine": 0.9982612313763186,
+    "assessment_maximum_per_probe_p90_relative_error": 0.289701122362586,
+    "assessment_worst_family_relative_error": 0.0950246353440102,
+    "assessment_error_reduction_vs_constant": 0.47800806076530594,
+    "assessment_error_reduction_vs_position_only": 0.47917060288681956,
+    "assessment_fidelity_and_structure_gates_passed": 11,
+    "assessment_fidelity_and_structure_gate_count": 11,
+    "assessment_collision_panel_gate_passed": false,
+    "assessment_collision_threshold": 0.01,
+    "assessment_minimum_collision_target_relative_difference": 0.000009239301071104905,
+    "assessment_formal_decision": "fails_collision_panel_identifiability_only",
+    "assessment_refit_performed": false,
+    "assessment_reselection_performed": false,
+    "assessment_claim_consumed": true,
+    "natural_prompt_transfer_tested": false,
+    "nll_measured": false,
+    "model_parameter_compression_claim": false,
+    "latency_measured": false,
+    "interpretation": "The frozen rank-8 provider generalized across all sealed synthetic families on every candidate-fidelity and structural gate. The formal protocol still failed because several true collision groups were too weakly separated under the preregistered whole-panel target-relative metric.",
+    "not_proven": "This does not prove prompt-independent Fisher-basis discovery, natural-prompt transfer, a complete L3-to-L4 replacement, whole-model compression, NLL retention, or speedup."
   }
 }

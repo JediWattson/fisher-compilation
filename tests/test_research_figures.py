@@ -7,6 +7,7 @@ import pytest
 
 from fisher_graph.research_figures import (
     extract_research_figure_data,
+    render_bilinear_spectral_assessment,
     render_l3_l4_rank_diagnostic,
     render_research_ladder,
     verify_available_source_digests,
@@ -27,6 +28,12 @@ DIAGNOSTIC_PATH = (
     / "images"
     / "l3-l4-rank-diagnostic.svg"
 )
+BILINEAR_PATH = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "images"
+    / "bilinear-spectral-assessment.svg"
+)
 
 
 def _load_summary() -> tuple[bytes, dict[str, object]]:
@@ -36,7 +43,7 @@ def _load_summary() -> tuple[bytes, dict[str, object]]:
     return summary_bytes, summary
 
 
-def _render_expected() -> tuple[str, str, str]:
+def _render_expected() -> tuple[str, str, str, str]:
     summary_bytes, summary = _load_summary()
     source_sha256 = hashlib.sha256(summary_bytes).hexdigest()
     data = extract_research_figure_data(summary)
@@ -48,6 +55,11 @@ def _render_expected() -> tuple[str, str, str]:
             source_label=source_label,
         ),
         render_l3_l4_rank_diagnostic(
+            data,
+            source_sha256=source_sha256,
+            source_label=source_label,
+        ),
+        render_bilinear_spectral_assessment(
             data,
             source_sha256=source_sha256,
             source_label=source_label,
@@ -65,7 +77,9 @@ def test_research_summary_data_contract() -> None:
         "fidelity_parent",
         "open_development",
         "analysis_only",
-        "next_experiment",
+        "analysis_only",
+        "frozen_assessment",
+        "open_development",
     ]
     assert data.stages[0].resource == (
         "35.3% of estimated source-block multiplies"
@@ -73,9 +87,48 @@ def test_research_summary_data_contract() -> None:
     assert data.stages[0].fidelity == (
         "Exact validation argmax; test result is exploratory"
     )
-    assert len(data.sources) == 5
-    assert data.sources[-2].sha256 == (
+    assert len(data.sources) == 11
+    assert data.sources[3].sha256 == (
         "4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016"
+    )
+    assert data.sources[-6].sha256 == (
+        "ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671"
+    )
+    assert data.sources[-5].sha256 == (
+        "931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d"
+    )
+    assert data.sources[-4].sha256 == (
+        "856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a"
+    )
+    assert data.sources[-3].sha256 == (
+        "6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab"
+    )
+    assert data.sources[-2].sha256 == (
+        "1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9"
+    )
+    assert data.sources[-1].sha256 == (
+        "613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e"
+    )
+    assert data.reference_provider.selected_candidate_id == (
+        "spectral-r08-t08"
+    )
+    assert (
+        data.reference_provider.selected_stored_scalar_count,
+        data.reference_provider.dense_provider_stored_scalar_count,
+    ) == (910, 15_046)
+    assert data.reference_provider.provider_scalar_reduction_fraction == (
+        pytest.approx(0.939518808985777)
+    )
+    assert (
+        data.reference_provider.assessment_fidelity_and_structure_gates_passed
+        == 11
+    )
+    assert not (
+        data.reference_provider.assessment_collision_panel_gate_passed
+    )
+    assert (
+        data.reference_provider.assessment_minimum_collision_target_relative_difference
+        < data.reference_provider.assessment_collision_threshold
     )
 
     rank_64, rank_128 = data.diagnostic.rank_results
@@ -111,6 +164,59 @@ def test_research_summary_data_contract() -> None:
     assert data.diagnostic.content_disjoint
     assert not data.diagnostic.family_disjoint
     assert not data.diagnostic.reference_provider_compiled
+    assert (
+        data.bilinear.selected_source_rank,
+        data.bilinear.selected_target_rank,
+    ) == (8, 8)
+    assert (
+        data.bilinear.selected_plan_stored_coefficient_count,
+        data.bilinear.direct_dense_branch_coefficient_count,
+    ) == (6880, 172032)
+    assert (
+        data.bilinear.base_plus_branch_stored_coefficient_count,
+        data.bilinear.matched_dense_three_branch_coefficient_count,
+    ) == (46816, 958464)
+    assert data.bilinear.branch_coefficient_reduction_fraction == pytest.approx(
+        0.9600074404761905
+    )
+    assert data.bilinear.combined_coefficient_reduction_fraction == pytest.approx(
+        0.9511551816239316
+    )
+    assert (
+        data.bilinear.selection_base_relative_error,
+        data.bilinear.selection_augmented_relative_error,
+        data.bilinear.selection_error_reduction_fraction,
+        data.bilinear.selection_augmented_cosine,
+    ) == pytest.approx(
+        (
+            0.2072601933625187,
+            0.1685161246715486,
+            0.18693444246287494,
+            0.9872879962098491,
+        )
+    )
+    assert (
+        data.bilinear.assessment_base_relative_error,
+        data.bilinear.assessment_augmented_relative_error,
+        data.bilinear.assessment_error_reduction_fraction,
+        data.bilinear.assessment_augmented_cosine,
+        data.bilinear.assessment_c11_relative_error,
+        data.bilinear.assessment_c11_cosine,
+    ) == pytest.approx(
+        (
+            0.20900929122427236,
+            0.1693739874258058,
+            0.1896341716021459,
+            0.9871028249581452,
+            0.22976163514361414,
+            0.9740618920255555,
+        )
+    )
+    assert data.bilinear.decision == "passes_frozen_assessment"
+    assert not data.bilinear.prompt_conditioned_reference_provider_compiled
+    assert not data.bilinear.nll_measured
+    assert not data.bilinear.model_parameter_compression_claim
+    assert not data.bilinear.latency_measured
 
 
 @pytest.mark.parametrize(
@@ -118,14 +224,24 @@ def test_research_summary_data_contract() -> None:
     [
         (LADDER_PATH, 0),
         (DIAGNOSTIC_PATH, 1),
+        (BILINEAR_PATH, 2),
     ],
 )
 def test_committed_research_figure_matches_summary(
     path: Path,
     figure_index: int,
 ) -> None:
-    expected_ladder, expected_diagnostic, source_sha256 = _render_expected()
-    expected = (expected_ladder, expected_diagnostic)[figure_index]
+    (
+        expected_ladder,
+        expected_diagnostic,
+        expected_bilinear,
+        source_sha256,
+    ) = _render_expected()
+    expected = (
+        expected_ladder,
+        expected_diagnostic,
+        expected_bilinear,
+    )[figure_index]
 
     assert path.read_text(encoding="utf-8") == expected
     root = ET.fromstring(expected)
@@ -146,6 +262,10 @@ def test_committed_research_figure_matches_summary(
         metadata.text or ""
     )
     assert "gemma_l3_l4_rank_64:" in (metadata.text or "")
+    assert "gemma_bilinear_assessment:" in (metadata.text or "")
+    assert "gemma_reference_provider_v2_assessment:" in (
+        metadata.text or ""
+    )
     assert "@media (prefers-color-scheme: dark)" in expected
 
 
@@ -262,8 +382,108 @@ def test_rank_diagnostic_supports_signed_cosine() -> None:
     ]
 
 
+def test_bilinear_diagnostic_rejects_inconsistent_accounting() -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["bilinear_diagnostic"][
+        "branch_coefficient_reduction_fraction"
+    ] = 0.5
+
+    with pytest.raises(
+        ValueError,
+        match="inconsistent branch coefficient reduction",
+    ):
+        extract_research_figure_data(summary)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "prompt_conditioned_reference_provider_compiled",
+        "nll_measured",
+        "model_parameter_compression_claim",
+        "latency_measured",
+        "positive_pair_identity_generalization_claim",
+    ],
+)
+def test_bilinear_diagnostic_preserves_claim_boundaries(
+    field: str,
+) -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["bilinear_diagnostic"][field] = True
+
+    with pytest.raises(
+        ValueError,
+        match="must preserve provider, NLL, model compression",
+    ):
+        extract_research_figure_data(summary)
+
+
+def test_reference_provider_diagnostic_rejects_inconsistent_accounting() -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_diagnostic"][
+        "provider_scalar_reduction_fraction"
+    ] = 0.5
+
+    with pytest.raises(
+        ValueError,
+        match="inconsistent scalar accounting",
+    ):
+        extract_research_figure_data(summary)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("assessment_fidelity_and_structure_gates_passed", 10),
+        ("assessment_collision_panel_gate_passed", True),
+        ("assessment_claim_consumed", False),
+    ],
+)
+def test_reference_provider_diagnostic_preserves_sealed_decision(
+    field: str,
+    value: object,
+) -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_diagnostic"][field] = value
+
+    with pytest.raises(
+        ValueError,
+        match="fidelity-pass and collision-control-fail",
+    ):
+        extract_research_figure_data(summary)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "natural_prompt_transfer_tested",
+        "nll_measured",
+        "model_parameter_compression_claim",
+        "latency_measured",
+    ],
+)
+def test_reference_provider_diagnostic_preserves_claim_boundaries(
+    field: str,
+) -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_diagnostic"][field] = True
+
+    with pytest.raises(
+        ValueError,
+        match="must preserve natural-prompt, NLL",
+    ):
+        extract_research_figure_data(summary)
+
+
 def test_dark_mode_preserves_pill_and_callout_contrast() -> None:
-    expected_ladder, expected_diagnostic, _ = _render_expected()
+    expected_ladder, expected_diagnostic, expected_bilinear, _ = (
+        _render_expected()
+    )
 
     assert 'class="status"' in expected_ladder
     assert 'style="fill:#166534"' in expected_ladder
@@ -275,3 +495,5 @@ def test_dark_mode_preserves_pill_and_callout_contrast() -> None:
         expected_diagnostic
     )
     assert 'class="callout"' in expected_diagnostic
+    assert "PASSES FROZEN ASSESSMENT" in expected_bilinear
+    assert ".verdict-good { fill: #6ee7b7; }" in expected_bilinear

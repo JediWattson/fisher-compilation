@@ -5,7 +5,10 @@ import torch
 from torch import Tensor, nn
 
 from fisher_graph import ActivationTrace
-from fisher_graph.adapters import Gemma3CausalLMAdapter
+from fisher_graph.adapters import (
+    Gemma3AttentionPrefixRun,
+    Gemma3CausalLMAdapter,
+)
 
 
 class FakeGemma3Config:
@@ -108,6 +111,129 @@ class FakeLegacyGemma3Layer(nn.Module):
         self.saw_global = bool(position_embeddings_global)
         self.saw_local = bool(position_embeddings_local)
         return hidden_states + torch.tanh(self.projection(hidden_states))
+
+
+class CountingProjection(nn.Module):
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.projection = nn.Linear(width, width, bias=False)
+        self.calls = 0
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        self.calls += 1
+        return torch.tanh(self.projection(hidden_states))
+
+
+class CountingLayerNorm(nn.Module):
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(width)
+        self.calls = 0
+
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        self.calls += 1
+        return self.norm(hidden_states)
+
+
+class FakeStructuredSelfAttention(nn.Module):
+    def __init__(self, width: int, *, is_sliding: bool) -> None:
+        super().__init__()
+        self.projection = nn.Linear(width, width, bias=False)
+        self.is_sliding = is_sliding
+        self.calls = 0
+        self.last_attention_mask: Tensor | None = None
+        self.last_position_embeddings: tuple[Tensor, Tensor] | None = None
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        *,
+        position_embeddings: tuple[Tensor, Tensor],
+        attention_mask: Tensor | None = None,
+        **kwargs: object,
+    ) -> tuple[Tensor, Tensor]:
+        del kwargs
+        self.calls += 1
+        self.last_attention_mask = attention_mask
+        self.last_position_embeddings = position_embeddings
+        weights = torch.zeros(
+            hidden_states.shape[0],
+            1,
+            hidden_states.shape[1],
+            hidden_states.shape[1],
+            dtype=hidden_states.dtype,
+            device=hidden_states.device,
+        )
+        return self.projection(hidden_states), weights
+
+
+class FakeStructuredGemma3Layer(nn.Module):
+    def __init__(self, width: int, *, is_sliding: bool) -> None:
+        super().__init__()
+        self.input_layernorm = nn.LayerNorm(width)
+        self.self_attn = FakeStructuredSelfAttention(
+            width,
+            is_sliding=is_sliding,
+        )
+        self.post_attention_layernorm = nn.LayerNorm(width)
+        self.pre_feedforward_layernorm = nn.LayerNorm(width)
+        self.mlp = CountingProjection(width)
+        self.post_feedforward_layernorm = CountingLayerNorm(width)
+        self.forward_calls = 0
+        self.last_post_attention: Tensor | None = None
+        self.last_normalized_mlp_input: Tensor | None = None
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        *,
+        position_embeddings: tuple[Tensor, Tensor] | None = None,
+        position_embeddings_global: tuple[Tensor, Tensor] | None = None,
+        position_embeddings_local: tuple[Tensor, Tensor] | None = None,
+        attention_mask: Tensor | None = None,
+        **kwargs: object,
+    ) -> Tensor:
+        self.forward_calls += 1
+        if position_embeddings is None:
+            position_embeddings = (
+                position_embeddings_local
+                if self.self_attn.is_sliding
+                else position_embeddings_global
+            )
+        assert position_embeddings is not None
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states = self.self_attn(
+            hidden_states,
+            position_embeddings=position_embeddings,
+            attention_mask=attention_mask,
+            **kwargs,
+        )[0]
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = residual + hidden_states
+        self.last_post_attention = hidden_states
+        residual = hidden_states
+        hidden_states = self.pre_feedforward_layernorm(hidden_states)
+        self.last_normalized_mlp_input = hidden_states
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = self.post_feedforward_layernorm(hidden_states)
+        return residual + hidden_states
+
+
+class TaggedLegacyRotaryEmbedding(nn.Module):
+    def __init__(self, tag: float) -> None:
+        super().__init__()
+        self.tag = tag
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        position_ids: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        values = (
+            position_ids.to(hidden_states.dtype).unsqueeze(-1) + self.tag
+        )
+        return values, -values
 
 
 class FakeGemma3TextModel(nn.Module):
@@ -607,6 +733,127 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
         self.assertTrue(layer.saw_global)
         self.assertTrue(layer.saw_local)
 
+    def test_attention_prefix_matches_native_stage_and_stops_before_mlp(
+        self,
+    ) -> None:
+        self.model.model.layers = nn.ModuleList(
+            FakeStructuredGemma3Layer(
+                self.model.config.hidden_size,
+                is_sliding=layer_type == "sliding_attention",
+            )
+            for layer_type in self.model.config.layer_types
+        )
+        adapter = Gemma3CausalLMAdapter(self.model)
+        inputs = {
+            "input_ids": self.input_ids,
+            "attention_mask": torch.ones_like(
+                self.attention_mask,
+                dtype=torch.bool,
+            ),
+        }
+        sequence = adapter.prepare_sequence(inputs)
+        hidden_states = adapter.embed(inputs, sequence).hidden_states
+        segment = adapter.segments[0]
+        layer = self.model.model.layers[0]
+        assert isinstance(layer, FakeStructuredGemma3Layer)
+
+        adapter.run_segment(segment, hidden_states, sequence)
+        expected_post_attention = layer.last_post_attention
+        expected_normalized_mlp_input = layer.last_normalized_mlp_input
+        assert expected_post_attention is not None
+        assert expected_normalized_mlp_input is not None
+        self.assertEqual(layer.forward_calls, 1)
+        self.assertEqual(layer.mlp.calls, 1)
+        self.assertEqual(layer.post_feedforward_layernorm.calls, 1)
+
+        layer.forward_calls = 0
+        layer.mlp.calls = 0
+        layer.post_feedforward_layernorm.calls = 0
+        trace = ActivationTrace(retain_grad=False)
+        result = adapter.run_attention_prefix(
+            segment,
+            hidden_states,
+            sequence,
+            trace=trace,
+        )
+
+        self.assertIsInstance(result, Gemma3AttentionPrefixRun)
+        torch.testing.assert_close(
+            result.post_attention_hidden_states,
+            expected_post_attention,
+        )
+        torch.testing.assert_close(
+            result.normalized_mlp_input,
+            expected_normalized_mlp_input,
+        )
+        self.assertIs(
+            result.post_attention_hidden_states,
+            trace["layer.0.post_attention"],
+        )
+        self.assertIs(
+            result.normalized_mlp_input,
+            trace["layer.0.mlp.normalized_input"],
+        )
+        self.assertEqual(
+            trace.names,
+            (
+                "layer.0.input",
+                "layer.0.attention.normalized_input",
+                "layer.0.attention.operator_output",
+                "layer.0.attention.delta",
+                "layer.0.post_attention",
+                "layer.0.mlp.normalized_input",
+            ),
+        )
+        self.assertEqual(layer.forward_calls, 0)
+        self.assertEqual(layer.mlp.calls, 0)
+        self.assertEqual(layer.post_feedforward_layernorm.calls, 0)
+        self.assertEqual(layer.self_attn.calls, 2)
+        mask = layer.self_attn.last_attention_mask
+        assert mask is not None
+        self.assertEqual(tuple(mask.shape), (2, 1, 4, 4))
+        minimum = torch.finfo(mask.dtype).min
+        self.assertEqual(mask[0, 0, 3, 0].item(), minimum)
+        self.assertEqual(mask[0, 0, 3, 1].item(), 0.0)
+
+    def test_attention_prefix_selects_released_dual_rope_by_layer_type(
+        self,
+    ) -> None:
+        self.model.model.rotary_emb = TaggedLegacyRotaryEmbedding(100.0)
+        self.model.model.rotary_emb_local = TaggedLegacyRotaryEmbedding(10.0)
+        self.model.model.layers = nn.ModuleList(
+            FakeStructuredGemma3Layer(
+                self.model.config.hidden_size,
+                is_sliding=layer_type == "sliding_attention",
+            )
+            for layer_type in self.model.config.layer_types
+        )
+        adapter = Gemma3CausalLMAdapter(self.model)
+        inputs = {
+            "input_ids": self.input_ids,
+            "attention_mask": self.attention_mask,
+        }
+        sequence = adapter.prepare_sequence(inputs)
+        hidden_states = adapter.embed(inputs, sequence).hidden_states
+
+        for ordinal, expected_tag in ((0, 10.0), (1, 100.0)):
+            adapter.run_attention_prefix(
+                adapter.segments[ordinal],
+                hidden_states,
+                sequence,
+            )
+            layer = self.model.model.layers[ordinal]
+            assert isinstance(layer, FakeStructuredGemma3Layer)
+            position_embeddings = layer.self_attn.last_position_embeddings
+            assert position_embeddings is not None
+            expected = (
+                sequence.logical_positions.to(hidden_states.dtype)
+                .unsqueeze(-1)
+                + expected_tag
+            )
+            torch.testing.assert_close(position_embeddings[0], expected)
+            torch.testing.assert_close(position_embeddings[1], -expected)
+
     def test_replaced_segments_restores_native_layers(self) -> None:
         original = self.model.model.layers[0]
         replacement = ZeroGemma3Layer()
@@ -658,8 +905,69 @@ class Gemma3CausalLMAdapterTests(unittest.TestCase):
         }
 
         expected = adapter.forward(inputs).logits
+        prefix_reference = adapter.forward(
+            inputs,
+            capture_sites=(
+                "layer.0.post_attention",
+                "layer.0.mlp.normalized_input",
+            ),
+        )
         sequence = adapter.prepare_sequence(inputs)
         hidden_states = adapter.embed(inputs, sequence).hidden_states
+        prefix_trace = ActivationTrace(retain_grad=False)
+        layer = model.model.layers[0]
+        prefix_calls = {"mlp": 0, "post_feedforward": 0}
+
+        def count_mlp(
+            _module: nn.Module,
+            _args: tuple[object, ...],
+            _output: object,
+        ) -> None:
+            prefix_calls["mlp"] += 1
+
+        def count_post_feedforward(
+            _module: nn.Module,
+            _args: tuple[object, ...],
+            _output: object,
+        ) -> None:
+            prefix_calls["post_feedforward"] += 1
+
+        handles = (
+            layer.mlp.register_forward_hook(count_mlp),
+            layer.post_feedforward_layernorm.register_forward_hook(
+                count_post_feedforward
+            ),
+        )
+        try:
+            prefix = adapter.run_attention_prefix(
+                adapter.segments[0],
+                hidden_states,
+                sequence,
+                trace=prefix_trace,
+            )
+        finally:
+            for handle in handles:
+                handle.remove()
+        torch.testing.assert_close(
+            prefix.post_attention_hidden_states,
+            prefix_reference.activations["layer.0.post_attention"],
+        )
+        torch.testing.assert_close(
+            prefix.normalized_mlp_input,
+            prefix_reference.activations["layer.0.mlp.normalized_input"],
+        )
+        self.assertEqual(prefix_calls, {"mlp": 0, "post_feedforward": 0})
+        self.assertEqual(
+            prefix_trace.names,
+            (
+                "layer.0.input",
+                "layer.0.attention.normalized_input",
+                "layer.0.attention.operator_output",
+                "layer.0.attention.delta",
+                "layer.0.post_attention",
+                "layer.0.mlp.normalized_input",
+            ),
+        )
         for segment in adapter.segments:
             hidden_states = adapter.run_segment(
                 segment,

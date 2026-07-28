@@ -16,6 +16,9 @@ from typing import Callable, Mapping, Sequence
 DEFAULT_SUMMARY = Path("artifacts/research/current_research_summary_v1.json")
 DEFAULT_LADDER_OUTPUT = Path("docs/images/research-ladder.svg")
 DEFAULT_DIAGNOSTIC_OUTPUT = Path("docs/images/l3-l4-rank-diagnostic.svg")
+DEFAULT_BILINEAR_OUTPUT = Path(
+    "docs/images/bilinear-spectral-assessment.svg"
+)
 
 
 @dataclass(frozen=True)
@@ -69,10 +72,87 @@ class L3L4Diagnostic:
 
 
 @dataclass(frozen=True)
+class BilinearDiagnostic:
+    protocol_scope: str
+    assessment_origin: int
+    assessment_refit_performed: bool
+    selected_plan_kind: str
+    selected_source_rank: int
+    selected_target_rank: int
+    selected_plan_stored_coefficient_count: int
+    direct_dense_branch_coefficient_count: int
+    selected_fraction_of_direct_dense: float
+    branch_coefficient_reduction_fraction: float
+    base_plus_branch_stored_coefficient_count: int
+    matched_dense_three_branch_coefficient_count: int
+    combined_fraction_of_matched_dense: float
+    combined_coefficient_reduction_fraction: float
+    selection_base_relative_error: float
+    selection_augmented_relative_error: float
+    selection_error_reduction_fraction: float
+    selection_augmented_cosine: float
+    assessment_base_relative_error: float
+    assessment_augmented_relative_error: float
+    assessment_error_reduction_fraction: float
+    assessment_augmented_cosine: float
+    assessment_c11_relative_error: float
+    assessment_c11_cosine: float
+    decision: str
+    prompt_conditioned_reference_provider_compiled: bool
+    nll_measured: bool
+    model_parameter_compression_claim: bool
+    latency_measured: bool
+    positive_pair_identity_generalization_claim: bool
+    interpretation: str
+    not_proven: str
+
+
+@dataclass(frozen=True)
+class ReferenceProviderDiagnostic:
+    protocol_scope: str
+    fit_probe_count: int
+    selection_probe_count: int
+    assessment_probe_count: int
+    selected_candidate_id: str
+    selected_source_rank: int
+    selected_target_rank: int
+    selected_stored_scalar_count: int
+    dense_provider_stored_scalar_count: int
+    selected_fraction_of_dense_provider: float
+    provider_scalar_reduction_fraction: float
+    selection_fisher_weighted_relative_error: float
+    selection_reference_cosine: float
+    selection_maximum_per_probe_p90_relative_error: float
+    assessment_fisher_weighted_relative_error: float
+    assessment_reference_cosine: float
+    assessment_maximum_per_probe_p90_relative_error: float
+    assessment_worst_family_relative_error: float
+    assessment_error_reduction_vs_constant: float
+    assessment_error_reduction_vs_position_only: float
+    assessment_fidelity_and_structure_gates_passed: int
+    assessment_fidelity_and_structure_gate_count: int
+    assessment_collision_panel_gate_passed: bool
+    assessment_collision_threshold: float
+    assessment_minimum_collision_target_relative_difference: float
+    assessment_formal_decision: str
+    assessment_refit_performed: bool
+    assessment_reselection_performed: bool
+    assessment_claim_consumed: bool
+    natural_prompt_transfer_tested: bool
+    nll_measured: bool
+    model_parameter_compression_claim: bool
+    latency_measured: bool
+    interpretation: str
+    not_proven: str
+
+
+@dataclass(frozen=True)
 class ResearchFigureData:
     sources: tuple[ResearchSource, ...]
     stages: tuple[ResearchStage, ...]
     diagnostic: L3L4Diagnostic
+    bilinear: BilinearDiagnostic
+    reference_provider: ReferenceProviderDiagnostic
     claim_scope: str
 
 
@@ -196,6 +276,12 @@ def extract_research_figure_data(
         "gemma_flat_generator_refit",
         "gemma_l3_l4_rank_64",
         "gemma_l3_l4_rank_128",
+        "gemma_conditional_assessment",
+        "gemma_mixed_falsification",
+        "gemma_bilinear_compile",
+        "gemma_bilinear_assessment",
+        "gemma_reference_provider_v2_compile",
+        "gemma_reference_provider_v2_assessment",
     )
     if tuple(source.source_id for source in sources) != expected_source_ids:
         raise ValueError(
@@ -220,6 +306,7 @@ def extract_research_figure_data(
         "open_development",
         "analysis_only",
         "next_experiment",
+        "frozen_assessment",
     }
     stages: list[ResearchStage] = []
     seen_stage_ids: set[str] = set()
@@ -262,8 +349,8 @@ def extract_research_figure_data(
                 ),
             )
         )
-    if len(stages) != 5:
-        raise ValueError("summary.research_ladder must contain five stages")
+    if len(stages) != 7:
+        raise ValueError("summary.research_ladder must contain seven stages")
 
     diagnostic_value = _object(
         summary.get("l3_l4_diagnostic"),
@@ -463,10 +550,472 @@ def extract_research_figure_data(
             "summary.l3_l4_diagnostic.not_proven",
         ),
     )
+
+    bilinear_value = _object(
+        summary.get("bilinear_diagnostic"),
+        "summary.bilinear_diagnostic",
+    )
+    bilinear_prefix = "summary.bilinear_diagnostic"
+
+    def bilinear_integer(field: str, *, minimum: int = 0) -> int:
+        return _integer(
+            bilinear_value.get(field),
+            f"{bilinear_prefix}.{field}",
+            minimum=minimum,
+        )
+
+    def bilinear_fraction(field: str) -> float:
+        return _number(
+            bilinear_value.get(field),
+            f"{bilinear_prefix}.{field}",
+            maximum=1.0,
+        )
+
+    def bilinear_cosine(field: str) -> float:
+        return _number(
+            bilinear_value.get(field),
+            f"{bilinear_prefix}.{field}",
+            minimum=-1.0,
+            maximum=1.0,
+        )
+
+    bilinear = BilinearDiagnostic(
+        protocol_scope=_string(
+            bilinear_value.get("protocol_scope"),
+            f"{bilinear_prefix}.protocol_scope",
+        ),
+        assessment_origin=bilinear_integer(
+            "assessment_origin",
+            minimum=1,
+        ),
+        assessment_refit_performed=_boolean(
+            bilinear_value.get("assessment_refit_performed"),
+            f"{bilinear_prefix}.assessment_refit_performed",
+        ),
+        selected_plan_kind=_string(
+            bilinear_value.get("selected_plan_kind"),
+            f"{bilinear_prefix}.selected_plan_kind",
+        ),
+        selected_source_rank=bilinear_integer(
+            "selected_source_rank",
+            minimum=1,
+        ),
+        selected_target_rank=bilinear_integer(
+            "selected_target_rank",
+            minimum=1,
+        ),
+        selected_plan_stored_coefficient_count=bilinear_integer(
+            "selected_plan_stored_coefficient_count",
+            minimum=1,
+        ),
+        direct_dense_branch_coefficient_count=bilinear_integer(
+            "direct_dense_branch_coefficient_count",
+            minimum=1,
+        ),
+        selected_fraction_of_direct_dense=bilinear_fraction(
+            "selected_fraction_of_direct_dense"
+        ),
+        branch_coefficient_reduction_fraction=bilinear_fraction(
+            "branch_coefficient_reduction_fraction"
+        ),
+        base_plus_branch_stored_coefficient_count=bilinear_integer(
+            "base_plus_branch_stored_coefficient_count",
+            minimum=1,
+        ),
+        matched_dense_three_branch_coefficient_count=bilinear_integer(
+            "matched_dense_three_branch_coefficient_count",
+            minimum=1,
+        ),
+        combined_fraction_of_matched_dense=bilinear_fraction(
+            "combined_fraction_of_matched_dense"
+        ),
+        combined_coefficient_reduction_fraction=bilinear_fraction(
+            "combined_coefficient_reduction_fraction"
+        ),
+        selection_base_relative_error=_number(
+            bilinear_value.get("selection_base_relative_error"),
+            f"{bilinear_prefix}.selection_base_relative_error",
+        ),
+        selection_augmented_relative_error=_number(
+            bilinear_value.get("selection_augmented_relative_error"),
+            f"{bilinear_prefix}.selection_augmented_relative_error",
+        ),
+        selection_error_reduction_fraction=bilinear_fraction(
+            "selection_error_reduction_fraction"
+        ),
+        selection_augmented_cosine=bilinear_cosine(
+            "selection_augmented_cosine"
+        ),
+        assessment_base_relative_error=_number(
+            bilinear_value.get("assessment_base_relative_error"),
+            f"{bilinear_prefix}.assessment_base_relative_error",
+        ),
+        assessment_augmented_relative_error=_number(
+            bilinear_value.get("assessment_augmented_relative_error"),
+            f"{bilinear_prefix}.assessment_augmented_relative_error",
+        ),
+        assessment_error_reduction_fraction=bilinear_fraction(
+            "assessment_error_reduction_fraction"
+        ),
+        assessment_augmented_cosine=bilinear_cosine(
+            "assessment_augmented_cosine"
+        ),
+        assessment_c11_relative_error=_number(
+            bilinear_value.get("assessment_c11_relative_error"),
+            f"{bilinear_prefix}.assessment_c11_relative_error",
+        ),
+        assessment_c11_cosine=bilinear_cosine(
+            "assessment_c11_cosine"
+        ),
+        decision=_string(
+            bilinear_value.get("decision"),
+            f"{bilinear_prefix}.decision",
+        ),
+        prompt_conditioned_reference_provider_compiled=_boolean(
+            bilinear_value.get(
+                "prompt_conditioned_reference_provider_compiled"
+            ),
+            (
+                f"{bilinear_prefix}."
+                "prompt_conditioned_reference_provider_compiled"
+            ),
+        ),
+        nll_measured=_boolean(
+            bilinear_value.get("nll_measured"),
+            f"{bilinear_prefix}.nll_measured",
+        ),
+        model_parameter_compression_claim=_boolean(
+            bilinear_value.get("model_parameter_compression_claim"),
+            f"{bilinear_prefix}.model_parameter_compression_claim",
+        ),
+        latency_measured=_boolean(
+            bilinear_value.get("latency_measured"),
+            f"{bilinear_prefix}.latency_measured",
+        ),
+        positive_pair_identity_generalization_claim=_boolean(
+            bilinear_value.get(
+                "positive_pair_identity_generalization_claim"
+            ),
+            (
+                f"{bilinear_prefix}."
+                "positive_pair_identity_generalization_claim"
+            ),
+        ),
+        interpretation=_string(
+            bilinear_value.get("interpretation"),
+            f"{bilinear_prefix}.interpretation",
+        ),
+        not_proven=_string(
+            bilinear_value.get("not_proven"),
+            f"{bilinear_prefix}.not_proven",
+        ),
+    )
+    if (
+        bilinear.protocol_scope
+        != "prompt_free_fixed_reference_modal_delta_component"
+        or bilinear.assessment_origin != 20
+        or bilinear.assessment_refit_performed
+        or bilinear.selected_plan_kind != "spectral"
+        or (bilinear.selected_source_rank, bilinear.selected_target_rank)
+        != (8, 8)
+        or bilinear.decision != "passes_frozen_assessment"
+    ):
+        raise ValueError(
+            "bilinear diagnostic must identify the frozen rank-8 by rank-8 "
+            "prompt-free assessment at origin 20"
+        )
+    forbidden_claims = (
+        bilinear.prompt_conditioned_reference_provider_compiled,
+        bilinear.nll_measured,
+        bilinear.model_parameter_compression_claim,
+        bilinear.latency_measured,
+        bilinear.positive_pair_identity_generalization_claim,
+    )
+    if any(forbidden_claims):
+        raise ValueError(
+            "bilinear diagnostic must preserve provider, NLL, model "
+            "compression, latency, and pair-generalization claim boundaries"
+        )
+    if (
+        bilinear.selected_plan_stored_coefficient_count
+        >= bilinear.direct_dense_branch_coefficient_count
+        or bilinear.base_plus_branch_stored_coefficient_count
+        >= bilinear.matched_dense_three_branch_coefficient_count
+        or bilinear.selection_augmented_relative_error
+        >= bilinear.selection_base_relative_error
+        or bilinear.assessment_augmented_relative_error
+        >= bilinear.assessment_base_relative_error
+    ):
+        raise ValueError(
+            "bilinear diagnostic requires smaller selected accounting and "
+            "lower augmented selection and assessment errors"
+        )
+    consistency_checks = (
+        (
+            bilinear.selected_fraction_of_direct_dense,
+            bilinear.selected_plan_stored_coefficient_count
+            / bilinear.direct_dense_branch_coefficient_count,
+            "selected fraction of direct dense",
+        ),
+        (
+            bilinear.branch_coefficient_reduction_fraction,
+            1.0 - bilinear.selected_fraction_of_direct_dense,
+            "branch coefficient reduction",
+        ),
+        (
+            bilinear.combined_fraction_of_matched_dense,
+            bilinear.base_plus_branch_stored_coefficient_count
+            / bilinear.matched_dense_three_branch_coefficient_count,
+            "combined fraction of matched dense",
+        ),
+        (
+            bilinear.combined_coefficient_reduction_fraction,
+            1.0 - bilinear.combined_fraction_of_matched_dense,
+            "combined coefficient reduction",
+        ),
+        (
+            bilinear.selection_error_reduction_fraction,
+            1.0
+            - bilinear.selection_augmented_relative_error
+            / bilinear.selection_base_relative_error,
+            "selection error reduction",
+        ),
+        (
+            bilinear.assessment_error_reduction_fraction,
+            1.0
+            - bilinear.assessment_augmented_relative_error
+            / bilinear.assessment_base_relative_error,
+            "assessment error reduction",
+        ),
+    )
+    for actual, expected, label in consistency_checks:
+        if not math.isclose(actual, expected, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError(
+                f"bilinear diagnostic has inconsistent {label}"
+            )
+
+    reference_value = _object(
+        summary.get("reference_provider_diagnostic"),
+        "summary.reference_provider_diagnostic",
+    )
+    reference_prefix = "summary.reference_provider_diagnostic"
+    reference_fields = set(ReferenceProviderDiagnostic.__dataclass_fields__)
+    if set(reference_value) != reference_fields:
+        raise ValueError(
+            "summary.reference_provider_diagnostic fields do not match "
+            "the frozen format"
+        )
+
+    def reference_number(
+        field_name: str,
+        *,
+        maximum: float | None = None,
+    ) -> float:
+        return _number(
+            reference_value.get(field_name),
+            f"{reference_prefix}.{field_name}",
+            maximum=maximum,
+        )
+
+    def reference_integer(field_name: str) -> int:
+        return _integer(
+            reference_value.get(field_name),
+            f"{reference_prefix}.{field_name}",
+        )
+
+    def reference_boolean(field_name: str) -> bool:
+        return _boolean(
+            reference_value.get(field_name),
+            f"{reference_prefix}.{field_name}",
+        )
+
+    reference_provider = ReferenceProviderDiagnostic(
+        protocol_scope=_string(
+            reference_value.get("protocol_scope"),
+            f"{reference_prefix}.protocol_scope",
+        ),
+        fit_probe_count=reference_integer("fit_probe_count"),
+        selection_probe_count=reference_integer("selection_probe_count"),
+        assessment_probe_count=reference_integer("assessment_probe_count"),
+        selected_candidate_id=_string(
+            reference_value.get("selected_candidate_id"),
+            f"{reference_prefix}.selected_candidate_id",
+        ),
+        selected_source_rank=reference_integer("selected_source_rank"),
+        selected_target_rank=reference_integer("selected_target_rank"),
+        selected_stored_scalar_count=reference_integer(
+            "selected_stored_scalar_count"
+        ),
+        dense_provider_stored_scalar_count=reference_integer(
+            "dense_provider_stored_scalar_count"
+        ),
+        selected_fraction_of_dense_provider=reference_number(
+            "selected_fraction_of_dense_provider",
+            maximum=1.0,
+        ),
+        provider_scalar_reduction_fraction=reference_number(
+            "provider_scalar_reduction_fraction",
+            maximum=1.0,
+        ),
+        selection_fisher_weighted_relative_error=reference_number(
+            "selection_fisher_weighted_relative_error"
+        ),
+        selection_reference_cosine=reference_number(
+            "selection_reference_cosine",
+            maximum=1.0,
+        ),
+        selection_maximum_per_probe_p90_relative_error=reference_number(
+            "selection_maximum_per_probe_p90_relative_error"
+        ),
+        assessment_fisher_weighted_relative_error=reference_number(
+            "assessment_fisher_weighted_relative_error"
+        ),
+        assessment_reference_cosine=reference_number(
+            "assessment_reference_cosine",
+            maximum=1.0,
+        ),
+        assessment_maximum_per_probe_p90_relative_error=reference_number(
+            "assessment_maximum_per_probe_p90_relative_error"
+        ),
+        assessment_worst_family_relative_error=reference_number(
+            "assessment_worst_family_relative_error"
+        ),
+        assessment_error_reduction_vs_constant=reference_number(
+            "assessment_error_reduction_vs_constant",
+            maximum=1.0,
+        ),
+        assessment_error_reduction_vs_position_only=reference_number(
+            "assessment_error_reduction_vs_position_only",
+            maximum=1.0,
+        ),
+        assessment_fidelity_and_structure_gates_passed=reference_integer(
+            "assessment_fidelity_and_structure_gates_passed"
+        ),
+        assessment_fidelity_and_structure_gate_count=reference_integer(
+            "assessment_fidelity_and_structure_gate_count"
+        ),
+        assessment_collision_panel_gate_passed=reference_boolean(
+            "assessment_collision_panel_gate_passed"
+        ),
+        assessment_collision_threshold=reference_number(
+            "assessment_collision_threshold"
+        ),
+        assessment_minimum_collision_target_relative_difference=(
+            reference_number(
+                "assessment_minimum_collision_target_relative_difference"
+            )
+        ),
+        assessment_formal_decision=_string(
+            reference_value.get("assessment_formal_decision"),
+            f"{reference_prefix}.assessment_formal_decision",
+        ),
+        assessment_refit_performed=reference_boolean(
+            "assessment_refit_performed"
+        ),
+        assessment_reselection_performed=reference_boolean(
+            "assessment_reselection_performed"
+        ),
+        assessment_claim_consumed=reference_boolean(
+            "assessment_claim_consumed"
+        ),
+        natural_prompt_transfer_tested=reference_boolean(
+            "natural_prompt_transfer_tested"
+        ),
+        nll_measured=reference_boolean("nll_measured"),
+        model_parameter_compression_claim=reference_boolean(
+            "model_parameter_compression_claim"
+        ),
+        latency_measured=reference_boolean("latency_measured"),
+        interpretation=_string(
+            reference_value.get("interpretation"),
+            f"{reference_prefix}.interpretation",
+        ),
+        not_proven=_string(
+            reference_value.get("not_proven"),
+            f"{reference_prefix}.not_proven",
+        ),
+    )
+    if (
+        reference_provider.protocol_scope
+        != (
+            "prompt_blind_after_frozen_upstream_prompt_conditioned_"
+            "fisher_basis"
+        )
+        or (
+            reference_provider.fit_probe_count,
+            reference_provider.selection_probe_count,
+            reference_provider.assessment_probe_count,
+        )
+        != (80, 32, 88)
+        or reference_provider.selected_candidate_id != "spectral-r08-t08"
+        or (
+            reference_provider.selected_source_rank,
+            reference_provider.selected_target_rank,
+        )
+        != (8, 8)
+        or reference_provider.selected_stored_scalar_count != 910
+        or reference_provider.dense_provider_stored_scalar_count != 15_046
+        or reference_provider.assessment_formal_decision
+        != "fails_collision_panel_identifiability_only"
+    ):
+        raise ValueError(
+            "reference-provider diagnostic must identify the frozen v2 "
+            "rank-8 prompt-blind result"
+        )
+    expected_fraction = (
+        reference_provider.selected_stored_scalar_count
+        / reference_provider.dense_provider_stored_scalar_count
+    )
+    if (
+        not math.isclose(
+            reference_provider.selected_fraction_of_dense_provider,
+            expected_fraction,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            reference_provider.provider_scalar_reduction_fraction,
+            1.0 - expected_fraction,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        raise ValueError(
+            "reference-provider diagnostic has inconsistent scalar accounting"
+        )
+    if (
+        reference_provider.assessment_fidelity_and_structure_gate_count != 11
+        or reference_provider.assessment_fidelity_and_structure_gates_passed
+        != reference_provider.assessment_fidelity_and_structure_gate_count
+        or reference_provider.assessment_collision_panel_gate_passed
+        or reference_provider.assessment_minimum_collision_target_relative_difference
+        >= reference_provider.assessment_collision_threshold
+        or reference_provider.assessment_refit_performed
+        or reference_provider.assessment_reselection_performed
+        or not reference_provider.assessment_claim_consumed
+    ):
+        raise ValueError(
+            "reference-provider diagnostic must preserve the sealed "
+            "fidelity-pass and collision-control-fail decision"
+        )
+    if any(
+        (
+            reference_provider.natural_prompt_transfer_tested,
+            reference_provider.nll_measured,
+            reference_provider.model_parameter_compression_claim,
+            reference_provider.latency_measured,
+        )
+    ):
+        raise ValueError(
+            "reference-provider diagnostic must preserve natural-prompt, "
+            "NLL, model-compression, and latency claim boundaries"
+        )
     return ResearchFigureData(
         sources=tuple(sources),
         stages=tuple(stages),
         diagnostic=diagnostic,
+        bilinear=bilinear,
+        reference_provider=reference_provider,
         claim_scope=_string(summary.get("claim_scope"), "summary.claim_scope"),
     )
 
@@ -670,6 +1219,7 @@ _STATUS_LABELS = {
     "open_development": "OPEN DEVELOPMENT",
     "analysis_only": "ANALYSIS ONLY",
     "next_experiment": "NEXT EXPERIMENT",
+    "frozen_assessment": "FROZEN ASSESSMENT",
 }
 _STATUS_COLORS = {
     "verified_reference": ("#dcfce7", "#166534", "#22c55e"),
@@ -677,6 +1227,7 @@ _STATUS_COLORS = {
     "open_development": ("#fef3c7", "#92400e", "#f59e0b"),
     "analysis_only": ("#fee2e2", "#991b1b", "#ef4444"),
     "next_experiment": ("#ede9fe", "#5b21b6", "#8b5cf6"),
+    "frozen_assessment": ("#ccfbf1", "#115e59", "#14b8a6"),
 }
 
 
@@ -688,17 +1239,19 @@ def render_research_ladder(
 ) -> str:
     """Render the empirical research progression and its claim boundaries."""
 
-    width = 1800
+    width = 2240
     height = 820
     svg = _svg_start(
         width=width,
         height=height,
         title="Fisher graph compilation research ladder",
         description=(
-            "Five stages summarize the verified toy executor, Gemma "
+            "Seven stages summarize the verified toy executor, Gemma "
             "single-layer fidelity parent, open-development flat generator "
-            "stack, failed stationary L3-to-L4 transport diagnostic, and the "
-            "next conditional-transport experiment."
+            "stack, failed stationary L3-to-L4 transport diagnostic, "
+            "conditional mixed-mode finding, and the frozen bilinear "
+            "spectral component assessment, followed by the prompt-blind "
+            "reference-provider fidelity result and failed collision control."
         ),
         source_label=source_label,
         source_sha256=source_sha256,
@@ -724,11 +1277,11 @@ def render_research_ladder(
         ]
     )
 
-    card_width = 310.0
+    card_width = 275.0
     card_height = 500.0
     card_y = 150.0
-    gap = 40.0
-    start_x = 45.0
+    gap = 32.0
+    start_x = 39.0
     card_positions = [
         start_x + index * (card_width + gap)
         for index in range(len(data.stages))
@@ -769,7 +1322,7 @@ def render_research_ladder(
                 card_y + 77.0,
                 stage.title,
                 css_class="stage-title",
-                width=23,
+                width=20,
                 line_height=26.0,
                 max_lines=2,
             )
@@ -804,7 +1357,7 @@ def render_research_ladder(
                 card_y + 207.0,
                 stage.resource,
                 css_class="body",
-                width=31,
+                width=27,
                 line_height=21.0,
                 max_lines=3,
             )
@@ -831,7 +1384,7 @@ def render_research_ladder(
                 card_y + 346.0,
                 stage.fidelity,
                 css_class="body",
-                width=31,
+                width=27,
                 line_height=21.0,
                 max_lines=3,
             )
@@ -842,7 +1395,7 @@ def render_research_ladder(
                 card_y + 429.0,
                 stage.claim,
                 css_class="claim",
-                width=33,
+                width=29,
                 line_height=20.0,
                 max_lines=3,
             )
@@ -854,8 +1407,8 @@ def render_research_ladder(
                 50,
                 710,
                 (
-                    "Current finding: more L3/L4 modal rank improves local "
-                    "representation but not finite transport."
+                    "Current finding: the rank-8 prompt-blind provider passed "
+                    "all sealed fidelity gates; its collision-panel control failed."
                 ),
                 css_class="footer-strong",
             ),
@@ -1188,14 +1741,417 @@ def render_l3_l4_rank_diagnostic(
     return "\n".join(svg) + "\n"
 
 
+def _paired_error_bars(
+    *,
+    x: float,
+    y: float,
+    width: float,
+    base_value: float,
+    augmented_value: float,
+) -> list[str]:
+    track_x = x + 112.0
+    track_width = width - 150.0
+    scale_max = 0.25
+    base_width = track_width * min(base_value / scale_max, 1.0)
+    augmented_width = track_width * min(augmented_value / scale_max, 1.0)
+    return [
+        _text(x, y, "Relative error", css_class="metric-label"),
+        _text(
+            x + width,
+            y,
+            "0–0.25 · lower is better",
+            css_class="metric-scale",
+            anchor="end",
+        ),
+        _text(x, y + 40.0, "Base", css_class="rank-label"),
+        (
+            f'<rect class="track" x="{track_x:.1f}" y="{y + 25.0:.1f}" '
+            f'width="{track_width:.1f}" height="22.0" rx="11"/>'
+        ),
+        (
+            f'<rect x="{track_x:.1f}" y="{y + 25.0:.1f}" '
+            f'width="{base_width:.1f}" height="22.0" rx="11" '
+            'fill="#64748b"/>'
+        ),
+        _text(
+            x + width,
+            y + 41.0,
+            f"{base_value:.4f}",
+            css_class="metric-value",
+            anchor="end",
+        ),
+        _text(x, y + 90.0, "+ branch", css_class="rank-label"),
+        (
+            f'<rect class="track" x="{track_x:.1f}" y="{y + 75.0:.1f}" '
+            f'width="{track_width:.1f}" height="22.0" rx="11"/>'
+        ),
+        (
+            f'<rect x="{track_x:.1f}" y="{y + 75.0:.1f}" '
+            f'width="{augmented_width:.1f}" height="22.0" rx="11" '
+            'fill="#0d9488"/>'
+        ),
+        _text(
+            x + width,
+            y + 91.0,
+            f"{augmented_value:.4f}",
+            css_class="metric-value",
+            anchor="end",
+        ),
+    ]
+
+
+def render_bilinear_spectral_assessment(
+    data: ResearchFigureData,
+    *,
+    source_sha256: str,
+    source_label: str,
+) -> str:
+    """Render the compact bilinear branch's rate and fidelity result."""
+
+    result = data.bilinear
+    width = 1600
+    height = 900
+    svg = _svg_start(
+        width=width,
+        height=height,
+        title="Gemma L3-to-L4 bilinear spectral assessment",
+        description=(
+            "Three panels show compact branch coefficient accounting, "
+            "selection-split fidelity, and response-unopened origin-20 "
+            "assessment fidelity. The frozen rank-8 by rank-8 branch uses "
+            "6,880 stored coefficients and passes its assessment gates, "
+            "within fixed-reference modal-delta scope only."
+        ),
+        source_label=source_label,
+        source_sha256=source_sha256,
+        sources=data.sources,
+    )
+    panel_width = 480.0
+    panel_y = 135.0
+    panel_height = 560.0
+    panel_xs = (50.0, 560.0, 1070.0)
+    svg.extend(
+        [
+            _text(
+                50,
+                58,
+                "Bilinear spectral branch — compact correction holds out",
+                css_class="figure-title",
+            ),
+            _text(
+                50,
+                91,
+                (
+                    "Explicit cross-mode products · position-conditioned "
+                    "spectral kernel · frozen assessment at origin 20"
+                ),
+                css_class="figure-subtitle",
+            ),
+        ]
+    )
+    for panel_x in panel_xs:
+        svg.append(
+            f'<rect class="panel" x="{panel_x:.1f}" y="{panel_y:.1f}" '
+            f'width="{panel_width:.1f}" height="{panel_height:.1f}" rx="18"/>'
+        )
+
+    left_x = panel_xs[0] + 28.0
+    bar_width = panel_width - 56.0
+    selected_bar_width = max(
+        4.0,
+        bar_width * result.selected_fraction_of_direct_dense,
+    )
+    combined_bar_width = max(
+        4.0,
+        bar_width * result.combined_fraction_of_matched_dense,
+    )
+    svg.extend(
+        [
+            _text(left_x, 181, "What was frozen", css_class="panel-title"),
+            _text(
+                left_x,
+                211,
+                (
+                    f"Spectral rank {result.selected_source_rank} × "
+                    f"{result.selected_target_rank}"
+                ),
+                css_class="figure-subtitle",
+            ),
+            _text(left_x, 263, "Bilinear branch", css_class="metric-label"),
+            (
+                f'<rect class="track" x="{left_x:.1f}" y="284.0" '
+                f'width="{bar_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            (
+                f'<rect x="{left_x:.1f}" y="284.0" '
+                f'width="{selected_bar_width:.1f}" height="24.0" rx="12" '
+                'fill="#0d9488"/>'
+            ),
+            _text(
+                left_x,
+                337,
+                (
+                    f"{result.selected_plan_stored_coefficient_count:,} / "
+                    f"{result.direct_dense_branch_coefficient_count:,} "
+                    "coefficients"
+                ),
+                css_class="body",
+            ),
+            _text(
+                left_x,
+                371,
+                (
+                    f"{100.0 * result.branch_coefficient_reduction_fraction:.4f}% "
+                    "fewer than direct dense"
+                ),
+                css_class="metric-scale verdict-good",
+            ),
+            _text(
+                left_x,
+                434,
+                "Base + bilinear branch",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{left_x:.1f}" y="455.0" '
+                f'width="{bar_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            (
+                f'<rect x="{left_x:.1f}" y="455.0" '
+                f'width="{combined_bar_width:.1f}" height="24.0" rx="12" '
+                'fill="#0d9488"/>'
+            ),
+            _text(
+                left_x,
+                508,
+                (
+                    f"{result.base_plus_branch_stored_coefficient_count:,} / "
+                    f"{result.matched_dense_three_branch_coefficient_count:,} "
+                    "coefficients"
+                ),
+                css_class="body",
+            ),
+            _text(
+                left_x,
+                542,
+                (
+                    f"{100.0 * result.combined_coefficient_reduction_fraction:.4f}% "
+                    "fewer than matched dense"
+                ),
+                css_class="metric-scale verdict-good",
+            ),
+            _text(
+                left_x,
+                630,
+                "Coefficient accounting only",
+                css_class="section-label",
+            ),
+            _text(
+                left_x,
+                658,
+                "No parameter or latency claim",
+                css_class="claim",
+            ),
+        ]
+    )
+
+    selection_x = panel_xs[1] + 28.0
+    svg.extend(
+        [
+            _text(
+                selection_x,
+                181,
+                "Frozen selection",
+                css_class="panel-title",
+            ),
+            _text(
+                selection_x,
+                211,
+                "Origins 16 and 32 · pooled",
+                css_class="figure-subtitle",
+            ),
+        ]
+    )
+    svg.extend(
+        _paired_error_bars(
+            x=selection_x,
+            y=263.0,
+            width=panel_width - 56.0,
+            base_value=result.selection_base_relative_error,
+            augmented_value=result.selection_augmented_relative_error,
+        )
+    )
+    svg.extend(
+        [
+            _text(
+                selection_x,
+                409,
+                (
+                    f"{100.0 * result.selection_error_reduction_fraction:.3f}% "
+                    "error reduction"
+                ),
+                css_class="metric-scale verdict-good",
+            ),
+            _text(
+                selection_x,
+                467,
+                "Augmented cosine",
+                css_class="metric-label",
+            ),
+            _text(
+                selection_x + panel_width - 56.0,
+                467,
+                f"{result.selection_augmented_cosine:.6f}",
+                css_class="metric-value",
+                anchor="end",
+            ),
+            _text(
+                selection_x,
+                521,
+                "Selected as minimal passing row",
+                css_class="section-label",
+            ),
+            _text(
+                selection_x,
+                558,
+                "Rate-first rule stopped at the",
+                css_class="claim",
+            ),
+            _text(
+                selection_x,
+                591,
+                "minimal passing rank 8 × 8 row",
+                css_class="claim",
+            ),
+        ]
+    )
+
+    assessment_x = panel_xs[2] + 28.0
+    svg.extend(
+        [
+            _text(
+                assessment_x,
+                181,
+                "Fresh assessment",
+                css_class="panel-title",
+            ),
+            _text(
+                assessment_x,
+                211,
+                "Response-unopened origin 20",
+                css_class="figure-subtitle",
+            ),
+        ]
+    )
+    svg.extend(
+        _paired_error_bars(
+            x=assessment_x,
+            y=263.0,
+            width=panel_width - 56.0,
+            base_value=result.assessment_base_relative_error,
+            augmented_value=result.assessment_augmented_relative_error,
+        )
+    )
+    svg.extend(
+        [
+            _text(
+                assessment_x,
+                409,
+                (
+                    f"{100.0 * result.assessment_error_reduction_fraction:.3f}% "
+                    "error reduction"
+                ),
+                css_class="metric-scale verdict-good",
+            ),
+            _text(
+                assessment_x,
+                467,
+                "Augmented cosine",
+                css_class="metric-label",
+            ),
+            _text(
+                assessment_x + panel_width - 56.0,
+                467,
+                f"{result.assessment_augmented_cosine:.6f}",
+                css_class="metric-value",
+                anchor="end",
+            ),
+            _text(
+                assessment_x,
+                521,
+                "Cross term C11",
+                css_class="section-label",
+            ),
+            _text(
+                assessment_x,
+                558,
+                (
+                    f"relative error {result.assessment_c11_relative_error:.6f}"
+                ),
+                css_class="claim",
+            ),
+            _text(
+                assessment_x,
+                591,
+                f"cosine {result.assessment_c11_cosine:.6f}",
+                css_class="claim",
+            ),
+            _text(
+                assessment_x,
+                647,
+                "PASSES FROZEN ASSESSMENT",
+                css_class="metric-scale verdict-good",
+            ),
+        ]
+    )
+
+    svg.append(
+        '<rect class="callout" x="50.0" y="728.0" width="1500.0" '
+        'height="104.0" rx="16"/>'
+    )
+    svg.extend(
+        _wrapped_text(
+            76.0,
+            762.0,
+            result.interpretation,
+            css_class="footer-strong",
+            width=145,
+            line_height=22.0,
+            max_lines=2,
+        )
+    )
+    svg.extend(
+        [
+            _text(
+                76,
+                813,
+                (
+                    "Boundary: fixed-reference modal-delta component only; "
+                    "provider, NLL, model compression, and latency remain open."
+                ),
+                css_class="footer",
+            ),
+            _text(
+                50,
+                869,
+                f"Scope: {data.claim_scope}",
+                css_class="footer",
+            ),
+            "</svg>",
+        ]
+    )
+    return "\n".join(svg) + "\n"
+
+
 def render_summary_file(
     summary_path: Path,
     ladder_output_path: Path,
     diagnostic_output_path: Path,
+    bilinear_output_path: Path,
     *,
     source_root: Path = Path("."),
 ) -> None:
-    """Render both committed figures from one source-safe summary."""
+    """Render all committed figures from one source-safe summary."""
 
     summary_bytes = summary_path.read_bytes()
     summary_value = json.loads(summary_bytes)
@@ -1214,11 +2170,22 @@ def render_summary_file(
         source_sha256=source_sha256,
         source_label=source_label,
     )
+    bilinear_svg = render_bilinear_spectral_assessment(
+        data,
+        source_sha256=source_sha256,
+        source_label=source_label,
+    )
     ladder_output_path.parent.mkdir(parents=True, exist_ok=True)
     diagnostic_output_path.parent.mkdir(parents=True, exist_ok=True)
+    bilinear_output_path.parent.mkdir(parents=True, exist_ok=True)
     ladder_output_path.write_text(ladder_svg, encoding="utf-8", newline="\n")
     diagnostic_output_path.write_text(
         diagnostic_svg,
+        encoding="utf-8",
+        newline="\n",
+    )
+    bilinear_output_path.write_text(
+        bilinear_svg,
         encoding="utf-8",
         newline="\n",
     )
@@ -1227,8 +2194,8 @@ def render_summary_file(
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Render the current research ladder and Gemma L3/L4 rank "
-            "diagnostic as deterministic SVGs."
+            "Render the current research ladder, Gemma L3/L4 rank "
+            "diagnostic, and bilinear assessment as deterministic SVGs."
         )
     )
     parser.add_argument(
@@ -1253,6 +2220,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
+        "--bilinear-output",
+        type=Path,
+        default=DEFAULT_BILINEAR_OUTPUT,
+        help=(
+            "bilinear spectral assessment SVG destination "
+            f"(default: {DEFAULT_BILINEAR_OUTPUT})"
+        ),
+    )
+    parser.add_argument(
         "--source-root",
         type=Path,
         default=Path("."),
@@ -1266,10 +2242,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         arguments.input,
         arguments.ladder_output,
         arguments.diagnostic_output,
+        arguments.bilinear_output,
         source_root=arguments.source_root,
     )
     print(f"Wrote {arguments.ladder_output}")
     print(f"Wrote {arguments.diagnostic_output}")
+    print(f"Wrote {arguments.bilinear_output}")
 
 
 if __name__ == "__main__":

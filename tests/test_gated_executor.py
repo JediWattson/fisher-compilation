@@ -20,6 +20,7 @@ def make_executor(
     router_width: int = 4,
     same_position_skip: bool = True,
     max_positive_lag: int | None = None,
+    source_normalized_routing: bool = False,
     dtype: torch.dtype = torch.float32,
 ) -> ResidualGatedCausalModalExecutor:
     return ResidualGatedCausalModalExecutor(
@@ -31,6 +32,7 @@ def make_executor(
             router_width=router_width,
             same_position_skip=same_position_skip,
             max_positive_lag=max_positive_lag,
+            source_normalized_routing=source_normalized_routing,
         ),
         dtype=dtype,
     )
@@ -124,6 +126,169 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
             ],
             torch.ones(3, 1, dtype=torch.float64),
         )
+        torch.testing.assert_close(
+            components.source_probabilities[
+                components.positive_lag_mask
+            ],
+            torch.ones(3, dtype=torch.float64),
+        )
+
+    def test_source_normalized_routing_uses_learned_pair_scores(self) -> None:
+        executor = make_executor(
+            input_modes=1,
+            output_modes=1,
+            expert_count=1,
+            expert_rank=1,
+            router_width=1,
+            same_position_skip=False,
+            source_normalized_routing=True,
+            dtype=torch.float64,
+        )
+        with torch.no_grad():
+            executor.same_position_weight.zero_()
+            executor.same_position_bias.zero_()
+            executor.expert_input_weight.fill_(1.0)
+            executor.expert_output_weight.fill_(1.0)
+            executor.router_query_weight.zero_()
+            executor.router_key_weight.zero_()
+            executor.router_lag_weight.zero_()
+            executor.source_score_weight.zero_()
+
+        values = torch.tensor(
+            [[[1.0], [2.0], [4.0]]],
+            dtype=torch.float64,
+        )
+        uniform = executor.forward_components(values)
+        torch.testing.assert_close(
+            uniform.positive_lag_output,
+            torch.tensor(
+                [[[0.0], [1.0], [1.5]]],
+                dtype=torch.float64,
+            ),
+        )
+        torch.testing.assert_close(
+            uniform.source_probabilities[0],
+            torch.tensor(
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.5, 0.5, 0.0],
+                ],
+                dtype=torch.float64,
+            ),
+        )
+
+        with torch.no_grad():
+            executor.router_lag_weight.fill_(1.0)
+            executor.source_score_weight.fill_(2.0)
+        scored = executor.forward_components(values)
+        expected_scores = 2.0 * torch.tanh(
+            torch.log1p(torch.tensor([2.0, 1.0], dtype=torch.float64))
+        )
+        expected_sources = torch.softmax(expected_scores, dim=0)
+        torch.testing.assert_close(
+            scored.source_probabilities[0, 2, :2],
+            expected_sources,
+        )
+        torch.testing.assert_close(
+            scored.positive_lag_output[0, 2, 0],
+            expected_sources @ values[0, :2, 0],
+        )
+        torch.testing.assert_close(
+            scored.source_probabilities.sum(dim=-1)[
+                scored.positive_lag_mask.any(dim=-1)
+            ],
+            torch.ones(2, dtype=torch.float64),
+        )
+        self.assertFalse(
+            scored.source_probabilities.triu(diagonal=0).any()
+        )
+        scored.output[0, 2, 0].backward()
+        self.assertIsNotNone(executor.source_score_weight.grad)
+        self.assertTrue(torch.isfinite(executor.source_score_weight.grad).all())
+        self.assertGreater(
+            executor.source_score_weight.grad.abs().max().item(),
+            0.0,
+        )
+
+        extended = torch.cat(
+            (
+                values,
+                torch.tensor(
+                    [[[1000.0], [-1000.0]]],
+                    dtype=torch.float64,
+                ),
+            ),
+            dim=1,
+        ).requires_grad_()
+        torch.testing.assert_close(
+            executor(extended)[:, :3],
+            scored.output,
+            rtol=0.0,
+            atol=0.0,
+        )
+        prefix_gradient = torch.autograd.grad(
+            executor(extended)[:, :3].sum(),
+            extended,
+        )[0]
+        torch.testing.assert_close(
+            prefix_gradient[:, 3:],
+            torch.zeros_like(prefix_gradient[:, 3:]),
+            rtol=0.0,
+            atol=0.0,
+        )
+
+    def test_source_normalization_is_exact_on_empty_edge_rows(self) -> None:
+        executor = make_executor(
+            input_modes=1,
+            output_modes=1,
+            expert_count=2,
+            expert_rank=1,
+            router_width=2,
+            same_position_skip=False,
+            source_normalized_routing=True,
+            dtype=torch.float64,
+        )
+        with torch.no_grad():
+            executor.same_position_weight.zero_()
+            executor.same_position_bias.zero_()
+        values = torch.randn(
+            1,
+            4,
+            1,
+            dtype=torch.float64,
+            requires_grad=True,
+        )
+        components = executor.forward_components(
+            values,
+            query_valid_mask=torch.ones(1, 4, dtype=torch.bool),
+            key_valid_mask=torch.zeros(1, 4, dtype=torch.bool),
+            logical_positions=torch.tensor([[0, 1, 2, 3]]),
+            key_logical_positions=torch.tensor([[-4, -3, -2, -1]]),
+        )
+
+        for value in (
+            components.output,
+            components.positive_lag_output,
+            components.router_probabilities,
+            components.source_probabilities,
+        ):
+            self.assertTrue(torch.isfinite(value).all())
+            torch.testing.assert_close(
+                value,
+                torch.zeros_like(value),
+                rtol=0.0,
+                atol=0.0,
+            )
+        components.output.sum().backward()
+        self.assertIsNotNone(executor.source_score_weight.grad)
+        self.assertTrue(torch.isfinite(executor.source_score_weight.grad).all())
+        torch.testing.assert_close(
+            executor.source_score_weight.grad,
+            torch.zeros_like(executor.source_score_weight.grad),
+            rtol=0.0,
+            atol=0.0,
+        )
 
     def test_future_slots_have_zero_forward_and_gradient_influence(self) -> None:
         executor = make_executor(expert_count=3).eval()
@@ -160,7 +325,7 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
         )
 
     def test_sparse_padding_matches_compact_valid_sequence(self) -> None:
-        executor = make_executor().eval()
+        executor = make_executor(source_normalized_routing=True).eval()
         values = torch.randn(1, 3, 3)
         positions = torch.tensor([[5, 7, 10]])
         compact = executor(
@@ -366,6 +531,26 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
         self.assertEqual(padded.active_positive_lag_queries, 1)
         self.assertEqual(padded.active_positive_lag_keys, 1)
 
+        normalized = make_executor(
+            input_modes=2,
+            output_modes=3,
+            expert_count=2,
+            expert_rank=4,
+            router_width=5,
+            same_position_skip=False,
+            source_normalized_routing=True,
+        )
+        normalized_accounting = normalized.execution_accounting(3)
+        self.assertEqual(normalized_accounting.router_parameter_count, 42)
+        self.assertEqual(normalized_accounting.total_parameter_count, 91)
+        self.assertEqual(
+            normalized_accounting.total_parameter_count,
+            sum(parameter.numel() for parameter in normalized.parameters()),
+        )
+        self.assertEqual(normalized_accounting.router_edge_mac_count, 45)
+        self.assertEqual(normalized_accounting.expert_mixture_mac_count, 30)
+        self.assertEqual(normalized_accounting.total_mac_count, 228)
+
     def test_strict_weights_only_artifact_round_trip_and_tamper_rejection(
         self,
     ) -> None:
@@ -386,6 +571,33 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
             ).eval()
         torch.testing.assert_close(restored(values), expected)
         self.assertEqual(restored.config, executor.config)
+        self.assertFalse(
+            restored.config.source_normalized_routing
+        )
+        self.assertNotIn(
+            "source_score_weight",
+            artifact["model_state_dict"],
+        )
+        self.assertEqual(artifact["format_version"], 2)
+
+        legacy = executor.artifact_state_dict()
+        legacy["format_version"] = 1
+        del legacy["config"]["source_normalized_routing"]
+        legacy_restored = (
+            ResidualGatedCausalModalExecutor.from_artifact_state_dict(
+                legacy
+            )
+        ).eval()
+        self.assertFalse(
+            legacy_restored.config.source_normalized_routing
+        )
+        torch.testing.assert_close(legacy_restored(values), expected)
+        legacy_state = legacy_restored.artifact_state_dict()
+        self.assertEqual(legacy_state["format_version"], 1)
+        self.assertNotIn(
+            "source_normalized_routing",
+            legacy_state["config"],
+        )
 
         # Artifact tensors are detached clones.
         artifact["model_state_dict"]["same_position_bias"][0] += 1.0
@@ -403,6 +615,16 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive integer"):
             ResidualGatedCausalModalExecutor.from_artifact_state_dict(
                 bad_config
+            )
+
+        bad_source_mode = executor.artifact_state_dict()
+        bad_source_mode["config"]["source_normalized_routing"] = 1
+        with self.assertRaisesRegex(
+            TypeError,
+            "source_normalized_routing must be boolean",
+        ):
+            ResidualGatedCausalModalExecutor.from_artifact_state_dict(
+                bad_source_mode
             )
 
         missing_weight = executor.artifact_state_dict()
@@ -427,6 +649,51 @@ class ResidualGatedCausalModalExecutorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "finite"):
             ResidualGatedCausalModalExecutor.from_artifact_state_dict(
                 nonfinite
+            )
+
+    def test_source_normalized_artifact_restores_weight_and_output(self) -> None:
+        executor = make_executor(
+            source_normalized_routing=True,
+            dtype=torch.float64,
+        ).eval()
+        with torch.no_grad():
+            executor.source_score_weight.copy_(
+                torch.linspace(
+                    -0.5,
+                    0.5,
+                    executor.config.router_width,
+                    dtype=torch.float64,
+                )
+            )
+        values = torch.randn(2, 5, 3, dtype=torch.float64)
+        expected = executor.forward_components(values)
+        artifact = executor.artifact_state_dict()
+
+        self.assertTrue(artifact["config"]["source_normalized_routing"])
+        self.assertIn("source_score_weight", artifact["model_state_dict"])
+        restored = (
+            ResidualGatedCausalModalExecutor.from_artifact_state_dict(
+                artifact
+            )
+        ).eval()
+
+        actual = restored.forward_components(values)
+        self.assertEqual(restored.config, executor.config)
+        torch.testing.assert_close(actual.output, expected.output)
+        torch.testing.assert_close(
+            actual.router_probabilities,
+            expected.router_probabilities,
+        )
+        torch.testing.assert_close(
+            actual.source_probabilities,
+            expected.source_probabilities,
+        )
+
+        missing_weight = executor.artifact_state_dict()
+        del missing_weight["model_state_dict"]["source_score_weight"]
+        with self.assertRaisesRegex(ValueError, "model state fields"):
+            ResidualGatedCausalModalExecutor.from_artifact_state_dict(
+                missing_weight
             )
 
     def test_input_and_sequence_validation_is_strict(self) -> None:
