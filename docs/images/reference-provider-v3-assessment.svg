@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="930" viewBox="0 0 1600 930" role="img" aria-labelledby="figure-title figure-description">
+<title id="figure-title">Fresh sealed V3 reference-provider assessment</title>
+<desc id="figure-description">The exact frozen rank-8 provider passes ordinary fidelity on sixteen fresh probes, but passes none of eight eligible radial contrasts, reverses the one eligible signed contrast, and hallucinates changes on five of twelve teacher-invariant null contrasts. The formal panel is inconclusive because the signed family lacks sufficient eligible coverage; the provider does not pass.</desc>
+<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=e03c8d902a10dbeff762edb8f64dd05cbff8741b601d34e6894758b41c2acecf;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672,gemma_conditional_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json:report_payload_sha256:ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671,gemma_mixed_falsification:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json:report_payload_sha256:931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d,gemma_bilinear_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json:report_payload_sha256:856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a,gemma_bilinear_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json:report_payload_sha256:6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab,gemma_reference_provider_v2_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json:report_payload_sha256:1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9,gemma_reference_provider_v2_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json:report_payload_sha256:613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e,gemma_reference_provider_v2_attenuation_localization:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-attenuation-localization-dev-v6.json:report_payload_sha256:e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a,gemma_reference_provider_v3_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v3.json:report_payload_sha256:df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392</metadata>
+<style>
+            .background { fill: #f1f5f9; }
+            .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+            .track { fill: #e2e8f0; }
+            .callout { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.5; }
+            .divider { stroke: #cbd5e1; stroke-width: 1; }
+            .connector { stroke: #94a3b8; stroke-width: 3;
+                         stroke-linecap: round; }
+            text { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", sans-serif; fill: #0f172a; }
+            .figure-title { font-size: 34px; font-weight: 750; }
+            .figure-subtitle { font-size: 18px; fill: #475569; }
+            .panel-title { font-size: 22px; font-weight: 700; }
+            .stage-number { font-size: 13px; font-weight: 800; fill: #64748b;
+                            letter-spacing: 1.2px; }
+            .stage-title { font-size: 22px; font-weight: 750; }
+            .status { font-size: 12px; font-weight: 800; letter-spacing: .6px; }
+            .section-label { font-size: 12px; font-weight: 800; fill: #64748b;
+                             letter-spacing: .8px; }
+            .body { font-size: 16px; font-weight: 550; }
+            .claim { font-size: 15px; fill: #475569; }
+            .metric-label { font-size: 16px; font-weight: 700; }
+            .metric-scale { font-size: 12px; fill: #64748b; }
+            .verdict-good { fill: #047857; }
+            .verdict-bad { fill: #b91c1c; }
+            .rank-label { font-size: 13px; font-weight: 750; }
+            .metric-value { font-size: 14px; font-weight: 750; }
+            .footer { font-size: 14px; fill: #475569; }
+            .footer-strong { font-size: 15px; font-weight: 700; }
+            @media (prefers-color-scheme: dark) {
+                .background { fill: #0b1220; }
+                .panel { fill: #111827; stroke: #334155; }
+                .track { fill: #334155; }
+                .callout { fill: #3b2616; stroke: #c2410c; }
+                .divider { stroke: #334155; }
+                .connector { stroke: #64748b; }
+                text { fill: #f8fafc; }
+                .figure-subtitle, .claim, .metric-scale, .footer {
+                    fill: #cbd5e1;
+                }
+                .verdict-good { fill: #6ee7b7; }
+                .verdict-bad { fill: #fca5a5; }
+                .stage-number, .section-label { fill: #94a3b8; }
+            }
+        </style>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+<rect class="background" width="1600" height="930" rx="24"/>
+<text class="figure-title" x="50.0" y="58.0">Fresh V3 — average fidelity holds, conditional response does not</text>
+<text class="figure-subtitle" x="50.0" y="91.0">48 sealed probes · exact frozen spectral-r08-t08 provider · no refit, reselection, or threshold tuning</text>
+<rect x="1280.0" y="38.0" width="270.0" height="58.0" rx="29" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>
+<text class="status" x="1415.0" y="73.0" text-anchor="middle" style="fill:#9a3412">PANEL INCONCLUSIVE</text>
+<rect class="panel" x="50.0" y="145.0" width="355.0" height="510.0" rx="18"/>
+<rect x="50.0" y="145.0" width="355.0" height="8.0" rx="4" fill="#059669"/>
+<rect class="panel" x="425.0" y="145.0" width="355.0" height="510.0" rx="18"/>
+<rect x="425.0" y="145.0" width="355.0" height="8.0" rx="4" fill="#dc2626"/>
+<rect class="panel" x="800.0" y="145.0" width="355.0" height="510.0" rx="18"/>
+<rect x="800.0" y="145.0" width="355.0" height="8.0" rx="4" fill="#f97316"/>
+<rect class="panel" x="1175.0" y="145.0" width="355.0" height="510.0" rx="18"/>
+<rect x="1175.0" y="145.0" width="355.0" height="8.0" rx="4" fill="#dc2626"/>
+<text class="section-label" x="76.0" y="184.0">ORDINARY FIDELITY</text>
+<text class="panel-title" x="76.0" y="223.0">Typical outputs hold</text>
+<text class="body" x="76.0" y="266.0">16 fresh probes</text>
+<text class="metric-value" x="379.0" y="266.0" text-anchor="end">12/12 gates</text>
+<text class="metric-label" x="76.0" y="321.0">Fisher-weighted error</text>
+<rect class="track" x="76.0" y="342.0" width="303.0" height="24.0" rx="12"/>
+<rect x="76.0" y="342.0" width="58.6" height="24.0" rx="12" fill="#059669"/>
+<text class="stage-title verdict-good" x="76.0" y="402.0">6.77%</text>
+<text class="metric-label" x="76.0" y="449.0">Reference cosine</text>
+<text class="stage-title verdict-good" x="76.0" y="493.0">0.9977</text>
+<text class="claim" x="76.0" y="542.0">Worst probe p90 29.14%</text>
+<text class="metric-scale verdict-good" x="76.0" y="617.0">PASS</text>
+<text class="section-label" x="451.0" y="184.0">RADIAL SENSITIVITY</text>
+<text class="panel-title" x="451.0" y="223.0">Magnitude changes</text>
+<text class="body" x="451.0" y="266.0">8/8 teacher eligible</text>
+<text class="metric-label" x="451.0" y="321.0">Candidate contrast passes</text>
+<rect class="track" x="451.0" y="342.0" width="303.0" height="24.0" rx="12"/>
+<text class="stage-title verdict-bad" x="451.0" y="402.0">0/8</text>
+<text class="metric-label" x="451.0" y="449.0">Contrast relative error</text>
+<text class="stage-title verdict-bad" x="451.0" y="493.0">72.7–130.3%</text>
+<text class="claim" x="451.0" y="542.0">Both retained + discarded strata; min cosine 0.434</text>
+<text class="metric-scale verdict-bad" x="451.0" y="617.0">CANDIDATE FAIL</text>
+<text class="section-label" x="826.0" y="184.0">SIGNED SENSITIVITY</text>
+<text class="panel-title" x="826.0" y="223.0">Direction changes</text>
+<text class="body" x="826.0" y="266.0">1/4 teacher eligible</text>
+<text class="metric-scale" x="1129.0" y="266.0" text-anchor="end">3 underpowered</text>
+<text class="metric-label" x="826.0" y="321.0">Teacher-qualified coverage</text>
+<rect class="track" x="826.0" y="342.0" width="303.0" height="24.0" rx="12"/>
+<rect x="826.0" y="342.0" width="75.8" height="24.0" rx="12" fill="#f97316"/>
+<text class="stage-title verdict-bad" x="826.0" y="402.0">0/1 eligible pass</text>
+<text class="metric-label verdict-bad" x="826.0" y="449.0">cosine -0.922</text>
+<text class="stage-title verdict-bad" x="826.0" y="493.0">gain -2.443</text>
+<text class="claim" x="826.0" y="542.0">Eligible response reversed + amplified</text>
+<text class="metric-scale verdict-bad" x="826.0" y="617.0">FAMILY INCONCLUSIVE</text>
+<text class="section-label" x="1201.0" y="184.0">INTENDED NULL</text>
+<text class="panel-title" x="1201.0" y="223.0">Should not change</text>
+<text class="body" x="1201.0" y="266.0">Teacher 12/12 invariant</text>
+<text class="metric-label" x="1201.0" y="321.0">Provider null passes</text>
+<rect class="track" x="1201.0" y="342.0" width="303.0" height="24.0" rx="12"/>
+<rect x="1201.0" y="342.0" width="176.8" height="24.0" rx="12" fill="#059669"/>
+<text class="stage-title verdict-bad" x="1201.0" y="402.0">7/12</text>
+<text class="metric-label verdict-bad" x="1201.0" y="449.0">5 hallucinated changes</text>
+<text class="stage-title verdict-bad" x="1201.0" y="493.0">max effect 2.53%</text>
+<text class="claim" x="1201.0" y="542.0">Teacher invariant; provider moves</text>
+<text class="metric-scale verdict-bad" x="1201.0" y="617.0">CANDIDATE FAIL</text>
+<rect class="callout" x="50.0" y="690.0" width="1500.0" height="148.0" rx="16"/>
+<text class="footer-strong verdict-bad" x="76.0" y="731.0">FORMAL OUTCOME: PANEL INCONCLUSIVE · PROVIDER PASSED: FALSE</text>
+<text class="footer" x="76.0" y="770.0">Why inconclusive: only 1/4 signed contrasts was strong enough, leaving the discarded signed stratum uncovered.</text>
+<text class="footer" x="76.0" y="807.0">Why actionable: radial tracking failed 0/8 and the provider invented five changes where the teacher stayed invariant.</text>
+<text class="footer" x="50.0" y="887.0">Boundary: endpoint fidelity does not authorize dynamic graph composition, natural-prompt shadow, NLL, compression, compute, or latency claims.</text>
+</svg>

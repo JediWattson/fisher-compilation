@@ -1102,28 +1102,205 @@ The ignored outputs are bound by:
 - v2 training protocol:
   `4eb3bc860539683802355bd156dd59ff6007e4de86c1b98558f51d45b798fbaf`.
 
+### Retrospective collision attenuation localization
+
+The failed collision control was traced backward only after the v2 assessment
+had been opened. This is a postmortem over consumed development data, not a
+second assessment and not a route to rescue the frozen result. The diagnostic
+authenticated the candidate, assessment, one-shot claim, v2 code bundle,
+basis, source model, and panel specification before executing any target. It
+then regenerated all 40 collision endpoints and required every full-width
+target hash to equal the opened assessment.
+
+For each of the 16 collision groups it identified the exact minimum-separation
+gate witness; it also retained all 32 unordered pairs for context. Each
+contrast was measured at:
+
+1. requested standardized modes and the realized manifold lift;
+2. L3 post-attention hidden state and exact L4 input;
+3. L4 attention normalization, operator output, delta, and residual merge;
+4. L4 pre-FF normalized input; and
+5. raw and Fisher-weighted L4 target modes.
+
+At the endpoint midpoint, a full-direction JVP measured local transport and a
+target-contrast-aligned VJP traced sensitivity backward. Exact repeated
+endpoint executions supplied the numerical floor. A contrast could be
+localized only when its upstream and downstream checkpoints were resolved,
+their midpoint linearizations were valid, the JVP/VJP adjoint identity passed,
+and no response occurred before the changed source position. Raw norms from
+unlike representations were not compared; checkpoint attenuation uses
+dimensionless midpoint-JVP relative response.
+
+The authenticated result was:
+
+| witness family | witnesses | threshold result | teacher-target range |
+|---|---:|---:|---:|
+| axis sign | `8` | `0 / 8` at or above `0.01` | `0.000105–0.002329` |
+| gain-null | `4` | `0 / 4` at or above `0.01` | `0.00000924–0.0000531` |
+| radial scale | `4` | `4 / 4` at or above `0.01` | `0.01516–0.03652` |
+
+All 16 witnesses were numerically valid. Mean-reference injection produced a
+dominant relative-response dilution on 10 witnesses: four axis, four null, and
+two passing radial controls. Because the same observation appears in passing
+and failing groups, it cannot by itself explain the failed gate. The only
+failure-exclusive observation was pre-FF RMSNorm attenuation, present on all
+four gain-null witnesses. No axis witness had a failure-exclusive localized
+bottleneck, so its small teacher effect is distributed rather than attributable
+to one validated transition.
+
+The alternatives were also sharply constrained:
+
+- no witness showed residual/attention cancellation;
+- no failed witness missed the retained Fisher subspace—the first 64 modes
+  captured at least `99.9988%` of full Fisher-weighted contrast energy;
+- the maximum midpoint JVP/VJP adjoint error was `1.77e-6`;
+- the maximum pre-source JVP energy fraction was exactly zero; and
+- no candidate prediction was used or scored.
+
+The conclusion is therefore narrower than “the provider failed”: the
+preregistered failure occurs at teacher-contrast eligibility before candidate
+tracking. Null controls expose a normalization invariance; axis controls simply
+do not produce a 1% target effect under this construct; radial sensitivity is
+identifiable. A v3 protocol must classify those roles separately and measure
+candidate contrast recovery only on sufficiently identified sensitivity
+groups.
+
+The local, tensor-free report is produced with:
+
+```bash
+fisher-graph-gemma-l3-l4-attenuation-localization-dev \
+  --device cpu \
+  --dtype float32
+```
+
+The final local report binds logical artifact
+`433e40bdea3ab958ee9cc7f5bb8dcfc8b7d09769ff20c4d65f5a5f5448291123`
+and report
+`e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a`.
+It stores only scalar summaries and tensor hashes. The target-derived VJP is
+diagnostic-only and may not be fitted, selected, or compiled; any change
+informed by this consumed panel requires a fresh v3 panel.
+
+### Fresh V3: ordinary fidelity passes, contrasts do not
+
+The proposed V3 protocol was implemented and spent exactly once. It bound the
+same frozen `spectral-r08-t08` candidate to a new 48-probe panel before loading
+the live model or producing a teacher target. The panel contains:
+
+- eight multitone and eight block-sparse ordinary-fidelity probes;
+- four three-level radial groups, producing eight adjacent sensitivity pairs;
+- four two-sign groups, producing four sensitivity pairs; and
+- four three-level exact-gain-null groups, producing all 12 unordered
+  invariance pairs.
+
+The resulting 12 groups and 24 pairs are new identities. The candidate,
+selected plan, controls, training protocol, basis, metric gauge, source model,
+panel, gates, and implementation bundle were authenticated before the claim.
+There was no refit, reselection, candidate mutation, threshold parameter,
+fallback, or retry.
+
+The ordinary 16-probe result passed every fidelity and execution-structure
+gate:
+
+| fresh V3 ordinary metric | result |
+|---|---:|
+| Fisher-weighted relative error | `0.0677296` |
+| reference cosine | `0.997722` |
+| maximum per-probe p90 error | `0.291379` |
+| worst family relative error | `0.0870385` |
+| reduction versus constant / position-only | `45.6100%` / `45.3379%` |
+| support / prepared parity | `1.0` / `3.26248e-8` |
+| causality / padding / repeat violations | `0 / 0 / 0` |
+
+The direct contrast assessment did not pass:
+
+| family | teacher-qualified | candidate passes | coverage | decision |
+|---|---:|---:|---|---|
+| radial block sensitivity | `8 / 8` | `0 / 8` | retained + discarded | `candidate_fail` |
+| signed block sensitivity | `1 / 4` | `0 / 1` | retained only | `panel_inconclusive` |
+| intended null | `12 / 12` | `7 / 12` | retained + discarded | `candidate_fail` |
+
+For radial sensitivity, macro RMS contrast-relative error was `0.929976`,
+worst error was `1.30261`, minimum direction cosine was `0.434185`,
+projection gain ranged `0.304312–0.803053`, and maximum orthogonal leakage was
+`1.23872`. These eight comparisons had sufficiently strong teacher effects,
+so this is an identified candidate failure rather than a weak-panel result.
+
+The signed construction produced only one eligible sensitivity pair. Three
+pairs were too weak, leaving the discarded stratum uncovered; the single
+scored pair also failed at relative error `3.59332` and cosine `-0.921539`.
+The family therefore cannot support a complete candidate verdict.
+
+Every intended-null pair satisfied the teacher invariance ceiling. Seven of
+twelve candidate comparisons passed, while the maximum candidate null-effect
+and null-error upper bounds were `0.0253284` and `0.0253292` against frozen
+`0.01` ceilings. Intended nulls are not scored with direction metrics, and weak
+sensitivity pairs do not enter candidate-relative metrics.
+
+Because panel-inconclusive status has priority over candidate failure, the
+formal runner outcome is `panel_inconclusive_sensitivity` and
+`provider_passed` is false. This should not be paraphrased as “V3 almost
+passed.” Ordinary absolute-target fidelity replicated, radial change recovery
+failed, five intended-null comparisons leaked too much candidate change, and
+one sensitivity family was underpowered.
+
+The ignored V3 result binds:
+
+- implementation bundle
+  `af06c779c18bf9bc860ca4683ed37c93a0954f090411c544b8062ddfa29086a0`;
+- protocol
+  `65959324d2815621a1d6420bdb4d41a9db74c4214205088da9545088bc19ce03`;
+- panel specification
+  `919126906cc6f07074d76599843504ea81462485e8f93ee6d35c71732979249e`;
+- measured panel
+  `4486367eb754ae197a25451ec86329cd6fb01d51c5c3bef32246f4ca0d30879a`;
+- one-shot claim receipt
+  `0dec295146d80db94483d176d3dc0d93473e8a48957a9d41cee080d0744b8487`;
+- fidelity / contrast score artifacts
+  `a7aad5cc473ecfd6c2b2d93c3191a08f374e4fd9a58596c5011bbc6c896aebf9`
+  and
+  `1f34e38f1bbfa5db75c0247fe9649d4b5eaadeb04f4db38e430d08be08061a1a`;
+- logical result
+  `60e83fa843e4a2878f597f0f924e736d83b4165b2bdbb3bd40aab0ca24905594`;
+  and
+- report
+  `df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392`.
+
+The local output remains ignored. Its published state is tensor-free: raw
+teacher targets, candidate predictions, provider parameters, source-model
+weights, prompts, and token IDs are not serialized.
+
 ## Next validation gate
 
-The v2 assessment panel is consumed and must not be rerun or rescued by
-lowering its threshold. The next rung must preregister a genuinely fresh v3
-panel and split the overloaded collision decision into:
+Both V2 and V3 are consumed. V2 remains a teacher-panel-control failure; V3 is
+the first direct evidence that this frozen provider's strong ordinary fidelity
+does not guarantee contrast preservation. Neither result may be rescued by
+rerunning, lowering thresholds, or refitting against opened targets.
 
-1. teacher-construct sensitivity gates for variables expected to matter;
-2. teacher-construct invariance ceilings for intended null controls;
-3. a panel-inconclusive state for effects too weak to test;
-4. candidate contrast recovery on sufficiently identified groups, comparing
-   \((\hat T_i-\hat T_j)\) directly with \((T_i-T_j)\); and
-5. fresh modes, positions, lengths, seeds, hashes, and a new one-shot ledger
-   identity.
+The next rung is:
 
-If that frozen provider gate passes, the rank-8 provider can be composed with
-the frozen linear, diagonal, and bilinear branches in one self-contained
-L3→L4 graph with transitive native fallback. The following rung is then
+1. use opened V3 only as a diagnostic to localize radial contrast loss and
+   intended-null leakage through the frozen provider;
+2. revise the provider architecture using fit and selection evidence, not V3
+   target-derived fitting or threshold tuning;
+3. strengthen the signed-sensitivity construct until retained and discarded
+   strata both have preregistered, teacher-eligible coverage;
+4. freeze the new candidate and preregister a genuinely fresh V4 panel with
+   new modes, positions, lengths, seeds, hashes, code binding, and one-shot
+   ledger identity; and
+5. require ordinary fidelity, teacher construct validity, candidate contrast
+   recovery, structural checks, and rank-stratum coverage to pass together.
+
+Only after that provider gate passes should the provider be composed with the
+frozen linear, diagonal, and bilinear branches in one self-contained L3→L4
+graph with transitive native fallback. The following rung is
 source-authoritative shadow execution on a family-disjoint natural-prompt
 split, scoring NLL, full-vocabulary KL, and top-1 agreement. Resident storage,
-active compute, and measured latency remain downstream of that fidelity gate.
+active compute, measured latency, and whole-model compression remain
+downstream of those fidelity gates.
 
 Parallel-path aggregation must also be authenticated before a later rung
-admits multiple fine edges with the same modal endpoints. Until those gates
-pass, the provider is strong synthetic evidence rather than an executable
-Gemma replacement or a compression result.
+admits multiple fine edges with the same modal endpoints. At the current rung,
+the provider is a compact synthetic component with positive ordinary fidelity
+and failed/inconclusive contrast evidence, not an executable Gemma replacement
+or compression result.

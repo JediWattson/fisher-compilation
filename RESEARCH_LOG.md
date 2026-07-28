@@ -1562,6 +1562,149 @@ and `613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e`.
 The selected plan is
 `7ab42890daece95eeedbf08ba0e5727f2bccfd7be20e00a4e404539cd1bf9cee`.
 
+The consumed v2 collision panel now has a separate authenticated retrospective
+attenuation trace. It reexecuted 40 collision endpoints and matched all 40
+opened target hashes, analyzed all 32 unordered pairs, and marked the 16 exact
+group-minimum gate witnesses. No candidate prediction entered the diagnostic;
+there was no refit, reselection, assessment-score recomputation, or new sealed
+claim.
+
+Only the four radial witnesses cleared the frozen `0.01` teacher-contrast
+threshold. The eight axis and four gain-null witnesses were below it but
+numerically resolved. Midpoint JVPs and contrast-aligned VJPs traced the
+manifold lift, L4 attention prefix, residual merge, pre-FF normalization, and
+Fisher-weighted target. Mean-reference injection was a dominant dimensionless
+relative-response dilution on 10 witnesses, including two passing radial
+controls, so it is not sufficient to explain failure. All four gain-null
+witnesses additionally showed pre-FF normalization attenuation, the only
+observation exclusive to failed witnesses. Axis failures had no
+failure-exclusive localized transition.
+
+No failed witness showed residual/attention cancellation or a retained
+Fisher-subspace miss; retained rank 64 captured at least `99.9988%` of the full
+Fisher-weighted contrast energy. The maximum JVP/VJP adjoint error was
+`1.76904e-6`, maximum pre-source JVP energy was zero, and every witness passed
+the diagnostic numerical-validity checks. This locates the formal collision
+failure at teacher-contrast eligibility before candidate tracking, while
+leaving provider contrast recovery untested and the v2 composite failure
+unchanged.
+
+The ignored v6 attenuation tensor/report hashes are
+`c4214ea078b905570ff01d58b2692df6b1f02c64a2122b27f81f504512c8e983` and
+`e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a`;
+the logical diagnostic artifact is
+`433e40bdea3ab958ee9cc7f5bb8dcfc8b7d09769ff20c4d65f5a5f5448291123`.
+The target-derived VJP remains diagnostic-only. Any compiler or protocol
+change informed by this opened panel requires a genuinely fresh v3
+assessment.
+
+### Fresh sealed V3 contrast assessment
+
+The fresh V3 assessment is complete. It tested the exact previously frozen
+`spectral-r08-t08` provider; there was no new fit, rank selection, candidate
+reselection, parameter mutation, retry, or threshold argument. Before any
+live V3 target was produced, the runner authenticated the candidate file and
+report, selected plan, controls, training protocol, basis, source model,
+metric gauge, complete 48-probe declaration, contrast gates, and scoring-code
+bundle, then wrote an output-independent one-shot claim.
+
+The panel contained 16 new ordinary-fidelity probes and 32 contrast probes:
+12 radial-scale probes, eight signed-axis probes, and 12 exact-gain-null
+probes. Twelve frozen groups expanded to 24 canonical pairs. Three exact
+teacher replays per batch had zero measured relative disagreement. All 48
+probe identities, 48 candidate predictions, and 24 contrast identities were
+bound into the result.
+
+The frozen provider passed all 12 ordinary fidelity and execution-structure
+flags:
+
+| fresh V3 ordinary metric | result |
+|---|---:|
+| Fisher-weighted relative error | `0.0677296` |
+| reference cosine | `0.997722` |
+| maximum per-probe p90 error | `0.291379` |
+| worst family relative error | `0.0870385` |
+| reduction versus constant | `45.6100%` |
+| reduction versus position-only | `45.3379%` |
+| in-support fraction | `1.0` |
+| prepared float32 parity error | `3.26248e-8` |
+| causality / padding / repeat violations | `0 / 0 / 0` |
+
+This ordinary-target result did not extend to the new difference-level tests:
+
+| contrast family | teacher-qualified | candidate passes | family decision |
+|---|---:|---:|---|
+| radial block sensitivity | `8 / 8` | `0 / 8` | `candidate_fail` |
+| signed block sensitivity | `1 / 4` | `0 / 1` | `panel_inconclusive` |
+| intended null | `12 / 12` | `7 / 12` | `candidate_fail` |
+
+Radial sensitivity covered both retained and discarded rank strata, but its
+macro RMS contrast-relative error was `0.929976`, worst error was `1.30261`,
+minimum direction cosine was `0.434185`, projection gain ranged
+`0.304312–0.803053`, and maximum orthogonal leakage was `1.23872`. This is a
+genuine candidate-recovery failure on a sufficiently sensitive teacher
+construct.
+
+Only one signed pair cleared the teacher sensitivity floor. The three
+underpowered pairs left the discarded stratum uncovered; the one scored pair
+also failed, with relative error `3.59332` and cosine `-0.921539`. The family
+therefore remains panel-inconclusive rather than supporting a four-pair
+candidate verdict.
+
+All 12 intended-null pairs satisfied the teacher invariance ceiling and were
+valid candidate tests. Seven passed. The maximum candidate null-effect upper
+bound was `0.0253284`, and the maximum null-error upper bound was `0.0253292`,
+both above their frozen `0.01` ceilings. These failures do not use direction
+metrics. Conversely, weak sensitivity contrasts never enter candidate
+relative metrics.
+
+The contrast scorer's overall status is `panel_inconclusive`, and the runner's
+formal outcome is `panel_inconclusive_sensitivity`; `provider_passed` is
+false. That priority is deliberate: the underpowered signed family prevents a
+clean whole-panel candidate-failure verdict. It does not cancel the identified
+radial and intended-null failures. The correct combined reading is that the
+rank-8 provider still has strong ordinary synthetic fidelity but does not
+preserve all of the local changes that generated nearly identical absolute
+targets.
+
+The ignored result is authenticated by:
+
+- implementation bundle
+  `af06c779c18bf9bc860ca4683ed37c93a0954f090411c544b8062ddfa29086a0`;
+- protocol
+  `65959324d2815621a1d6420bdb4d41a9db74c4214205088da9545088bc19ce03`;
+- panel specification
+  `919126906cc6f07074d76599843504ea81462485e8f93ee6d35c71732979249e`;
+- measured panel
+  `4486367eb754ae197a25451ec86329cd6fb01d51c5c3bef32246f4ca0d30879a`;
+- contrast gates
+  `bedf561b190b04f880aabad6020ddb680d187734d572c9ec1abba7573cad0de1`;
+- fidelity score
+  `a7aad5cc473ecfd6c2b2d93c3191a08f374e4fd9a58596c5011bbc6c896aebf9`;
+- contrast score
+  `1f34e38f1bbfa5db75c0247fe9649d4b5eaadeb04f4db38e430d08be08061a1a`;
+- claim receipt
+  `0dec295146d80db94483d176d3dc0d93473e8a48957a9d41cee080d0744b8487`;
+- logical artifact
+  `60e83fa843e4a2878f597f0f924e736d83b4165b2bdbb3bd40aab0ca24905594`;
+- tensor file
+  `49ef76479663eefa66d67a8ae90f1f03cbaff266602368f147df1518adf472d3`;
+  and
+- report
+  `df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392`.
+
+The local output serializes hashes and scalar score states, not raw teacher
+targets, candidate predictions, provider parameters, source-model state,
+prompts, or token IDs. It remains ignored and non-committable.
+
+V3 is now consumed. It may be used to localize the radial and null failures,
+but not to refit this candidate, tune its gates, or claim another assessment.
+The next candidate must be changed using fit/selection evidence, the signed
+construct must identify both rank strata, and a genuinely fresh V4 panel must
+be preregistered before a new one-shot decision. Natural-prompt shadow NLL,
+full-vocabulary KL, top-1 agreement, graph composition, storage, compute, and
+latency remain downstream of that fresh provider gate.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block

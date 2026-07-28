@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="930" viewBox="0 0 1600 930" role="img" aria-labelledby="figure-title figure-description">
+<title id="figure-title">Retrospective reference-provider collision attenuation</title>
+<desc id="figure-description">A post-assessment diagnostic preserves the frozen v2 failure while showing canonical collision-witness contrast ranges and two teacher-path observations. Twelve of sixteen witnesses remain below the one-percent teacher-separation threshold. A fresh v3 assessment remains required.</desc>
+<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=e03c8d902a10dbeff762edb8f64dd05cbff8741b601d34e6894758b41c2acecf;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672,gemma_conditional_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json:report_payload_sha256:ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671,gemma_mixed_falsification:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json:report_payload_sha256:931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d,gemma_bilinear_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json:report_payload_sha256:856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a,gemma_bilinear_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json:report_payload_sha256:6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab,gemma_reference_provider_v2_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json:report_payload_sha256:1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9,gemma_reference_provider_v2_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json:report_payload_sha256:613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e,gemma_reference_provider_v2_attenuation_localization:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-attenuation-localization-dev-v6.json:report_payload_sha256:e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a,gemma_reference_provider_v3_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v3.json:report_payload_sha256:df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392</metadata>
+<style>
+            .background { fill: #f1f5f9; }
+            .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+            .track { fill: #e2e8f0; }
+            .callout { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.5; }
+            .divider { stroke: #cbd5e1; stroke-width: 1; }
+            .connector { stroke: #94a3b8; stroke-width: 3;
+                         stroke-linecap: round; }
+            text { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", sans-serif; fill: #0f172a; }
+            .figure-title { font-size: 34px; font-weight: 750; }
+            .figure-subtitle { font-size: 18px; fill: #475569; }
+            .panel-title { font-size: 22px; font-weight: 700; }
+            .stage-number { font-size: 13px; font-weight: 800; fill: #64748b;
+                            letter-spacing: 1.2px; }
+            .stage-title { font-size: 22px; font-weight: 750; }
+            .status { font-size: 12px; font-weight: 800; letter-spacing: .6px; }
+            .section-label { font-size: 12px; font-weight: 800; fill: #64748b;
+                             letter-spacing: .8px; }
+            .body { font-size: 16px; font-weight: 550; }
+            .claim { font-size: 15px; fill: #475569; }
+            .metric-label { font-size: 16px; font-weight: 700; }
+            .metric-scale { font-size: 12px; fill: #64748b; }
+            .verdict-good { fill: #047857; }
+            .verdict-bad { fill: #b91c1c; }
+            .rank-label { font-size: 13px; font-weight: 750; }
+            .metric-value { font-size: 14px; font-weight: 750; }
+            .footer { font-size: 14px; fill: #475569; }
+            .footer-strong { font-size: 15px; font-weight: 700; }
+            @media (prefers-color-scheme: dark) {
+                .background { fill: #0b1220; }
+                .panel { fill: #111827; stroke: #334155; }
+                .track { fill: #334155; }
+                .callout { fill: #3b2616; stroke: #c2410c; }
+                .divider { stroke: #334155; }
+                .connector { stroke: #64748b; }
+                text { fill: #f8fafc; }
+                .figure-subtitle, .claim, .metric-scale, .footer {
+                    fill: #cbd5e1;
+                }
+                .verdict-good { fill: #6ee7b7; }
+                .verdict-bad { fill: #fca5a5; }
+                .stage-number, .section-label { fill: #94a3b8; }
+            }
+        </style>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
+<rect class="background" width="1600" height="930" rx="24"/>
+<text class="figure-title" x="50.0" y="58.0">Collision attenuation — what the opened V2 panel reveals</text>
+<text class="figure-subtitle" x="50.0" y="91.0">Retrospective teacher-path localization · no candidate refit, reselection, or score recomputation</text>
+<rect class="panel" x="50.0" y="135.0" width="335.0" height="555.0" rx="18"/>
+<rect class="panel" x="415.0" y="135.0" width="700.0" height="555.0" rx="18"/>
+<rect class="panel" x="1145.0" y="135.0" width="405.0" height="555.0" rx="18"/>
+<text class="panel-title" x="78.0" y="181.0">Frozen result</text>
+<text class="metric-label" x="78.0" y="225.0">16 canonical witnesses</text>
+<rect class="track" x="78.0" y="258.0" width="279.0" height="28.0" rx="14"/>
+<rect x="78.0" y="258.0" width="209.2" height="28.0" rx="14" fill="#dc2626"/>
+<rect x="287.2" y="258.0" width="69.8" height="28.0" rx="14" fill="#059669"/>
+<text class="metric-label verdict-bad" x="78.0" y="323.0">12 below 1%</text>
+<text class="metric-label verdict-good" x="357.0" y="323.0" text-anchor="end">4 at/above</text>
+<text class="section-label" x="78.0" y="379.0">AUTHENTICATED REPLAY</text>
+<text class="body" x="78.0" y="414.0">40/40 target hashes match</text>
+<text class="section-label" x="78.0" y="470.0">SAFETY BOUNDARY</text>
+<text class="body" x="78.0" y="505.0">Opened V2 panel only</text>
+<text class="body" x="78.0" y="539.0">Candidate predictions excluded</text>
+<text class="body" x="78.0" y="573.0">Target VJP stays diagnostic</text>
+<text class="metric-scale verdict-bad" x="78.0" y="642.0">FORMAL V2 FAILURE UNCHANGED</text>
+<text class="panel-title" x="443.0" y="181.0">Teacher contrast by family</text>
+<text class="claim" x="443.0" y="213.0">Minimum — median — maximum across canonical gate witnesses</text>
+<line x1="588.0" y1="242.0" x2="588.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="588.0" y="597.0" text-anchor="middle">1e-6</text>
+<line x1="687.0" y1="242.0" x2="687.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="687.0" y="597.0" text-anchor="middle">1e-5</text>
+<line x1="786.0" y1="242.0" x2="786.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="786.0" y="597.0" text-anchor="middle">1e-4</text>
+<line x1="885.0" y1="242.0" x2="885.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="885.0" y="597.0" text-anchor="middle">1e-3</text>
+<line x1="984.0" y1="242.0" x2="984.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="984.0" y="597.0" text-anchor="middle">1e-2</text>
+<line x1="1083.0" y1="242.0" x2="1083.0" y2="570.0" stroke="#cbd5e1" stroke-width="1"/>
+<text class="metric-scale" x="1083.0" y="597.0" text-anchor="middle">1e-1</text>
+<line x1="984.0" y1="231.0" x2="984.0" y2="570.0" stroke="#f97316" stroke-width="3" stroke-dasharray="8 6"/>
+<text class="metric-label" x="984.0" y="226.0" text-anchor="middle">1% gate</text>
+<text class="metric-label" x="443.0" y="291.0">Axis sign</text>
+<text class="metric-scale verdict-bad" x="443.0" y="318.0">0/8 clear</text>
+<line x1="788.3" y1="300.0" x2="921.4" y2="300.0" stroke="#dc2626" stroke-width="8" stroke-linecap="round"/>
+<circle cx="863.9" cy="300.0" r="9" fill="#dc2626" stroke="#ffffff" stroke-width="3"/>
+<text class="metric-value" x="1083.0" y="330.0" text-anchor="end">1.05e-04 — 2.33e-03</text>
+<text class="metric-label" x="443.0" y="416.0">Gain-null</text>
+<text class="metric-scale verdict-bad" x="443.0" y="443.0">0/4 clear</text>
+<line x1="683.6" y1="425.0" x2="758.8" y2="425.0" stroke="#ea580c" stroke-width="8" stroke-linecap="round"/>
+<circle cx="720.4" cy="425.0" r="9" fill="#ea580c" stroke="#ffffff" stroke-width="3"/>
+<text class="metric-value" x="1083.0" y="455.0" text-anchor="end">9.24e-06 — 5.31e-05</text>
+<text class="metric-label" x="443.0" y="541.0">Radial scale</text>
+<text class="metric-scale verdict-good" x="443.0" y="568.0">4/4 clear</text>
+<line x1="1001.9" y1="550.0" x2="1039.7" y2="550.0" stroke="#059669" stroke-width="8" stroke-linecap="round"/>
+<circle cx="1014.8" cy="550.0" r="9" fill="#059669" stroke="#ffffff" stroke-width="3"/>
+<text class="metric-value" x="1083.0" y="580.0" text-anchor="end">1.52e-02 — 3.65e-02</text>
+<text class="panel-title" x="1173.0" y="181.0">Localization observations</text>
+<text class="metric-label" x="1173.0" y="224.0">Reference-baseline dilution</text>
+<rect class="track" x="1173.0" y="248.0" width="349.0" height="22.0" rx="11"/>
+<rect x="1173.0" y="248.0" width="218.1" height="22.0" rx="11" fill="#64748b"/>
+<text class="metric-value" x="1522.0" y="240.0" text-anchor="end">10/16</text>
+<text class="claim" x="1173.0" y="303.0">Shared with passing controls</text>
+<text class="metric-label" x="1173.0" y="363.0">Pre-FF norm attenuation</text>
+<rect class="track" x="1173.0" y="387.0" width="349.0" height="22.0" rx="11"/>
+<rect x="1173.0" y="387.0" width="87.2" height="22.0" rx="11" fill="#ea580c"/>
+<text class="metric-value" x="1522.0" y="379.0" text-anchor="end">4/16</text>
+<text class="claim" x="1173.0" y="442.0">Exclusive to failing null witnesses</text>
+<text class="section-label" x="1173.0" y="502.0">NEGATIVE CONTROLS</text>
+<text class="body" x="1173.0" y="539.0">0 retained-Fisher misses</text>
+<text class="body" x="1173.0" y="575.0">0 residual cancellations</text>
+<text class="metric-scale verdict-bad" x="1173.0" y="642.0">LOCALIZATION, NOT A RESCUE</text>
+<rect class="callout" x="50.0" y="720.0" width="1500.0" height="132.0" rx="16"/>
+<text class="footer-strong" x="76.0" y="758.0">
+<tspan x="76.0" dy="0.0">The retrospective teacher-path trace reproduced all 40 opened collision targets. Twelve of 16 canonical gate witnesses remained below one percent.</tspan>
+<tspan x="76.0" dy="23.0">Reference-baseline relative dilution occurred in both passing and failing controls, while pre-FF normalization attenuation was exclusive to the</tspan>
+<tspan x="76.0" dy="23.0">four failing null witnesses.</tspan>
+</text>
+<text class="footer" x="76.0" y="832.0">Boundary: V2 remains a composite-control failure; any compiler change informed by this opened panel requires V3.</text>
+<text class="footer" x="50.0" y="890.0">
+<tspan x="50.0" dy="0.0">Scope: source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, and a fresh sealed v3 contrast assessment of the</tspan>
+<tspan x="50.0" dy="18.0">exact frozen rank-8 provider after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim</tspan>
+</text>
+</svg>

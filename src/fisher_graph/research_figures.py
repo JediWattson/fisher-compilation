@@ -19,6 +19,12 @@ DEFAULT_DIAGNOSTIC_OUTPUT = Path("docs/images/l3-l4-rank-diagnostic.svg")
 DEFAULT_BILINEAR_OUTPUT = Path(
     "docs/images/bilinear-spectral-assessment.svg"
 )
+DEFAULT_ATTENUATION_OUTPUT = Path(
+    "docs/images/reference-provider-collision-attenuation.svg"
+)
+DEFAULT_V3_ASSESSMENT_OUTPUT = Path(
+    "docs/images/reference-provider-v3-assessment.svg"
+)
 
 
 @dataclass(frozen=True)
@@ -147,12 +153,146 @@ class ReferenceProviderDiagnostic:
 
 
 @dataclass(frozen=True)
+class CollisionAttenuationFamily:
+    family_id: str
+    pair_count: int
+    gate_witness_count: int
+    gate_witnesses_at_or_above_threshold: int
+    target_relative_difference_minimum: float
+    target_relative_difference_median: float
+    target_relative_difference_maximum: float
+    gate_witness_conclusion: str
+    reference_baseline_relative_dilution_count: int
+    pre_ff_norm_attenuation_count: int
+
+
+@dataclass(frozen=True)
+class ReferenceProviderCollisionAttenuationDiagnostic:
+    protocol_scope: str
+    source_report_sha256: str
+    logical_artifact_sha256: str
+    tensor_file_sha256: str
+    source_assessment_artifact_sha256: str
+    source_assessment_report_sha256: str
+    collision_threshold: float
+    collision_endpoint_count: int
+    all_target_hashes_match_opened_assessment: bool
+    collision_group_count: int
+    unordered_pair_count: int
+    gate_witness_count: int
+    numerically_valid_gate_witness_count: int
+    gate_witnesses_at_or_above_threshold: int
+    gate_witnesses_below_threshold: int
+    families: tuple[CollisionAttenuationFamily, ...]
+    reference_baseline_relative_dilution_count: int
+    pre_ff_norm_attenuation_count: int
+    observations_shared_with_passing_controls: tuple[str, ...]
+    observations_exclusive_to_failed_witnesses: tuple[str, ...]
+    failed_witnesses_with_retained_fisher_subspace_miss: int
+    minimum_failed_witness_retained_64_fisher_energy_fraction: float
+    failed_witnesses_with_residual_attention_cancellation: int
+    maximum_jvp_vjp_adjoint_relative_error: float
+    maximum_pre_source_jvp_energy_fraction: float
+    diagnostic_conclusion: str
+    candidate_predictions_entered_collision_metric: bool
+    assessment_panel_previously_opened: bool
+    new_sealed_panel_opened: bool
+    assessment_score_recomputed: bool
+    candidate_refit_performed: bool
+    candidate_reselection_performed: bool
+    candidate_tracking_failure_can_be_assigned: bool
+    formal_v2_decision_changed: bool
+    target_derived_vjp_may_become_compiler_input: bool
+    fresh_v3_assessment_required: bool
+    interpretation: str
+    not_proven: str
+
+
+@dataclass(frozen=True)
+class ReferenceProviderV3ContrastFamily:
+    family_id: str
+    intent: str
+    planned_contrast_count: int
+    required_eligible_count: int
+    teacher_qualified_contrast_count: int
+    candidate_scored_count: int
+    candidate_pass_count: int
+    decision_status: str
+    qualified_rank_strata: tuple[str, ...]
+    retained_and_discarded_covered: bool
+    macro_rms_contrast_relative_error: float | None
+    worst_contrast_relative_error: float | None
+    minimum_direction_cosine: float | None
+    minimum_projection_gain: float | None
+    maximum_projection_gain: float | None
+    maximum_orthogonal_leakage: float | None
+    maximum_candidate_null_relative_effect_upper: float | None
+    maximum_candidate_null_relative_error_upper: float | None
+
+
+@dataclass(frozen=True)
+class ReferenceProviderV3Assessment:
+    protocol_scope: str
+    source_report_sha256: str
+    logical_artifact_sha256: str
+    tensor_file_sha256: str
+    protocol_sha256: str
+    panel_spec_sha256: str
+    measured_panel_sha256: str
+    code_bundle_sha256: str
+    claim_receipt_sha256: str
+    claim_uniqueness_sha256: str
+    assessment_probe_count: int
+    ordinary_fidelity_probe_count: int
+    contrast_probe_count: int
+    contrast_group_count: int
+    contrast_pair_count: int
+    selected_candidate_id: str
+    selected_stored_scalar_count: int
+    assessment_refit_performed: bool
+    assessment_reselection_performed: bool
+    assessment_claim_consumed: bool
+    ordinary_fidelity_passed: bool
+    ordinary_fidelity_and_structure_gates_passed: int
+    ordinary_fidelity_and_structure_gate_count: int
+    ordinary_fidelity_fisher_weighted_relative_error: float
+    ordinary_fidelity_reference_cosine: float
+    ordinary_fidelity_maximum_per_probe_p90_relative_error: float
+    ordinary_fidelity_worst_family_relative_error: float
+    ordinary_fidelity_error_reduction_vs_constant: float
+    ordinary_fidelity_error_reduction_vs_position_only: float
+    ordinary_fidelity_in_support_fraction: float
+    ordinary_fidelity_prepared_vs_analytic_relative_error: float
+    ordinary_fidelity_causality_violation: float
+    ordinary_fidelity_padding_violation: float
+    ordinary_fidelity_repeat_relative_error: float
+    contrast_overall_status: str
+    formal_outcome: str
+    provider_passed: bool
+    contrast_families: tuple[ReferenceProviderV3ContrastFamily, ...]
+    all_families_cover_retained_and_discarded_strata: bool
+    weak_teacher_contrasts_entered_candidate_relative_metrics: bool
+    intended_null_contrasts_entered_direction_metrics: bool
+    candidate_parameters_changed: bool
+    natural_prompt_transfer_tested: bool
+    nll_measured: bool
+    whole_model_replacement_tested: bool
+    model_parameter_compression_claim: bool
+    latency_measured: bool
+    interpretation: str
+    next_rung: str
+    not_proven: str
+
+
+@dataclass(frozen=True)
 class ResearchFigureData:
     sources: tuple[ResearchSource, ...]
     stages: tuple[ResearchStage, ...]
     diagnostic: L3L4Diagnostic
     bilinear: BilinearDiagnostic
     reference_provider: ReferenceProviderDiagnostic
+    collision_attenuation: ReferenceProviderCollisionAttenuationDiagnostic
+    reference_provider_v3: ReferenceProviderV3Assessment
     claim_scope: str
 
 
@@ -194,6 +334,15 @@ def _number(
         raise ValueError(f"{path} must be finite and at least {minimum}")
     if maximum is not None and result > maximum:
         raise ValueError(f"{path} must be at most {maximum}")
+    return result
+
+
+def _signed_number(value: object, path: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{path} must be numeric")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{path} must be finite")
     return result
 
 
@@ -282,6 +431,8 @@ def extract_research_figure_data(
         "gemma_bilinear_assessment",
         "gemma_reference_provider_v2_compile",
         "gemma_reference_provider_v2_assessment",
+        "gemma_reference_provider_v2_attenuation_localization",
+        "gemma_reference_provider_v3_assessment",
     )
     if tuple(source.source_id for source in sources) != expected_source_ids:
         raise ValueError(
@@ -307,6 +458,7 @@ def extract_research_figure_data(
         "analysis_only",
         "next_experiment",
         "frozen_assessment",
+        "sealed_mixed_result",
     }
     stages: list[ResearchStage] = []
     seen_stage_ids: set[str] = set()
@@ -1010,12 +1162,944 @@ def extract_research_figure_data(
             "reference-provider diagnostic must preserve natural-prompt, "
             "NLL, model-compression, and latency claim boundaries"
         )
+
+    attenuation_value = _object(
+        summary.get("reference_provider_collision_attenuation_diagnostic"),
+        "summary.reference_provider_collision_attenuation_diagnostic",
+    )
+    attenuation_prefix = (
+        "summary.reference_provider_collision_attenuation_diagnostic"
+    )
+    attenuation_fields = set(
+        ReferenceProviderCollisionAttenuationDiagnostic.__dataclass_fields__
+    )
+    if set(attenuation_value) != attenuation_fields:
+        raise ValueError(
+            "summary.reference_provider_collision_attenuation_diagnostic "
+            "fields do not match the frozen format"
+        )
+
+    def attenuation_number(field_name: str) -> float:
+        return _number(
+            attenuation_value.get(field_name),
+            f"{attenuation_prefix}.{field_name}",
+        )
+
+    def attenuation_integer(field_name: str) -> int:
+        return _integer(
+            attenuation_value.get(field_name),
+            f"{attenuation_prefix}.{field_name}",
+        )
+
+    def attenuation_boolean(field_name: str) -> bool:
+        return _boolean(
+            attenuation_value.get(field_name),
+            f"{attenuation_prefix}.{field_name}",
+        )
+
+    families: list[CollisionAttenuationFamily] = []
+    family_fields = set(CollisionAttenuationFamily.__dataclass_fields__)
+    for index, family_value in enumerate(
+        _array(
+            attenuation_value.get("families"),
+            f"{attenuation_prefix}.families",
+        )
+    ):
+        family = _object(
+            family_value,
+            f"{attenuation_prefix}.families[{index}]",
+        )
+        family_prefix = f"{attenuation_prefix}.families[{index}]"
+        if set(family) != family_fields:
+            raise ValueError(
+                f"{family_prefix} fields do not match the frozen format"
+            )
+        row = CollisionAttenuationFamily(
+            family_id=_string(
+                family.get("family_id"),
+                f"{family_prefix}.family_id",
+            ),
+            pair_count=_integer(
+                family.get("pair_count"),
+                f"{family_prefix}.pair_count",
+            ),
+            gate_witness_count=_integer(
+                family.get("gate_witness_count"),
+                f"{family_prefix}.gate_witness_count",
+            ),
+            gate_witnesses_at_or_above_threshold=_integer(
+                family.get("gate_witnesses_at_or_above_threshold"),
+                (
+                    f"{family_prefix}."
+                    "gate_witnesses_at_or_above_threshold"
+                ),
+            ),
+            target_relative_difference_minimum=_number(
+                family.get("target_relative_difference_minimum"),
+                f"{family_prefix}.target_relative_difference_minimum",
+            ),
+            target_relative_difference_median=_number(
+                family.get("target_relative_difference_median"),
+                f"{family_prefix}.target_relative_difference_median",
+            ),
+            target_relative_difference_maximum=_number(
+                family.get("target_relative_difference_maximum"),
+                f"{family_prefix}.target_relative_difference_maximum",
+            ),
+            gate_witness_conclusion=_string(
+                family.get("gate_witness_conclusion"),
+                f"{family_prefix}.gate_witness_conclusion",
+            ),
+            reference_baseline_relative_dilution_count=_integer(
+                family.get(
+                    "reference_baseline_relative_dilution_count"
+                ),
+                (
+                    f"{family_prefix}."
+                    "reference_baseline_relative_dilution_count"
+                ),
+            ),
+            pre_ff_norm_attenuation_count=_integer(
+                family.get("pre_ff_norm_attenuation_count"),
+                f"{family_prefix}.pre_ff_norm_attenuation_count",
+            ),
+        )
+        if not (
+            row.target_relative_difference_minimum
+            <= row.target_relative_difference_median
+            <= row.target_relative_difference_maximum
+        ):
+            raise ValueError(
+                f"{family_prefix} target-relative range must be ordered"
+            )
+        if (
+            row.gate_witnesses_at_or_above_threshold
+            > row.gate_witness_count
+            or row.gate_witness_count > row.pair_count
+        ):
+            raise ValueError(
+                f"{family_prefix} has inconsistent witness accounting"
+            )
+        families.append(row)
+
+    def attenuation_strings(field_name: str) -> tuple[str, ...]:
+        return tuple(
+            _string(
+                value,
+                f"{attenuation_prefix}.{field_name}[{index}]",
+            )
+            for index, value in enumerate(
+                _array(
+                    attenuation_value.get(field_name),
+                    f"{attenuation_prefix}.{field_name}",
+                )
+            )
+        )
+
+    collision_attenuation = ReferenceProviderCollisionAttenuationDiagnostic(
+        protocol_scope=_string(
+            attenuation_value.get("protocol_scope"),
+            f"{attenuation_prefix}.protocol_scope",
+        ),
+        source_report_sha256=_sha256(
+            attenuation_value.get("source_report_sha256"),
+            f"{attenuation_prefix}.source_report_sha256",
+        ),
+        logical_artifact_sha256=_sha256(
+            attenuation_value.get("logical_artifact_sha256"),
+            f"{attenuation_prefix}.logical_artifact_sha256",
+        ),
+        tensor_file_sha256=_sha256(
+            attenuation_value.get("tensor_file_sha256"),
+            f"{attenuation_prefix}.tensor_file_sha256",
+        ),
+        source_assessment_artifact_sha256=_sha256(
+            attenuation_value.get("source_assessment_artifact_sha256"),
+            f"{attenuation_prefix}.source_assessment_artifact_sha256",
+        ),
+        source_assessment_report_sha256=_sha256(
+            attenuation_value.get("source_assessment_report_sha256"),
+            f"{attenuation_prefix}.source_assessment_report_sha256",
+        ),
+        collision_threshold=attenuation_number("collision_threshold"),
+        collision_endpoint_count=attenuation_integer(
+            "collision_endpoint_count"
+        ),
+        all_target_hashes_match_opened_assessment=attenuation_boolean(
+            "all_target_hashes_match_opened_assessment"
+        ),
+        collision_group_count=attenuation_integer("collision_group_count"),
+        unordered_pair_count=attenuation_integer("unordered_pair_count"),
+        gate_witness_count=attenuation_integer("gate_witness_count"),
+        numerically_valid_gate_witness_count=attenuation_integer(
+            "numerically_valid_gate_witness_count"
+        ),
+        gate_witnesses_at_or_above_threshold=attenuation_integer(
+            "gate_witnesses_at_or_above_threshold"
+        ),
+        gate_witnesses_below_threshold=attenuation_integer(
+            "gate_witnesses_below_threshold"
+        ),
+        families=tuple(families),
+        reference_baseline_relative_dilution_count=attenuation_integer(
+            "reference_baseline_relative_dilution_count"
+        ),
+        pre_ff_norm_attenuation_count=attenuation_integer(
+            "pre_ff_norm_attenuation_count"
+        ),
+        observations_shared_with_passing_controls=attenuation_strings(
+            "observations_shared_with_passing_controls"
+        ),
+        observations_exclusive_to_failed_witnesses=attenuation_strings(
+            "observations_exclusive_to_failed_witnesses"
+        ),
+        failed_witnesses_with_retained_fisher_subspace_miss=(
+            attenuation_integer(
+                "failed_witnesses_with_retained_fisher_subspace_miss"
+            )
+        ),
+        minimum_failed_witness_retained_64_fisher_energy_fraction=(
+            attenuation_number(
+                "minimum_failed_witness_retained_64_fisher_energy_fraction"
+            )
+        ),
+        failed_witnesses_with_residual_attention_cancellation=(
+            attenuation_integer(
+                "failed_witnesses_with_residual_attention_cancellation"
+            )
+        ),
+        maximum_jvp_vjp_adjoint_relative_error=attenuation_number(
+            "maximum_jvp_vjp_adjoint_relative_error"
+        ),
+        maximum_pre_source_jvp_energy_fraction=attenuation_number(
+            "maximum_pre_source_jvp_energy_fraction"
+        ),
+        diagnostic_conclusion=_string(
+            attenuation_value.get("diagnostic_conclusion"),
+            f"{attenuation_prefix}.diagnostic_conclusion",
+        ),
+        candidate_predictions_entered_collision_metric=attenuation_boolean(
+            "candidate_predictions_entered_collision_metric"
+        ),
+        assessment_panel_previously_opened=attenuation_boolean(
+            "assessment_panel_previously_opened"
+        ),
+        new_sealed_panel_opened=attenuation_boolean(
+            "new_sealed_panel_opened"
+        ),
+        assessment_score_recomputed=attenuation_boolean(
+            "assessment_score_recomputed"
+        ),
+        candidate_refit_performed=attenuation_boolean(
+            "candidate_refit_performed"
+        ),
+        candidate_reselection_performed=attenuation_boolean(
+            "candidate_reselection_performed"
+        ),
+        candidate_tracking_failure_can_be_assigned=attenuation_boolean(
+            "candidate_tracking_failure_can_be_assigned"
+        ),
+        formal_v2_decision_changed=attenuation_boolean(
+            "formal_v2_decision_changed"
+        ),
+        target_derived_vjp_may_become_compiler_input=attenuation_boolean(
+            "target_derived_vjp_may_become_compiler_input"
+        ),
+        fresh_v3_assessment_required=attenuation_boolean(
+            "fresh_v3_assessment_required"
+        ),
+        interpretation=_string(
+            attenuation_value.get("interpretation"),
+            f"{attenuation_prefix}.interpretation",
+        ),
+        not_proven=_string(
+            attenuation_value.get("not_proven"),
+            f"{attenuation_prefix}.not_proven",
+        ),
+    )
+
+    attenuation_source = sources[-2]
+    if (
+        attenuation_source.source_id
+        != "gemma_reference_provider_v2_attenuation_localization"
+        or attenuation_source.sha256
+        != collision_attenuation.source_report_sha256
+        or collision_attenuation.source_assessment_report_sha256
+        != sources[-3].sha256
+        or collision_attenuation.protocol_scope
+        != "retrospective_teacher_path_attenuation_on_consumed_v2_panel"
+        or collision_attenuation.source_assessment_artifact_sha256
+        != "21500080aed580e91b605a6fdd01984dcc41676c0dea96a7813ee0ec4a8cc57d"
+        or collision_attenuation.collision_threshold
+        != reference_provider.assessment_collision_threshold
+        or collision_attenuation.collision_endpoint_count != 40
+        or not collision_attenuation.all_target_hashes_match_opened_assessment
+        or collision_attenuation.collision_group_count != 16
+        or collision_attenuation.unordered_pair_count != 32
+        or collision_attenuation.gate_witness_count != 16
+        or collision_attenuation.numerically_valid_gate_witness_count != 16
+        or collision_attenuation.gate_witnesses_at_or_above_threshold != 4
+        or collision_attenuation.gate_witnesses_below_threshold != 12
+        or tuple(family.family_id for family in families)
+        != ("axis", "null_collision", "radial_collision")
+    ):
+        raise ValueError(
+            "collision-attenuation diagnostic must identify the authenticated "
+            "retrospective v2 teacher-path result"
+        )
+    if (
+        sum(family.pair_count for family in families)
+        != collision_attenuation.unordered_pair_count
+        or sum(family.gate_witness_count for family in families)
+        != collision_attenuation.gate_witness_count
+        or sum(
+            family.gate_witnesses_at_or_above_threshold
+            for family in families
+        )
+        != collision_attenuation.gate_witnesses_at_or_above_threshold
+        or collision_attenuation.gate_witnesses_at_or_above_threshold
+        + collision_attenuation.gate_witnesses_below_threshold
+        != collision_attenuation.gate_witness_count
+        or sum(
+            family.reference_baseline_relative_dilution_count
+            for family in families
+        )
+        != collision_attenuation.reference_baseline_relative_dilution_count
+        or sum(family.pre_ff_norm_attenuation_count for family in families)
+        != collision_attenuation.pre_ff_norm_attenuation_count
+    ):
+        raise ValueError(
+            "collision-attenuation diagnostic has inconsistent aggregate "
+            "accounting"
+        )
+    axis, null_collision, radial_collision = families
+    if (
+        axis.gate_witness_conclusion != "teacher_contrast_ineligible"
+        or null_collision.gate_witness_conclusion
+        != "teacher_contrast_ineligible"
+        or radial_collision.gate_witness_conclusion
+        != "teacher_contrast_eligible"
+        or axis.target_relative_difference_maximum
+        >= collision_attenuation.collision_threshold
+        or null_collision.target_relative_difference_maximum
+        >= collision_attenuation.collision_threshold
+        or radial_collision.target_relative_difference_minimum
+        < collision_attenuation.collision_threshold
+        or not math.isclose(
+            null_collision.target_relative_difference_minimum,
+            reference_provider.assessment_minimum_collision_target_relative_difference,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or collision_attenuation.reference_baseline_relative_dilution_count
+        != 10
+        or collision_attenuation.pre_ff_norm_attenuation_count != 4
+        or collision_attenuation.observations_shared_with_passing_controls
+        != ("reference_baseline_relative_dilution",)
+        or collision_attenuation.observations_exclusive_to_failed_witnesses
+        != ("pre_ff_norm_attenuation",)
+        or collision_attenuation.failed_witnesses_with_retained_fisher_subspace_miss
+        != 0
+        or not math.isclose(
+            collision_attenuation.minimum_failed_witness_retained_64_fisher_energy_fraction,
+            0.9999880706223239,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or collision_attenuation.failed_witnesses_with_residual_attention_cancellation
+        != 0
+        or collision_attenuation.maximum_pre_source_jvp_energy_fraction
+        != 0.0
+        or collision_attenuation.diagnostic_conclusion
+        != (
+            "collision_failure_precedes_candidate_tracking_and_is_a_"
+            "teacher_contrast_eligibility_failure"
+        )
+    ):
+        raise ValueError(
+            "collision-attenuation diagnostic must preserve the reported "
+            "family and mechanism result"
+        )
+    if (
+        collision_attenuation.candidate_predictions_entered_collision_metric
+        or not collision_attenuation.assessment_panel_previously_opened
+        or collision_attenuation.new_sealed_panel_opened
+        or collision_attenuation.assessment_score_recomputed
+        or collision_attenuation.candidate_refit_performed
+        or collision_attenuation.candidate_reselection_performed
+        or collision_attenuation.candidate_tracking_failure_can_be_assigned
+        or collision_attenuation.formal_v2_decision_changed
+        or collision_attenuation.target_derived_vjp_may_become_compiler_input
+        or not collision_attenuation.fresh_v3_assessment_required
+    ):
+        raise ValueError(
+            "collision-attenuation diagnostic must preserve frozen v2 and "
+            "require a fresh v3 assessment"
+        )
+
+    v3_value = _object(
+        summary.get("reference_provider_v3_assessment"),
+        "summary.reference_provider_v3_assessment",
+    )
+    v3_prefix = "summary.reference_provider_v3_assessment"
+    if set(v3_value) != set(ReferenceProviderV3Assessment.__dataclass_fields__):
+        raise ValueError(
+            "summary.reference_provider_v3_assessment fields do not match "
+            "the sealed format"
+        )
+
+    def v3_number(field_name: str) -> float:
+        return _number(
+            v3_value.get(field_name),
+            f"{v3_prefix}.{field_name}",
+        )
+
+    def v3_integer(field_name: str) -> int:
+        return _integer(
+            v3_value.get(field_name),
+            f"{v3_prefix}.{field_name}",
+        )
+
+    def v3_boolean(field_name: str) -> bool:
+        return _boolean(
+            v3_value.get(field_name),
+            f"{v3_prefix}.{field_name}",
+        )
+
+    family_common_fields = {
+        "family_id",
+        "intent",
+        "planned_contrast_count",
+        "required_eligible_count",
+        "teacher_qualified_contrast_count",
+        "candidate_scored_count",
+        "candidate_pass_count",
+        "decision_status",
+        "qualified_rank_strata",
+        "retained_and_discarded_covered",
+    }
+    sensitivity_fields = family_common_fields | {
+        "macro_rms_contrast_relative_error",
+        "worst_contrast_relative_error",
+        "minimum_direction_cosine",
+        "minimum_projection_gain",
+        "maximum_projection_gain",
+        "maximum_orthogonal_leakage",
+    }
+    invariance_fields = family_common_fields | {
+        "maximum_candidate_null_relative_effect_upper",
+        "maximum_candidate_null_relative_error_upper",
+    }
+    v3_families: list[ReferenceProviderV3ContrastFamily] = []
+    for index, family_value in enumerate(
+        _array(
+            v3_value.get("contrast_families"),
+            f"{v3_prefix}.contrast_families",
+        )
+    ):
+        family = _object(
+            family_value,
+            f"{v3_prefix}.contrast_families[{index}]",
+        )
+        family_prefix = f"{v3_prefix}.contrast_families[{index}]"
+        intent = _string(family.get("intent"), f"{family_prefix}.intent")
+        expected_fields = (
+            sensitivity_fields if intent == "sensitivity" else invariance_fields
+        )
+        if intent not in {"sensitivity", "invariance"}:
+            raise ValueError(f"{family_prefix}.intent is unsupported")
+        if set(family) != expected_fields:
+            raise ValueError(
+                f"{family_prefix} fields do not match the sealed {intent} format"
+            )
+        qualified_rank_strata = tuple(
+            _string(value, f"{family_prefix}.qualified_rank_strata[{item_index}]")
+            for item_index, value in enumerate(
+                _array(
+                    family.get("qualified_rank_strata"),
+                    f"{family_prefix}.qualified_rank_strata",
+                )
+            )
+        )
+        if (
+            len(set(qualified_rank_strata)) != len(qualified_rank_strata)
+            or any(
+                stratum not in {"retained", "discarded"}
+                for stratum in qualified_rank_strata
+            )
+        ):
+            raise ValueError(
+                f"{family_prefix}.qualified_rank_strata must be unique "
+                "retained/discarded labels"
+            )
+        planned_count = _integer(
+            family.get("planned_contrast_count"),
+            f"{family_prefix}.planned_contrast_count",
+        )
+        teacher_count = _integer(
+            family.get("teacher_qualified_contrast_count"),
+            f"{family_prefix}.teacher_qualified_contrast_count",
+        )
+        candidate_scored_count = _integer(
+            family.get("candidate_scored_count"),
+            f"{family_prefix}.candidate_scored_count",
+        )
+        candidate_pass_count = _integer(
+            family.get("candidate_pass_count"),
+            f"{family_prefix}.candidate_pass_count",
+        )
+        if not (
+            candidate_pass_count
+            <= candidate_scored_count
+            <= teacher_count
+            <= planned_count
+        ):
+            raise ValueError(
+                f"{family_prefix} has inconsistent contrast accounting"
+            )
+        if intent == "sensitivity":
+            minimum_direction_cosine = _signed_number(
+                family.get("minimum_direction_cosine"),
+                f"{family_prefix}.minimum_direction_cosine",
+            )
+            minimum_projection_gain = _signed_number(
+                family.get("minimum_projection_gain"),
+                f"{family_prefix}.minimum_projection_gain",
+            )
+            maximum_projection_gain = _signed_number(
+                family.get("maximum_projection_gain"),
+                f"{family_prefix}.maximum_projection_gain",
+            )
+            if not -1.0 <= minimum_direction_cosine <= 1.0:
+                raise ValueError(
+                    f"{family_prefix}.minimum_direction_cosine must be "
+                    "between -1 and 1"
+                )
+            if minimum_projection_gain > maximum_projection_gain:
+                raise ValueError(
+                    f"{family_prefix} projection-gain range must be ordered"
+                )
+            macro_rms_error = _number(
+                family.get("macro_rms_contrast_relative_error"),
+                f"{family_prefix}.macro_rms_contrast_relative_error",
+            )
+            worst_error = _number(
+                family.get("worst_contrast_relative_error"),
+                f"{family_prefix}.worst_contrast_relative_error",
+            )
+            maximum_orthogonal_leakage = _number(
+                family.get("maximum_orthogonal_leakage"),
+                f"{family_prefix}.maximum_orthogonal_leakage",
+            )
+            if macro_rms_error > worst_error:
+                raise ValueError(
+                    f"{family_prefix} RMS error cannot exceed worst error"
+                )
+            maximum_null_effect = None
+            maximum_null_error = None
+        else:
+            macro_rms_error = None
+            worst_error = None
+            minimum_direction_cosine = None
+            minimum_projection_gain = None
+            maximum_projection_gain = None
+            maximum_orthogonal_leakage = None
+            maximum_null_effect = _number(
+                family.get("maximum_candidate_null_relative_effect_upper"),
+                (
+                    f"{family_prefix}."
+                    "maximum_candidate_null_relative_effect_upper"
+                ),
+            )
+            maximum_null_error = _number(
+                family.get("maximum_candidate_null_relative_error_upper"),
+                (
+                    f"{family_prefix}."
+                    "maximum_candidate_null_relative_error_upper"
+                ),
+            )
+        v3_families.append(
+            ReferenceProviderV3ContrastFamily(
+                family_id=_string(
+                    family.get("family_id"),
+                    f"{family_prefix}.family_id",
+                ),
+                intent=intent,
+                planned_contrast_count=planned_count,
+                required_eligible_count=_integer(
+                    family.get("required_eligible_count"),
+                    f"{family_prefix}.required_eligible_count",
+                ),
+                teacher_qualified_contrast_count=teacher_count,
+                candidate_scored_count=candidate_scored_count,
+                candidate_pass_count=candidate_pass_count,
+                decision_status=_string(
+                    family.get("decision_status"),
+                    f"{family_prefix}.decision_status",
+                ),
+                qualified_rank_strata=qualified_rank_strata,
+                retained_and_discarded_covered=_boolean(
+                    family.get("retained_and_discarded_covered"),
+                    f"{family_prefix}.retained_and_discarded_covered",
+                ),
+                macro_rms_contrast_relative_error=macro_rms_error,
+                worst_contrast_relative_error=worst_error,
+                minimum_direction_cosine=minimum_direction_cosine,
+                minimum_projection_gain=minimum_projection_gain,
+                maximum_projection_gain=maximum_projection_gain,
+                maximum_orthogonal_leakage=maximum_orthogonal_leakage,
+                maximum_candidate_null_relative_effect_upper=maximum_null_effect,
+                maximum_candidate_null_relative_error_upper=maximum_null_error,
+            )
+        )
+
+    reference_provider_v3 = ReferenceProviderV3Assessment(
+        protocol_scope=_string(
+            v3_value.get("protocol_scope"),
+            f"{v3_prefix}.protocol_scope",
+        ),
+        source_report_sha256=_sha256(
+            v3_value.get("source_report_sha256"),
+            f"{v3_prefix}.source_report_sha256",
+        ),
+        logical_artifact_sha256=_sha256(
+            v3_value.get("logical_artifact_sha256"),
+            f"{v3_prefix}.logical_artifact_sha256",
+        ),
+        tensor_file_sha256=_sha256(
+            v3_value.get("tensor_file_sha256"),
+            f"{v3_prefix}.tensor_file_sha256",
+        ),
+        protocol_sha256=_sha256(
+            v3_value.get("protocol_sha256"),
+            f"{v3_prefix}.protocol_sha256",
+        ),
+        panel_spec_sha256=_sha256(
+            v3_value.get("panel_spec_sha256"),
+            f"{v3_prefix}.panel_spec_sha256",
+        ),
+        measured_panel_sha256=_sha256(
+            v3_value.get("measured_panel_sha256"),
+            f"{v3_prefix}.measured_panel_sha256",
+        ),
+        code_bundle_sha256=_sha256(
+            v3_value.get("code_bundle_sha256"),
+            f"{v3_prefix}.code_bundle_sha256",
+        ),
+        claim_receipt_sha256=_sha256(
+            v3_value.get("claim_receipt_sha256"),
+            f"{v3_prefix}.claim_receipt_sha256",
+        ),
+        claim_uniqueness_sha256=_sha256(
+            v3_value.get("claim_uniqueness_sha256"),
+            f"{v3_prefix}.claim_uniqueness_sha256",
+        ),
+        assessment_probe_count=v3_integer("assessment_probe_count"),
+        ordinary_fidelity_probe_count=v3_integer(
+            "ordinary_fidelity_probe_count"
+        ),
+        contrast_probe_count=v3_integer("contrast_probe_count"),
+        contrast_group_count=v3_integer("contrast_group_count"),
+        contrast_pair_count=v3_integer("contrast_pair_count"),
+        selected_candidate_id=_string(
+            v3_value.get("selected_candidate_id"),
+            f"{v3_prefix}.selected_candidate_id",
+        ),
+        selected_stored_scalar_count=v3_integer(
+            "selected_stored_scalar_count"
+        ),
+        assessment_refit_performed=v3_boolean(
+            "assessment_refit_performed"
+        ),
+        assessment_reselection_performed=v3_boolean(
+            "assessment_reselection_performed"
+        ),
+        assessment_claim_consumed=v3_boolean("assessment_claim_consumed"),
+        ordinary_fidelity_passed=v3_boolean("ordinary_fidelity_passed"),
+        ordinary_fidelity_and_structure_gates_passed=v3_integer(
+            "ordinary_fidelity_and_structure_gates_passed"
+        ),
+        ordinary_fidelity_and_structure_gate_count=v3_integer(
+            "ordinary_fidelity_and_structure_gate_count"
+        ),
+        ordinary_fidelity_fisher_weighted_relative_error=v3_number(
+            "ordinary_fidelity_fisher_weighted_relative_error"
+        ),
+        ordinary_fidelity_reference_cosine=v3_number(
+            "ordinary_fidelity_reference_cosine"
+        ),
+        ordinary_fidelity_maximum_per_probe_p90_relative_error=v3_number(
+            "ordinary_fidelity_maximum_per_probe_p90_relative_error"
+        ),
+        ordinary_fidelity_worst_family_relative_error=v3_number(
+            "ordinary_fidelity_worst_family_relative_error"
+        ),
+        ordinary_fidelity_error_reduction_vs_constant=v3_number(
+            "ordinary_fidelity_error_reduction_vs_constant"
+        ),
+        ordinary_fidelity_error_reduction_vs_position_only=v3_number(
+            "ordinary_fidelity_error_reduction_vs_position_only"
+        ),
+        ordinary_fidelity_in_support_fraction=v3_number(
+            "ordinary_fidelity_in_support_fraction"
+        ),
+        ordinary_fidelity_prepared_vs_analytic_relative_error=v3_number(
+            "ordinary_fidelity_prepared_vs_analytic_relative_error"
+        ),
+        ordinary_fidelity_causality_violation=v3_number(
+            "ordinary_fidelity_causality_violation"
+        ),
+        ordinary_fidelity_padding_violation=v3_number(
+            "ordinary_fidelity_padding_violation"
+        ),
+        ordinary_fidelity_repeat_relative_error=v3_number(
+            "ordinary_fidelity_repeat_relative_error"
+        ),
+        contrast_overall_status=_string(
+            v3_value.get("contrast_overall_status"),
+            f"{v3_prefix}.contrast_overall_status",
+        ),
+        formal_outcome=_string(
+            v3_value.get("formal_outcome"),
+            f"{v3_prefix}.formal_outcome",
+        ),
+        provider_passed=v3_boolean("provider_passed"),
+        contrast_families=tuple(v3_families),
+        all_families_cover_retained_and_discarded_strata=v3_boolean(
+            "all_families_cover_retained_and_discarded_strata"
+        ),
+        weak_teacher_contrasts_entered_candidate_relative_metrics=v3_boolean(
+            "weak_teacher_contrasts_entered_candidate_relative_metrics"
+        ),
+        intended_null_contrasts_entered_direction_metrics=v3_boolean(
+            "intended_null_contrasts_entered_direction_metrics"
+        ),
+        candidate_parameters_changed=v3_boolean("candidate_parameters_changed"),
+        natural_prompt_transfer_tested=v3_boolean(
+            "natural_prompt_transfer_tested"
+        ),
+        nll_measured=v3_boolean("nll_measured"),
+        whole_model_replacement_tested=v3_boolean(
+            "whole_model_replacement_tested"
+        ),
+        model_parameter_compression_claim=v3_boolean(
+            "model_parameter_compression_claim"
+        ),
+        latency_measured=v3_boolean("latency_measured"),
+        interpretation=_string(
+            v3_value.get("interpretation"),
+            f"{v3_prefix}.interpretation",
+        ),
+        next_rung=_string(
+            v3_value.get("next_rung"),
+            f"{v3_prefix}.next_rung",
+        ),
+        not_proven=_string(
+            v3_value.get("not_proven"),
+            f"{v3_prefix}.not_proven",
+        ),
+    )
+
+    v3_source = sources[-1]
+    radial, signed, intended_null = reference_provider_v3.contrast_families
+    if (
+        v3_source.source_id != "gemma_reference_provider_v3_assessment"
+        or v3_source.sha256 != reference_provider_v3.source_report_sha256
+        or reference_provider_v3.protocol_scope
+        != "fresh_sealed_synthetic_contrast_assessment_of_exact_frozen_v2_rank8_provider"
+        or reference_provider_v3.logical_artifact_sha256
+        != "60e83fa843e4a2878f597f0f924e736d83b4165b2bdbb3bd40aab0ca24905594"
+        or reference_provider_v3.tensor_file_sha256
+        != "49ef76479663eefa66d67a8ae90f1f03cbaff266602368f147df1518adf472d3"
+        or reference_provider_v3.protocol_sha256
+        != "65959324d2815621a1d6420bdb4d41a9db74c4214205088da9545088bc19ce03"
+        or reference_provider_v3.panel_spec_sha256
+        != "919126906cc6f07074d76599843504ea81462485e8f93ee6d35c71732979249e"
+        or reference_provider_v3.measured_panel_sha256
+        != "4486367eb754ae197a25451ec86329cd6fb01d51c5c3bef32246f4ca0d30879a"
+        or reference_provider_v3.code_bundle_sha256
+        != "af06c779c18bf9bc860ca4683ed37c93a0954f090411c544b8062ddfa29086a0"
+        or reference_provider_v3.claim_receipt_sha256
+        != "0dec295146d80db94483d176d3dc0d93473e8a48957a9d41cee080d0744b8487"
+        or reference_provider_v3.claim_uniqueness_sha256
+        != "c7c361118fea271f8a7a968aa53a47edb366ed80c1089c5a8dbb57c423c83e95"
+        or (
+            reference_provider_v3.assessment_probe_count,
+            reference_provider_v3.ordinary_fidelity_probe_count,
+            reference_provider_v3.contrast_probe_count,
+            reference_provider_v3.contrast_group_count,
+            reference_provider_v3.contrast_pair_count,
+        )
+        != (48, 16, 32, 12, 24)
+        or reference_provider_v3.selected_candidate_id != "spectral-r08-t08"
+        or reference_provider_v3.selected_stored_scalar_count != 910
+    ):
+        raise ValueError(
+            "reference-provider v3 assessment must identify the authenticated "
+            "sealed panel and exact frozen rank-8 candidate"
+        )
+    if (
+        reference_provider_v3.assessment_refit_performed
+        or reference_provider_v3.assessment_reselection_performed
+        or not reference_provider_v3.assessment_claim_consumed
+        or not reference_provider_v3.ordinary_fidelity_passed
+        or (
+            reference_provider_v3.ordinary_fidelity_and_structure_gates_passed,
+            reference_provider_v3.ordinary_fidelity_and_structure_gate_count,
+        )
+        != (12, 12)
+        or reference_provider_v3.contrast_overall_status != "panel_inconclusive"
+        or reference_provider_v3.formal_outcome
+        != "panel_inconclusive_sensitivity"
+        or reference_provider_v3.provider_passed
+        or reference_provider_v3.all_families_cover_retained_and_discarded_strata
+    ):
+        raise ValueError(
+            "reference-provider v3 assessment must preserve the ordinary-"
+            "fidelity pass and panel-inconclusive provider result"
+        )
+    if (
+        tuple(family.family_id for family in v3_families)
+        != (
+            "radial_block_sensitivity",
+            "signed_block_sensitivity",
+            "null_single_invariance",
+        )
+        or (
+            radial.intent,
+            radial.planned_contrast_count,
+            radial.required_eligible_count,
+            radial.teacher_qualified_contrast_count,
+            radial.candidate_scored_count,
+            radial.candidate_pass_count,
+            radial.decision_status,
+            radial.qualified_rank_strata,
+            radial.retained_and_discarded_covered,
+        )
+        != (
+            "sensitivity",
+            8,
+            6,
+            8,
+            8,
+            0,
+            "candidate_fail",
+            ("discarded", "retained"),
+            True,
+        )
+        or (
+            signed.intent,
+            signed.planned_contrast_count,
+            signed.required_eligible_count,
+            signed.teacher_qualified_contrast_count,
+            signed.candidate_scored_count,
+            signed.candidate_pass_count,
+            signed.decision_status,
+            signed.qualified_rank_strata,
+            signed.retained_and_discarded_covered,
+        )
+        != (
+            "sensitivity",
+            4,
+            4,
+            1,
+            1,
+            0,
+            "panel_inconclusive",
+            ("retained",),
+            False,
+        )
+        or (
+            intended_null.intent,
+            intended_null.planned_contrast_count,
+            intended_null.required_eligible_count,
+            intended_null.teacher_qualified_contrast_count,
+            intended_null.candidate_scored_count,
+            intended_null.candidate_pass_count,
+            intended_null.decision_status,
+            intended_null.qualified_rank_strata,
+            intended_null.retained_and_discarded_covered,
+        )
+        != (
+            "invariance",
+            12,
+            12,
+            12,
+            12,
+            7,
+            "candidate_fail",
+            ("discarded", "retained"),
+            True,
+        )
+    ):
+        raise ValueError(
+            "reference-provider v3 assessment must preserve sealed contrast-"
+            "family accounting and decisions"
+        )
+    if (
+        not math.isclose(
+            reference_provider_v3.ordinary_fidelity_fisher_weighted_relative_error,
+            0.06772962100197875,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            reference_provider_v3.ordinary_fidelity_reference_cosine,
+            0.9977221137523479,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            radial.worst_contrast_relative_error or 0.0,
+            1.302609636349226,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            signed.minimum_direction_cosine or 0.0,
+            -0.9215394885190904,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            signed.minimum_projection_gain or 0.0,
+            -2.4427641222529104,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            intended_null.maximum_candidate_null_relative_effect_upper or 0.0,
+            0.025328387634504894,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        raise ValueError(
+            "reference-provider v3 assessment must preserve the sealed "
+            "ordinary, radial, signed, and null measurements"
+        )
+    if (
+        reference_provider_v3.weak_teacher_contrasts_entered_candidate_relative_metrics
+        or reference_provider_v3.intended_null_contrasts_entered_direction_metrics
+        or reference_provider_v3.candidate_parameters_changed
+        or reference_provider_v3.natural_prompt_transfer_tested
+        or reference_provider_v3.nll_measured
+        or reference_provider_v3.whole_model_replacement_tested
+        or reference_provider_v3.model_parameter_compression_claim
+        or reference_provider_v3.latency_measured
+    ):
+        raise ValueError(
+            "reference-provider v3 assessment must preserve metric-isolation "
+            "and downstream claim boundaries"
+        )
     return ResearchFigureData(
         sources=tuple(sources),
         stages=tuple(stages),
         diagnostic=diagnostic,
         bilinear=bilinear,
         reference_provider=reference_provider,
+        collision_attenuation=collision_attenuation,
+        reference_provider_v3=reference_provider_v3,
         claim_scope=_string(summary.get("claim_scope"), "summary.claim_scope"),
     )
 
@@ -1220,6 +2304,7 @@ _STATUS_LABELS = {
     "analysis_only": "ANALYSIS ONLY",
     "next_experiment": "NEXT EXPERIMENT",
     "frozen_assessment": "FROZEN ASSESSMENT",
+    "sealed_mixed_result": "SEALED MIXED RESULT",
 }
 _STATUS_COLORS = {
     "verified_reference": ("#dcfce7", "#166534", "#22c55e"),
@@ -1228,6 +2313,7 @@ _STATUS_COLORS = {
     "analysis_only": ("#fee2e2", "#991b1b", "#ef4444"),
     "next_experiment": ("#ede9fe", "#5b21b6", "#8b5cf6"),
     "frozen_assessment": ("#ccfbf1", "#115e59", "#14b8a6"),
+    "sealed_mixed_result": ("#ffedd5", "#9a3412", "#f97316"),
 }
 
 
@@ -2143,11 +3229,868 @@ def render_bilinear_spectral_assessment(
     return "\n".join(svg) + "\n"
 
 
+def render_reference_provider_collision_attenuation(
+    data: ResearchFigureData,
+    *,
+    source_sha256: str,
+    source_label: str,
+) -> str:
+    """Render the retrospective teacher-path collision localization."""
+
+    result = data.collision_attenuation
+    width = 1600
+    height = 930
+    svg = _svg_start(
+        width=width,
+        height=height,
+        title="Retrospective reference-provider collision attenuation",
+        description=(
+            "A post-assessment diagnostic preserves the frozen v2 failure while "
+            "showing canonical collision-witness contrast ranges and two "
+            "teacher-path observations. Twelve of sixteen witnesses remain "
+            "below the one-percent teacher-separation threshold. A fresh v3 "
+            "assessment remains required."
+        ),
+        source_label=source_label,
+        source_sha256=source_sha256,
+        sources=data.sources,
+    )
+    panel_y = 135.0
+    panel_height = 555.0
+    panel_specs = (
+        (50.0, 335.0),
+        (415.0, 700.0),
+        (1145.0, 405.0),
+    )
+    svg.extend(
+        [
+            _text(
+                50,
+                58,
+                "Collision attenuation — what the opened V2 panel reveals",
+                css_class="figure-title",
+            ),
+            _text(
+                50,
+                91,
+                (
+                    "Retrospective teacher-path localization · no candidate "
+                    "refit, reselection, or score recomputation"
+                ),
+                css_class="figure-subtitle",
+            ),
+        ]
+    )
+    for x, panel_width in panel_specs:
+        svg.append(
+            f'<rect class="panel" x="{x:.1f}" y="{panel_y:.1f}" '
+            f'width="{panel_width:.1f}" height="{panel_height:.1f}" rx="18"/>'
+        )
+
+    left_x = panel_specs[0][0] + 28.0
+    left_width = panel_specs[0][1] - 56.0
+    passed_width = (
+        left_width
+        * result.gate_witnesses_at_or_above_threshold
+        / result.gate_witness_count
+    )
+    failed_width = left_width - passed_width
+    svg.extend(
+        [
+            _text(left_x, 181, "Frozen result", css_class="panel-title"),
+            _text(
+                left_x,
+                225,
+                f"{result.gate_witness_count} canonical witnesses",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{left_x:.1f}" y="258.0" '
+                f'width="{left_width:.1f}" height="28.0" rx="14"/>'
+            ),
+            (
+                f'<rect x="{left_x:.1f}" y="258.0" '
+                f'width="{failed_width:.1f}" height="28.0" rx="14" '
+                'fill="#dc2626"/>'
+            ),
+            (
+                f'<rect x="{left_x + failed_width:.1f}" y="258.0" '
+                f'width="{passed_width:.1f}" height="28.0" rx="14" '
+                'fill="#059669"/>'
+            ),
+            _text(
+                left_x,
+                323,
+                f"{result.gate_witnesses_below_threshold} below 1%",
+                css_class="metric-label verdict-bad",
+            ),
+            _text(
+                left_x + left_width,
+                323,
+                f"{result.gate_witnesses_at_or_above_threshold} at/above",
+                css_class="metric-label verdict-good",
+                anchor="end",
+            ),
+            _text(left_x, 379, "AUTHENTICATED REPLAY", css_class="section-label"),
+            _text(
+                left_x,
+                414,
+                (
+                    f"{result.collision_endpoint_count}/"
+                    f"{result.collision_endpoint_count} target hashes match"
+                ),
+                css_class="body",
+            ),
+            _text(left_x, 470, "SAFETY BOUNDARY", css_class="section-label"),
+            _text(left_x, 505, "Opened V2 panel only", css_class="body"),
+            _text(left_x, 539, "Candidate predictions excluded", css_class="body"),
+            _text(left_x, 573, "Target VJP stays diagnostic", css_class="body"),
+            _text(
+                left_x,
+                642,
+                "FORMAL V2 FAILURE UNCHANGED",
+                css_class="metric-scale verdict-bad",
+            ),
+        ]
+    )
+
+    middle_x = panel_specs[1][0] + 28.0
+    chart_x = middle_x + 145.0
+    chart_width = panel_specs[1][1] - 205.0
+    log_minimum = -6.0
+    log_maximum = -1.0
+
+    def contrast_x(value: float) -> float:
+        fraction = (
+            math.log10(value) - log_minimum
+        ) / (log_maximum - log_minimum)
+        return chart_x + chart_width * fraction
+
+    svg.extend(
+        [
+            _text(middle_x, 181, "Teacher contrast by family", css_class="panel-title"),
+            _text(
+                middle_x,
+                213,
+                "Minimum — median — maximum across canonical gate witnesses",
+                css_class="claim",
+            ),
+        ]
+    )
+    for exponent in range(-6, 0):
+        x = chart_x + chart_width * (
+            (float(exponent) - log_minimum) / (log_maximum - log_minimum)
+        )
+        svg.extend(
+            [
+                (
+                    f'<line x1="{x:.1f}" y1="242.0" x2="{x:.1f}" y2="570.0" '
+                    'stroke="#cbd5e1" stroke-width="1"/>'
+                ),
+                _text(
+                    x,
+                    597,
+                    f"1e{exponent}",
+                    css_class="metric-scale",
+                    anchor="middle",
+                ),
+            ]
+        )
+    threshold_x = contrast_x(result.collision_threshold)
+    svg.extend(
+        [
+            (
+                f'<line x1="{threshold_x:.1f}" y1="231.0" '
+                f'x2="{threshold_x:.1f}" y2="570.0" '
+                'stroke="#f97316" stroke-width="3" stroke-dasharray="8 6"/>'
+            ),
+            _text(
+                threshold_x,
+                226,
+                "1% gate",
+                css_class="metric-label",
+                anchor="middle",
+            ),
+        ]
+    )
+    family_labels = {
+        "axis": "Axis sign",
+        "null_collision": "Gain-null",
+        "radial_collision": "Radial scale",
+    }
+    family_colors = {
+        "axis": "#dc2626",
+        "null_collision": "#ea580c",
+        "radial_collision": "#059669",
+    }
+    for index, family in enumerate(result.families):
+        y = 300.0 + index * 125.0
+        minimum_x = contrast_x(family.target_relative_difference_minimum)
+        median_x = contrast_x(family.target_relative_difference_median)
+        maximum_x = contrast_x(family.target_relative_difference_maximum)
+        color = family_colors[family.family_id]
+        verdict_class = (
+            "metric-scale verdict-good"
+            if family.gate_witnesses_at_or_above_threshold
+            == family.gate_witness_count
+            else "metric-scale verdict-bad"
+        )
+        svg.extend(
+            [
+                _text(
+                    middle_x,
+                    y - 9.0,
+                    family_labels[family.family_id],
+                    css_class="metric-label",
+                ),
+                _text(
+                    middle_x,
+                    y + 18.0,
+                    (
+                        f"{family.gate_witnesses_at_or_above_threshold}/"
+                        f"{family.gate_witness_count} clear"
+                    ),
+                    css_class=verdict_class,
+                ),
+                (
+                    f'<line x1="{minimum_x:.1f}" y1="{y:.1f}" '
+                    f'x2="{maximum_x:.1f}" y2="{y:.1f}" '
+                    f'stroke="{color}" stroke-width="8" stroke-linecap="round"/>'
+                ),
+                (
+                    f'<circle cx="{median_x:.1f}" cy="{y:.1f}" r="9" '
+                    f'fill="{color}" stroke="#ffffff" stroke-width="3"/>'
+                ),
+                _text(
+                    chart_x + chart_width,
+                    y + 30.0,
+                    (
+                        f"{family.target_relative_difference_minimum:.2e} — "
+                        f"{family.target_relative_difference_maximum:.2e}"
+                    ),
+                    css_class="metric-value",
+                    anchor="end",
+                ),
+            ]
+        )
+
+    right_x = panel_specs[2][0] + 28.0
+    right_width = panel_specs[2][1] - 56.0
+    baseline_width = (
+        right_width
+        * result.reference_baseline_relative_dilution_count
+        / result.gate_witness_count
+    )
+    norm_width = (
+        right_width
+        * result.pre_ff_norm_attenuation_count
+        / result.gate_witness_count
+    )
+    svg.extend(
+        [
+            _text(right_x, 181, "Localization observations", css_class="panel-title"),
+            _text(
+                right_x,
+                224,
+                "Reference-baseline dilution",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{right_x:.1f}" y="248.0" '
+                f'width="{right_width:.1f}" height="22.0" rx="11"/>'
+            ),
+            (
+                f'<rect x="{right_x:.1f}" y="248.0" '
+                f'width="{baseline_width:.1f}" height="22.0" rx="11" '
+                'fill="#64748b"/>'
+            ),
+            _text(
+                right_x + right_width,
+                240,
+                f"{result.reference_baseline_relative_dilution_count}/16",
+                css_class="metric-value",
+                anchor="end",
+            ),
+            _text(
+                right_x,
+                303,
+                "Shared with passing controls",
+                css_class="claim",
+            ),
+            _text(
+                right_x,
+                363,
+                "Pre-FF norm attenuation",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{right_x:.1f}" y="387.0" '
+                f'width="{right_width:.1f}" height="22.0" rx="11"/>'
+            ),
+            (
+                f'<rect x="{right_x:.1f}" y="387.0" '
+                f'width="{norm_width:.1f}" height="22.0" rx="11" '
+                'fill="#ea580c"/>'
+            ),
+            _text(
+                right_x + right_width,
+                379,
+                f"{result.pre_ff_norm_attenuation_count}/16",
+                css_class="metric-value",
+                anchor="end",
+            ),
+            _text(
+                right_x,
+                442,
+                "Exclusive to failing null witnesses",
+                css_class="claim",
+            ),
+            _text(right_x, 502, "NEGATIVE CONTROLS", css_class="section-label"),
+            _text(
+                right_x,
+                539,
+                (
+                    f"{result.failed_witnesses_with_retained_fisher_subspace_miss} "
+                    "retained-Fisher misses"
+                ),
+                css_class="body",
+            ),
+            _text(
+                right_x,
+                575,
+                (
+                    f"{result.failed_witnesses_with_residual_attention_cancellation} "
+                    "residual cancellations"
+                ),
+                css_class="body",
+            ),
+            _text(
+                right_x,
+                642,
+                "LOCALIZATION, NOT A RESCUE",
+                css_class="metric-scale verdict-bad",
+            ),
+        ]
+    )
+
+    svg.append(
+        '<rect class="callout" x="50.0" y="720.0" width="1500.0" '
+        'height="132.0" rx="16"/>'
+    )
+    svg.extend(
+        _wrapped_text(
+            76.0,
+            758.0,
+            result.interpretation,
+            css_class="footer-strong",
+            width=146,
+            line_height=23.0,
+            max_lines=3,
+        )
+    )
+    svg.append(
+        _text(
+            76,
+            832,
+            (
+                "Boundary: V2 remains a composite-control failure; any "
+                "compiler change informed by this opened panel requires V3."
+            ),
+            css_class="footer",
+        )
+    )
+    svg.extend(
+        _wrapped_text(
+            50.0,
+            890.0,
+            f"Scope: {data.claim_scope}",
+            css_class="footer",
+            width=185,
+            line_height=18.0,
+            max_lines=2,
+        )
+    )
+    svg.append("</svg>")
+    return "\n".join(svg) + "\n"
+
+
+def render_reference_provider_v3_assessment(
+    data: ResearchFigureData,
+    *,
+    source_sha256: str,
+    source_label: str,
+) -> str:
+    """Render the sealed V3 endpoint-fidelity and contrast result."""
+
+    result = data.reference_provider_v3
+    radial, signed, intended_null = result.contrast_families
+    width = 1600
+    height = 930
+    svg = _svg_start(
+        width=width,
+        height=height,
+        title="Fresh sealed V3 reference-provider assessment",
+        description=(
+            "The exact frozen rank-8 provider passes ordinary fidelity on "
+            "sixteen fresh probes, but passes none of eight eligible radial "
+            "contrasts, reverses the one eligible signed contrast, and "
+            "hallucinates changes on five of twelve teacher-invariant null "
+            "contrasts. The formal panel is inconclusive because the signed "
+            "family lacks sufficient eligible coverage; the provider does "
+            "not pass."
+        ),
+        source_label=source_label,
+        source_sha256=source_sha256,
+        sources=data.sources,
+    )
+    svg.extend(
+        [
+            _text(
+                50,
+                58,
+                "Fresh V3 — average fidelity holds, conditional response does not",
+                css_class="figure-title",
+            ),
+            _text(
+                50,
+                91,
+                (
+                    "48 sealed probes · exact frozen spectral-r08-t08 provider "
+                    "· no refit, reselection, or threshold tuning"
+                ),
+                css_class="figure-subtitle",
+            ),
+            (
+                '<rect x="1280.0" y="38.0" width="270.0" height="58.0" '
+                'rx="29" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>'
+            ),
+            (
+                '<text class="status" x="1415.0" y="73.0" text-anchor="middle" '
+                'style="fill:#9a3412">PANEL INCONCLUSIVE</text>'
+            ),
+        ]
+    )
+
+    panel_y = 145.0
+    panel_height = 510.0
+    panel_width = 355.0
+    panel_xs = (50.0, 425.0, 800.0, 1175.0)
+    accents = ("#059669", "#dc2626", "#f97316", "#dc2626")
+    for panel_x, accent in zip(panel_xs, accents):
+        svg.extend(
+            [
+                (
+                    f'<rect class="panel" x="{panel_x:.1f}" y="{panel_y:.1f}" '
+                    f'width="{panel_width:.1f}" height="{panel_height:.1f}" '
+                    'rx="18"/>'
+                ),
+                (
+                    f'<rect x="{panel_x:.1f}" y="{panel_y:.1f}" '
+                    f'width="{panel_width:.1f}" height="8.0" rx="4" '
+                    f'fill="{accent}"/>'
+                ),
+            ]
+        )
+
+    ordinary_x = panel_xs[0] + 26.0
+    ordinary_track_width = panel_width - 52.0
+    ordinary_error_width = ordinary_track_width * min(
+        result.ordinary_fidelity_fisher_weighted_relative_error / 0.35,
+        1.0,
+    )
+    svg.extend(
+        [
+            _text(
+                ordinary_x,
+                184,
+                "ORDINARY FIDELITY",
+                css_class="section-label",
+            ),
+            _text(
+                ordinary_x,
+                223,
+                "Typical outputs hold",
+                css_class="panel-title",
+            ),
+            _text(
+                ordinary_x,
+                266,
+                f"{result.ordinary_fidelity_probe_count} fresh probes",
+                css_class="body",
+            ),
+            _text(
+                ordinary_x + ordinary_track_width,
+                266,
+                (
+                    f"{result.ordinary_fidelity_and_structure_gates_passed}/"
+                    f"{result.ordinary_fidelity_and_structure_gate_count} gates"
+                ),
+                css_class="metric-value",
+                anchor="end",
+            ),
+            _text(
+                ordinary_x,
+                321,
+                "Fisher-weighted error",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{ordinary_x:.1f}" y="342.0" '
+                f'width="{ordinary_track_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            (
+                f'<rect x="{ordinary_x:.1f}" y="342.0" '
+                f'width="{ordinary_error_width:.1f}" height="24.0" rx="12" '
+                'fill="#059669"/>'
+            ),
+            _text(
+                ordinary_x,
+                402,
+                (
+                    f"{100.0 * result.ordinary_fidelity_fisher_weighted_relative_error:.2f}%"
+                ),
+                css_class="stage-title verdict-good",
+            ),
+            _text(
+                ordinary_x,
+                449,
+                "Reference cosine",
+                css_class="metric-label",
+            ),
+            _text(
+                ordinary_x,
+                493,
+                f"{result.ordinary_fidelity_reference_cosine:.4f}",
+                css_class="stage-title verdict-good",
+            ),
+            _text(
+                ordinary_x,
+                542,
+                (
+                    "Worst probe p90 "
+                    f"{100.0 * result.ordinary_fidelity_maximum_per_probe_p90_relative_error:.2f}%"
+                ),
+                css_class="claim",
+            ),
+            _text(
+                ordinary_x,
+                617,
+                "PASS",
+                css_class="metric-scale verdict-good",
+            ),
+        ]
+    )
+
+    radial_x = panel_xs[1] + 26.0
+    radial_track_width = panel_width - 52.0
+    svg.extend(
+        [
+            _text(
+                radial_x,
+                184,
+                "RADIAL SENSITIVITY",
+                css_class="section-label",
+            ),
+            _text(
+                radial_x,
+                223,
+                "Magnitude changes",
+                css_class="panel-title",
+            ),
+            _text(
+                radial_x,
+                266,
+                (
+                    f"{radial.teacher_qualified_contrast_count}/"
+                    f"{radial.planned_contrast_count} teacher eligible"
+                ),
+                css_class="body",
+            ),
+            _text(
+                radial_x,
+                321,
+                "Candidate contrast passes",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{radial_x:.1f}" y="342.0" '
+                f'width="{radial_track_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            _text(
+                radial_x,
+                402,
+                (
+                    f"{radial.candidate_pass_count}/"
+                    f"{radial.candidate_scored_count}"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                radial_x,
+                449,
+                "Contrast relative error",
+                css_class="metric-label",
+            ),
+            _text(
+                radial_x,
+                493,
+                (
+                    "72.7–"
+                    f"{100.0 * (radial.worst_contrast_relative_error or 0.0):.1f}%"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                radial_x,
+                542,
+                (
+                    "Both retained + discarded strata; "
+                    f"min cosine {radial.minimum_direction_cosine:.3f}"
+                ),
+                css_class="claim",
+            ),
+            _text(
+                radial_x,
+                617,
+                "CANDIDATE FAIL",
+                css_class="metric-scale verdict-bad",
+            ),
+        ]
+    )
+
+    signed_x = panel_xs[2] + 26.0
+    signed_track_width = panel_width - 52.0
+    signed_eligible_width = (
+        signed_track_width
+        * signed.teacher_qualified_contrast_count
+        / signed.planned_contrast_count
+    )
+    svg.extend(
+        [
+            _text(
+                signed_x,
+                184,
+                "SIGNED SENSITIVITY",
+                css_class="section-label",
+            ),
+            _text(
+                signed_x,
+                223,
+                "Direction changes",
+                css_class="panel-title",
+            ),
+            _text(
+                signed_x,
+                266,
+                (
+                    f"{signed.teacher_qualified_contrast_count}/"
+                    f"{signed.planned_contrast_count} teacher eligible"
+                ),
+                css_class="body",
+            ),
+            _text(
+                signed_x + signed_track_width,
+                266,
+                "3 underpowered",
+                css_class="metric-scale",
+                anchor="end",
+            ),
+            _text(
+                signed_x,
+                321,
+                "Teacher-qualified coverage",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{signed_x:.1f}" y="342.0" '
+                f'width="{signed_track_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            (
+                f'<rect x="{signed_x:.1f}" y="342.0" '
+                f'width="{signed_eligible_width:.1f}" height="24.0" rx="12" '
+                'fill="#f97316"/>'
+            ),
+            _text(
+                signed_x,
+                402,
+                (
+                    f"{signed.candidate_pass_count}/"
+                    f"{signed.candidate_scored_count} eligible pass"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                signed_x,
+                449,
+                (
+                    f"cosine {signed.minimum_direction_cosine:.3f}"
+                ),
+                css_class="metric-label verdict-bad",
+            ),
+            _text(
+                signed_x,
+                493,
+                (
+                    f"gain {signed.minimum_projection_gain:.3f}"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                signed_x,
+                542,
+                "Eligible response reversed + amplified",
+                css_class="claim",
+            ),
+            _text(
+                signed_x,
+                617,
+                "FAMILY INCONCLUSIVE",
+                css_class="metric-scale verdict-bad",
+            ),
+        ]
+    )
+
+    null_x = panel_xs[3] + 26.0
+    null_track_width = panel_width - 52.0
+    null_pass_width = (
+        null_track_width
+        * intended_null.candidate_pass_count
+        / intended_null.candidate_scored_count
+    )
+    hallucinated_count = (
+        intended_null.candidate_scored_count
+        - intended_null.candidate_pass_count
+    )
+    svg.extend(
+        [
+            _text(
+                null_x,
+                184,
+                "INTENDED NULL",
+                css_class="section-label",
+            ),
+            _text(
+                null_x,
+                223,
+                "Should not change",
+                css_class="panel-title",
+            ),
+            _text(
+                null_x,
+                266,
+                (
+                    f"Teacher {intended_null.teacher_qualified_contrast_count}/"
+                    f"{intended_null.planned_contrast_count} invariant"
+                ),
+                css_class="body",
+            ),
+            _text(
+                null_x,
+                321,
+                "Provider null passes",
+                css_class="metric-label",
+            ),
+            (
+                f'<rect class="track" x="{null_x:.1f}" y="342.0" '
+                f'width="{null_track_width:.1f}" height="24.0" rx="12"/>'
+            ),
+            (
+                f'<rect x="{null_x:.1f}" y="342.0" '
+                f'width="{null_pass_width:.1f}" height="24.0" rx="12" '
+                'fill="#059669"/>'
+            ),
+            _text(
+                null_x,
+                402,
+                (
+                    f"{intended_null.candidate_pass_count}/"
+                    f"{intended_null.candidate_scored_count}"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                null_x,
+                449,
+                f"{hallucinated_count} hallucinated changes",
+                css_class="metric-label verdict-bad",
+            ),
+            _text(
+                null_x,
+                493,
+                (
+                    "max effect "
+                    f"{100.0 * (intended_null.maximum_candidate_null_relative_effect_upper or 0.0):.2f}%"
+                ),
+                css_class="stage-title verdict-bad",
+            ),
+            _text(
+                null_x,
+                542,
+                "Teacher invariant; provider moves",
+                css_class="claim",
+            ),
+            _text(
+                null_x,
+                617,
+                "CANDIDATE FAIL",
+                css_class="metric-scale verdict-bad",
+            ),
+        ]
+    )
+
+    svg.append(
+        '<rect class="callout" x="50.0" y="690.0" width="1500.0" '
+        'height="148.0" rx="16"/>'
+    )
+    svg.extend(
+        [
+            _text(
+                76,
+                731,
+                "FORMAL OUTCOME: PANEL INCONCLUSIVE · PROVIDER PASSED: FALSE",
+                css_class="footer-strong verdict-bad",
+            ),
+            _text(
+                76,
+                770,
+                (
+                    "Why inconclusive: only 1/4 signed contrasts was strong "
+                    "enough, leaving the discarded signed stratum uncovered."
+                ),
+                css_class="footer",
+            ),
+            _text(
+                76,
+                807,
+                (
+                    "Why actionable: radial tracking failed 0/8 and the provider "
+                    "invented five changes where the teacher stayed invariant."
+                ),
+                css_class="footer",
+            ),
+            _text(
+                50,
+                887,
+                (
+                    "Boundary: endpoint fidelity does not authorize dynamic "
+                    "graph composition, natural-prompt shadow, NLL, compression, "
+                    "compute, or latency claims."
+                ),
+                css_class="footer",
+            ),
+            "</svg>",
+        ]
+    )
+    return "\n".join(svg) + "\n"
+
+
 def render_summary_file(
     summary_path: Path,
     ladder_output_path: Path,
     diagnostic_output_path: Path,
     bilinear_output_path: Path,
+    attenuation_output_path: Path,
+    v3_assessment_output_path: Path,
     *,
     source_root: Path = Path("."),
 ) -> None:
@@ -2175,9 +4118,21 @@ def render_summary_file(
         source_sha256=source_sha256,
         source_label=source_label,
     )
+    attenuation_svg = render_reference_provider_collision_attenuation(
+        data,
+        source_sha256=source_sha256,
+        source_label=source_label,
+    )
+    v3_assessment_svg = render_reference_provider_v3_assessment(
+        data,
+        source_sha256=source_sha256,
+        source_label=source_label,
+    )
     ladder_output_path.parent.mkdir(parents=True, exist_ok=True)
     diagnostic_output_path.parent.mkdir(parents=True, exist_ok=True)
     bilinear_output_path.parent.mkdir(parents=True, exist_ok=True)
+    attenuation_output_path.parent.mkdir(parents=True, exist_ok=True)
+    v3_assessment_output_path.parent.mkdir(parents=True, exist_ok=True)
     ladder_output_path.write_text(ladder_svg, encoding="utf-8", newline="\n")
     diagnostic_output_path.write_text(
         diagnostic_svg,
@@ -2189,13 +4144,25 @@ def render_summary_file(
         encoding="utf-8",
         newline="\n",
     )
+    attenuation_output_path.write_text(
+        attenuation_svg,
+        encoding="utf-8",
+        newline="\n",
+    )
+    v3_assessment_output_path.write_text(
+        v3_assessment_svg,
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Render the current research ladder, Gemma L3/L4 rank "
-            "diagnostic, and bilinear assessment as deterministic SVGs."
+            "diagnostic, bilinear assessment, and retrospective collision "
+            "attenuation and sealed V3 assessment results as deterministic "
+            "SVGs."
         )
     )
     parser.add_argument(
@@ -2229,6 +4196,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
+        "--attenuation-output",
+        type=Path,
+        default=DEFAULT_ATTENUATION_OUTPUT,
+        help=(
+            "reference-provider collision-attenuation SVG destination "
+            f"(default: {DEFAULT_ATTENUATION_OUTPUT})"
+        ),
+    )
+    parser.add_argument(
+        "--v3-assessment-output",
+        type=Path,
+        default=DEFAULT_V3_ASSESSMENT_OUTPUT,
+        help=(
+            "reference-provider V3 assessment SVG destination "
+            f"(default: {DEFAULT_V3_ASSESSMENT_OUTPUT})"
+        ),
+    )
+    parser.add_argument(
         "--source-root",
         type=Path,
         default=Path("."),
@@ -2243,11 +4228,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         arguments.ladder_output,
         arguments.diagnostic_output,
         arguments.bilinear_output,
+        arguments.attenuation_output,
+        arguments.v3_assessment_output,
         source_root=arguments.source_root,
     )
     print(f"Wrote {arguments.ladder_output}")
     print(f"Wrote {arguments.diagnostic_output}")
     print(f"Wrote {arguments.bilinear_output}")
+    print(f"Wrote {arguments.attenuation_output}")
+    print(f"Wrote {arguments.v3_assessment_output}")
 
 
 if __name__ == "__main__":

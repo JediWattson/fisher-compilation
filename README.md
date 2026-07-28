@@ -24,17 +24,27 @@ inference by graph traversal
 The repository contains a verified end-to-end toy implementation, a
 source-free Gemma layer executor, a full Gemma MLP-stack generator baseline,
 and a recursive L3→L4 hierarchy with a prompt-blind state-conditioned
-reference-provider experiment. It is a research compiler, not a production
-compression library.
+reference-provider experiment and fresh sealed contrast assessment. It is a
+research compiler, not a production compression library.
 
 [![Research ladder from the verified toy executor to the prompt-blind reference-provider fidelity result](docs/images/research-ladder.svg)](docs/images/research-ladder.svg)
 
 ## Current finding
 
-A source-normalized rank-8 reference provider now passes every frozen
-candidate-fidelity and structural gate on a sealed, family-disjoint synthetic
-Gemma panel—without using prompt text, token IDs, a tokenizer, natural
-activation rows, or prompt-local kernels during provider fitting.
+The exact frozen 910-scalar rank-8 reference provider passed every ordinary
+fidelity, support, and structural gate again on a fresh 48-probe V3 panel, but
+did **not** pass the new contrast assessment. Radial sensitivity was fully
+identified and failed candidate recovery; intended-null controls were fully
+valid but failed on five of twelve pairs; signed sensitivity identified only
+one of four pairs and did not cover the discarded rank stratum. The formal
+one-shot outcome is therefore `panel_inconclusive_sensitivity`, not a provider
+pass.
+
+This is a useful narrowing. The provider retains strong ordinary synthetic
+fidelity, while the new difference-level tests show that matching absolute
+targets is not enough to preserve small, meaningful changes. No prompt text,
+token IDs, tokenizer, natural activation rows, or prompt-local kernels were
+used by the provider.
 
 The v1 executor mixed every eligible earlier source by summation. Its errors
 accumulated after source activity began, and no rank passed the per-probe tail
@@ -88,6 +98,88 @@ The clean conclusion is therefore:
 The upstream Fisher basis is itself prompt-derived. “Prompt-blind” here means
 provider relation mapping after that basis was frozen, not prompt-independent
 basis discovery.
+
+### What the backward trace found
+
+An authenticated retrospective diagnostic reexecuted all 40 collision
+endpoints, reproduced every target hash from the consumed assessment, analyzed
+all 32 unordered pairs, and marked the exact 16 group-minimum gate witnesses.
+It then traced each finite contrast through the manifold lift, L4 attention
+prefix, residual merge, pre-FF normalization, and Fisher-weighted target using
+midpoint JVPs and contrast-aligned VJPs.
+
+The result localizes the **test failure before candidate tracking**:
+
+- all 12 below-threshold witnesses were numerically resolved, but their true
+  teacher contrasts were still smaller than the frozen `0.01` gate;
+- mean-reference injection was a dominant relative-contrast dilution on
+  `10 / 16` witnesses, including two radial witnesses that nevertheless
+  passed, so it is a shared property rather than a sufficient failure cause;
+- pre-FF normalization was the only observation exclusive to failed
+  witnesses, appearing on all `4 / 4` gain-null groups;
+- the axis groups had no failure-exclusive checkpoint bottleneck—their small
+  effect remained distributed through the teacher path;
+- no failed witness showed residual/attention cancellation or a retained
+  Fisher-subspace miss; the retained 64 modes captured at least `99.9988%` of
+  the full Fisher-weighted contrast energy; and
+- JVP/VJP adjoint error was at most `1.77e-6`, with zero response before the
+  changed source position.
+
+This does not rehabilitate v2 or show candidate contrast recovery: candidate
+predictions never enter the collision metric. The diagnostic consumed only the
+already-opened panel, made no refit or reselection, and cannot become compiler
+input. Any repair still requires a genuinely fresh sealed v3 assessment.
+
+[![Retrospective collision attenuation trace showing teacher contrast ranges and localized observations](docs/images/reference-provider-collision-attenuation.svg)](docs/images/reference-provider-collision-attenuation.svg)
+
+### What the fresh V3 assessment found
+
+V3 authenticated the exact frozen `spectral-r08-t08` artifact, its selected
+plan, controls, training protocol, Fisher basis, source model, scoring code,
+and all 48 new probe identities before creating an irreversible claim. Only
+after that claim did it materialize 16 ordinary-fidelity probes and 32
+contrast probes spanning 12 groups and 24 preregistered pairs. There was no
+refit, reselection, parameter change, retry, or threshold override.
+
+Ordinary full-target fidelity remained positive:
+
+| metric | fresh V3 result |
+|---|---:|
+| Fisher-weighted relative error | `0.06773` |
+| Reference cosine | `0.99772` |
+| Maximum per-probe p90 error | `0.29138` |
+| Worst family relative error | `0.08704` |
+| Error reduction vs constant / position-only | `45.61%` / `45.34%` |
+| Support / prepared parity | `1.0` / `3.26e-8` |
+| Causality / padding / repeat violations | `0 / 0 / 0` |
+
+The contrast result was materially different:
+
+| family | teacher-qualified | candidate passes | result |
+|---|---:|---:|---|
+| Radial sensitivity | `8 / 8` | `0 / 8` | candidate failure; macro relative error `0.9300`, minimum cosine `0.4342` |
+| Signed sensitivity | `1 / 4` | `0 / 1` | panel-inconclusive; discarded-stratum sensitivity was not established |
+| Intended null | `12 / 12` | `7 / 12` | candidate failure; maximum null effect/error upper bounds `0.02533 / 0.02533` against `0.01` ceilings |
+
+The signed family makes the whole panel inconclusive before a clean composite
+candidate-failure verdict can be issued, but it does not erase the identified
+radial and null failures. Weak teacher contrasts never entered candidate
+relative metrics, and intended nulls never entered direction metrics.
+
+The ignored result is bound by implementation bundle
+`af06c779c18bf9bc860ca4683ed37c93a0954f090411c544b8062ddfa29086a0`,
+protocol
+`65959324d2815621a1d6420bdb4d41a9db74c4214205088da9545088bc19ce03`,
+panel
+`919126906cc6f07074d76599843504ea81462485e8f93ee6d35c71732979249e`,
+logical artifact
+`60e83fa843e4a2878f597f0f924e736d83b4165b2bdbb3bd40aab0ca24905594`,
+and report
+`df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392`.
+The local tensor/report artifacts contain no prompts, token IDs, model state,
+provider parameters, or raw teacher/candidate tensors and remain ignored.
+
+[![Fresh V3 assessment showing ordinary fidelity passing while radial and null contrast behavior fails](docs/images/reference-provider-v3-assessment.svg)](docs/images/reference-provider-v3-assessment.svg)
 
 ### What this builds on
 
@@ -157,20 +249,18 @@ IDs, model weights, or tensor artifacts. Tests reject stale SVGs.
 
 The next experiment is therefore:
 
-1. preserve v2 permanently as a composite-control failure—do not rerun its
-   consumed panel or lower its threshold;
-2. preregister a fresh v3 panel with new modes, positions, sequence lengths,
-   seeds, hashes, and a new one-shot ledger identity;
-3. split the overloaded collision gate into teacher-construct checks:
-   sensitivity controls such as radial scale require a minimum contrast,
-   expected-null controls require a maximum contrast, and underpowered groups
-   are marked panel-inconclusive rather than candidate-wrong;
-4. add a candidate contrast-recovery metric that directly compares predicted
-   and measured target differences within sufficiently identified groups;
-5. if that fresh gate passes, freeze the provider with the linear, diagonal,
-   and bilinear branches in one L3→L4 graph and run source-authoritative shadow
-   execution on a family-disjoint natural-prompt split, scoring NLL,
-   full-vocabulary KL, and top-1 agreement; and
+1. preserve both consumed panels and their outcomes—do not rerun V2 or V3,
+   weaken their thresholds, or refit against their targets;
+2. use the opened V3 result only to localize why the frozen provider misses
+   radial differences and leaks intended-null changes;
+3. revise the provider architecture on fit/selection data and strengthen the
+   signed-sensitivity construction so both rank strata become testable;
+4. freeze that new candidate and preregister a genuinely fresh V4 panel with
+   new modes, positions, lengths, seeds, hashes, and one-shot identity;
+5. only if V4 passes, compose the provider with the linear, diagonal, and
+   bilinear branches and run source-authoritative shadow execution on a
+   family-disjoint natural-prompt split, scoring NLL, full-vocabulary KL, and
+   top-1 agreement; and
 6. only after downstream fidelity passes, measure resident storage, active
    compute, and end-to-end latency.
 
@@ -190,7 +280,7 @@ This work is described in
 | Gemma conditional spectral modal-delta executor | `39,936` edge coefficients versus `786,432` for a matched dense two-branch family (`94.92%` fewer); provider and model excluded | Fresh origin-20 local cosine `0.9819`; diagonal correction reduces finite error `0.2278 → 0.2006` | Prompt-free fixed-reference interior interpolation only; no-refit assessment |
 | Gemma mixed-mode chord assessment | No deployed reduction; frozen candidate unchanged | Fresh origin-28 error `0.1863`, cosine `0.9834`; cross nonadditivity `11.27%`; interaction-oracle gain `23.10%` | Diagonal-only correction materially falsified; compact bilinear branch nominated |
 | Gemma bilinear modal-generator executor | Bilinear branch stores `6,880` coefficients versus `172,032` dense (`96.00%` fewer); all three edge branches store `46,816` versus `958,464` matched dense (`95.12%` fewer) | Fresh origin-20 error `0.2090 → 0.1694` (`18.96%` reduction), cosine `0.9871`; recovers `94.10%` of \(C_{11}\) oracle headroom | Positive no-refit mixed-mode edge transport; fixed-reference and known-pair scope only |
-| Gemma prompt-blind reference provider v2 | Rank 8 stores `910` scalars versus `15,046` for the full-width provider (`93.95%` fewer); provider-only ideal MAC savings are sequence-dependent | Sealed error `0.0590`, cosine `0.9983`, p90 `0.2897`; every fidelity/structure gate passed | Strong synthetic family transfer after a frozen prompt-derived basis; formal composite assessment failed its teacher collision-panel gate |
+| Gemma prompt-blind reference provider V2/V3 | Rank 8 stores `910` scalars versus `15,046` for the full-width provider (`93.95%` fewer); provider-only ideal MAC savings are sequence-dependent | Fresh-V3 ordinary error `0.0677`, cosine `0.9977`, p90 `0.2914`; all ordinary fidelity/structure gates passed | Radial and intended-null contrast recovery failed; signed sensitivity was underpowered, so the formal V3 outcome is panel-inconclusive |
 
 There are three important distinctions:
 

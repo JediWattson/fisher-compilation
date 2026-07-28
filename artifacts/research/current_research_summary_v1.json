@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "schema": "fisher_graph.current_research_summary",
-  "claim_scope": "source-safe synthetic prompt-blind state-conditioned provider evidence after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim",
+  "claim_scope": "source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, and a fresh sealed v3 contrast assessment of the exact frozen rank-8 provider after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim",
   "sources": [
     {
       "id": "toy_fused_executor",
@@ -79,6 +79,20 @@
       "sha256": "613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e",
       "sha256_kind": "report_payload_sha256",
       "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_reference_provider_v2_attenuation_localization",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-attenuation-localization-dev-v6.json",
+      "sha256": "e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_reference_provider_v3_assessment",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v3.json",
+      "sha256": "df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392",
+      "sha256_kind": "report_payload_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
     }
   ],
   "research_ladder": [
@@ -133,10 +147,10 @@
     {
       "id": "prompt_blind_reference_provider",
       "title": "Prompt-blind reference provider",
-      "status": "open_development",
+      "status": "sealed_mixed_result",
       "resource": "910 vs 15,046 provider scalars; 93.95% fewer",
-      "fidelity": "Sealed error 0.0590; cosine 0.9983; p90 0.2897",
-      "claim": "All fidelity gates passed; collision-panel control failed"
+      "fidelity": "Fresh-v3 ordinary error 0.0677; cosine 0.9977; p90 0.2914",
+      "claim": "Ordinary fidelity passed; radial and null contrasts failed; signed sensitivity was inconclusive"
     }
   ],
   "l3_l4_diagnostic": {
@@ -254,5 +268,197 @@
     "latency_measured": false,
     "interpretation": "The frozen rank-8 provider generalized across all sealed synthetic families on every candidate-fidelity and structural gate. The formal protocol still failed because several true collision groups were too weakly separated under the preregistered whole-panel target-relative metric.",
     "not_proven": "This does not prove prompt-independent Fisher-basis discovery, natural-prompt transfer, a complete L3-to-L4 replacement, whole-model compression, NLL retention, or speedup."
+  },
+  "reference_provider_v3_assessment": {
+    "protocol_scope": "fresh_sealed_synthetic_contrast_assessment_of_exact_frozen_v2_rank8_provider",
+    "source_report_sha256": "df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392",
+    "logical_artifact_sha256": "60e83fa843e4a2878f597f0f924e736d83b4165b2bdbb3bd40aab0ca24905594",
+    "tensor_file_sha256": "49ef76479663eefa66d67a8ae90f1f03cbaff266602368f147df1518adf472d3",
+    "protocol_sha256": "65959324d2815621a1d6420bdb4d41a9db74c4214205088da9545088bc19ce03",
+    "panel_spec_sha256": "919126906cc6f07074d76599843504ea81462485e8f93ee6d35c71732979249e",
+    "measured_panel_sha256": "4486367eb754ae197a25451ec86329cd6fb01d51c5c3bef32246f4ca0d30879a",
+    "code_bundle_sha256": "af06c779c18bf9bc860ca4683ed37c93a0954f090411c544b8062ddfa29086a0",
+    "claim_receipt_sha256": "0dec295146d80db94483d176d3dc0d93473e8a48957a9d41cee080d0744b8487",
+    "claim_uniqueness_sha256": "c7c361118fea271f8a7a968aa53a47edb366ed80c1089c5a8dbb57c423c83e95",
+    "assessment_probe_count": 48,
+    "ordinary_fidelity_probe_count": 16,
+    "contrast_probe_count": 32,
+    "contrast_group_count": 12,
+    "contrast_pair_count": 24,
+    "selected_candidate_id": "spectral-r08-t08",
+    "selected_stored_scalar_count": 910,
+    "assessment_refit_performed": false,
+    "assessment_reselection_performed": false,
+    "assessment_claim_consumed": true,
+    "ordinary_fidelity_passed": true,
+    "ordinary_fidelity_and_structure_gates_passed": 12,
+    "ordinary_fidelity_and_structure_gate_count": 12,
+    "ordinary_fidelity_fisher_weighted_relative_error": 0.06772962100197875,
+    "ordinary_fidelity_reference_cosine": 0.9977221137523479,
+    "ordinary_fidelity_maximum_per_probe_p90_relative_error": 0.29137921318592663,
+    "ordinary_fidelity_worst_family_relative_error": 0.08703854956107655,
+    "ordinary_fidelity_error_reduction_vs_constant": 0.45610030446113364,
+    "ordinary_fidelity_error_reduction_vs_position_only": 0.4533789411808126,
+    "ordinary_fidelity_in_support_fraction": 1.0,
+    "ordinary_fidelity_prepared_vs_analytic_relative_error": 0.000000032624766672534354,
+    "ordinary_fidelity_causality_violation": 0.0,
+    "ordinary_fidelity_padding_violation": 0.0,
+    "ordinary_fidelity_repeat_relative_error": 0.0,
+    "contrast_overall_status": "panel_inconclusive",
+    "formal_outcome": "panel_inconclusive_sensitivity",
+    "provider_passed": false,
+    "contrast_families": [
+      {
+        "family_id": "radial_block_sensitivity",
+        "intent": "sensitivity",
+        "planned_contrast_count": 8,
+        "required_eligible_count": 6,
+        "teacher_qualified_contrast_count": 8,
+        "candidate_scored_count": 8,
+        "candidate_pass_count": 0,
+        "decision_status": "candidate_fail",
+        "qualified_rank_strata": [
+          "discarded",
+          "retained"
+        ],
+        "retained_and_discarded_covered": true,
+        "macro_rms_contrast_relative_error": 0.9299763132031491,
+        "worst_contrast_relative_error": 1.302609636349226,
+        "minimum_direction_cosine": 0.43418458636664103,
+        "minimum_projection_gain": 0.3043123162460221,
+        "maximum_projection_gain": 0.8030530359830008,
+        "maximum_orthogonal_leakage": 1.23871642394017
+      },
+      {
+        "family_id": "signed_block_sensitivity",
+        "intent": "sensitivity",
+        "planned_contrast_count": 4,
+        "required_eligible_count": 4,
+        "teacher_qualified_contrast_count": 1,
+        "candidate_scored_count": 1,
+        "candidate_pass_count": 0,
+        "decision_status": "panel_inconclusive",
+        "qualified_rank_strata": [
+          "retained"
+        ],
+        "retained_and_discarded_covered": false,
+        "macro_rms_contrast_relative_error": 3.593322333923473,
+        "worst_contrast_relative_error": 3.593322333923473,
+        "minimum_direction_cosine": -0.9215394885190904,
+        "minimum_projection_gain": -2.4427641222529104,
+        "maximum_projection_gain": -2.4427641222529104,
+        "maximum_orthogonal_leakage": 1.0292427284180283
+      },
+      {
+        "family_id": "null_single_invariance",
+        "intent": "invariance",
+        "planned_contrast_count": 12,
+        "required_eligible_count": 12,
+        "teacher_qualified_contrast_count": 12,
+        "candidate_scored_count": 12,
+        "candidate_pass_count": 7,
+        "decision_status": "candidate_fail",
+        "qualified_rank_strata": [
+          "discarded",
+          "retained"
+        ],
+        "retained_and_discarded_covered": true,
+        "maximum_candidate_null_relative_effect_upper": 0.025328387634504894,
+        "maximum_candidate_null_relative_error_upper": 0.025329186676548963
+      }
+    ],
+    "all_families_cover_retained_and_discarded_strata": false,
+    "weak_teacher_contrasts_entered_candidate_relative_metrics": false,
+    "intended_null_contrasts_entered_direction_metrics": false,
+    "candidate_parameters_changed": false,
+    "natural_prompt_transfer_tested": false,
+    "nll_measured": false,
+    "whole_model_replacement_tested": false,
+    "model_parameter_compression_claim": false,
+    "latency_measured": false,
+    "interpretation": "The exact frozen rank-8 provider again passed ordinary fresh-family fidelity, support, and structural gates, but it did not recover the identified radial contrasts or five of twelve intended-null contrasts. Signed sensitivity remained underpowered in the discarded stratum, so the formal one-shot outcome is panel-inconclusive rather than a clean whole-panel candidate failure.",
+    "next_rung": "Treat the opened v3 panel as diagnostic-only: localize the radial and null contrast errors, revise the provider on fit and selection data without weakening the frozen gates, then preregister a fresh v4 one-shot contrast panel before any natural-prompt shadow or composition claim.",
+    "not_proven": "V3 does not prove natural-prompt transfer, NLL retention, a complete L3-to-L4 replacement, whole-model compression, reduced deployment compute, or latency. It does not authorize refitting or threshold tuning against the consumed v3 targets."
+  },
+  "reference_provider_collision_attenuation_diagnostic": {
+    "protocol_scope": "retrospective_teacher_path_attenuation_on_consumed_v2_panel",
+    "source_report_sha256": "e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a",
+    "logical_artifact_sha256": "433e40bdea3ab958ee9cc7f5bb8dcfc8b7d09769ff20c4d65f5a5f5448291123",
+    "tensor_file_sha256": "c4214ea078b905570ff01d58b2692df6b1f02c64a2122b27f81f504512c8e983",
+    "source_assessment_artifact_sha256": "21500080aed580e91b605a6fdd01984dcc41676c0dea96a7813ee0ec4a8cc57d",
+    "source_assessment_report_sha256": "613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e",
+    "collision_threshold": 0.01,
+    "collision_endpoint_count": 40,
+    "all_target_hashes_match_opened_assessment": true,
+    "collision_group_count": 16,
+    "unordered_pair_count": 32,
+    "gate_witness_count": 16,
+    "numerically_valid_gate_witness_count": 16,
+    "gate_witnesses_at_or_above_threshold": 4,
+    "gate_witnesses_below_threshold": 12,
+    "families": [
+      {
+        "family_id": "axis",
+        "pair_count": 8,
+        "gate_witness_count": 8,
+        "gate_witnesses_at_or_above_threshold": 0,
+        "target_relative_difference_minimum": 0.00010542351712380978,
+        "target_relative_difference_median": 0.0006128441835090825,
+        "target_relative_difference_maximum": 0.0023294302236150865,
+        "gate_witness_conclusion": "teacher_contrast_ineligible",
+        "reference_baseline_relative_dilution_count": 4,
+        "pre_ff_norm_attenuation_count": 0
+      },
+      {
+        "family_id": "null_collision",
+        "pair_count": 12,
+        "gate_witness_count": 4,
+        "gate_witnesses_at_or_above_threshold": 0,
+        "target_relative_difference_minimum": 0.000009239301071104905,
+        "target_relative_difference_median": 0.000021754685756103733,
+        "target_relative_difference_maximum": 0.00005306805047829994,
+        "gate_witness_conclusion": "teacher_contrast_ineligible",
+        "reference_baseline_relative_dilution_count": 4,
+        "pre_ff_norm_attenuation_count": 4
+      },
+      {
+        "family_id": "radial_collision",
+        "pair_count": 12,
+        "gate_witness_count": 4,
+        "gate_witnesses_at_or_above_threshold": 4,
+        "target_relative_difference_minimum": 0.015155807881490166,
+        "target_relative_difference_median": 0.020458325380239985,
+        "target_relative_difference_maximum": 0.03652349040631975,
+        "gate_witness_conclusion": "teacher_contrast_eligible",
+        "reference_baseline_relative_dilution_count": 2,
+        "pre_ff_norm_attenuation_count": 0
+      }
+    ],
+    "reference_baseline_relative_dilution_count": 10,
+    "pre_ff_norm_attenuation_count": 4,
+    "observations_shared_with_passing_controls": [
+      "reference_baseline_relative_dilution"
+    ],
+    "observations_exclusive_to_failed_witnesses": [
+      "pre_ff_norm_attenuation"
+    ],
+    "failed_witnesses_with_retained_fisher_subspace_miss": 0,
+    "minimum_failed_witness_retained_64_fisher_energy_fraction": 0.9999880706223239,
+    "failed_witnesses_with_residual_attention_cancellation": 0,
+    "maximum_jvp_vjp_adjoint_relative_error": 0.0000017690372996595452,
+    "maximum_pre_source_jvp_energy_fraction": 0.0,
+    "diagnostic_conclusion": "collision_failure_precedes_candidate_tracking_and_is_a_teacher_contrast_eligibility_failure",
+    "candidate_predictions_entered_collision_metric": false,
+    "assessment_panel_previously_opened": true,
+    "new_sealed_panel_opened": false,
+    "assessment_score_recomputed": false,
+    "candidate_refit_performed": false,
+    "candidate_reselection_performed": false,
+    "candidate_tracking_failure_can_be_assigned": false,
+    "formal_v2_decision_changed": false,
+    "target_derived_vjp_may_become_compiler_input": false,
+    "fresh_v3_assessment_required": true,
+    "interpretation": "The retrospective teacher-path trace reproduced all 40 opened collision targets. Twelve of 16 canonical gate witnesses remained below one percent. Reference-baseline relative dilution occurred in both passing and failing controls, while pre-FF normalization attenuation was exclusive to the four failing null witnesses.",
+    "not_proven": "This post-assessment localization does not rescue v2, assign candidate tracking failure, authorize target-derived VJPs as compiler inputs, replace a fresh v3 panel, or establish natural-prompt, NLL, model-replacement, compression, or latency performance."
   }
 }
