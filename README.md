@@ -31,6 +31,67 @@ research compiler, not a production compression library.
 
 ## Current finding
 
+The new C2 contrast-packed provider rung tested a genuine dense modal
+bottleneck:
+
+```text
+all 64 source modes
+  → learned 64→r encoder
+  → causal rank-r executor
+  → learned r→64 decoder
+  → all 64 target modes
+```
+
+This is not prefix deletion: every rank-8, rank-16, and rank-32 candidate can
+mix nonadjacent input modes and reconstruct every output mode. The exact
+gain-null coordinate is omitted structurally. A disjoint held-out development
+selection panel was opened only after all three candidates were fitted and
+frozen.
+
+The first C1 calibration pilot failed closed: at its maximum tested amplitude
+of `2`, no rank band reached the unchanged `0.02` effect floor, so neither C1
+fit nor C1 selection was opened. Fresh C2 pilot identities and a preregistered
+`2/4/6/8/12` grid retained the same gates; the smallest eligible global
+amplitude was `8`.
+
+Before selection was materialized, an implementation audit also found that
+endpoint subtraction was not the required hidden-to-provider-chart tangent.
+The final fit was rerun with the exact midpoint chart JVP; the stale endpoint
+approximation was never used to score selection.
+
+No candidate passed the combined gate:
+
+| latent rank | stored scalars | reduction vs prior dense-64 provider | canonical MACs, `B=1`, `S=128` | ordinary gate | null / radial / signed passes |
+|---:|---:|---:|---:|---|---:|
+| 8 | `1,980` | `86.84%` | `893,216` | pass | `24/24`, `12/16`, `0/7` |
+| 16 | `4,276` | `71.58%` | `1,315,072` | pass | `24/24`, `13/16`, `0/7` |
+| 32 | `8,676` | `42.34%` | `1,874,688` | pass | `24/24`, `7/16`, `0/7` |
+
+Rank 8 and rank 16 use `52.35%` and `29.85%` fewer declared canonical MACs
+than rank 32. All three candidates passed ordinary full-target fidelity,
+support, causality, padding, repeatability, and prepared-execution gates, and
+all three preserved the structurally exact gain null. Radial recovery was
+partial and signed recovery failed for every teacher-qualified pair, so the
+formal outcome is `no_candidate_passed_combined_gates`.
+
+The curve is nonmonotonic: rank 16 was the best radial candidate, while rank
+32 was worse despite having more latent capacity. The fitted loss explains
+one likely cause. After applying the declared weights, the final nonpointwise
+contrast contribution was only `0.950716`, `0.425144`, and `0.507412` against
+pointwise contributions of `26,394.44`, `12,828.99`, and `12,016.03`.
+Pointwise fidelity therefore occupied `99.9958–99.9967%` of the final
+objective. The next development rung should rebalance or stage contrast
+optimization before changing the packing hypothesis.
+
+This is held-out **development selection**, not V4 and not a validation
+result. It makes no prompt, natural-language NLL, full-model replacement,
+whole-model compression, or latency claim. The synthetic provider panels were
+prompt-free, but the frozen upstream Fisher basis remains prompt-derived.
+
+[![C2 contrast-packed provider development rate curve, ordinary fidelity, and contrast recovery](docs/images/reference-provider-contrast-packed-development.svg)](docs/images/reference-provider-contrast-packed-development.svg)
+
+### Frozen V2/V3 baseline
+
 The exact frozen 910-scalar rank-8 reference provider passed every ordinary
 fidelity, support, and structural gate again on a fresh 48-probe V3 panel, but
 did **not** pass the new contrast assessment. Radial sensitivity was fully
@@ -281,6 +342,7 @@ This work is described in
 | Gemma mixed-mode chord assessment | No deployed reduction; frozen candidate unchanged | Fresh origin-28 error `0.1863`, cosine `0.9834`; cross nonadditivity `11.27%`; interaction-oracle gain `23.10%` | Diagonal-only correction materially falsified; compact bilinear branch nominated |
 | Gemma bilinear modal-generator executor | Bilinear branch stores `6,880` coefficients versus `172,032` dense (`96.00%` fewer); all three edge branches store `46,816` versus `958,464` matched dense (`95.12%` fewer) | Fresh origin-20 error `0.2090 → 0.1694` (`18.96%` reduction), cosine `0.9871`; recovers `94.10%` of \(C_{11}\) oracle headroom | Positive no-refit mixed-mode edge transport; fixed-reference and known-pair scope only |
 | Gemma prompt-blind reference provider V2/V3 | Rank 8 stores `910` scalars versus `15,046` for the full-width provider (`93.95%` fewer); provider-only ideal MAC savings are sequence-dependent | Fresh-V3 ordinary error `0.0677`, cosine `0.9977`, p90 `0.2914`; all ordinary fidelity/structure gates passed | Radial and intended-null contrast recovery failed; signed sensitivity was underpowered, so the formal V3 outcome is panel-inconclusive |
+| Gemma C2 contrast-packed provider development | Ranks `8/16/32` store `1,980/4,276/8,676` scalars (`86.84%/71.58%/42.34%` below the prior dense-64 component); canonical rank-8/rank-16 MACs are `52.35%/29.85%` below rank 32 | Every rank passed ordinary fidelity and `24/24` exact-null pairs; radial passes were `12/16`, `13/16`, `7/16`, while signed passes were `0/7` at every rank | Held-out development selection only; no candidate passed, V4 remains unopened |
 
 There are three important distinctions:
 
@@ -449,6 +511,12 @@ fisher-graph-gemma-l3-l4-bilinear-spectral-dev assess \
     631006014eaf092a27a72d2918ab61d144fe925896a4ccb812094e10d1200cf7 \
   --candidate-report-sha256 \
     856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a \
+  --device cpu \
+  --dtype float32
+
+fisher-graph-gemma-l3-l4-contrast-provider-dev describe
+
+fisher-graph-gemma-l3-l4-contrast-provider-dev compile \
   --device cpu \
   --dtype float32
 ```

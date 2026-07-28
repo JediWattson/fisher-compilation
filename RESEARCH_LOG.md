@@ -1705,6 +1705,108 @@ be preregistered before a new one-shot decision. Natural-prompt shadow NLL,
 full-vocabulary KL, top-1 agreement, graph composition, storage, compute, and
 latency remain downstream of that fresh provider gate.
 
+### Contrast-packed C2 provider development selection
+
+The provider repair was implemented as an open-development rate curve rather
+than spending V4. It replaced the previous prefix-retained rank with learned
+dense packing:
+
+```text
+all 64 source modes → 64→r encoder → causal rank-r executor
+                    → r→64 decoder → all 64 target modes
+```
+
+Ranks 8, 16, and 32 can therefore combine nonadjacent modes without deleting
+any visible input or output coordinate. The exact gain-null coordinate was
+removed structurally; the provider reconstructs only a non-null RMS feature.
+
+The first calibration declaration, C1, stopped at its pilot. At amplitude `2`
+the four rank-band teacher effects were `0.008251`, `0.003732`, `0.011773`,
+and `0.003672`, so none cleared the unchanged `0.02` floor. C1 fit and
+selection were never opened. The replacement C2 declaration used fresh
+identities and seeds and expanded only the preregistered amplitude grid to
+`2/4/6/8/12`; it did not weaken the gates. Its frozen rule chose amplitude
+`8`, the smallest step with at least three of four rank bands above the effect
+floor and stable half/full finite differences in every band.
+
+An implementation audit then caught a chart-coordinate error before opening
+selection. The intended tangent was the JVP of the nonlinear
+hidden-to-provider chart at the hidden midpoint along the hidden endpoint
+chord, not subtraction of endpoint chart features. Although endpoint
+arithmetic approximated the primal midpoint closely, its modal tangent had
+relative error as high as `0.7261`, minimum cosine `0.9181`, and gain range
+`0.6047–1.4885`. The final fit used the exact chart primal and push-forward,
+explicitly forbade endpoint arithmetic, and reran every candidate before the
+held-out selection panel was materialized.
+
+The C2 firewall comprised 40 pilot endpoints, 80 fit endpoints, and 80
+disjoint selection endpoints. All three candidates were fitted and frozen
+before selection materialization; selection data did not alter training. The
+result was:
+
+| rank | stored scalars | reduction vs prior dense-64 provider | canonical MACs (`B=1`, `S=128`) | ordinary error / cosine | null / radial / signed passes |
+|---:|---:|---:|---:|---:|---:|
+| 8 | `1,980` | `86.84%` | `893,216` | `0.0122242 / 0.999928` | `24/24`, `12/16`, `0/7` |
+| 16 | `4,276` | `71.58%` | `1,315,072` | `0.0107269 / 0.999945` | `24/24`, `13/16`, `0/7` |
+| 32 | `8,676` | `42.34%` | `1,874,688` | `0.0168532 / 0.999862` | `24/24`, `7/16`, `0/7` |
+
+Rank 8 and rank 16 reduce declared canonical provider MACs by `52.35%` and
+`29.85%` relative to rank 32. Every rank passed every ordinary fidelity and
+execution-structure gate. Every rank also passed all 24 exact-null
+comparisons. Seven of eight signed contrasts were teacher-qualified at every
+rank, but none passed candidate recovery. The radial family came closest at
+rank 16: `13/16` passed; minimum cosine `0.97597` and maximum leakage
+`0.18472` passed; macro relative error `0.28925` and gain range
+`0.56395–1.36211` failed. Consequently no candidate was selected and the
+formal outcome is `no_candidate_passed_combined_gates`.
+
+The rank curve was nonmonotonic: rank 16 outperformed both rank 8 and rank 32
+on several selection metrics. The fitted objective also turned out to be
+effectively pointwise-dominated:
+
+| rank | final pointwise contribution | final nonpointwise contribution | pointwise fraction |
+|---:|---:|---:|---:|
+| 8 | `26,394.4388` | `0.950716` | `99.996398%` |
+| 16 | `12,828.9941` | `0.425144` | `99.996686%` |
+| 32 | `12,016.0297` | `0.507412` | `99.995777%` |
+
+This supplies a concrete next hypothesis: normalize or stage the pointwise
+and contrast terms so contrast fitting has material optimization influence,
+then repeat the packing curve on fresh development splits. The observed
+failure does not show that packing is impossible; capacity, optimization, and
+generalization are confounded by the nonmonotonic curve and extreme loss-scale
+imbalance. The opened C2 selection targets cannot be recycled into that fit.
+
+[![C2 contrast-packed provider development rate curve, ordinary fidelity, and contrast recovery](docs/images/reference-provider-contrast-packed-development.svg)](docs/images/reference-provider-contrast-packed-development.svg)
+
+The source-safe bindings are protocol
+`033020dc9a0da819bd5753eb10090bff1bd9b4fcf61f33cd7186b1c1e3cb5254`,
+calibration
+`aedb23de65ed6a37d645539001311ddb415cd2713400777dac448cb96bd5bfa8`,
+candidate set
+`716ef6dda128deb407eb955f013988cd415559feda3b3a220479ccfeed540209`,
+implementation bundle
+`eb3bc4a89315bc7550e8599572b174d9c3be22e96374269f22b744a393360d64`,
+logical artifact
+`77c3d569304b26352ff7975a045105d4ee72156600c9489a67fdfa137bfb697f`,
+and report
+`4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e`.
+The local provider tensors and report remain ignored.
+
+```bash
+fisher-graph-gemma-l3-l4-contrast-provider-dev describe
+
+fisher-graph-gemma-l3-l4-contrast-provider-dev compile \
+  --device cpu \
+  --dtype float32
+```
+
+This is held-out development selection, not V4 or validation. It used no
+prompt text, token IDs, tokenizer, natural activation rows, or V2/V3 targets.
+Its frozen upstream Fisher basis remains prompt-derived. It makes no
+natural-prompt NLL, full-model replacement, whole-model compression,
+downstream-task, or latency claim.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -1780,6 +1882,10 @@ python -m fisher_graph.gemma3_modal_generator_multifragment_dev_experiment \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
 python -m fisher_graph.gemma3_full_mlp_stack_dev_experiment \
   --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1
+python -m fisher_graph.gemma3_l3_l4_contrast_provider_development describe
+python -m fisher_graph.gemma3_l3_l4_contrast_provider_development compile \
+  --device cpu \
+  --dtype float32
 python -m fisher_graph.optimization_figure
 python -m fisher_graph.verify artifacts/associative_recall
 ```

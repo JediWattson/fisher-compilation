@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2240" height="820" viewBox="0 0 2240 820" role="img" aria-labelledby="figure-title figure-description">
+<svg xmlns="http://www.w3.org/2000/svg" width="2550" height="820" viewBox="0 0 2550 820" role="img" aria-labelledby="figure-title figure-description">
 <title id="figure-title">Fisher graph compilation research ladder</title>
-<desc id="figure-description">Seven stages summarize the verified toy executor, Gemma single-layer fidelity parent, open-development flat generator stack, failed stationary L3-to-L4 transport diagnostic, conditional mixed-mode finding, and the frozen bilinear spectral component assessment, followed by the prompt-blind reference-provider fidelity result and failed collision control.</desc>
-<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=e03c8d902a10dbeff762edb8f64dd05cbff8741b601d34e6894758b41c2acecf;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672,gemma_conditional_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json:report_payload_sha256:ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671,gemma_mixed_falsification:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json:report_payload_sha256:931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d,gemma_bilinear_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json:report_payload_sha256:856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a,gemma_bilinear_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json:report_payload_sha256:6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab,gemma_reference_provider_v2_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json:report_payload_sha256:1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9,gemma_reference_provider_v2_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json:report_payload_sha256:613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e,gemma_reference_provider_v2_attenuation_localization:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-attenuation-localization-dev-v6.json:report_payload_sha256:e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a,gemma_reference_provider_v3_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v3.json:report_payload_sha256:df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392</metadata>
+<desc id="figure-description">Eight stages summarize the verified toy executor, Gemma single-layer fidelity parent, open-development flat generator stack, failed stationary L3-to-L4 transport diagnostic, conditional mixed-mode finding, and the frozen bilinear spectral component assessment, the sealed prompt-blind reference-provider result, and the open-development contrast-aware dense modal-packing rate curve.</desc>
+<metadata>source=artifacts/research/current_research_summary_v1.json;sha256=907fe84a05e42ff85fc3f5ca13710ab2a22f20d748a1bf96b4d8fb6c60e88905;upstream=toy_fused_executor:artifacts/associative_recall/fused_executor_report.json:file_sha256:722fb25b9671e97836a0d88e9ca1b2986c2f452ff0b975580bdd42ddb2221dc6,gemma_structured_layer_v6:.local-runs/google--gemma-3-270m/layer-4-structured-strong-v6.json:file_sha256:38f7b31c92f4f1b61b56bae9cdf7d8d3eb98a780abc14061287a195eebcf40b0,gemma_flat_generator_refit:.local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-refit-dev-v1.json:report_payload_sha256:7108eb7893e7113df8781583b646b2490545be2771e6c477b87e41ba1035f47a,gemma_l3_l4_rank_64:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-measurement-dev-v3.json:report_payload_sha256:4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016,gemma_l3_l4_rank_128:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-hierarchy-r128-dev-v1.json:report_payload_sha256:313c3af50a260cf30477e4c41e2700f07cba62cab518ab6895dbde7a6280a672,gemma_conditional_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-conditional-spectral-assessment-origin20-dev-v1.json:report_payload_sha256:ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671,gemma_mixed_falsification:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-mixed-mode-falsification-dev-v1.json:report_payload_sha256:931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d,gemma_bilinear_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-executor-dev-v1.json:report_payload_sha256:856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a,gemma_bilinear_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-bilinear-spectral-assessment-dev-v1.json:report_payload_sha256:6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab,gemma_reference_provider_v2_compile:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-dev-v2.json:report_payload_sha256:1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9,gemma_reference_provider_v2_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v2.json:report_payload_sha256:613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e,gemma_reference_provider_v2_attenuation_localization:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-attenuation-localization-dev-v6.json:report_payload_sha256:e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a,gemma_reference_provider_v3_assessment:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-reference-provider-assessment-dev-v3.json:report_payload_sha256:df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392,gemma_reference_provider_contrast_packed_development_c2:.local-runs/google--gemma-3-270m/modal-generator-l3-l4-contrast-packed-provider-dev-c2.json:report_sha256:4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e</metadata>
 <style>
             .background { fill: #f1f5f9; }
             .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
@@ -48,7 +48,7 @@
             }
         </style>
 <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>
-<rect class="background" width="2240" height="820" rx="24"/>
+<rect class="background" width="2550" height="820" rx="24"/>
 <text class="figure-title" x="50.0" y="58.0">Fisher graph compilation — current research ladder</text>
 <text class="figure-subtitle" x="50.0" y="91.0">Evidence becomes more model-realistic from left to right; claim strength does not automatically increase.</text>
 <line class="connector" x1="321.0" y1="400.0" x2="336.0" y2="400.0" marker-end="url(#arrow)"/>
@@ -57,6 +57,7 @@
 <line class="connector" x1="1242.0" y1="400.0" x2="1257.0" y2="400.0" marker-end="url(#arrow)"/>
 <line class="connector" x1="1549.0" y1="400.0" x2="1564.0" y2="400.0" marker-end="url(#arrow)"/>
 <line class="connector" x1="1856.0" y1="400.0" x2="1871.0" y2="400.0" marker-end="url(#arrow)"/>
+<line class="connector" x1="2163.0" y1="400.0" x2="2178.0" y2="400.0" marker-end="url(#arrow)"/>
 <rect class="panel" x="39.0" y="150.0" width="275.0" height="500.0" rx="18"/>
 <rect x="39.0" y="150.0" width="275.0" height="8.0" rx="4" fill="#22c55e"/>
 <text class="stage-number" x="63.0" y="189.0">RUNG 1</text>
@@ -226,7 +227,34 @@
 <tspan x="1905.0" dy="20.0">radial and null contrasts</tspan>
 <tspan x="1905.0" dy="20.0">failed; signed sensitivity…</tspan>
 </text>
-<text class="footer-strong" x="50.0" y="710.0">Current finding: the rank-8 prompt-blind provider passed all sealed fidelity gates; its collision-panel control failed.</text>
+<rect class="panel" x="2188.0" y="150.0" width="275.0" height="500.0" rx="18"/>
+<rect x="2188.0" y="150.0" width="275.0" height="8.0" rx="4" fill="#f59e0b"/>
+<text class="stage-number" x="2212.0" y="189.0">RUNG 8</text>
+<text class="stage-title" x="2212.0" y="227.0">
+<tspan x="2212.0" dy="0.0">Contrast-aware modal</tspan>
+<tspan x="2212.0" dy="26.0">packing</tspan>
+</text>
+<rect x="2212.0" y="262.0" width="168.0" height="30.0" rx="15" fill="#fef3c7"/>
+<text class="status" x="2224.0" y="282.5" style="fill:#92400e">OPEN DEVELOPMENT</text>
+<text class="section-label" x="2212.0" y="330.0">RESOURCE</text>
+<text class="body" x="2212.0" y="357.0">
+<tspan x="2212.0" dy="0.0">Ranks 8/16/32:</tspan>
+<tspan x="2212.0" dy="21.0">1,980/4,276/8,676 scalars;</tspan>
+<tspan x="2212.0" dy="21.0">0.89M/1.32M/1.87M ideal…</tspan>
+</text>
+<line class="divider" x1="2212.0" y1="434.0" x2="2439.0" y2="434.0"/>
+<text class="section-label" x="2212.0" y="469.0">FIDELITY</text>
+<text class="body" x="2212.0" y="496.0">
+<tspan x="2212.0" dy="0.0">All ordinary and null gates</tspan>
+<tspan x="2212.0" dy="21.0">passed; radial 12/16,</tspan>
+<tspan x="2212.0" dy="21.0">13/16, 7/16; signed 0/7</tspan>
+</text>
+<text class="claim" x="2212.0" y="579.0">
+<tspan x="2212.0" dy="0.0">No candidate selected;</tspan>
+<tspan x="2212.0" dy="20.0">objective imbalance is the</tspan>
+<tspan x="2212.0" dy="20.0">next hypothesis, not…</tspan>
+</text>
+<text class="footer-strong" x="50.0" y="710.0">Current finding: all C2 packed widths passed ordinary and exact-null gates; none passed radial plus signed sensitivity.</text>
 <text class="footer" x="50.0" y="742.0">Gemma resource figures are logical accounting. No replacement-model compression or latency result is claimed.</text>
-<text class="footer" x="50.0" y="775.0">Scope: source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, and a fresh sealed v3 contrast assessment of the exact frozen rank-8 provider after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim</text>
+<text class="footer" x="50.0" y="775.0">Scope: source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, a sealed v3 contrast assessment of the exact frozen rank-8 provider, and open-development C2 rate/fidelity/contrast measurements for dense 64-to-r-to-64 modal packing after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, whole-model-compression, kernel-efficiency, or latency claim</text>
 </svg>

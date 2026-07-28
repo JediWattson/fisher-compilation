@@ -25,6 +25,9 @@ DEFAULT_ATTENUATION_OUTPUT = Path(
 DEFAULT_V3_ASSESSMENT_OUTPUT = Path(
     "docs/images/reference-provider-v3-assessment.svg"
 )
+DEFAULT_CONTRAST_PACKED_DEVELOPMENT_OUTPUT = Path(
+    "docs/images/reference-provider-contrast-packed-development.svg"
+)
 
 
 @dataclass(frozen=True)
@@ -285,6 +288,81 @@ class ReferenceProviderV3Assessment:
 
 
 @dataclass(frozen=True)
+class ContrastPackedPredecessorPilot:
+    protocol_sha256: str
+    pilot_panel_sha256: str
+    outcome: str
+    maximum_tested_amplitude: float
+    teacher_relative_effect_at_maximum_by_band: tuple[float, ...]
+    unchanged_minimum_effect_lower: float
+    fit_opened: bool
+    selection_opened: bool
+    c2_change_scope: str
+
+
+@dataclass(frozen=True)
+class ContrastPackedCandidate:
+    candidate_id: str
+    latent_rank: int
+    stored_scalar_count: int
+    canonical_total_mac_count: int
+    ordinary_passed: bool
+    ordinary_fisher_weighted_relative_error: float
+    ordinary_reference_cosine: float
+    ordinary_maximum_per_probe_p90_relative_error: float
+    null_candidate_pass_count: int
+    null_candidate_scored_count: int
+    radial_candidate_pass_count: int
+    radial_candidate_scored_count: int
+    radial_minimum_direction_cosine: float
+    radial_maximum_orthogonal_leakage: float
+    signed_candidate_pass_count: int
+    signed_candidate_scored_count: int
+    final_pointwise_mse: float
+    final_weighted_contrast_terms: float
+    final_pointwise_objective_fraction: float
+    combined_selection_pass: bool
+
+
+@dataclass(frozen=True)
+class ReferenceProviderContrastPackedDevelopment:
+    protocol_scope: str
+    source_report_sha256: str
+    report_schema: str
+    protocol_sha256: str
+    selected_calibration_amplitude: float
+    selection_outcome: str
+    candidate_selected: bool
+    fit_probe_count: int
+    selection_probe_count: int
+    all_candidates_frozen_before_selection_materialization: bool
+    visible_source_modes: int
+    visible_target_modes: int
+    bottleneck_semantics: str
+    prefix_deletion_used: bool
+    exact_gain_null_omitted_structurally: bool
+    c1_predecessor_pilot: ContrastPackedPredecessorPilot
+    candidates: tuple[ContrastPackedCandidate, ...]
+    all_ordinary_candidates_passed: bool
+    all_null_contrasts_passed: bool
+    exact_chart_diagnostic_count: int
+    exact_chart_semantics: str
+    endpoint_arithmetic_used_for_fit: bool
+    maximum_endpoint_chord_relative_error_vs_exact_jvp: float
+    minimum_endpoint_chord_cosine_vs_exact_jvp: float
+    minimum_endpoint_chord_gain_vs_exact_jvp: float
+    maximum_endpoint_chord_gain_vs_exact_jvp: float
+    natural_prompt_transfer_tested: bool
+    nll_measured: bool
+    whole_model_replacement_tested: bool
+    whole_model_compression_claim: bool
+    wall_clock_speed_claim: bool
+    interpretation: str
+    next_rung: str
+    not_proven: str
+
+
+@dataclass(frozen=True)
 class ResearchFigureData:
     sources: tuple[ResearchSource, ...]
     stages: tuple[ResearchStage, ...]
@@ -293,6 +371,7 @@ class ResearchFigureData:
     reference_provider: ReferenceProviderDiagnostic
     collision_attenuation: ReferenceProviderCollisionAttenuationDiagnostic
     reference_provider_v3: ReferenceProviderV3Assessment
+    contrast_packed_development: ReferenceProviderContrastPackedDevelopment
     claim_scope: str
 
 
@@ -395,7 +474,11 @@ def extract_research_figure_data(
             source.get("sha256_kind"),
             f"summary.sources[{index}].sha256_kind",
         )
-        if sha256_kind not in {"file_sha256", "report_payload_sha256"}:
+        if sha256_kind not in {
+            "file_sha256",
+            "report_payload_sha256",
+            "report_sha256",
+        }:
             raise ValueError(
                 f"unsupported research source SHA kind: {sha256_kind}"
             )
@@ -433,6 +516,7 @@ def extract_research_figure_data(
         "gemma_reference_provider_v2_assessment",
         "gemma_reference_provider_v2_attenuation_localization",
         "gemma_reference_provider_v3_assessment",
+        "gemma_reference_provider_contrast_packed_development_c2",
     )
     if tuple(source.source_id for source in sources) != expected_source_ids:
         raise ValueError(
@@ -501,8 +585,8 @@ def extract_research_figure_data(
                 ),
             )
         )
-    if len(stages) != 7:
-        raise ValueError("summary.research_ladder must contain seven stages")
+    if len(stages) != 8:
+        raise ValueError("summary.research_ladder must contain eight stages")
 
     diagnostic_value = _object(
         summary.get("l3_l4_diagnostic"),
@@ -1418,14 +1502,14 @@ def extract_research_figure_data(
         ),
     )
 
-    attenuation_source = sources[-2]
+    attenuation_source = sources[-3]
     if (
         attenuation_source.source_id
         != "gemma_reference_provider_v2_attenuation_localization"
         or attenuation_source.sha256
         != collision_attenuation.source_report_sha256
         or collision_attenuation.source_assessment_report_sha256
-        != sources[-3].sha256
+        != sources[-4].sha256
         or collision_attenuation.protocol_scope
         != "retrospective_teacher_path_attenuation_on_consumed_v2_panel"
         or collision_attenuation.source_assessment_artifact_sha256
@@ -1900,7 +1984,7 @@ def extract_research_figure_data(
         ),
     )
 
-    v3_source = sources[-1]
+    v3_source = sources[-2]
     radial, signed, intended_null = reference_provider_v3.contrast_families
     if (
         v3_source.source_id != "gemma_reference_provider_v3_assessment"
@@ -2092,6 +2176,521 @@ def extract_research_figure_data(
             "reference-provider v3 assessment must preserve metric-isolation "
             "and downstream claim boundaries"
         )
+
+    packed_value = _object(
+        summary.get("reference_provider_contrast_packed_development"),
+        "summary.reference_provider_contrast_packed_development",
+    )
+    packed_prefix = "summary.reference_provider_contrast_packed_development"
+    if set(packed_value) != set(
+        ReferenceProviderContrastPackedDevelopment.__dataclass_fields__
+    ):
+        raise ValueError(
+            "summary.reference_provider_contrast_packed_development fields "
+            "do not match the source-safe format"
+        )
+
+    predecessor_value = _object(
+        packed_value.get("c1_predecessor_pilot"),
+        f"{packed_prefix}.c1_predecessor_pilot",
+    )
+    predecessor_prefix = f"{packed_prefix}.c1_predecessor_pilot"
+    expected_predecessor_fields = set(
+        ContrastPackedPredecessorPilot.__dataclass_fields__
+    )
+    if set(predecessor_value) != expected_predecessor_fields:
+        raise ValueError(
+            f"{predecessor_prefix} fields do not match the failed-closed format"
+        )
+    predecessor_effect_value = _object(
+        predecessor_value.get("teacher_relative_effect_at_maximum_by_band"),
+        f"{predecessor_prefix}.teacher_relative_effect_at_maximum_by_band",
+    )
+    expected_rank_bands = (
+        "band_00_07",
+        "band_08_15",
+        "band_16_31",
+        "band_32_63",
+    )
+    if tuple(predecessor_effect_value) != expected_rank_bands:
+        raise ValueError(
+            f"{predecessor_prefix} must preserve all four ordered rank bands"
+        )
+    predecessor = ContrastPackedPredecessorPilot(
+        protocol_sha256=_sha256(
+            predecessor_value.get("protocol_sha256"),
+            f"{predecessor_prefix}.protocol_sha256",
+        ),
+        pilot_panel_sha256=_sha256(
+            predecessor_value.get("pilot_panel_sha256"),
+            f"{predecessor_prefix}.pilot_panel_sha256",
+        ),
+        outcome=_string(
+            predecessor_value.get("outcome"),
+            f"{predecessor_prefix}.outcome",
+        ),
+        maximum_tested_amplitude=_number(
+            predecessor_value.get("maximum_tested_amplitude"),
+            f"{predecessor_prefix}.maximum_tested_amplitude",
+        ),
+        teacher_relative_effect_at_maximum_by_band=tuple(
+            _number(
+                predecessor_effect_value.get(rank_band),
+                (
+                    f"{predecessor_prefix}."
+                    f"teacher_relative_effect_at_maximum_by_band.{rank_band}"
+                ),
+            )
+            for rank_band in expected_rank_bands
+        ),
+        unchanged_minimum_effect_lower=_number(
+            predecessor_value.get("unchanged_minimum_effect_lower"),
+            f"{predecessor_prefix}.unchanged_minimum_effect_lower",
+        ),
+        fit_opened=_boolean(
+            predecessor_value.get("fit_opened"),
+            f"{predecessor_prefix}.fit_opened",
+        ),
+        selection_opened=_boolean(
+            predecessor_value.get("selection_opened"),
+            f"{predecessor_prefix}.selection_opened",
+        ),
+        c2_change_scope=_string(
+            predecessor_value.get("c2_change_scope"),
+            f"{predecessor_prefix}.c2_change_scope",
+        ),
+    )
+
+    packed_candidates: list[ContrastPackedCandidate] = []
+    for index, candidate_value in enumerate(
+        _array(packed_value.get("candidates"), f"{packed_prefix}.candidates")
+    ):
+        candidate = _object(
+            candidate_value,
+            f"{packed_prefix}.candidates[{index}]",
+        )
+        candidate_prefix = f"{packed_prefix}.candidates[{index}]"
+        if set(candidate) != set(ContrastPackedCandidate.__dataclass_fields__):
+            raise ValueError(
+                f"{candidate_prefix} fields do not match the packed-rate format"
+            )
+        packed_candidates.append(
+            ContrastPackedCandidate(
+                candidate_id=_string(
+                    candidate.get("candidate_id"),
+                    f"{candidate_prefix}.candidate_id",
+                ),
+                latent_rank=_integer(
+                    candidate.get("latent_rank"),
+                    f"{candidate_prefix}.latent_rank",
+                    minimum=1,
+                ),
+                stored_scalar_count=_integer(
+                    candidate.get("stored_scalar_count"),
+                    f"{candidate_prefix}.stored_scalar_count",
+                    minimum=1,
+                ),
+                canonical_total_mac_count=_integer(
+                    candidate.get("canonical_total_mac_count"),
+                    f"{candidate_prefix}.canonical_total_mac_count",
+                    minimum=1,
+                ),
+                ordinary_passed=_boolean(
+                    candidate.get("ordinary_passed"),
+                    f"{candidate_prefix}.ordinary_passed",
+                ),
+                ordinary_fisher_weighted_relative_error=_number(
+                    candidate.get("ordinary_fisher_weighted_relative_error"),
+                    (
+                        f"{candidate_prefix}."
+                        "ordinary_fisher_weighted_relative_error"
+                    ),
+                ),
+                ordinary_reference_cosine=_number(
+                    candidate.get("ordinary_reference_cosine"),
+                    f"{candidate_prefix}.ordinary_reference_cosine",
+                    maximum=1.0,
+                ),
+                ordinary_maximum_per_probe_p90_relative_error=_number(
+                    candidate.get(
+                        "ordinary_maximum_per_probe_p90_relative_error"
+                    ),
+                    (
+                        f"{candidate_prefix}."
+                        "ordinary_maximum_per_probe_p90_relative_error"
+                    ),
+                ),
+                null_candidate_pass_count=_integer(
+                    candidate.get("null_candidate_pass_count"),
+                    f"{candidate_prefix}.null_candidate_pass_count",
+                ),
+                null_candidate_scored_count=_integer(
+                    candidate.get("null_candidate_scored_count"),
+                    f"{candidate_prefix}.null_candidate_scored_count",
+                ),
+                radial_candidate_pass_count=_integer(
+                    candidate.get("radial_candidate_pass_count"),
+                    f"{candidate_prefix}.radial_candidate_pass_count",
+                ),
+                radial_candidate_scored_count=_integer(
+                    candidate.get("radial_candidate_scored_count"),
+                    f"{candidate_prefix}.radial_candidate_scored_count",
+                ),
+                radial_minimum_direction_cosine=_signed_number(
+                    candidate.get("radial_minimum_direction_cosine"),
+                    f"{candidate_prefix}.radial_minimum_direction_cosine",
+                ),
+                radial_maximum_orthogonal_leakage=_number(
+                    candidate.get("radial_maximum_orthogonal_leakage"),
+                    f"{candidate_prefix}.radial_maximum_orthogonal_leakage",
+                ),
+                signed_candidate_pass_count=_integer(
+                    candidate.get("signed_candidate_pass_count"),
+                    f"{candidate_prefix}.signed_candidate_pass_count",
+                ),
+                signed_candidate_scored_count=_integer(
+                    candidate.get("signed_candidate_scored_count"),
+                    f"{candidate_prefix}.signed_candidate_scored_count",
+                ),
+                final_pointwise_mse=_number(
+                    candidate.get("final_pointwise_mse"),
+                    f"{candidate_prefix}.final_pointwise_mse",
+                ),
+                final_weighted_contrast_terms=_number(
+                    candidate.get("final_weighted_contrast_terms"),
+                    f"{candidate_prefix}.final_weighted_contrast_terms",
+                ),
+                final_pointwise_objective_fraction=_number(
+                    candidate.get("final_pointwise_objective_fraction"),
+                    f"{candidate_prefix}.final_pointwise_objective_fraction",
+                    maximum=1.0,
+                ),
+                combined_selection_pass=_boolean(
+                    candidate.get("combined_selection_pass"),
+                    f"{candidate_prefix}.combined_selection_pass",
+                ),
+            )
+        )
+
+    def packed_number(field_name: str) -> float:
+        return _number(
+            packed_value.get(field_name),
+            f"{packed_prefix}.{field_name}",
+        )
+
+    def packed_integer(field_name: str) -> int:
+        return _integer(
+            packed_value.get(field_name),
+            f"{packed_prefix}.{field_name}",
+        )
+
+    def packed_boolean(field_name: str) -> bool:
+        return _boolean(
+            packed_value.get(field_name),
+            f"{packed_prefix}.{field_name}",
+        )
+
+    contrast_packed_development = ReferenceProviderContrastPackedDevelopment(
+        protocol_scope=_string(
+            packed_value.get("protocol_scope"),
+            f"{packed_prefix}.protocol_scope",
+        ),
+        source_report_sha256=_sha256(
+            packed_value.get("source_report_sha256"),
+            f"{packed_prefix}.source_report_sha256",
+        ),
+        report_schema=_string(
+            packed_value.get("report_schema"),
+            f"{packed_prefix}.report_schema",
+        ),
+        protocol_sha256=_sha256(
+            packed_value.get("protocol_sha256"),
+            f"{packed_prefix}.protocol_sha256",
+        ),
+        selected_calibration_amplitude=packed_number(
+            "selected_calibration_amplitude"
+        ),
+        selection_outcome=_string(
+            packed_value.get("selection_outcome"),
+            f"{packed_prefix}.selection_outcome",
+        ),
+        candidate_selected=packed_boolean("candidate_selected"),
+        fit_probe_count=packed_integer("fit_probe_count"),
+        selection_probe_count=packed_integer("selection_probe_count"),
+        all_candidates_frozen_before_selection_materialization=packed_boolean(
+            "all_candidates_frozen_before_selection_materialization"
+        ),
+        visible_source_modes=packed_integer("visible_source_modes"),
+        visible_target_modes=packed_integer("visible_target_modes"),
+        bottleneck_semantics=_string(
+            packed_value.get("bottleneck_semantics"),
+            f"{packed_prefix}.bottleneck_semantics",
+        ),
+        prefix_deletion_used=packed_boolean("prefix_deletion_used"),
+        exact_gain_null_omitted_structurally=packed_boolean(
+            "exact_gain_null_omitted_structurally"
+        ),
+        c1_predecessor_pilot=predecessor,
+        candidates=tuple(packed_candidates),
+        all_ordinary_candidates_passed=packed_boolean(
+            "all_ordinary_candidates_passed"
+        ),
+        all_null_contrasts_passed=packed_boolean(
+            "all_null_contrasts_passed"
+        ),
+        exact_chart_diagnostic_count=packed_integer(
+            "exact_chart_diagnostic_count"
+        ),
+        exact_chart_semantics=_string(
+            packed_value.get("exact_chart_semantics"),
+            f"{packed_prefix}.exact_chart_semantics",
+        ),
+        endpoint_arithmetic_used_for_fit=packed_boolean(
+            "endpoint_arithmetic_used_for_fit"
+        ),
+        maximum_endpoint_chord_relative_error_vs_exact_jvp=packed_number(
+            "maximum_endpoint_chord_relative_error_vs_exact_jvp"
+        ),
+        minimum_endpoint_chord_cosine_vs_exact_jvp=packed_number(
+            "minimum_endpoint_chord_cosine_vs_exact_jvp"
+        ),
+        minimum_endpoint_chord_gain_vs_exact_jvp=packed_number(
+            "minimum_endpoint_chord_gain_vs_exact_jvp"
+        ),
+        maximum_endpoint_chord_gain_vs_exact_jvp=packed_number(
+            "maximum_endpoint_chord_gain_vs_exact_jvp"
+        ),
+        natural_prompt_transfer_tested=packed_boolean(
+            "natural_prompt_transfer_tested"
+        ),
+        nll_measured=packed_boolean("nll_measured"),
+        whole_model_replacement_tested=packed_boolean(
+            "whole_model_replacement_tested"
+        ),
+        whole_model_compression_claim=packed_boolean(
+            "whole_model_compression_claim"
+        ),
+        wall_clock_speed_claim=packed_boolean("wall_clock_speed_claim"),
+        interpretation=_string(
+            packed_value.get("interpretation"),
+            f"{packed_prefix}.interpretation",
+        ),
+        next_rung=_string(
+            packed_value.get("next_rung"),
+            f"{packed_prefix}.next_rung",
+        ),
+        not_proven=_string(
+            packed_value.get("not_proven"),
+            f"{packed_prefix}.not_proven",
+        ),
+    )
+
+    packed_source = sources[-1]
+    if (
+        packed_source.source_id
+        != "gemma_reference_provider_contrast_packed_development_c2"
+        or packed_source.sha256
+        != contrast_packed_development.source_report_sha256
+        or contrast_packed_development.protocol_scope
+        != "open_development_prompt_blind_synthetic_provider_selection"
+        or contrast_packed_development.report_schema
+        != "fisher_graph.gemma3_l3_l4_contrast_packed_provider_development.c2"
+        or contrast_packed_development.protocol_sha256
+        != "033020dc9a0da819bd5753eb10090bff1bd9b4fcf61f33cd7186b1c1e3cb5254"
+        or contrast_packed_development.selected_calibration_amplitude != 8.0
+        or contrast_packed_development.selection_outcome
+        != "no_candidate_passed_combined_gates"
+        or contrast_packed_development.candidate_selected
+        or (
+            contrast_packed_development.fit_probe_count,
+            contrast_packed_development.selection_probe_count,
+        )
+        != (80, 80)
+        or not (
+            contrast_packed_development
+            .all_candidates_frozen_before_selection_materialization
+        )
+    ):
+        raise ValueError(
+            "contrast-packed development must identify the authenticated C2 "
+            "protocol, calibration, frozen candidates, and no-selection result"
+        )
+    if (
+        predecessor.protocol_sha256
+        != "829fe983b1a221b888d683d71e658a86038dbbb61fd5b8fd1e3ebd979e40aadf"
+        or predecessor.pilot_panel_sha256
+        != "5268c22ecc9b8154d0f1f70a653bab9b146f88815b7f11f8c0576f278f5bb085"
+        or predecessor.outcome
+        != "failed_closed_no_eligible_global_amplitude"
+        or predecessor.maximum_tested_amplitude != 2.0
+        or predecessor.teacher_relative_effect_at_maximum_by_band
+        != (0.008251, 0.003732, 0.011773, 0.003672)
+        or predecessor.unchanged_minimum_effect_lower != 0.02
+        or predecessor.fit_opened
+        or predecessor.selection_opened
+        or predecessor.c2_change_scope
+        != "fresh_pilot_identities_and_amplitude_grid_not_gate_tuning"
+    ):
+        raise ValueError(
+            "contrast-packed development must preserve the consumed C1 "
+            "failed-closed provenance and unopened fit/selection panels"
+        )
+    if (
+        contrast_packed_development.visible_source_modes,
+        contrast_packed_development.visible_target_modes,
+        contrast_packed_development.bottleneck_semantics,
+        contrast_packed_development.prefix_deletion_used,
+        contrast_packed_development.exact_gain_null_omitted_structurally,
+    ) != (
+        64,
+        64,
+        "learned_64_to_r_to_64_modal_packing",
+        False,
+        True,
+    ):
+        raise ValueError(
+            "contrast-packed development must preserve dense 64-to-r-to-64 "
+            "packing rather than prefix deletion"
+        )
+    if tuple(
+        (
+            candidate.candidate_id,
+            candidate.latent_rank,
+            candidate.stored_scalar_count,
+            candidate.canonical_total_mac_count,
+            candidate.ordinary_passed,
+            candidate.null_candidate_pass_count,
+            candidate.null_candidate_scored_count,
+            candidate.radial_candidate_pass_count,
+            candidate.radial_candidate_scored_count,
+            candidate.signed_candidate_pass_count,
+            candidate.signed_candidate_scored_count,
+            candidate.combined_selection_pass,
+        )
+        for candidate in packed_candidates
+    ) != (
+        ("latent-r08", 8, 1980, 893216, True, 24, 24, 12, 16, 0, 7, False),
+        ("latent-r16", 16, 4276, 1315072, True, 24, 24, 13, 16, 0, 7, False),
+        ("latent-r32", 32, 8676, 1874688, True, 24, 24, 7, 16, 0, 7, False),
+    ):
+        raise ValueError(
+            "contrast-packed development must preserve the rank, storage, "
+            "MAC, ordinary, null, radial, signed, and selection accounting"
+        )
+    expected_candidate_measurements = (
+        (
+            0.01222416949725639,
+            0.9999277488877331,
+            0.052867457436583,
+            0.9650302580926577,
+            0.22299812726834625,
+            26394.438818249164,
+            0.9507158710657677,
+            0.9999639817449999,
+        ),
+        (
+            0.010726897262420765,
+            0.9999446403971924,
+            0.04443231542673734,
+            0.9759708617678738,
+            0.18472275950946263,
+            12828.99406375779,
+            0.4251439190356905,
+            0.9999668617953663,
+        ),
+        (
+            0.016853246635341403,
+            0.9998620255229652,
+            0.09586100691327414,
+            0.8962859149612649,
+            0.3547592766021971,
+            12016.029716510138,
+            0.507412490207571,
+            0.9999577738174683,
+        ),
+    )
+    for candidate, expected in zip(
+        packed_candidates,
+        expected_candidate_measurements,
+        strict=True,
+    ):
+        actual = (
+            candidate.ordinary_fisher_weighted_relative_error,
+            candidate.ordinary_reference_cosine,
+            candidate.ordinary_maximum_per_probe_p90_relative_error,
+            candidate.radial_minimum_direction_cosine,
+            candidate.radial_maximum_orthogonal_leakage,
+            candidate.final_pointwise_mse,
+            candidate.final_weighted_contrast_terms,
+            candidate.final_pointwise_objective_fraction,
+        )
+        if any(
+            not math.isclose(
+                actual_value,
+                expected_value,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+            for actual_value, expected_value in zip(actual, expected, strict=True)
+        ):
+            raise ValueError(
+                "contrast-packed development must preserve the reported "
+                "ordinary, radial, and objective measurements"
+            )
+    if (
+        not contrast_packed_development.all_ordinary_candidates_passed
+        or not contrast_packed_development.all_null_contrasts_passed
+        or contrast_packed_development.exact_chart_diagnostic_count != 24
+        or contrast_packed_development.exact_chart_semantics
+        != (
+            "z_of_hidden_midpoint_and_J_z_at_hidden_midpoint_times_"
+            "right_minus_left_hidden"
+        )
+        or contrast_packed_development.endpoint_arithmetic_used_for_fit
+        or not math.isclose(
+            contrast_packed_development
+            .maximum_endpoint_chord_relative_error_vs_exact_jvp,
+            0.7260907286237727,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            contrast_packed_development
+            .minimum_endpoint_chord_cosine_vs_exact_jvp,
+            0.9181098842784801,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            contrast_packed_development
+            .minimum_endpoint_chord_gain_vs_exact_jvp,
+            0.6047321724599608,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        or not math.isclose(
+            contrast_packed_development
+            .maximum_endpoint_chord_gain_vs_exact_jvp,
+            1.4885416696763296,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    ):
+        raise ValueError(
+            "contrast-packed development must preserve exact provider-chart "
+            "JVP fitting and the measured endpoint-chord mismatch"
+        )
+    if (
+        contrast_packed_development.natural_prompt_transfer_tested
+        or contrast_packed_development.nll_measured
+        or contrast_packed_development.whole_model_replacement_tested
+        or contrast_packed_development.whole_model_compression_claim
+        or contrast_packed_development.wall_clock_speed_claim
+    ):
+        raise ValueError(
+            "contrast-packed development must preserve natural-prompt, NLL, "
+            "whole-model, compression, and wall-clock claim boundaries"
+        )
     return ResearchFigureData(
         sources=tuple(sources),
         stages=tuple(stages),
@@ -2100,6 +2699,7 @@ def extract_research_figure_data(
         reference_provider=reference_provider,
         collision_attenuation=collision_attenuation,
         reference_provider_v3=reference_provider_v3,
+        contrast_packed_development=contrast_packed_development,
         claim_scope=_string(summary.get("claim_scope"), "summary.claim_scope"),
     )
 
@@ -2128,7 +2728,10 @@ def verify_available_source_digests(
         source_bytes = source_path.read_bytes()
         if source.sha256_kind == "file_sha256":
             actual_sha256 = hashlib.sha256(source_bytes).hexdigest()
-        elif source.sha256_kind == "report_payload_sha256":
+        elif source.sha256_kind in {
+            "report_payload_sha256",
+            "report_sha256",
+        }:
             report_value = json.loads(source_bytes)
             report = _object(report_value, f"source[{source.source_id}]")
             actual_sha256 = _sha256(
@@ -2325,19 +2928,20 @@ def render_research_ladder(
 ) -> str:
     """Render the empirical research progression and its claim boundaries."""
 
-    width = 2240
+    width = 2550
     height = 820
     svg = _svg_start(
         width=width,
         height=height,
         title="Fisher graph compilation research ladder",
         description=(
-            "Seven stages summarize the verified toy executor, Gemma "
+            "Eight stages summarize the verified toy executor, Gemma "
             "single-layer fidelity parent, open-development flat generator "
             "stack, failed stationary L3-to-L4 transport diagnostic, "
             "conditional mixed-mode finding, and the frozen bilinear "
-            "spectral component assessment, followed by the prompt-blind "
-            "reference-provider fidelity result and failed collision control."
+            "spectral component assessment, the sealed prompt-blind "
+            "reference-provider result, and the open-development contrast-"
+            "aware dense modal-packing rate curve."
         ),
         source_label=source_label,
         source_sha256=source_sha256,
@@ -2493,8 +3097,8 @@ def render_research_ladder(
                 50,
                 710,
                 (
-                    "Current finding: the rank-8 prompt-blind provider passed "
-                    "all sealed fidelity gates; its collision-panel control failed."
+                    "Current finding: all C2 packed widths passed ordinary and "
+                    "exact-null gates; none passed radial plus signed sensitivity."
                 ),
                 css_class="footer-strong",
             ),
@@ -4084,6 +4688,410 @@ def render_reference_provider_v3_assessment(
     return "\n".join(svg) + "\n"
 
 
+def render_reference_provider_contrast_packed_development(
+    data: ResearchFigureData,
+    *,
+    source_sha256: str,
+    source_label: str,
+) -> str:
+    """Render the open-development C2 rate, fidelity, and contrast result."""
+
+    result = data.contrast_packed_development
+    candidates = result.candidates
+    width = 1600
+    height = 950
+    panel_y = 142.0
+    panel_height = 560.0
+    panel_width = 470.0
+    panel_xs = (50.0, 565.0, 1080.0)
+    svg = _svg_start(
+        width=width,
+        height=height,
+        title="Contrast-aware packed reference-provider development",
+        description=(
+            "Three panels compare rank 8, 16, and 32 dense modal-packing "
+            "providers by stored scalars and ideal mathematical MACs, held-out "
+            "ordinary fidelity, and null, radial, and signed contrast passes. "
+            "All ordinary and null tests pass, but no candidate passes the "
+            "combined sensitivity gates."
+        ),
+        source_label=source_label,
+        source_sha256=source_sha256,
+        sources=data.sources,
+    )
+    svg.extend(
+        [
+            _text(
+                50,
+                58,
+                "C2 packed provider — rate, fidelity, and contrast",
+                css_class="figure-title",
+            ),
+            _text(
+                50,
+                91,
+                (
+                    "Dense 64→r→64 modal packing keeps every source and target "
+                    "mode visible; ranks are bottleneck widths, not prefix cuts."
+                ),
+                css_class="figure-subtitle",
+            ),
+        ]
+    )
+    for x in panel_xs:
+        svg.append(
+            f'<rect class="panel" x="{x:.1f}" y="{panel_y:.1f}" '
+            f'width="{panel_width:.1f}" height="{panel_height:.1f}" rx="18"/>'
+        )
+
+    # Panel 1: rate.
+    rate_x = panel_xs[0] + 26.0
+    rate_track_x = rate_x + 82.0
+    rate_track_width = 238.0
+    maximum_storage = max(
+        candidate.stored_scalar_count for candidate in candidates
+    )
+    maximum_macs = max(
+        candidate.canonical_total_mac_count for candidate in candidates
+    )
+    svg.extend(
+        [
+            _text(rate_x, 181, "1 · RATE", css_class="section-label"),
+            _text(
+                rate_x,
+                220,
+                "Stored state + ideal MACs",
+                css_class="panel-title",
+            ),
+            _text(
+                rate_x,
+                248,
+                "Bars normalize to rank 32; actual values are labeled.",
+                css_class="metric-scale",
+            ),
+        ]
+    )
+    for index, candidate in enumerate(candidates):
+        y = 294.0 + index * 116.0
+        storage_width = (
+            rate_track_width
+            * candidate.stored_scalar_count
+            / maximum_storage
+        )
+        mac_width = (
+            rate_track_width
+            * candidate.canonical_total_mac_count
+            / maximum_macs
+        )
+        svg.extend(
+            [
+                _text(
+                    rate_x,
+                    y + 17.0,
+                    f"r{candidate.latent_rank}",
+                    css_class="rank-label",
+                ),
+                _text(
+                    rate_x + 34.0,
+                    y + 17.0,
+                    "state",
+                    css_class="metric-scale",
+                ),
+                (
+                    f'<rect class="track" x="{rate_track_x:.1f}" '
+                    f'y="{y:.1f}" width="{rate_track_width:.1f}" '
+                    'height="19.0" rx="9.5"/>'
+                ),
+                (
+                    f'<rect x="{rate_track_x:.1f}" y="{y:.1f}" '
+                    f'width="{storage_width:.1f}" height="19.0" rx="9.5" '
+                    'fill="#3b82f6"/>'
+                ),
+                _text(
+                    rate_track_x + rate_track_width + 10.0,
+                    y + 15.5,
+                    f"{candidate.stored_scalar_count:,}",
+                    css_class="metric-value",
+                ),
+                _text(
+                    rate_x + 34.0,
+                    y + 51.0,
+                    "MAC",
+                    css_class="metric-scale",
+                ),
+                (
+                    f'<rect class="track" x="{rate_track_x:.1f}" '
+                    f'y="{y + 34.0:.1f}" width="{rate_track_width:.1f}" '
+                    'height="19.0" rx="9.5"/>'
+                ),
+                (
+                    f'<rect x="{rate_track_x:.1f}" y="{y + 34.0:.1f}" '
+                    f'width="{mac_width:.1f}" height="19.0" rx="9.5" '
+                    'fill="#14b8a6"/>'
+                ),
+                _text(
+                    rate_track_x + rate_track_width + 10.0,
+                    y + 49.5,
+                    f"{candidate.canonical_total_mac_count / 1_000_000:.2f}M",
+                    css_class="metric-value",
+                ),
+            ]
+        )
+    svg.extend(
+        _wrapped_text(
+            rate_x,
+            651,
+            (
+                "Ideal mathematical accounting only; this is not a kernel "
+                "efficiency or wall-clock measurement."
+            ),
+            css_class="footer",
+            width=51,
+            line_height=19.0,
+            max_lines=2,
+        )
+    )
+
+    # Panel 2: ordinary held-out fidelity.
+    fidelity_x = panel_xs[1] + 26.0
+    fidelity_track_x = fidelity_x + 55.0
+    fidelity_track_width = 270.0
+    fidelity_scale = 0.02
+    svg.extend(
+        [
+            _text(fidelity_x, 181, "2 · FIDELITY", css_class="section-label"),
+            _text(
+                fidelity_x,
+                220,
+                "Ordinary held-out error",
+                css_class="panel-title",
+            ),
+            _text(
+                fidelity_x,
+                248,
+                "Fisher-weighted relative error; lower is better.",
+                css_class="metric-scale",
+            ),
+        ]
+    )
+    for index, candidate in enumerate(candidates):
+        y = 299.0 + index * 116.0
+        error_width = (
+            fidelity_track_width
+            * candidate.ordinary_fisher_weighted_relative_error
+            / fidelity_scale
+        )
+        svg.extend(
+            [
+                _text(
+                    fidelity_x,
+                    y + 17.0,
+                    f"r{candidate.latent_rank}",
+                    css_class="rank-label",
+                ),
+                (
+                    f'<rect class="track" x="{fidelity_track_x:.1f}" '
+                    f'y="{y:.1f}" width="{fidelity_track_width:.1f}" '
+                    'height="24.0" rx="12"/>'
+                ),
+                (
+                    f'<rect x="{fidelity_track_x:.1f}" y="{y:.1f}" '
+                    f'width="{error_width:.1f}" height="24.0" rx="12" '
+                    'fill="#f59e0b"/>'
+                ),
+                _text(
+                    fidelity_track_x + fidelity_track_width + 10.0,
+                    y + 18.0,
+                    (
+                        f"{100 * candidate.ordinary_fisher_weighted_relative_error:.2f}%"
+                    ),
+                    css_class="metric-value",
+                ),
+                _text(
+                    fidelity_track_x,
+                    y + 50.0,
+                    (
+                        f"cosine {candidate.ordinary_reference_cosine:.5f} · "
+                        f"p90 max {100 * candidate.ordinary_maximum_per_probe_p90_relative_error:.2f}%"
+                    ),
+                    css_class="metric-scale",
+                ),
+                _text(
+                    fidelity_track_x,
+                    y + 76.0,
+                    "ORDINARY PASS",
+                    css_class="metric-scale verdict-good",
+                ),
+            ]
+        )
+    svg.extend(
+        _wrapped_text(
+            fidelity_x,
+            651,
+            (
+                "Rank 16 is the best ordinary point, but rank does not order "
+                "held-out error monotonically."
+            ),
+            css_class="footer",
+            width=51,
+            line_height=19.0,
+            max_lines=2,
+        )
+    )
+
+    # Panel 3: contrast pass fractions.
+    contrast_x = panel_xs[2] + 26.0
+    contrast_track_x = contrast_x + 70.0
+    contrast_track_width = 238.0
+    svg.extend(
+        [
+            _text(contrast_x, 181, "3 · CONTRAST", css_class="section-label"),
+            _text(
+                contrast_x,
+                220,
+                "Qualified contrast passes",
+                css_class="panel-title",
+            ),
+            _text(
+                contrast_x,
+                248,
+                "Null / radial / signed pass counts at each rank.",
+                css_class="metric-scale",
+            ),
+        ]
+    )
+    contrast_rows = (
+        ("null", "#10b981"),
+        ("radial", "#f59e0b"),
+        ("signed", "#ef4444"),
+    )
+    for candidate_index, candidate in enumerate(candidates):
+        group_y = 280.0 + candidate_index * 122.0
+        svg.append(
+            _text(
+                contrast_x,
+                group_y + 17.0,
+                f"r{candidate.latent_rank}",
+                css_class="rank-label",
+            )
+        )
+        counts = {
+            "null": (
+                candidate.null_candidate_pass_count,
+                candidate.null_candidate_scored_count,
+            ),
+            "radial": (
+                candidate.radial_candidate_pass_count,
+                candidate.radial_candidate_scored_count,
+            ),
+            "signed": (
+                candidate.signed_candidate_pass_count,
+                candidate.signed_candidate_scored_count,
+            ),
+        }
+        for row_index, (family, fill) in enumerate(contrast_rows):
+            y = group_y + row_index * 31.0
+            passed, scored = counts[family]
+            pass_width = contrast_track_width * passed / scored
+            svg.extend(
+                [
+                    _text(
+                        contrast_x + 30.0,
+                        y + 15.0,
+                        family,
+                        css_class="metric-scale",
+                    ),
+                    (
+                        f'<rect class="track" x="{contrast_track_x:.1f}" '
+                        f'y="{y:.1f}" width="{contrast_track_width:.1f}" '
+                        'height="18.0" rx="9"/>'
+                    ),
+                    (
+                        f'<rect x="{contrast_track_x:.1f}" y="{y:.1f}" '
+                        f'width="{pass_width:.1f}" height="18.0" rx="9" '
+                        f'fill="{fill}"/>'
+                    ),
+                    _text(
+                        contrast_track_x + contrast_track_width + 10.0,
+                        y + 14.5,
+                        f"{passed}/{scored}",
+                        css_class="metric-value",
+                    ),
+                ]
+            )
+    svg.extend(
+        [
+            _text(
+                contrast_x,
+                651,
+                "NO COMBINED CANDIDATE SELECTED",
+                css_class="footer-strong verdict-bad",
+            ),
+            _text(
+                contrast_x,
+                678,
+                "Rank 16 is closest on radial sensitivity: 13/16.",
+                css_class="footer",
+            ),
+        ]
+    )
+
+    svg.extend(
+        [
+            (
+                '<rect class="callout" x="50.0" y="736.0" width="1500.0" '
+                'height="112.0" rx="16"/>'
+            ),
+            _text(
+                76,
+                770,
+                "WHY THE NEXT TEST IS OBJECTIVE REBALANCING",
+                css_class="section-label",
+            ),
+            _text(
+                76,
+                800,
+                (
+                    "Pointwise loss is >99.995% of the final weighted objective "
+                    "at every rank (contrast terms: 0.951 / 0.425 / 0.507)."
+                ),
+                css_class="footer-strong",
+            ),
+            _text(
+                76,
+                829,
+                (
+                    "Exact chart correction is active: fit JVPs use z(hmid) and "
+                    "Jz(hmid)(hR−hL), not endpoint subtraction; chord error "
+                    "reached 72.6%."
+                ),
+                css_class="footer",
+            ),
+            _text(
+                50,
+                888,
+                (
+                    "Boundary: open synthetic development only — no natural-"
+                    "prompt, NLL, whole-model replacement/compression, realized "
+                    "kernel, speed, or latency claim."
+                ),
+                css_class="footer",
+            ),
+            _text(
+                50,
+                919,
+                (
+                    "C1 failed closed at h≤2 with fit and selection unopened; "
+                    "fresh C2 identities selected h=8 without changing gates."
+                ),
+                css_class="footer",
+            ),
+            "</svg>",
+        ]
+    )
+    return "\n".join(svg) + "\n"
+
+
 def render_summary_file(
     summary_path: Path,
     ladder_output_path: Path,
@@ -4091,6 +5099,7 @@ def render_summary_file(
     bilinear_output_path: Path,
     attenuation_output_path: Path,
     v3_assessment_output_path: Path,
+    contrast_packed_development_output_path: Path,
     *,
     source_root: Path = Path("."),
 ) -> None:
@@ -4128,11 +5137,22 @@ def render_summary_file(
         source_sha256=source_sha256,
         source_label=source_label,
     )
+    contrast_packed_development_svg = (
+        render_reference_provider_contrast_packed_development(
+            data,
+            source_sha256=source_sha256,
+            source_label=source_label,
+        )
+    )
     ladder_output_path.parent.mkdir(parents=True, exist_ok=True)
     diagnostic_output_path.parent.mkdir(parents=True, exist_ok=True)
     bilinear_output_path.parent.mkdir(parents=True, exist_ok=True)
     attenuation_output_path.parent.mkdir(parents=True, exist_ok=True)
     v3_assessment_output_path.parent.mkdir(parents=True, exist_ok=True)
+    contrast_packed_development_output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
     ladder_output_path.write_text(ladder_svg, encoding="utf-8", newline="\n")
     diagnostic_output_path.write_text(
         diagnostic_svg,
@@ -4154,6 +5174,11 @@ def render_summary_file(
         encoding="utf-8",
         newline="\n",
     )
+    contrast_packed_development_output_path.write_text(
+        contrast_packed_development_svg,
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -4161,8 +5186,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         description=(
             "Render the current research ladder, Gemma L3/L4 rank "
             "diagnostic, bilinear assessment, and retrospective collision "
-            "attenuation and sealed V3 assessment results as deterministic "
-            "SVGs."
+            "attenuation, sealed V3 assessment, and open-development C2 packed "
+            "provider results as deterministic SVGs."
         )
     )
     parser.add_argument(
@@ -4214,6 +5239,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
+        "--contrast-packed-development-output",
+        type=Path,
+        default=DEFAULT_CONTRAST_PACKED_DEVELOPMENT_OUTPUT,
+        help=(
+            "contrast-packed provider development SVG destination "
+            f"(default: {DEFAULT_CONTRAST_PACKED_DEVELOPMENT_OUTPUT})"
+        ),
+    )
+    parser.add_argument(
         "--source-root",
         type=Path,
         default=Path("."),
@@ -4230,6 +5264,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         arguments.bilinear_output,
         arguments.attenuation_output,
         arguments.v3_assessment_output,
+        arguments.contrast_packed_development_output,
         source_root=arguments.source_root,
     )
     print(f"Wrote {arguments.ladder_output}")
@@ -4237,6 +5272,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Wrote {arguments.bilinear_output}")
     print(f"Wrote {arguments.attenuation_output}")
     print(f"Wrote {arguments.v3_assessment_output}")
+    print(f"Wrote {arguments.contrast_packed_development_output}")
 
 
 if __name__ == "__main__":

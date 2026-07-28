@@ -1270,6 +1270,139 @@ The local output remains ignored. Its published state is tensor-free: raw
 teacher targets, candidate predictions, provider parameters, source-model
 weights, prompts, and token IDs are not serialized.
 
+### C2 development: dense modal packing with contrast-aware fitting
+
+The next architecture was tested as a held-out **development-selection**
+rung, not as V4 and not as sealed validation. It replaces prefix retention
+with a learned bottleneck:
+
+```text
+64 visible source modes
+  → learned dense 64→r encoder
+  → causal rank-r modal executor
+  → learned dense r→64 decoder
+  → 64 visible target modes
+```
+
+Thus rank \(r\) is a packed latent width. Every candidate still sees all 64
+inputs and reconstructs all 64 outputs; encoder columns may combine
+nonadjacent modes. No source or target prefix is deleted. The only scalar gain
+feature is reconstructed from non-null RMS, and the exact gain-null coordinate
+is omitted structurally, so a pure gain-null displacement cannot change the
+provider input.
+
+The protocol maintained a strict data firewall:
+
+- a 40-endpoint pilot could choose one global displacement amplitude;
+- 80 fit endpoints trained ranks 8, 16, and 32;
+- all three candidates were frozen before the disjoint 80-endpoint selection
+  panel was materialized; and
+- selection data did not change training.
+
+The first C1 pilot failed closed. At the largest tested amplitude, `2`, its
+per-band teacher effects were `0.008251`, `0.003732`, `0.011773`, and
+`0.003672`; none met the unchanged `0.02` floor. C1 fit and selection were
+therefore never opened. C2 used fresh pilot, fit, and selection identities and
+a preregistered `2/4/6/8/12` amplitude grid without changing the effect,
+finite-difference, or stability gates. Amplitude `8` was the smallest global
+choice satisfying the frozen 75%-of-bands effect rule and all-band
+finite-difference stability rule.
+
+Before selection was materialized, a fit-path audit found a separate
+coordinate error: subtracting provider-chart endpoint features is not the JVP
+of the nonlinear hidden-to-provider chart. The endpoint approximation's
+modal tangent reached relative error `0.7261`, cosine `0.9181`, and gains from
+`0.6047` to `1.4885`. The final candidates were refitted with the exact
+hidden-midpoint chart primal and hidden-chord push-forward computed by JVP.
+The objective and artifact explicitly forbid endpoint arithmetic, and no
+selection target was opened before this correction.
+
+All three ranks passed the ordinary full-target and execution-structure gates:
+
+| rank | Fisher-relative error | reference cosine | max per-probe p90 | worst family error |
+|---:|---:|---:|---:|---:|
+| 8 | `0.0122242` | `0.999928` | `0.0528675` | `0.0171139` |
+| 16 | `0.0107269` | `0.999945` | `0.0444323` | `0.0134167` |
+| 32 | `0.0168532` | `0.999862` | `0.0958610` | `0.0241072` |
+
+The contrast gate did not pass:
+
+| rank | exact gain-null | radial sensitivity | signed sensitivity | combined |
+|---:|---:|---:|---:|---|
+| 8 | `24 / 24` | `12 / 16` | `0 / 7` | fail |
+| 16 | `24 / 24` | `13 / 16` | `0 / 7` | fail |
+| 32 | `24 / 24` | `7 / 16` | `0 / 7` | fail |
+
+All four Fisher-rank bands were represented. Seven of eight signed pairs were
+teacher-qualified at every rank, but none passed candidate recovery. Rank 16
+was the closest radial candidate: minimum direction cosine `0.97597` and
+maximum orthogonal leakage `0.18472` passed, while macro relative error
+`0.28925` and projection gain range `0.56395–1.36211` still failed. The rank
+curve is therefore nonmonotonic; adding latent width did not monotonically
+improve either ordinary or contrast generalization.
+
+The most actionable diagnostic is objective scale. Although pointwise,
+relative-delta, direction, midpoint-JVP, and null losses were all present, the
+final weighted objective was effectively pointwise-only:
+
+| rank | pointwise contribution | all nonpointwise contributions | pointwise fraction |
+|---:|---:|---:|---:|
+| 8 | `26,394.4388` | `0.950716` | `99.996398%` |
+| 16 | `12,828.9941` | `0.425144` | `99.996686%` |
+| 32 | `12,016.0297` | `0.507412` | `99.995777%` |
+
+That scale imbalance is consistent with excellent absolute-target fidelity
+and poor difference-level generalization. Together with the nonmonotonic rank
+curve, it points to optimization and objective balancing as unresolved
+variables; it is not evidence that dense modal packing is impossible.
+
+The resource curve is real for this provider component but narrow:
+
+| rank | stored scalars | reduction vs prior 15,046-scalar dense provider | canonical MACs, `B=1`, `S=128` | MAC reduction vs rank 32 |
+|---:|---:|---:|---:|---:|
+| 8 | `1,980` | `86.84%` | `893,216` | `52.35%` |
+| 16 | `4,276` | `71.58%` | `1,315,072` | `29.85%` |
+| 32 | `8,676` | `42.34%` | `1,874,688` | `0%` |
+
+These are stored provider scalars and declared mathematical MACs. They are not
+whole-model parameter counts, measured latency, or proof of an executable
+Gemma replacement.
+
+[![C2 contrast-packed provider development rate curve, ordinary fidelity, and contrast recovery](images/reference-provider-contrast-packed-development.svg)](images/reference-provider-contrast-packed-development.svg)
+
+The ignored C2 report binds protocol
+`033020dc9a0da819bd5753eb10090bff1bd9b4fcf61f33cd7186b1c1e3cb5254`,
+calibration
+`aedb23de65ed6a37d645539001311ddb415cd2713400777dac448cb96bd5bfa8`,
+candidate set
+`716ef6dda128deb407eb955f013988cd415559feda3b3a220479ccfeed540209`,
+implementation bundle
+`eb3bc4a89315bc7550e8599572b174d9c3be22e96374269f22b744a393360d64`,
+logical artifact
+`77c3d569304b26352ff7975a045105d4ee72156600c9489a67fdfa137bfb697f`,
+and report
+`4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e`.
+The local tensor artifact contains the fitted provider parameters and remains
+ignored and non-committable. The run loaded no prompt text, token IDs,
+tokenizer, natural activation rows, V2/V3 targets, or source-model state into
+the artifact. The frozen upstream Fisher basis is still prompt-derived; this
+run does not establish prompt-independent basis discovery.
+
+The declaration can be inspected without loading the model or opening any
+teacher target:
+
+```bash
+fisher-graph-gemma-l3-l4-contrast-provider-dev describe
+```
+
+The full development run defaults to the ignored `.local-runs/` tree:
+
+```bash
+fisher-graph-gemma-l3-l4-contrast-provider-dev compile \
+  --device cpu \
+  --dtype float32
+```
+
 ## Next validation gate
 
 Both V2 and V3 are consumed. V2 remains a teacher-panel-control failure; V3 is
@@ -1277,19 +1410,25 @@ the first direct evidence that this frozen provider's strong ordinary fidelity
 does not guarantee contrast preservation. Neither result may be rescued by
 rerunning, lowering thresholds, or refitting against opened targets.
 
-The next rung is:
+The C2 development selection is also open evidence, not reusable fit data. It
+found useful provider compaction and ordinary fidelity, but selected no
+candidate. V4 remains unopened.
 
-1. use opened V3 only as a diagnostic to localize radial contrast loss and
-   intended-null leakage through the frozen provider;
-2. revise the provider architecture using fit and selection evidence, not V3
-   target-derived fitting or threshold tuning;
-3. strengthen the signed-sensitivity construct until retained and discarded
-   strata both have preregistered, teacher-eligible coverage;
-4. freeze the new candidate and preregister a genuinely fresh V4 panel with
-   new modes, positions, lengths, seeds, hashes, code binding, and one-shot
-   ledger identity; and
-5. require ordinary fidelity, teacher construct validity, candidate contrast
-   recovery, structural checks, and rank-stratum coverage to pass together.
+The next development rung is:
+
+1. preregister a fit-only normalization or staged schedule that gives
+   pointwise and contrast terms comparable optimization influence;
+2. repeat the packed rank curve across fixed optimization seeds or a
+   deterministic continuation schedule, because the current curve is
+   nonmonotonic;
+3. use fresh development fit/selection identities and keep the opened C2
+   selection targets out of training and threshold choice;
+4. require ordinary fidelity, exact-null invariance, radial and signed
+   recovery, structural checks, and all-rank-band coverage to pass together;
+   and
+5. only then freeze one candidate and preregister a genuinely fresh V4 panel
+   with new modes, positions, lengths, seeds, hashes, code binding, and
+   one-shot identity.
 
 Only after that provider gate passes should the provider be composed with the
 frozen linear, diagonal, and bilinear branches in one self-contained L3→L4
@@ -1301,6 +1440,8 @@ downstream of those fidelity gates.
 
 Parallel-path aggregation must also be authenticated before a later rung
 admits multiple fine edges with the same modal endpoints. At the current rung,
-the provider is a compact synthetic component with positive ordinary fidelity
-and failed/inconclusive contrast evidence, not an executable Gemma replacement
-or compression result.
+the packed providers are compact synthetic development candidates with
+positive ordinary fidelity and failed contrast evidence, not executable Gemma
+replacements or accepted compression results. No natural-prompt NLL,
+full-vocabulary KL, downstream task, whole-model, or latency claim has been
+made.

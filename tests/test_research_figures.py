@@ -9,6 +9,7 @@ from fisher_graph.research_figures import (
     extract_research_figure_data,
     render_bilinear_spectral_assessment,
     render_l3_l4_rank_diagnostic,
+    render_reference_provider_contrast_packed_development,
     render_reference_provider_collision_attenuation,
     render_reference_provider_v3_assessment,
     render_research_ladder,
@@ -48,6 +49,12 @@ V3_ASSESSMENT_PATH = (
     / "images"
     / "reference-provider-v3-assessment.svg"
 )
+CONTRAST_PACKED_DEVELOPMENT_PATH = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "images"
+    / "reference-provider-contrast-packed-development.svg"
+)
 
 
 def _load_summary() -> tuple[bytes, dict[str, object]]:
@@ -57,7 +64,7 @@ def _load_summary() -> tuple[bytes, dict[str, object]]:
     return summary_bytes, summary
 
 
-def _render_expected() -> tuple[str, str, str, str, str, str]:
+def _render_expected() -> tuple[str, str, str, str, str, str, str]:
     summary_bytes, summary = _load_summary()
     source_sha256 = hashlib.sha256(summary_bytes).hexdigest()
     data = extract_research_figure_data(summary)
@@ -88,6 +95,11 @@ def _render_expected() -> tuple[str, str, str, str, str, str]:
             source_sha256=source_sha256,
             source_label=source_label,
         ),
+        render_reference_provider_contrast_packed_development(
+            data,
+            source_sha256=source_sha256,
+            source_label=source_label,
+        ),
         source_sha256,
     )
 
@@ -104,6 +116,7 @@ def test_research_summary_data_contract() -> None:
         "analysis_only",
         "frozen_assessment",
         "sealed_mixed_result",
+        "open_development",
     ]
     assert data.stages[0].resource == (
         "35.3% of estimated source-block multiplies"
@@ -111,33 +124,37 @@ def test_research_summary_data_contract() -> None:
     assert data.stages[0].fidelity == (
         "Exact validation argmax; test result is exploratory"
     )
-    assert len(data.sources) == 13
+    assert len(data.sources) == 14
     assert data.sources[3].sha256 == (
         "4a6e2437711f77af0123fd8fd3c8f35bb557f36623da6ef3272bb7f665ddd016"
     )
-    assert data.sources[-8].sha256 == (
+    assert data.sources[-9].sha256 == (
         "ea42a293e4d5f4c1a6ef68b0a60826a14bc61b0e5e8ac373171d4a331d43d671"
     )
-    assert data.sources[-7].sha256 == (
+    assert data.sources[-8].sha256 == (
         "931596c3889fe80c822c8620ca2ea9351751a98e93c3a49f4edce1713650ef3d"
     )
-    assert data.sources[-6].sha256 == (
+    assert data.sources[-7].sha256 == (
         "856d116f687fcde936e447d8f14053e74fa9ebf3a6996a60c527cec2e541a37a"
     )
-    assert data.sources[-5].sha256 == (
+    assert data.sources[-6].sha256 == (
         "6963ba73b71d178e66c58bbcdaf9d1ca9feffb51ce1ad062599b55bdd3f753ab"
     )
-    assert data.sources[-4].sha256 == (
+    assert data.sources[-5].sha256 == (
         "1e14518f915821aa7448b6f4799e322e2451074b3030ba4107c6a2a0924be4d9"
     )
-    assert data.sources[-3].sha256 == (
+    assert data.sources[-4].sha256 == (
         "613856ec39a7d0cac21cc6e41a155a4609c73ea05e4daa01ccf1affe26153b6e"
     )
-    assert data.sources[-2].sha256 == (
+    assert data.sources[-3].sha256 == (
         "e6af80a6929b79fb86a4fabb2b0bf94cea92a881d37506802091bf2ddb0e804a"
     )
-    assert data.sources[-1].sha256 == (
+    assert data.sources[-2].sha256 == (
         "df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392"
+    )
+    assert data.sources[-1].sha256_kind == "report_sha256"
+    assert data.sources[-1].sha256 == (
+        "4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e"
     )
     assert data.reference_provider.selected_candidate_id == (
         "spectral-r08-t08"
@@ -220,6 +237,60 @@ def test_research_summary_data_contract() -> None:
     ) == (12, 7)
     assert v3.formal_outcome == "panel_inconclusive_sensitivity"
     assert not v3.provider_passed
+    packed = data.contrast_packed_development
+    assert packed.selected_calibration_amplitude == 8.0
+    assert packed.selection_outcome == "no_candidate_passed_combined_gates"
+    assert not packed.candidate_selected
+    assert packed.all_candidates_frozen_before_selection_materialization
+    assert (
+        packed.visible_source_modes,
+        packed.visible_target_modes,
+        packed.bottleneck_semantics,
+        packed.prefix_deletion_used,
+    ) == (64, 64, "learned_64_to_r_to_64_modal_packing", False)
+    assert [
+        (
+            candidate.latent_rank,
+            candidate.stored_scalar_count,
+            candidate.canonical_total_mac_count,
+            candidate.ordinary_passed,
+            candidate.null_candidate_pass_count,
+            candidate.radial_candidate_pass_count,
+            candidate.signed_candidate_pass_count,
+        )
+        for candidate in packed.candidates
+    ] == [
+        (8, 1980, 893216, True, 24, 12, 0),
+        (16, 4276, 1315072, True, 24, 13, 0),
+        (32, 8676, 1874688, True, 24, 7, 0),
+    ]
+    assert [
+        candidate.final_pointwise_objective_fraction
+        for candidate in packed.candidates
+    ] == pytest.approx(
+        (0.9999639817449999, 0.9999668617953663, 0.9999577738174683)
+    )
+    assert all(
+        candidate.final_pointwise_objective_fraction > 0.99995
+        for candidate in packed.candidates
+    )
+    assert (
+        packed.c1_predecessor_pilot.outcome
+        == "failed_closed_no_eligible_global_amplitude"
+    )
+    assert not packed.c1_predecessor_pilot.fit_opened
+    assert not packed.c1_predecessor_pilot.selection_opened
+    assert packed.exact_chart_diagnostic_count == 24
+    assert not packed.endpoint_arithmetic_used_for_fit
+    assert (
+        packed.maximum_endpoint_chord_relative_error_vs_exact_jvp
+        == pytest.approx(0.7260907286237727)
+    )
+    assert not packed.natural_prompt_transfer_tested
+    assert not packed.nll_measured
+    assert not packed.whole_model_replacement_tested
+    assert not packed.whole_model_compression_claim
+    assert not packed.wall_clock_speed_claim
 
     rank_64, rank_128 = data.diagnostic.rank_results
     assert (rank_64.rank, rank_128.rank) == (64, 128)
@@ -317,6 +388,7 @@ def test_research_summary_data_contract() -> None:
         (BILINEAR_PATH, 2),
         (ATTENUATION_PATH, 3),
         (V3_ASSESSMENT_PATH, 4),
+        (CONTRAST_PACKED_DEVELOPMENT_PATH, 5),
     ],
 )
 def test_committed_research_figure_matches_summary(
@@ -329,6 +401,7 @@ def test_committed_research_figure_matches_summary(
         expected_bilinear,
         expected_attenuation,
         expected_v3_assessment,
+        expected_contrast_packed_development,
         source_sha256,
     ) = _render_expected()
     expected = (
@@ -337,6 +410,7 @@ def test_committed_research_figure_matches_summary(
         expected_bilinear,
         expected_attenuation,
         expected_v3_assessment,
+        expected_contrast_packed_development,
     )[figure_index]
 
     assert path.read_text(encoding="utf-8") == expected
@@ -366,6 +440,9 @@ def test_committed_research_figure_matches_summary(
         metadata.text or ""
     )
     assert "gemma_reference_provider_v3_assessment:" in (
+        metadata.text or ""
+    )
+    assert "gemma_reference_provider_contrast_packed_development_c2:" in (
         metadata.text or ""
     )
     assert "@media (prefers-color-scheme: dark)" in expected
@@ -718,6 +795,69 @@ def test_v3_assessment_preserves_claim_boundaries(field: str) -> None:
         extract_research_figure_data(summary)
 
 
+def test_contrast_packed_development_rejects_rate_accounting_drift() -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_contrast_packed_development"]["candidates"][1][
+        "stored_scalar_count"
+    ] = 4275
+
+    with pytest.raises(
+        ValueError,
+        match="rank, storage, MAC, ordinary, null, radial, signed",
+    ):
+        extract_research_figure_data(summary)
+
+
+@pytest.mark.parametrize("field", ["fit_opened", "selection_opened"])
+def test_contrast_packed_development_preserves_c1_fail_closed_provenance(
+    field: str,
+) -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_contrast_packed_development"][
+        "c1_predecessor_pilot"
+    ][field] = True
+
+    with pytest.raises(ValueError, match="failed-closed provenance"):
+        extract_research_figure_data(summary)
+
+
+def test_contrast_packed_development_requires_exact_provider_chart() -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_contrast_packed_development"][
+        "endpoint_arithmetic_used_for_fit"
+    ] = True
+
+    with pytest.raises(ValueError, match="exact provider-chart JVP"):
+        extract_research_figure_data(summary)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "natural_prompt_transfer_tested",
+        "nll_measured",
+        "whole_model_replacement_tested",
+        "whole_model_compression_claim",
+        "wall_clock_speed_claim",
+    ],
+)
+def test_contrast_packed_development_preserves_claim_boundaries(
+    field: str,
+) -> None:
+    _, current_summary = _load_summary()
+    summary = json.loads(json.dumps(current_summary))
+    summary["reference_provider_contrast_packed_development"][field] = True
+
+    with pytest.raises(
+        ValueError,
+        match="natural-prompt, NLL, whole-model, compression",
+    ):
+        extract_research_figure_data(summary)
+
+
 def test_dark_mode_preserves_pill_and_callout_contrast() -> None:
     (
         expected_ladder,
@@ -725,6 +865,7 @@ def test_dark_mode_preserves_pill_and_callout_contrast() -> None:
         expected_bilinear,
         expected_attenuation,
         expected_v3_assessment,
+        expected_contrast_packed_development,
         _,
     ) = _render_expected()
 
@@ -751,3 +892,19 @@ def test_dark_mode_preserves_pill_and_callout_contrast() -> None:
     assert "5 hallucinated changes" in expected_v3_assessment
     assert "PROVIDER PASSED: FALSE" in expected_v3_assessment
     assert ".verdict-bad { fill: #fca5a5; }" in expected_v3_assessment
+    assert "1,980" in expected_contrast_packed_development
+    assert "0.89M" in expected_contrast_packed_development
+    assert "12/16" in expected_contrast_packed_development
+    assert "13/16" in expected_contrast_packed_development
+    assert "7/16" in expected_contrast_packed_development
+    assert "0/7" in expected_contrast_packed_development
+    assert "NO COMBINED CANDIDATE SELECTED" in (
+        expected_contrast_packed_development
+    )
+    assert "&gt;99.995%" in expected_contrast_packed_development
+    assert "chord error reached 72.6%" in (
+        expected_contrast_packed_development
+    )
+    assert ".verdict-bad { fill: #fca5a5; }" in (
+        expected_contrast_packed_development
+    )

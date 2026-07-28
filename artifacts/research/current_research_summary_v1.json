@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "schema": "fisher_graph.current_research_summary",
-  "claim_scope": "source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, and a fresh sealed v3 contrast assessment of the exact frozen rank-8 provider after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, model-parameter-compression, or latency claim",
+  "claim_scope": "source-safe synthetic prompt-blind state-conditioned provider evidence, retrospective v2 teacher-path attenuation localization, a sealed v3 contrast assessment of the exact frozen rank-8 provider, and open-development C2 rate/fidelity/contrast measurements for dense 64-to-r-to-64 modal packing after a frozen prompt-derived Fisher basis; no natural-prompt, NLL, model-replacement, whole-model-compression, kernel-efficiency, or latency claim",
   "sources": [
     {
       "id": "toy_fused_executor",
@@ -93,6 +93,13 @@
       "sha256": "df4562f976ae903fc89d6d299b4cb3fbd771f99b28e28717d545d9fdb48f0392",
       "sha256_kind": "report_payload_sha256",
       "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
+    },
+    {
+      "id": "gemma_reference_provider_contrast_packed_development_c2",
+      "path": ".local-runs/google--gemma-3-270m/modal-generator-l3-l4-contrast-packed-provider-dev-c2.json",
+      "sha256": "4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e",
+      "sha256_kind": "report_sha256",
+      "source_status": "ignored_local_report_summarized_without_prompts_or_tensors"
     }
   ],
   "research_ladder": [
@@ -151,6 +158,14 @@
       "resource": "910 vs 15,046 provider scalars; 93.95% fewer",
       "fidelity": "Fresh-v3 ordinary error 0.0677; cosine 0.9977; p90 0.2914",
       "claim": "Ordinary fidelity passed; radial and null contrasts failed; signed sensitivity was inconclusive"
+    },
+    {
+      "id": "contrast_packed_reference_provider",
+      "title": "Contrast-aware modal packing",
+      "status": "open_development",
+      "resource": "Ranks 8/16/32: 1,980/4,276/8,676 scalars; 0.89M/1.32M/1.87M ideal MACs",
+      "fidelity": "All ordinary and null gates passed; radial 12/16, 13/16, 7/16; signed 0/7",
+      "claim": "No candidate selected; objective imbalance is the next hypothesis, not packing-capacity failure"
     }
   ],
   "l3_l4_diagnostic": {
@@ -460,5 +475,123 @@
     "fresh_v3_assessment_required": true,
     "interpretation": "The retrospective teacher-path trace reproduced all 40 opened collision targets. Twelve of 16 canonical gate witnesses remained below one percent. Reference-baseline relative dilution occurred in both passing and failing controls, while pre-FF normalization attenuation was exclusive to the four failing null witnesses.",
     "not_proven": "This post-assessment localization does not rescue v2, assign candidate tracking failure, authorize target-derived VJPs as compiler inputs, replace a fresh v3 panel, or establish natural-prompt, NLL, model-replacement, compression, or latency performance."
+  },
+  "reference_provider_contrast_packed_development": {
+    "protocol_scope": "open_development_prompt_blind_synthetic_provider_selection",
+    "source_report_sha256": "4c99907eff6b72e10f123cae532e1ac44515b55a5c3f070dd8dd4715b8d6992e",
+    "report_schema": "fisher_graph.gemma3_l3_l4_contrast_packed_provider_development.c2",
+    "protocol_sha256": "033020dc9a0da819bd5753eb10090bff1bd9b4fcf61f33cd7186b1c1e3cb5254",
+    "selected_calibration_amplitude": 8.0,
+    "selection_outcome": "no_candidate_passed_combined_gates",
+    "candidate_selected": false,
+    "fit_probe_count": 80,
+    "selection_probe_count": 80,
+    "all_candidates_frozen_before_selection_materialization": true,
+    "visible_source_modes": 64,
+    "visible_target_modes": 64,
+    "bottleneck_semantics": "learned_64_to_r_to_64_modal_packing",
+    "prefix_deletion_used": false,
+    "exact_gain_null_omitted_structurally": true,
+    "c1_predecessor_pilot": {
+      "protocol_sha256": "829fe983b1a221b888d683d71e658a86038dbbb61fd5b8fd1e3ebd979e40aadf",
+      "pilot_panel_sha256": "5268c22ecc9b8154d0f1f70a653bab9b146f88815b7f11f8c0576f278f5bb085",
+      "outcome": "failed_closed_no_eligible_global_amplitude",
+      "maximum_tested_amplitude": 2.0,
+      "teacher_relative_effect_at_maximum_by_band": {
+        "band_00_07": 0.008251,
+        "band_08_15": 0.003732,
+        "band_16_31": 0.011773,
+        "band_32_63": 0.003672
+      },
+      "unchanged_minimum_effect_lower": 0.02,
+      "fit_opened": false,
+      "selection_opened": false,
+      "c2_change_scope": "fresh_pilot_identities_and_amplitude_grid_not_gate_tuning"
+    },
+    "candidates": [
+      {
+        "candidate_id": "latent-r08",
+        "latent_rank": 8,
+        "stored_scalar_count": 1980,
+        "canonical_total_mac_count": 893216,
+        "ordinary_passed": true,
+        "ordinary_fisher_weighted_relative_error": 0.01222416949725639,
+        "ordinary_reference_cosine": 0.9999277488877331,
+        "ordinary_maximum_per_probe_p90_relative_error": 0.052867457436583,
+        "null_candidate_pass_count": 24,
+        "null_candidate_scored_count": 24,
+        "radial_candidate_pass_count": 12,
+        "radial_candidate_scored_count": 16,
+        "radial_minimum_direction_cosine": 0.9650302580926577,
+        "radial_maximum_orthogonal_leakage": 0.22299812726834625,
+        "signed_candidate_pass_count": 0,
+        "signed_candidate_scored_count": 7,
+        "final_pointwise_mse": 26394.438818249164,
+        "final_weighted_contrast_terms": 0.9507158710657677,
+        "final_pointwise_objective_fraction": 0.9999639817449999,
+        "combined_selection_pass": false
+      },
+      {
+        "candidate_id": "latent-r16",
+        "latent_rank": 16,
+        "stored_scalar_count": 4276,
+        "canonical_total_mac_count": 1315072,
+        "ordinary_passed": true,
+        "ordinary_fisher_weighted_relative_error": 0.010726897262420765,
+        "ordinary_reference_cosine": 0.9999446403971924,
+        "ordinary_maximum_per_probe_p90_relative_error": 0.04443231542673734,
+        "null_candidate_pass_count": 24,
+        "null_candidate_scored_count": 24,
+        "radial_candidate_pass_count": 13,
+        "radial_candidate_scored_count": 16,
+        "radial_minimum_direction_cosine": 0.9759708617678738,
+        "radial_maximum_orthogonal_leakage": 0.18472275950946263,
+        "signed_candidate_pass_count": 0,
+        "signed_candidate_scored_count": 7,
+        "final_pointwise_mse": 12828.99406375779,
+        "final_weighted_contrast_terms": 0.4251439190356905,
+        "final_pointwise_objective_fraction": 0.9999668617953663,
+        "combined_selection_pass": false
+      },
+      {
+        "candidate_id": "latent-r32",
+        "latent_rank": 32,
+        "stored_scalar_count": 8676,
+        "canonical_total_mac_count": 1874688,
+        "ordinary_passed": true,
+        "ordinary_fisher_weighted_relative_error": 0.016853246635341403,
+        "ordinary_reference_cosine": 0.9998620255229652,
+        "ordinary_maximum_per_probe_p90_relative_error": 0.09586100691327414,
+        "null_candidate_pass_count": 24,
+        "null_candidate_scored_count": 24,
+        "radial_candidate_pass_count": 7,
+        "radial_candidate_scored_count": 16,
+        "radial_minimum_direction_cosine": 0.8962859149612649,
+        "radial_maximum_orthogonal_leakage": 0.3547592766021971,
+        "signed_candidate_pass_count": 0,
+        "signed_candidate_scored_count": 7,
+        "final_pointwise_mse": 12016.029716510138,
+        "final_weighted_contrast_terms": 0.507412490207571,
+        "final_pointwise_objective_fraction": 0.9999577738174683,
+        "combined_selection_pass": false
+      }
+    ],
+    "all_ordinary_candidates_passed": true,
+    "all_null_contrasts_passed": true,
+    "exact_chart_diagnostic_count": 24,
+    "exact_chart_semantics": "z_of_hidden_midpoint_and_J_z_at_hidden_midpoint_times_right_minus_left_hidden",
+    "endpoint_arithmetic_used_for_fit": false,
+    "maximum_endpoint_chord_relative_error_vs_exact_jvp": 0.7260907286237727,
+    "minimum_endpoint_chord_cosine_vs_exact_jvp": 0.9181098842784801,
+    "minimum_endpoint_chord_gain_vs_exact_jvp": 0.6047321724599608,
+    "maximum_endpoint_chord_gain_vs_exact_jvp": 1.4885416696763296,
+    "natural_prompt_transfer_tested": false,
+    "nll_measured": false,
+    "whole_model_replacement_tested": false,
+    "whole_model_compression_claim": false,
+    "wall_clock_speed_claim": false,
+    "interpretation": "All three dense modal-packing widths passed ordinary held-out fidelity and all 24 exact-null contrasts, so the packed 64-to-r-to-64 architecture is viable enough to continue. No width passed the combined contrast gate: radial sensitivity was closest at rank 16 with 13 of 16 passes, while signed sensitivity was 0 of 7 at every rank. Pointwise loss contributed more than 99.995 percent of the final weighted objective at every width, supporting optimizer/objective imbalance as the next hypothesis rather than disproving packing capacity.",
+    "next_rung": "Use the existing C2 fit evidence for fit-only rank-16 objective diagnosis, without making another selection claim from the consumed C2 selection panel. Then preregister fresh C3 fit and selection identities with unchanged scientific gates before testing whether rebalanced training closes radial magnitude/error and signed direction failures.",
+    "not_proven": "This open-development C2 result does not prove natural-prompt transfer, NLL retention, a complete L3-to-L4 or whole-model replacement, whole-model parameter compression, realized kernel efficiency, wall-clock speed, or latency."
   }
 }
