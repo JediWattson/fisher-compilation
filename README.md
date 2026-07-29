@@ -31,6 +31,62 @@ research compiler, not a production compression library.
 
 ## Current finding
 
+The authenticated rank-16 objective-balance diagnostic tested whether C2's
+signed-contrast failure was merely an optimization-scale artifact. It replayed
+only the frozen C2 pilot and fit roles; C2 selection was forbidden and never
+materialized, and no fresh C3 panel was opened. The raw Fisher square-root
+weights had RMS `581.8848242` and mean square `338,589.948635`. Dividing them
+by that one global RMS preserved their relative mode weights while reducing
+fit-teacher weighted energy from `338,589.948635` to
+`0.999999999999986`.
+
+| treatment | initial pointwise / contrast share | ordinary | null | radial | signed | balance gate | formal fit outcome |
+|---|---:|---:|---:|---:|---:|---|---|
+| D0 raw C2 control | `99.998614% / 0.001381%` | `12/12` | `24/24` | `16/16` | `2/8` | fail | `candidate_fail` |
+| D1 unit-RMS gauge | `17.617305% / 82.382695%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
+| D2 D1 + signed-family balance | `14.581530% / 85.418469%` | `12/12` | `24/24` | `16/16` | `2/8` | pass | `candidate_fail` |
+| D3 D2 + stronger direction / 600 steps | `12.768013% / 87.231987%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
+
+Normalization therefore fixed the declared scalar-contribution balance, and
+every treatment passed every ordinary, null, and radial fit-side comparison.
+It did not repair signed transport: no advancement-eligible treatment passed
+all eight signed comparisons, no replication seed was run, and the formal
+outcome is `no_primary_treatment_passed_fit_gates`. This rules out the
+specific explanation that global Fisher scale was the only blocker. It does
+not prove balanced gradients or Adam updates; the diagnostic tests the
+fit-capability consequence of the dimensionless objective.
+
+The next rung is a rank-64 capacity control on the same fit-side contract. If
+full rank passes, latent capacity is the leading explanation and a width
+ladder should locate the smallest viable compressed rank. If full rank
+reproduces the signed failures, the provider needs a signed
+conditional-residual branch before any fresh C3 assessment. This result is
+fit-only and synthetic: it is not held-out generalization, C3/V4, natural
+prompt fidelity, NLL, full-model replacement, compression, or a speed claim.
+The run used the frozen CPU/float32 execution contract; the report separately
+records provider fitting math in `torch.float64`.
+
+Authenticated bindings are protocol
+`d502d003fd86f6ef7322e35854d0bb738fdc4cfa6fa5089c2812e366a142d2eb`,
+code bundle
+`c88cd41db520e953c08b389df47e5befb6e3207c336e2dea79231e76ac4bed31`,
+logical artifact
+`e171361c2a2f43083f9e591d27c1d7b4555302c89d9d6e6e2f54e6be7cfd9cb0`,
+and report
+`88394ae24648eca541a7b83ad48afec0681772bb231ff0fa5866ab75d74510ed`.
+The tensor artifact and tensor-free JSON report remain ignored under
+`.local-runs/`.
+
+```bash
+fisher-graph-gemma-l3-l4-objective-balance-dev describe
+
+fisher-graph-gemma-l3-l4-objective-balance-dev run \
+  --device cpu \
+  --dtype float32
+```
+
+### Prior rung: contrast-packed C2 provider
+
 The new C2 contrast-packed provider rung tested a genuine dense modal
 bottleneck:
 
@@ -343,6 +399,7 @@ This work is described in
 | Gemma bilinear modal-generator executor | Bilinear branch stores `6,880` coefficients versus `172,032` dense (`96.00%` fewer); all three edge branches store `46,816` versus `958,464` matched dense (`95.12%` fewer) | Fresh origin-20 error `0.2090 → 0.1694` (`18.96%` reduction), cosine `0.9871`; recovers `94.10%` of \(C_{11}\) oracle headroom | Positive no-refit mixed-mode edge transport; fixed-reference and known-pair scope only |
 | Gemma prompt-blind reference provider V2/V3 | Rank 8 stores `910` scalars versus `15,046` for the full-width provider (`93.95%` fewer); provider-only ideal MAC savings are sequence-dependent | Fresh-V3 ordinary error `0.0677`, cosine `0.9977`, p90 `0.2914`; all ordinary fidelity/structure gates passed | Radial and intended-null contrast recovery failed; signed sensitivity was underpowered, so the formal V3 outcome is panel-inconclusive |
 | Gemma C2 contrast-packed provider development | Ranks `8/16/32` store `1,980/4,276/8,676` scalars (`86.84%/71.58%/42.34%` below the prior dense-64 component); canonical rank-8/rank-16 MACs are `52.35%/29.85%` below rank 32 | Every rank passed ordinary fidelity and `24/24` exact-null pairs; radial passes were `12/16`, `13/16`, `7/16`, while signed passes were `0/7` at every rank | Held-out development selection only; no candidate passed, V4 remains unopened |
+| Gemma rank-16 objective-balance diagnostic | Same `4,276`-scalar candidate form; no new resource or deployment claim | Unit-RMS treatments passed `12/12` ordinary, `24/24` null, and `16/16` radial fit checks, but only `2–3/8` signed checks | Fit-only diagnostic; global loss scale is not the sole blocker and C3 remains unopened |
 
 There are three important distinctions:
 
@@ -517,6 +574,12 @@ fisher-graph-gemma-l3-l4-bilinear-spectral-dev assess \
 fisher-graph-gemma-l3-l4-contrast-provider-dev describe
 
 fisher-graph-gemma-l3-l4-contrast-provider-dev compile \
+  --device cpu \
+  --dtype float32
+
+fisher-graph-gemma-l3-l4-objective-balance-dev describe
+
+fisher-graph-gemma-l3-l4-objective-balance-dev run \
   --device cpu \
   --dtype float32
 ```

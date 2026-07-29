@@ -1807,6 +1807,97 @@ Its frozen upstream Fisher basis remains prompt-derived. It makes no
 natural-prompt NLL, full-model replacement, whole-model compression,
 downstream-task, or latency claim.
 
+### Authenticated rank-16 objective-balance diagnostic
+
+The next frozen diagnostic isolated C2's objective-scale hypothesis without
+reusing its opened selection targets. It authenticated and replayed the C2
+pilot and fit roles only, forbade the C2 selection prefix, never loaded the C2
+provider artifact, and did not materialize or score selection. All four
+treatments used the same fit data binding and rank-16 provider form. D0 kept
+the raw canonical Fisher metric as a non-advancement control; D1 applied one
+global unit-RMS Fisher gauge; D2 additionally duplicated each authenticated
+signed pair so radial and signed families had equal pair mass; and D3 also
+raised direction weight from `0.5` to `2.0` and trained for `600` rather than
+`300` steps. D3 is therefore a composite treatment, not an attribution test.
+
+The raw positive square-root Fisher weights had RMS `581.8848242008186`,
+mean square `338,589.94863521756`, and fit-teacher weighted energy
+`338,589.9486352126`. The unit-RMS gauge divides every weight by the same
+RMS, preserves relative mode weights, and produced normalized RMS `1.0` and
+fit-teacher weighted energy `0.9999999999999858`. It scales both absolute
+pointwise and intended-null terms. Common metric rescaling is algebraically
+invariant for the relative delta, direction, and JVP terms only while fixed
+numerical floors are inactive; the report does not mark that invariance proved
+because the candidate direction-norm floor was not separately gated.
+
+| treatment | initial pointwise share | initial contrast share | ordinary | null | radial | signed | balance gate | formal outcome |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| D0 raw C2 control | `99.998614%` | `0.001381%` | `12/12` | `24/24` | `16/16` | `2/8` | fail | `candidate_fail` |
+| D1 unit-RMS gauge | `17.617305%` | `82.382695%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
+| D2 D1 + signed-family balance | `14.581530%` | `85.418469%` | `12/12` | `24/24` | `16/16` | `2/8` | pass | `candidate_fail` |
+| D3 D2 + direction `2.0`, 600 steps | `12.768013%` | `87.231987%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
+
+All 12 ordinary flags, all 24 intended-null pairs, and all 16 radial pairs
+passed for every treatment. Unit-RMS normalization also moved the declared
+initial pointwise share into the frozen `10–40%` interval, raised contrast
+share above `50%`, and kept every active non-null component below `65%`.
+Nevertheless signed recovery stayed at `2/8`, `3/8`, `2/8`, and `3/8`.
+Consequently no primary treatment passed the complete fit gates, no
+replication seed was authorized, `authorized_fresh_c3_recipe_id` is null, and
+the formal run outcome is `no_primary_treatment_passed_fit_gates`.
+
+This is a useful negative result: the prior extreme scalar loss imbalance was
+real and was repaired, but it was not the sole cause of the signed-transport
+failure. The contribution audit does not claim that per-term gradients or
+Adam updates are balanced; it tests the downstream fit-capability consequence
+under a dimensionless objective. The next discriminating rung is a rank-64
+capacity control under the same fit-side protocol. If rank 64 passes, run a
+width ladder to locate the smallest viable compressed rank. If rank 64
+reproduces the signed failures, the evidence supports adding a conditional
+signed-residual correction before opening a genuinely fresh C3 panel.
+
+The declaration and implementation were preregistered in commit `771e918`.
+The first live invocation failed closed before publishing because the artifact
+safety validator conservatively rejected the scalar accounting field
+`target_modes`. Commit `31d3c08` narrowed that exception to the canonical
+integer value `64` only beneath candidate accounting and added rejection tests
+for every other placement, type, and value. It changed no recipe, gate, data
+binding, or score. The successful rerun used the frozen CPU/float32 execution
+contract; the report separately records the provider fitting numeric dtype as
+`torch.float64`.
+
+The authenticated bindings are:
+
+- protocol:
+  `d502d003fd86f6ef7322e35854d0bb738fdc4cfa6fa5089c2812e366a142d2eb`;
+- fit data:
+  `a84f73269fd3bf71c350c79309ef7539a2728b67007c75950aa9f87fb2447c17`;
+- unit-RMS gauge:
+  `4a553347335815c56643fdde56c32247e32153ed20e8c713626e35a9a072c312`;
+- code bundle:
+  `c88cd41db520e953c08b389df47e5befb6e3207c336e2dea79231e76ac4bed31`;
+- logical artifact:
+  `e171361c2a2f43083f9e591d27c1d7b4555302c89d9d6e6e2f54e6be7cfd9cb0`;
+  and
+- report:
+  `88394ae24648eca541a7b83ad48afec0681772bb231ff0fa5866ab75d74510ed`.
+
+```bash
+fisher-graph-gemma-l3-l4-objective-balance-dev describe
+
+fisher-graph-gemma-l3-l4-objective-balance-dev run \
+  --device cpu \
+  --dtype float32
+```
+
+This is a synthetic, same-fit capability diagnostic—not held-out
+generalization, C3/V4, natural-prompt fidelity, shadow NLL, full-model
+replacement, compression, downstream-task accuracy, wall-clock speed, or
+kernel latency. The ignored tensor artifact contains provider parameters; the
+published JSON is tensor-free and contains no raw teacher targets, JVP
+tensors, prompt text, token IDs, tokenizer, natural activation rows,
+source-model state, V2/V3 targets, or C2 selection data.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
