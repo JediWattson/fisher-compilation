@@ -77,6 +77,7 @@ fisher-graph-gemma-l3-l4-objective-balance-dev = "fisher_graph.gemma3_l3_l4_obje
 fisher-graph-gemma-l3-l4-rank64-capacity-dev = "fisher_graph.gemma3_l3_l4_rank64_capacity_control:main"
 fisher-graph-gemma-l3-l4-function-preserving-width-dev = "fisher_graph.gemma3_l3_l4_function_preserving_width_control:main"
 fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev = "fisher_graph.gemma3_l3_l4_function_preserving_expert_rank_control:main"
+fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev = "fisher_graph.gemma3_l3_l4_function_preserving_expert_count_control:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-plot-research = "fisher_graph.research_figures:main"
 fisher-graph-verify = "fisher_graph.verify:main"
