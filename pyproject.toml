@@ -74,6 +74,7 @@ fisher-graph-gemma-l3-l4-attenuation-localization-dev = "fisher_graph.gemma3_l3_
 fisher-graph-gemma-l3-l4-frozen-provider-v3 = "fisher_graph.gemma3_l3_l4_frozen_provider_assessment_v3:main"
 fisher-graph-gemma-l3-l4-contrast-provider-dev = "fisher_graph.gemma3_l3_l4_contrast_provider_development:main"
 fisher-graph-gemma-l3-l4-objective-balance-dev = "fisher_graph.gemma3_l3_l4_objective_balance_diagnostic:main"
+fisher-graph-gemma-l3-l4-rank64-capacity-dev = "fisher_graph.gemma3_l3_l4_rank64_capacity_control:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-plot-research = "fisher_graph.research_figures:main"
 fisher-graph-verify = "fisher_graph.verify:main"
