@@ -583,8 +583,27 @@ def test_output_path_and_atomic_report_safety(
 
     output = tmp_path / "published.pt"
     report = runner._publish_artifact(
-        {"provider_weight": torch.ones(2)},
-        {"schema": "safe-test", "contains_raw_teacher_targets": False},
+        {
+            "provider_weight": torch.ones(2),
+            "candidate_results": {
+                "candidate": {
+                    "accounting": {
+                        "target_modes": runner._MODAL_WIDTH,
+                    }
+                }
+            },
+        },
+        {
+            "schema": "safe-test",
+            "contains_raw_teacher_targets": False,
+            "candidate_results": (
+                {
+                    "accounting": {
+                        "target_modes": runner._MODAL_WIDTH,
+                    }
+                },
+            ),
+        },
         output=output,
     )
     report_path = output.with_suffix(".json")
@@ -600,6 +619,40 @@ def test_output_path_and_atomic_report_safety(
             {"teacher_midpoint_jvp": torch.ones(1)},
             {},
             output=tmp_path / "unsafe.pt",
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        torch.ones(1),
+        [runner._MODAL_WIDTH],
+        True,
+        str(runner._MODAL_WIDTH),
+        -1,
+        runner._MODAL_WIDTH - 1,
+    ),
+)
+def test_artifact_safety_rejects_noncanonical_target_mode_accounting(
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match="forbidden"):
+        runner._assert_safe_artifact_tree(
+            {"candidate": {"accounting": {"target_modes": value}}},
+        )
+
+
+def test_artifact_safety_allows_canonical_target_mode_accounting() -> None:
+    runner._assert_safe_artifact_tree(
+        {
+            "candidate": {
+                "accounting": {"target_modes": runner._MODAL_WIDTH}
+            }
+        },
+    )
+    with pytest.raises(ValueError, match="forbidden"):
+        runner._assert_safe_artifact_tree(
+            {"target_modes": runner._MODAL_WIDTH},
         )
 
 

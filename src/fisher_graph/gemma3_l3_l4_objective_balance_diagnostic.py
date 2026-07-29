@@ -806,7 +806,6 @@ def _assert_tensor_free_report(value: object, *, path: str = "report") -> None:
 
 def _assert_safe_artifact_tree(value: object, *, path: str = "state") -> None:
     forbidden_exact = {
-        "target_modes",
         "teacher_midpoint_jvp",
         "provider_chart_modal_primal",
         "provider_chart_null_primal",
@@ -822,11 +821,23 @@ def _assert_safe_artifact_tree(value: object, *, path: str = "state") -> None:
     }
     if isinstance(value, Mapping):
         for key, nested in value.items():
-            if str(key) in forbidden_exact:
+            key_name = str(key)
+            nested_path = f"{path}.{key}"
+            if key_name == "target_modes":
+                if (
+                    not path.endswith(".accounting")
+                    or type(nested) is not int
+                    or nested != _MODAL_WIDTH
+                ):
+                    raise ValueError(
+                        f"{nested_path} is forbidden in diagnostic artifacts"
+                    )
+                continue
+            if key_name in forbidden_exact:
                 raise ValueError(
-                    f"{path}.{key} is forbidden in diagnostic artifacts"
+                    f"{nested_path} is forbidden in diagnostic artifacts"
                 )
-            _assert_safe_artifact_tree(nested, path=f"{path}.{key}")
+            _assert_safe_artifact_tree(nested, path=nested_path)
     elif isinstance(value, (tuple, list)):
         for index, nested in enumerate(value):
             _assert_safe_artifact_tree(
