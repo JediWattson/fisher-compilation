@@ -2306,6 +2306,231 @@ fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev run \
   --dtype float32
 ```
 
+### Phase-aware source-response graph Fourier diagnostic
+
+The next post-hoc diagnostic reauthenticated the frozen rank-64 L3→L4
+spectral-map V2 artifact and loaded no model, tokenizer, prompt text, token
+IDs, or prompt activation rows. The temporal FFT itself was not replaced.
+The previous mapper was already partly phase-aware: its real similarity
+contains a coherence-weighted cosine of relative phase. Because cosine is
+even, however, that scalar cannot distinguish lead from lag, and its positive
+magnitude term can hide nearly opposite response patterns.
+
+For each response family, the new analysis flattens the authenticated
+source-mode fingerprint across impulse origin, temporal frequency, and target
+mode after one-sided RFFT energy weighting. It then forms the normalized
+complex source-response Gram matrix
+
+\[
+C_{ij} =
+\frac{\langle H_i,H_j\rangle}
+{\lVert H_i\rVert_2\lVert H_j\rVert_2}.
+\]
+
+The dense complex connection graph uses \(C\) with a zero diagonal. Its signed
+control uses \(\operatorname{Re}C\), and the phase-blind control first removes
+phase per bin and then computes cosine similarity between \(\lvert H_i\rvert\)
+and \(\lvert H_j\rvert\). All three normalized Laplacians use absolute edge
+weight for degree. The top-six-per-node edge mask is only a deterministic
+readable view; it does not alter any Laplacian or graph Fourier result.
+
+The missing directional statistic is the antisymmetric, coherence-weighted
+sine channel
+
+\[
+Q_{ij}\propto
+\sum_k q_{ik}q_{jk}c_{ik}c_{jk}
+\sin(\phi_{ik}-\phi_{jk}),
+\qquad Q_{ji}=-Q_{ij}.
+\]
+
+Graph Fourier analysis diagonalizes each source-response Laplacian and
+projects the mean complex response onto its eigenvectors. “Low” graph
+frequency therefore means a response varying smoothly according to the
+signed/complex source-response relationships; it does not mean low temporal
+frequency. The reported `90% / 95% / 99%` numbers are tied-eigenspace-complete
+low-to-high Laplacian prefix indices, not matrix rank, effective rank, mode
+count, or expert count.
+
+| response | phase-aware low-8 / low-16 energy | phase-aware 90 / 95 / 99 prefix | phase-blind low-8 / low-16 energy | phase-blind 90 / 95 / 99 prefix |
+|---|---:|---:|---:|---:|
+| finite secant | `0.474368 / 0.595972` | `45 / 52 / 62` | `0.091430 / 0.209573` | `56 / 62 / 64` |
+| local central secant | `0.480857 / 0.603187` | `45 / 52 / 62` | `0.092365 / 0.214016` | `57 / 61 / 63` |
+| operating `1σ` central secant | `0.480504 / 0.602718` | `44 / 52 / 62` | `0.091001 / 0.210935` | `56 / 61 / 63` |
+
+This is a large internal contrast: at local scale, phase preservation moves
+the first eight graph bands from `9.24%` to `48.09%` of response energy and
+the first sixteen from `21.40%` to `60.32%`. The signed-real graph gives the
+same qualitative result (`46.86%` / `59.58%` at local scale). The phase-aware
+topology is also stable across the two symmetric amplitudes:
+
+- local-to-`1σ` complex-Laplacian relative difference is `0.003678`;
+- local-to-`1σ` low-eight complex-projector overlap is `0.999535`;
+- local-to-`1σ` signed-projector overlap is `0.999162`; and
+- directional-quadrature cosine is `0.999003`.
+
+The phase view also recovers relationships hidden by the legacy scalar.
+Modes `3` and `12` have local pooled alignment `-0.866338`, while their
+legacy similarity is positive `0.267652`. Modes `9` and `18` carry the
+strongest local directional example: raw pooled quadrature `0.267166` and
+the coherence-weighted directional statistic `0.0973475`. These are opposed
+or phase-shifted pooled target-response patterns, not negative causal edges
+between source modes.
+
+All 64 modes clear the fixed relative numerical support floor. Parseval-scaled
+response norms span `12.3403` to `818.378` locally (`66.32×`), so the artifact
+retains raw norm diagnostics while the graph deliberately normalizes gain.
+It therefore makes no coupling-strength or capacity claim.
+
+The result is promising evidence that phase organizes the existing
+source-response fingerprints, but it is still in-sample: the same frozen
+fingerprints define the graph and supply the projected signal. Target modes
+are feature coordinates rather than graph nodes, temporal frequencies are
+globally pooled, and complex edge phase remains bound to the frozen FFT
+length. This rung does not establish a directed L3→L4 transfer graph,
+frequency-resolved delay, held-out prediction, semantics, merging, pruning,
+executor fidelity, compression, FLOPs, or speed.
+
+The next confirmatory rung is a frequency-indexed, Fisher-weighted bipartite
+source/target graph. For each temporal frequency it should build a Hermitian
+dilation of the signed L3→L4 transfer, freeze its eigenspace blocks, and test
+held-out JVP directions against magnitude-only, phase-shuffled, lag-shuffled,
+and rewired controls before any graph executor is compiled.
+
+The durable external result receipt is:
+
+- logical artifact:
+  `883a942439cad49cea4a9579ee04821ce196c56a8f8ba5894474b61ca1c9effc`;
+- tensor file:
+  `89932d887d4d5122681c8e4c91520d9b17486940f0ab9044ddfb41e4d64eb24f`;
+  and
+- report:
+  `341b6042fa9b8944a0aeeeb3877d33f8d3d08ae2e543429cc9eb66c387d19aab`.
+
+The 1.85 MB tensor artifact and adjacent tensor-free JSON report remain
+ignored under `.local-runs/` and must not be committed.
+
+```bash
+fisher-graph-gemma-l3-l4-phase-graph-spectral-dev describe
+fisher-graph-gemma-l3-l4-phase-graph-spectral-dev analyze
+```
+
+### Fit-only graph-Fourier rate-distortion ladder
+
+The pooled phase diagnostic above could not answer whether its ordering
+compresses an executable transfer. The next rung therefore rebuilt the graph
+from only the established compile origins `8 / 24 / 40`, froze every basis and
+position-conditioned core, and then read origins `16 / 32` only for
+open-development selection. The source tensor is the pinned prompt-free
+`[64, 5, 32, 64]` local central-response artifact; no model, tokenizer, prompt
+text, token IDs, or prompt activation rows were loaded.
+
+The real deployment-primary graph uses the normalized Laplacian of
+`Re(complex coherency)`. It preserves signed/opposed spectral alignment but
+not the antisymmetric quadrature channel, so it is not described as a
+direction-preserving graph. The phase-blind graph uses magnitude-only
+similarity. Both graphs are derived from the exact fit-only weighted tensor
+with SHA-256
+`04143f6714bd6983fac6397fb580dbfbf5d8a938ec2486a56e09310487c33cd8`.
+The resulting strict graph-basis artifact is
+`855a047ef20ca3e11a105d7d62752575381ce6eeccd7d12bf98b72dc43067730`.
+
+For each preregistered cutoff `8 / 16 / 32 / 45 / 52`, the compiler keeps the
+first low-to-high signed-Laplacian eigenvectors, fits a full-rank 64-dimensional
+target decoder and three position-knot causal cores, and emits a real
+`ConditionalSpectralGeneratorPlan`. Target rank 64 deliberately isolates the
+source-axis question: this rung does not get extra distortion or savings from
+a target bottleneck. The current generic runtime stores and multiplies the
+explicit full target basis, and that overhead is included.
+
+Every cutoff has a nonzero boundary eigengap, so none splits a numerically
+tied eigenspace. Fit-only signed-GFA projection energy is:
+
+| source rank | fit projection energy | fit projection error | boundary eigengap |
+|---:|---:|---:|---:|
+| 8 | `0.718227` | `0.530823` | `0.0258390` |
+| 16 | `0.811841` | `0.433773` | `0.00342112` |
+| 32 | `0.917180` | `0.287784` | `0.00139817` |
+| 45 | `0.964169` | `0.189291` | `0.00196543` |
+| 52 | `0.979596` | `0.142841` | `0.00216795` |
+
+The selection comparison is deliberately harder than a magnitude-only
+contrast. At every identical rank, coefficient count, and cached-core MAC
+budget it includes:
+
+- the ordinary fit-only left-SVD source basis;
+- the native Fisher prefix;
+- the phase-blind magnitude graph;
+- a deterministic signed-graph row permutation; and
+- eight independently seeded deterministic random-Haar bases.
+
+No selection response is reprojected to obtain executable coefficients. Each
+reported compiled prediction comes from the frozen fit-knot cores and their
+piecewise origin interpolation. Separately labelled oracle source-projection
+metrics remain diagnostic only.
+
+| rank | signed-GFA error | SVD error | magnitude error | native-prefix error | random-Haar median |
+|---:|---:|---:|---:|---:|---:|
+| 8 | `0.528655` | `0.341787` | `0.931455` | `0.911661` | `0.936811` |
+| 16 | `0.431139` | `0.211029` | `0.858783` | `0.833289` | `0.872441` |
+| 32 | `0.286869` | `0.090961` | `0.701015` | `0.569246` | `0.702363` |
+| 45 | `0.190040` | `0.050555` | `0.594678` | `0.384865` | `0.535661` |
+| 52 | `0.144935` | `0.040911` | `0.459840` | `0.270741` | `0.400616` |
+
+This gives a useful but mixed result. Signed GFA beats the magnitude graph,
+native prefix, permuted graph, and all/random-median controls at every cutoff.
+Rank 45 is the first fixed cutoff to clear the locked reconstruction boundary:
+global selection error is `0.190040`, p90 per-origin error is `0.193105`,
+worst per-origin error is `0.193896`, and worst cosine is `0.981045`.
+Rank 52 improves those values to `0.144935`, `0.148363`, `0.149253`, and
+`0.988823`.
+
+However, ordinary SVD is substantially better at exactly the same plan
+storage and kernel-application budget for all five cutoffs. No signed-GFA row
+therefore passes the controlled compression-candidate gate. The graph has
+shown meaningful organization and transfer across the two unfit origins, but
+it has not shown that graph frequency is a better compression coordinate than
+ordinary low rank.
+
+Storage and compute must also remain separate:
+
+| rank | stored coefficients | reduction vs dense fit knots | cached-core linear MAC reduction | current multiply ratio with uncached interpolation |
+|---:|---:|---:|---:|---:|
+| 8 | `53,760` | `86.33%` | `80.29%` | `0.447×` |
+| 16 | `103,424` | `73.70%` | `67.40%` | `0.826×` |
+| 32 | `202,752` | `48.44%` | `41.62%` | `1.584×` |
+| 45 | `283,456` | `27.91%` | `20.67%` | `2.200×` |
+| 52 | `326,912` | `16.86%` | `9.39%` | `2.531×` |
+
+The rank-45 fidelity/storage point is real, but it is not a compute or speed
+win in the present executor. Its factorized kernel application uses
+`3,431,232` logical MACs versus `4,325,376` dense, while per-forward core
+interpolation adds `6,082,560` multiplies. An implicit target identity plus
+cached or fused position cores is required before the nominal MAC reduction
+can become a runtime candidate. Even then, the same-budget SVD control remains
+the compression baseline to beat.
+
+The 65-plan strict bundle contains no model state or prompts and remains
+ignored under `.local-runs/`. Its receipt is:
+
+- logical artifact:
+  `000cd4eca18bb69b2ad587d20a436b6469592c1c859bb793460a9f8dccc80db3`;
+- tensor file:
+  `5d79c98a738d2192714caad6c61c425215c382460d63e5e0e5c7c2178e984c5b`;
+  and
+- report:
+  `5609c4c0fc716463c9a40985ba57e7d4e8b1d7b587cb2f83a2434f55b6309c92`.
+
+This rung does not authorize family-disjoint prompt/NLL evaluation. The
+current outcome says the signed graph is scientifically useful as an
+organizational coordinate, but the executable compression line should remain
+the ordinary fit-only SVD unless a later graph-conditioned provider
+generalizes better on genuinely new reference states.
+
+```bash
+fisher-graph-gemma-l3-l4-graph-spectral-rate-dev
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
@@ -3378,3 +3603,139 @@ timing and derived ratio. Format-2 reports remain supported.
 The test suite additionally checks position-conditioned and fractional
 suppression, downstream propagation, autograd, invalid interventions, and
 standard-versus-graph executor equivalence under the same intervention.
+
+## Graph-organized global-SVD executor
+
+The next compiler rung preserved the graph-Fourier analysis while removing
+the part that the controlled rate curve had falsified. Signed GFA was a useful
+organization of the source response, but at every matched rank it was a much
+worse numerical compression basis than global SVD. The hybrid therefore gives
+the two decompositions different responsibilities:
+
+1. fit the ordinary global rank-45 SVD on prompt-free weighted response knots
+   at origins `8 / 24 / 40`;
+2. fit the signed graph basis from exactly the same declared fit origins;
+3. project every retained SVD source vector into graph frequency;
+4. assign it to the largest-mass tied-safe band among
+   `0:8 / 8:16 / 16:32 / 32:64`;
+5. reorder the SVD source vectors and corresponding core rows into packs; and
+6. route those packs without changing their numerical coefficients.
+
+The target rank is the complete 64-mode width. Its orthogonal target basis is
+folded into the causal core, removing a redundant runtime target projection.
+The signed plan produced pack sizes `8 / 8 / 8 / 21`. All-on execution matches
+the source SVD plan at every measured origin; the largest real-kernel absolute
+difference was `1.00e-11`, and the prepared float64 runtime matched in the
+focused parity test.
+
+The strict plan now binds the exact source-SVD artifact, fit response tensor,
+graph artifact, graph row permutation, organization kind and seed, canonical
+pack permutation, spectra, and all tensor hashes. It rejects graph-basis or
+control plans mislabeled as global SVD. Serialized floats must be canonical
+float64, control assignments are reconstructed from their declared seeds, and
+public analytic methods fail closed after tensor mutation.
+
+For each knot, lag, and pack, the artifact stores an upward-inflated spectral
+norm bound. Convex interpolation keeps it an upper bound on the interpolated
+pack core. The reference router scores each pack from the product of latent
+pack norm and the lag-vector norm of those bounds. Exhaustive synthetic tests
+over every pack subset confirm that omitted source-response norm never exceeds
+the reported certificate. The prepared float64 path computes the source
+projection once and reuses it for routing and transport. Core interpolation is
+cached by logical origin and pack within a call. Execution accounting includes
+standardization, source projection, active pack/rank instances, admitted
+causal rank and pack pairs, core accumulation, cache-miss interpolation, and
+the explicit non-sorting router primitives; sort comparisons remain
+separately marked uncounted.
+
+### Correcting the C2 zero-padding confound
+
+The first exploratory calculation flattened all C2 sequence rows. That made
+the apparent conditional saving misleading because only `1,132 / 12,560`
+fit rows and `1,132 / 12,880` selection rows were nonzero. Exact-zero padding
+was roughly 91% of the inputs. The frozen experiment removes exact-zero rows
+before scoring and preserves multiplicities of the remaining unique
+directions. Tiny nonzero rows are retained. This makes the denominator the
+computation-bearing synthetic directions instead of padded positions.
+
+All organizations and the fixed threshold ladder
+`0.90 / 0.95 / 0.975 / 0.99 / 1.0` were frozen before the already-opened C2
+selection role was materialized. Selection is consequently development
+evidence rather than a fresh assessment. Origin 32 was held out from SVD and
+graph fitting, but the C2 selection panel had already been opened upstream.
+
+### Resource accounting
+
+| State or operation | Count | Relative to dense |
+|---|---:|---:|
+| Three dense `64×32×64` fit knots | `393,216` coefficients | `100.00%` |
+| Deployable rank-45 hybrid plus norm certificates | `279,744` coefficients | `71.14%` |
+| Full research plan including graph diagnostics | `287,156` float scalars | `73.03%` |
+| Dense complete 32-lag response | `131,072` linear MACs per source row | `100.00%` |
+| All-on rank-45 response, cached core | `95,040` linear MACs per source row | `72.51%` |
+
+The coefficient result is a `28.86%` reduction for this measured edge.
+The all-on arithmetic result is a `27.49%` cached-core linear-MAC reduction.
+The conditional rows below include the always-paid full source projection but
+exclude router work, cache-miss interpolation, additions, memory traffic, and
+surrounding Gemma computation. They are not latency measurements.
+
+### Frozen development rate curve
+
+Fit-direction results at origin 24:
+
+| organization / retained bound mass | mean active rank | cached-core MAC fraction | routed error vs full SVD | error vs dense response |
+|---|---:|---:|---:|---:|
+| signed GFA, `90%` | `33.733` | `54.91%` | `0.12521` | `0.13075` |
+| contiguous SVD, `90%` | `31.896` | `52.03%` | `0.14686` | `0.15173` |
+| signed GFA, `95%` | `44.124` | `71.14%` | `0.03047` | `0.04946` |
+| contiguous SVD, `95%` | `44.148` | `71.18%` | `0.03090` | `0.04970` |
+| all-on SVD | `45.000` | `72.51%` | `0` | `0.03918` |
+
+C2 development-selection results at held-out response origin 32:
+
+| organization / retained bound mass | mean active rank | cached-core MAC fraction | routed error vs full SVD | error vs dense response |
+|---|---:|---:|---:|---:|
+| signed GFA, `90%` | `30.327` | `49.58%` | `0.12706` | `0.12936` |
+| contiguous SVD, `90%` | `30.610` | `50.02%` | `0.10313` | `0.10724` |
+| random controls, `90%` | `37.000–42.329` | — | — | `0.12110–0.19531` |
+| signed GFA, `95%` | `43.784` | `70.61%` | `0.00412` | `0.03206` |
+| contiguous SVD, `95%` | `43.135` | `69.60%` | `0.02731` | `0.04148` |
+| random controls, `95%` | `39.572–44.936` | — | — | `0.03185–0.11190` |
+| all-on SVD | `45.000` | `72.51%` | `0` | `0.03179` |
+
+The graph organization is useful but not uniformly best. At 95% retained
+bound mass it preserves almost all full-SVD fidelity and materially beats the
+contiguous grouping, although the extra compute reduction beyond all-on SVD
+is small: mean active rank drops by only `1.216`, and cached-core MAC fraction
+drops from `72.51%` to `70.61%`. At 90%, mean active rank falls to `30.327`
+and cached-core MACs to `49.58%` of dense, but error rises to `0.12936`; the
+contiguous grouping is better at a nearly identical rate. Some random
+groupings approach the high-fidelity point while using more active rank.
+There is therefore no claim that graph-frequency bands are the optimal
+router partition.
+
+This rung establishes:
+
+- exact all-on lowering of a global-SVD edge into graph-addressable packs;
+- strict, one-sided omission certificates;
+- a real `28.86%` deployable coefficient reduction for the measured edge;
+- a corrected conditional rate curve with matched contiguous and eight
+  random controls; and
+- a runtime boundary on which a finer or learned router can operate.
+
+It does not establish natural-prompt transfer, NLL, top-1 or task accuracy,
+complete-block replacement, whole-model compression, wall-clock latency, or
+GPU speed. The next fidelity rung is family-disjoint shadow execution inside
+the model. The next routing rung is a finer pack or individual-component
+policy compared at equal active-rank budgets, because four coarse packs force
+the high-fidelity point to retain nearly all rank.
+
+The ignored result is bound by logical artifact
+`b3e011d8067ff3538888851c476fba03c57f4e9f172f923c20fdd90ac0799f84`,
+tensor file
+`d77a60532b660160413331ceddbe8d970c2828d53ff5788642250ff3c5d49fa1`,
+and report
+`5c958c54fbcd55239cc1f5943dcb1bf138bbd4116233783bf7020e1023f4998a`.
+The local tensor is approximately 24 MiB because it retains all ten strict
+plan variants and diagnostics; it remains ignored under `.local-runs/`.

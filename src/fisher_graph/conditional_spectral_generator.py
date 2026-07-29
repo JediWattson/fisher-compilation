@@ -57,6 +57,7 @@ __all__ = [
     "PreparedConditionalSpectralGenerator",
     "evaluate_conditional_spectral_generator",
     "fit_conditional_spectral_generator",
+    "fit_conditional_spectral_generator_with_source_basis",
 ]
 
 
@@ -71,6 +72,10 @@ _INTERPOLATION = "piecewise_linear_source_origin_no_extrapolation"
 _FACTORIZATION = (
     "two_sided_real_tucker_from_parseval_weighted_rfft_fit_knots_only"
 )
+_GRAPH_SOURCE_FACTORIZATION = (
+    "fixed_fit_only_graph_source_basis_with_parseval_weighted_rfft_"
+    "svd_target_basis"
+)
 _CORE_SEMANTICS = (
     "U_source_transpose_diag_source_scale_H_U_target_per_fit_knot"
 )
@@ -83,6 +88,24 @@ _CROSS_TERM_STATUS = "cross_mode_products_unmeasured_and_absent"
 _RANK_SEMANTICS = (
     "left_singular_subspace_of_parseval_correct_real_augmented_rfft_"
     "unfolding_over_fit_knots_only"
+)
+_SIGNED_GRAPH_RANK_SEMANTICS = (
+    "low_to_high_normalized_signed_phase_coherency_graph_laplacian_"
+    "eigenvectors_from_fit_knots_only"
+)
+_MAGNITUDE_GRAPH_RANK_SEMANTICS = (
+    "low_to_high_normalized_phase_blind_magnitude_graph_laplacian_"
+    "eigenvectors_from_fit_knots_only"
+)
+_CONTROL_BASIS_RANK_SEMANTICS = (
+    "fixed_orthonormal_control_source_basis_bound_to_fit_knots_only"
+)
+_GRAPH_RANK_SEMANTICS = frozenset(
+    {
+        _SIGNED_GRAPH_RANK_SEMANTICS,
+        _MAGNITUDE_GRAPH_RANK_SEMANTICS,
+        _CONTROL_BASIS_RANK_SEMANTICS,
+    }
 )
 _RUNTIME_DTYPES = frozenset(
     {
@@ -930,14 +953,23 @@ class ConditionalSpectralGeneratorPlan:
             raise ValueError("rFFT augmentation is not Parseval correct")
         if self.interpolation_semantics != _INTERPOLATION:
             raise ValueError("interpolation semantics drifted")
-        if self.factorization_semantics != _FACTORIZATION:
-            raise ValueError("factorization semantics drifted")
+        if (
+            self.factorization_semantics,
+            self.rank_semantics,
+        ) not in {
+            (_FACTORIZATION, _RANK_SEMANTICS),
+            *(
+                (_GRAPH_SOURCE_FACTORIZATION, rank_semantics)
+                for rank_semantics in _GRAPH_RANK_SEMANTICS
+            ),
+        }:
+            raise ValueError(
+                "factorization and rank semantics are incompatible"
+            )
         if self.core_semantics != _CORE_SEMANTICS:
             raise ValueError("core semantics drifted")
         if self.fit_origin_scope != _FIT_SCOPE:
             raise ValueError("fit origin scope drifted")
-        if self.rank_semantics != _RANK_SEMANTICS:
-            raise ValueError("rank semantics drifted")
         if self.heldout_origins_used_for_fit is not False:
             raise ValueError("heldout origins cannot participate in fitting")
         if self.cross_mode_terms_measured is not False:
@@ -1989,6 +2021,175 @@ def fit_conditional_spectral_generator(
         weighted_relative_error=relative_error,
         source_parseval_relative_error=source_parseval,
         target_parseval_relative_error=target_parseval,
+    )
+
+
+def fit_conditional_spectral_generator_with_source_basis(
+    responses: Tensor,
+    source_scales: Tensor,
+    origins: Sequence[int],
+    fit_origins: Sequence[int],
+    source_basis: Tensor,
+    target_rank: int,
+    *,
+    source_basis_kind: Literal[
+        "signed_phase_graph_low_frequency",
+        "phase_blind_magnitude_graph_low_frequency",
+        "fixed_orthonormal_control",
+    ],
+    source_basis_fit_weighted_kernels_sha256: str,
+    response_binding_sha256: str,
+    input_transform: InputTransform = "standardized_linear",
+    fft_length: int | None = None,
+) -> ConditionalSpectralGeneratorPlan:
+    """Fit a target decoder and causal cores around one frozen graph basis.
+
+    The caller supplies an orthonormal source basis derived from the declared
+    fit knots.  Its claimed fit-tensor hash must exactly match the weighted
+    fit tensor selected here.  Held-out origins are therefore not read while
+    fitting the target basis or cores, and a basis from a different response
+    tensor cannot be silently attached to the plan.
+    """
+
+    _require_sha256(
+        response_binding_sha256,
+        label="response_binding_sha256",
+    )
+    basis_fit_sha256 = _require_sha256(
+        source_basis_fit_weighted_kernels_sha256,
+        label="source_basis_fit_weighted_kernels_sha256",
+    )
+    if source_basis_kind == "signed_phase_graph_low_frequency":
+        rank_semantics = _SIGNED_GRAPH_RANK_SEMANTICS
+    elif (
+        source_basis_kind
+        == "phase_blind_magnitude_graph_low_frequency"
+    ):
+        rank_semantics = _MAGNITUDE_GRAPH_RANK_SEMANTICS
+    elif source_basis_kind == "fixed_orthonormal_control":
+        rank_semantics = _CONTROL_BASIS_RANK_SEMANTICS
+    else:
+        raise ValueError("source_basis_kind is invalid")
+    kernels = _canonical_float_tensor(
+        responses,
+        label="responses",
+        ndim=4,
+    )
+    scales = _canonical_float_tensor(
+        source_scales,
+        label="source_scales",
+        ndim=1,
+    )
+    basis = _canonical_float_tensor(
+        source_basis,
+        label="source_basis",
+        ndim=2,
+    )
+    if kernels.shape[0] != scales.numel():
+        raise ValueError("responses and source_scales have different widths")
+    if bool((scales <= 0.0).any()):
+        raise ValueError("source_scales must be strictly positive")
+    if basis.shape[0] != kernels.shape[0]:
+        raise ValueError("source_basis and responses have different widths")
+    if basis.shape[1] > basis.shape[0]:
+        raise ValueError("source basis rank cannot exceed source modes")
+    identity = torch.eye(basis.shape[1], dtype=torch.float64)
+    if not _close(basis.T @ basis, identity):
+        raise ValueError("source_basis columns must be orthonormal")
+    measured_origins = _origin_tuple(origins, label="origins")
+    if len(measured_origins) != kernels.shape[1]:
+        raise ValueError("origins must match the response origin axis")
+    knots = _origin_tuple(
+        fit_origins,
+        label="fit_origins",
+        minimum_count=2,
+    )
+    origin_to_index = {
+        origin: index for index, origin in enumerate(measured_origins)
+    }
+    if any(origin not in origin_to_index for origin in knots):
+        raise ValueError("every fit origin must exist in origins")
+    target_rank = _positive_int(target_rank, label="target_rank")
+    if target_rank > kernels.shape[3]:
+        raise ValueError("target_rank cannot exceed target modes")
+    input_transform = _canonical_input_transform(input_transform)
+    lag_count = int(kernels.shape[2])
+    if fft_length is None:
+        fft_length = 1 << (lag_count - 1).bit_length()
+    fft_length = _positive_int(fft_length, label="fft_length")
+    if fft_length < lag_count:
+        raise ValueError("fft_length cannot truncate causal lags")
+    fit_indices = torch.tensor(
+        [origin_to_index[origin] for origin in knots],
+        dtype=torch.int64,
+    )
+    fit_kernels = kernels.index_select(1, fit_indices).contiguous()
+    weighted = (
+        fit_kernels * scales.view(-1, 1, 1, 1)
+    ).contiguous()
+    weighted_sha256 = _tensor_sha256(weighted)
+    if basis_fit_sha256 != weighted_sha256:
+        raise ValueError(
+            "source basis was not bound to the selected weighted fit tensor"
+        )
+    (
+        source_unfolding,
+        target_unfolding,
+        source_parseval,
+        target_parseval,
+    ) = _parseval_augmented_unfoldings(
+        weighted,
+        fft_length=fft_length,
+    )
+    _, source_singular, _ = torch.linalg.svd(
+        source_unfolding,
+        full_matrices=False,
+    )
+    target_left, target_singular, _ = torch.linalg.svd(
+        target_unfolding,
+        full_matrices=False,
+    )
+    if target_rank > target_left.shape[1]:
+        raise ValueError(
+            "target_rank exceeds the fitted target unfolding rank capacity"
+        )
+    target_basis = _canonicalize_column_signs(
+        target_left[:, :target_rank]
+    )
+    cores = torch.einsum(
+        "sa,sklt,tb->klab",
+        basis,
+        weighted,
+        target_basis,
+    ).contiguous()
+    total_energy = float(weighted.square().sum())
+    retained_energy = float(cores.square().sum())
+    relative_error = (
+        math.sqrt(
+            max(total_energy - retained_energy, 0.0) / total_energy
+        )
+        if total_energy > torch.finfo(torch.float64).eps
+        else 0.0
+    )
+    return ConditionalSpectralGeneratorPlan(
+        response_binding_sha256=response_binding_sha256,
+        fit_weighted_kernels_sha256=weighted_sha256,
+        fit_knot_origins=knots,
+        source_scales=scales,
+        source_basis=basis,
+        target_basis=target_basis,
+        knot_cores=cores,
+        source_singular_values=source_singular,
+        target_singular_values=target_singular,
+        fft_length=fft_length,
+        input_transform=input_transform,
+        weighted_total_energy=total_energy,
+        weighted_retained_energy=retained_energy,
+        weighted_relative_error=relative_error,
+        source_parseval_relative_error=source_parseval,
+        target_parseval_relative_error=target_parseval,
+        factorization_semantics=_GRAPH_SOURCE_FACTORIZATION,
+        rank_semantics=rank_semantics,
     )
 
 

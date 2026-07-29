@@ -662,6 +662,12 @@ from .conditional_spectral_generator import (
     evaluate_conditional_spectral_generator,
     fit_conditional_spectral_generator,
 )
+from .graph_organized_svd import (
+    GraphOrganizedSVDExecutionAccounting,
+    GraphOrganizedSVDPlan,
+    PreparedGraphOrganizedSVD,
+    organize_conditional_svd_with_graph,
+)
 from .off_diagonal_bilinear_modal import (
     BilinearPairDesignDiagnostics,
     DenseBilinearKernelRecovery,
@@ -799,6 +805,8 @@ __all__ = [
     "ConditionalSpectralGeneratorAccounting",
     "ConditionalSpectralGeneratorEvaluation",
     "ConditionalSpectralGeneratorPlan",
+    "GraphOrganizedSVDExecutionAccounting",
+    "GraphOrganizedSVDPlan",
     "BilinearPairDesignDiagnostics",
     "DenseBilinearKernelRecovery",
     "DenseBilinearKernelRecoveryDiagnostics",
@@ -823,6 +831,7 @@ __all__ = [
     "PreparedCausalModalPair",
     "PreparedCausalModalPairSession",
     "PreparedConditionalSpectralGenerator",
+    "PreparedGraphOrganizedSVD",
     "PreparedTorchHierarchyRuntime",
     "SharingFamilyNomination",
     "JointMessageMomentsResult",
@@ -840,6 +849,7 @@ __all__ = [
     "extract_coarsening_group",
     "fit_causal_edge_jvp",
     "fit_conditional_spectral_generator",
+    "organize_conditional_svd_with_graph",
     "apply_dense_bilinear_feature_kernels",
     "build_explicit_pair_product_feature_map",
     "build_off_diagonal_bilinear_feature_map",
