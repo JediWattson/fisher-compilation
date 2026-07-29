@@ -2067,6 +2067,113 @@ fisher-graph-gemma-l3-l4-function-preserving-width-dev run \
   --dtype float32
 ```
 
+### Authenticated function-preserving expert-rank control
+
+The next control moved the capacity intervention inside the conditional
+executor. It held outer/modal rank 64, two experts, router width 16, encoder,
+decoder, routing and causality semantics, the D3 unit-RMS objective, fit data
+and ordering, optimizer, learning rate, seeds, and 600-step budget fixed. The
+control used expert rank 16 and exactly replayed the authenticated
+function-preserving-width rank-64 arm. The treatment raised only the two
+experts' inner rank to 64.
+
+This was again a nested, function-preserving comparison rather than two
+unrelated cold starts. The first 16 expert coordinates were copied exactly.
+For the 48 added coordinates, the two experts received balanced
+positive/negative input identities while every added output weight started at
+zero. A split wrapper exposed the added bank during fitting, after which its
+weights were concatenated into the standard rank-64 executor used for
+publication and scoring.
+
+The preregistered validity checks all passed:
+
+- control-versus-treatment initial observable and provider-chart JVP errors
+  were exactly `0`, as was the initial weighted-objective difference;
+- split-wrapper versus concatenated-executor initial maximum output and JVP
+  absolute errors were `8.881784197001252e-16` and
+  `1.7763568394002505e-15`;
+- at step one, the added output bank had gradient norm `1.9633094586148923`
+  and parameter delta norm `0.03918682697223519`, while the added input bank
+  remained exactly zero as required;
+- at step two, the added input bank had gradient norm
+  `0.014977110302041203` and parameter delta norm
+  `0.05920228747007784`; the added output bank had gradient norm
+  `1.6076096838506702` and parameter delta norm
+  `0.09194759732980043`; and
+- after the full treatment fit, split/concatenated maximum output error was
+  `7.105427357601002e-15`, maximum JVP error was
+  `7.882583474838611e-15`, and weighted-objective error was
+  `1.6653345369377348e-16`.
+
+The primary rank-16 control also reproduced the bound source plan and its
+initial and final metrics exactly. Every paired-treatment flag therefore
+passed and `primary_treatment_valid=true`.
+
+| expert rank | ordinary error / cosine | ordinary | null | radial pass / macro / worst | signed pass / macro / worst | final weighted objective |
+|---:|---:|---:|---:|---:|---:|---:|
+| 16 replay | `0.0065299364 / 0.9999787839` | `12/12` | `24/24` | `16/16 / 0.0710131488 / 0.1066254261` | `3/8 / 0.3868906939 / 0.7754276377` | `0.1675690734` |
+| 64 matched lift | `0.0062163149 / 0.9999811625` | `12/12` | `24/24` | `16/16 / 0.0630768682 / 0.0935633655` | `3/8 / 0.3839030254 / 0.7520430925` | `0.1641059523` |
+
+Expert rank 64 improved ordinary error by `4.8028%`, radial macro error by
+`11.1758%`, and the final weighted objective by `2.0667%`. Its signed macro
+and worst errors also improved by `0.7722%` and `3.0157%`. Those continuous
+improvements did not cross another categorical gate: both arms passed exactly
+the same three signed identities,
+`development_c2.fit.signed_sensitivity.base_01.pair.00`,
+`development_c2.fit.signed_sensitivity.base_04.pair.00`, and
+`development_c2.fit.signed_sensitivity.base_06.pair.00`.
+
+The resource cost increased materially:
+
+| expert rank | executor scalars | total stored scalars | canonical core MACs | canonical total MACs (`B=1`, `S=128`) | fit-panel total MACs |
+|---:|---:|---:|---:|---:|---:|
+| 16 | `10,626` | `19,012` | `2,133,760` | `3,190,528` | `345,767,280` |
+| 64 | `23,106` | `31,492` | `4,499,008` | `5,555,776` | `610,001,520` |
+
+The larger core stores `65.6428%` more total scalars, uses `110.8488%` more
+core MACs, and uses `74.1334%` more total canonical MACs. Fit-panel
+mathematical MACs rose `76.4197%`. These counts are ideal sparse mathematical
+operations, not measured kernel latency or wall-clock speed.
+
+The formal outcome is `primary_both_fail`. The rank-64 treatment was valid,
+but it did not make the full fit-capability contract pass. The conditional
+replication therefore did not run, no two-seed inner-expert-rank attribution
+or descending expert-rank ladder is authorized, and expert rank alone is
+insufficient under this matched budget. The preregistered `both_fail` branch
+does authorize a separately preregistered fixed-outer-rank expert-count
+control. It does not authorize C3/V4, held-out or natural-prompt
+generalization, shadow NLL, full-model replacement, rank reduction,
+compression, downstream-task accuracy, kernel speed, or wall-clock speed.
+
+The executable protocol was preregistered in commit `a3ab937`. Its protocol
+binding is
+`94b24068fa583c627faa7d06838c6cd80065f6180c3047ee2923ed95b587014c`
+and its code bundle is
+`bcdd356aea62fedbdffd57bca39e1287f6da1374bb7477a2b28de374c9afebc3`.
+The durable external result receipt is:
+
+- logical artifact:
+  `9759407bf2f2c0a1deb1d29aba7fdbf453bdda8a727aa1e672452a00299a48a9`;
+- tensor file:
+  `2139696efebcee68dd379f8226e04cb5edce57c10571f7db5b697700854a2a61`;
+  and
+- report:
+  `f2a8cb19f5aeebf9e5a1b46ac880655611db45138ab9943216ed9d2acea78c7c`.
+
+The run-generated receipt checks immediate publication integrity but is not
+an external scientific trust root. Recording that exact triple here supplies
+durable authority. The 24,315,927-byte tensor artifact and adjacent
+tensor-free JSON report remain ignored under `.local-runs/` and must not be
+committed.
+
+```bash
+fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev describe
+
+fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev run \
+  --device cpu \
+  --dtype float32
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block

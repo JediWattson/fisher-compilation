@@ -31,54 +31,55 @@ research compiler, not a production compression library.
 
 ## Current finding
 
-The authenticated function-preserving width control removed the initial-state
-confound from the prior rank-16/rank-64 comparison. It exactly replayed D3's
-rank-16 cold start and embedded the same observable function into a
-gradient-open rank-64 arm. Initial observable error was exactly `0`; the
-maximum provider-chart JVP absolute error was `8.88e-16`; and the added
-rank-64 decoder, encoder, and executor paths passed their preregistered
-gradient-openness checks.
+The authenticated function-preserving expert-rank control held outer rank 64,
+expert count 2, router width 16, and the complete D3 fit contract fixed while
+raising each expert's inner rank from 16 to 64. The treatment began as exactly
+the same function and provider-chart Jacobian as the control: initial
+observable and JVP errors were exactly `0`. Its 48 added expert coordinates
+were placed behind zero output weights, then passed the preregistered
+two-step gradient-openness check. The split training wrapper and published
+concatenated executor also matched after fitting to maximum output and JVP
+absolute errors of `7.11e-15` and `7.88e-15`.
 
 | arm | stored scalars / canonical MACs | ordinary error / cosine | null | radial pass / macro error | signed pass / macro / worst error | weighted training objective |
 |---|---:|---:|---:|---:|---:|---:|
-| rank 16 D3 replay | `4,276 / 1,315,072` | `0.00769406 / 0.99997058` | `24/24` | `16/16 / 0.083419` | `3/8 / 0.380298 / 0.738002` | `0.222771` |
-| rank 64 matched lift | `19,012 / 3,190,528` | `0.00652994 / 0.99997878` | `24/24` | `16/16 / 0.071013` | `3/8 / 0.386891 / 0.775428` | `0.167569` |
+| expert rank 16 replay | `19,012 / 3,190,528` | `0.00652994 / 0.99997878` | `24/24` | `16/16 / 0.071013` | `3/8 / 0.386891 / 0.775428` | `0.167569` |
+| expert rank 64 matched lift | `31,492 / 5,555,776` | `0.00621631 / 0.99998116` | `24/24` | `16/16 / 0.063077` | `3/8 / 0.383903 / 0.752043` | `0.164106` |
 
 Both arms passed all `12/12` ordinary, `24/24` exact-null, and `16/16`
-radial checks. Rank 64 improved the smooth fit measures—ordinary error,
-radial macro error, and the weighted training objective—but it passed only
-the same three signed identities as rank 16. Its signed macro and worst error
-were also slightly worse. The valid formal outcome is `primary_both_fail`;
-the conditional replication did not run because only a rank-16-fail /
-rank-64-pass result could open it.
+radial checks. The larger expert core improved ordinary error by `4.80%`,
+radial macro error by `11.18%`, and the weighted training objective by
+`2.07%`. It nevertheless passed only the same three signed identities as the
+control: `base_01`, `base_04`, and `base_06`. The valid formal outcome is
+`primary_both_fail`; the conditional replication did not run because only an
+expert-rank-16-fail / expert-rank-64-pass primary result could open it.
 
-This is now a causal negative result for outer width under the matched
-600-step fit budget: quadrupling outer rank alone did not recover categorical
-signed fidelity. The rank-64 arm stores `4.446×` as many scalars and requires
-`2.426×` the declared canonical MACs, so it is also not a compression
-candidate. The result authorizes the preregistered expert/core control, which
-will test capacity inside the conditional executor rather than widening the
-outer modal packer. It authorizes no compressed-width ladder, C3, held-out
-generalization, full-model replacement, compression, or wall-clock speed
-claim.
+This is a causal negative result for inner expert rank alone under the matched
+600-step fit budget. Rank 64 costs `65.64%` more stored scalars and `74.13%`
+more declared canonical MACs than rank 16, yet did not recover another signed
+identity. The result authorizes a separately preregistered fixed-outer-rank
+expert-count control. It authorizes no descending expert-rank ladder, C3,
+held-out generalization, full-model replacement, compression, rank reduction,
+or wall-clock speed claim.
 
 The durable external result receipt is logical artifact
-`9e07c7208b3b690a8024bd809a0d80c2842145cfa73e655bb737e5497913ce47`,
+`9759407bf2f2c0a1deb1d29aba7fdbf453bdda8a727aa1e672452a00299a48a9`,
 tensor file
-`5a3c8de7bd6731a78904a14c488648f6641d6b3cbe96167438f633b65f9104c5`,
+`2139696efebcee68dd379f8226e04cb5edce57c10571f7db5b697700854a2a61`,
 and report
-`6aacad6f05e3b43bbeba62b6ce7ae35897af6af60d53f9dfa96eec951ad6965f`.
+`f2a8cb19f5aeebf9e5a1b46ac880655611db45138ab9943216ed9d2acea78c7c`.
 The protocol binding is
-`c3ad81c84d41108839b5fcab13e3b5d47d99a55ae9a9223c3f116edb6b457597`
+`94b24068fa583c627faa7d06838c6cd80065f6180c3047ee2923ed95b587014c`
 and the code bundle is
-`5c314fff7959f659257911ca0190605ea4ef41c556bd18a27108acb48d2545a4`.
+`bcdd356aea62fedbdffd57bca39e1287f6da1374bb7477a2b28de374c9afebc3`;
+the executable protocol was preregistered in commit `a3ab937`.
 The tensor artifact and tensor-free JSON report remain ignored under
 `.local-runs/`; the receipt recorded here is the durable trust root.
 
 ```bash
-fisher-graph-gemma-l3-l4-function-preserving-width-dev describe
+fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev describe
 
-fisher-graph-gemma-l3-l4-function-preserving-width-dev run \
+fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev run \
   --device cpu \
   --dtype float32
 ```
@@ -400,6 +401,7 @@ This work is described in
 | Gemma rank-16 objective-balance diagnostic | Same `4,276`-scalar candidate form; no new resource or deployment claim | Unit-RMS treatments passed `12/12` ordinary, `24/24` null, and `16/16` radial fit checks, but only `2–3/8` signed checks | Fit-only diagnostic; global loss scale is not the sole blocker and C3 remains unopened |
 | Gemma rank-64 capacity control | `19,012` stored scalars and `3,190,528` canonical MACs versus rank 16's `4,276` and `1,315,072`; no reduction claim | Descriptively `12/12` ordinary, `24/24` null, `16/16` radial, and `3/8` signed; ordinary error `0.00672074`, cosine `0.99997745` | Invalid comparison: initial pointwise share missed the frozen balance gate, so no capacity conclusion, replication, width ladder, or C3 is authorized |
 | Gemma function-preserving width control | Rank 64 uses `19,012` scalars / `3,190,528` canonical MACs versus rank 16's `4,276` / `1,315,072` (`4.446×` storage and `2.426×` MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; rank 64 improved ordinary error `0.00769406 → 0.00652994` while signed macro error changed `0.380298 → 0.386891` | Outer width alone is insufficient under the matched fit budget; expert/core control authorized, with no replication, width ladder, C3, or compression claim |
+| Gemma function-preserving expert-rank control | Expert rank 64 uses `31,492` scalars / `5,555,776` canonical MACs versus expert rank 16's `19,012` / `3,190,528` (`65.64%` more storage and `74.13%` more MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; expert rank 64 improved ordinary error `0.00652994 → 0.00621631` and signed macro error `0.386891 → 0.383903` | Inner expert rank alone is insufficient under the matched fit budget; expert-count control authorized, with no replication, descending rank ladder, C3, compression, or speed claim |
 
 There are three important distinctions:
 
