@@ -31,56 +31,63 @@ research compiler, not a production compression library.
 
 ## Current finding
 
-The authenticated rank-16 objective-balance diagnostic tested whether C2's
-signed-contrast failure was merely an optimization-scale artifact. It replayed
-only the frozen C2 pilot and fit roles; C2 selection was forbidden and never
-materialized, and no fresh C3 panel was opened. The raw Fisher square-root
-weights had RMS `581.8848242` and mean square `338,589.948635`. Dividing them
-by that one global RMS preserved their relative mode weights while reducing
-fit-teacher weighted energy from `338,589.948635` to
-`0.999999999999986`.
+The authenticated rank-64 capacity control changed only the outer modal
+packer from rank 16 to rank 64 under D3's unit-RMS objective, fit data,
+schedule, and gates. It was intended to distinguish an outer-packing capacity
+limit from a failure shared by the executor, objective, or optimization. The
+run did not produce that comparison: its sole treatment-validity failure was
+the frozen initial objective-balance gate.
 
-| treatment | initial pointwise / contrast share | ordinary | null | radial | signed | balance gate | formal fit outcome |
-|---|---:|---:|---:|---:|---:|---|---|
-| D0 raw C2 control | `99.998614% / 0.001381%` | `12/12` | `24/24` | `16/16` | `2/8` | fail | `candidate_fail` |
-| D1 unit-RMS gauge | `17.617305% / 82.382695%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
-| D2 D1 + signed-family balance | `14.581530% / 85.418469%` | `12/12` | `24/24` | `16/16` | `2/8` | pass | `candidate_fail` |
-| D3 D2 + stronger direction / 600 steps | `12.768013% / 87.231987%` | `12/12` | `24/24` | `16/16` | `3/8` | pass | `candidate_fail` |
+| treatment | initial pointwise / contrast share | largest active share | ordinary | null | radial | signed | treatment valid |
+|---|---:|---:|---:|---:|---:|---:|---|
+| D3 rank 16 | `12.768013% / 87.231987%` | `46.713755%` | `12/12` | `24/24` | `16/16` | `3/8` | pass |
+| D3 rank 64 | `8.742727% / 91.257272%` | `51.276526%` | `12/12` | `24/24` | `16/16` | `3/8` | fail |
 
-Normalization therefore fixed the declared scalar-contribution balance, and
-every treatment passed every ordinary, null, and radial fit-side comparison.
-It did not repair signed transport: no advancement-eligible treatment passed
-all eight signed comparisons, no replication seed was run, and the formal
-outcome is `no_primary_treatment_passed_fit_gates`. This rules out the
-specific explanation that global Fisher scale was the only blocker. It does
-not prove balanced gradients or Adam updates; the diagnostic tests the
-fit-capability consequence of the dimensionless objective.
+The rank-64 pointwise share fell below the preregistered `10–40%` interval.
+Contrast share remained above `50%`, the largest active non-null component
+remained below `65%`, and every other treatment-validity flag passed. The
+formal outcome is
+`invalid_rank_comparison_primary_treatment_validity_failed`; replication did
+not run. Threshold relaxation after seeing the result is forbidden.
 
-The next rung is a rank-64 capacity control on the same fit-side contract. If
-full rank passes, latent capacity is the leading explanation and a width
-ladder should locate the smallest viable compressed rank. If full rank
-reproduces the signed failures, the provider needs a signed
-conditional-residual branch before any fresh C3 assessment. This result is
-fit-only and synthetic: it is not held-out generalization, C3/V4, natural
-prompt fidelity, NLL, full-model replacement, compression, or a speed claim.
-The run used the frozen CPU/float32 execution contract; the report separately
-records provider fitting math in `torch.float64`.
+Descriptively, rank 64 reached ordinary relative error `0.00672074` and cosine
+`0.99997745`, then passed all null and radial checks. Its signed macro and
+worst errors were `0.414150` and `0.869743`, compared with D3 rank 16's
+`0.380298` and `0.738002`. Both passed exactly signed identities `01`, `04`,
+and `06`. Those observations cannot support a causal capacity conclusion
+because the initial-state treatment contract failed.
+
+Rank 64 stores `19,012` scalars and requires `3,190,528` declared canonical
+MACs at `B=1`, `S=128`, versus rank 16's `4,276` scalars and `1,315,072`
+MACs. It is a capacity diagnostic, not compression. This result does not
+authorize a width ladder, C3, a compression claim, or a threshold change.
+
+The next rung is a paired rank-16/rank-64 initialization control. It will
+recreate the exact D3 rank-16 cold start, replay it as one arm, and lift that
+same observable function into a trainable rank-64 arm. The added channels
+start hidden only by zero decoder rows, receive decoder gradients on step one,
+and must reach upstream parameters by step two. Initial outputs, provider-chart
+JVPs, metrics, and contribution shares must match rank 16 exactly before the
+width comparison is valid. The design is frozen conceptually; its executable
+protocol must still be committed before either arm runs.
 
 Authenticated bindings are protocol
-`d502d003fd86f6ef7322e35854d0bb738fdc4cfa6fa5089c2812e366a142d2eb`,
+`03b1e595836ee325b83f5c2fc7355b31f7e5e6deceba92f9ad98ae27c29e6cf5`,
 code bundle
-`c88cd41db520e953c08b389df47e5befb6e3207c336e2dea79231e76ac4bed31`,
+`e139fe6e7b7a55ffc325e0ddf49f23acce8aa9cbeacac312f64fbb0328f7ca9e`,
 logical artifact
-`e171361c2a2f43083f9e591d27c1d7b4555302c89d9d6e6e2f54e6be7cfd9cb0`,
+`cccc3fc51ce123a74cea9238bd359e8c09872f2432300d684c02a84d6f8a84fa`,
+tensor file
+`3d44215ae206f85cf778ee85944b36bd58e0255299685b05bf689c27e5ba0f07`,
 and report
-`88394ae24648eca541a7b83ad48afec0681772bb231ff0fa5866ab75d74510ed`.
+`8d49ed2b8591645d0c4e0a641a1d5253c8171b0129fd3d9be0cefcaf4a2e13f7`.
 The tensor artifact and tensor-free JSON report remain ignored under
 `.local-runs/`.
 
 ```bash
-fisher-graph-gemma-l3-l4-objective-balance-dev describe
+fisher-graph-gemma-l3-l4-rank64-capacity-dev describe
 
-fisher-graph-gemma-l3-l4-objective-balance-dev run \
+fisher-graph-gemma-l3-l4-rank64-capacity-dev run \
   --device cpu \
   --dtype float32
 ```
@@ -400,6 +407,7 @@ This work is described in
 | Gemma prompt-blind reference provider V2/V3 | Rank 8 stores `910` scalars versus `15,046` for the full-width provider (`93.95%` fewer); provider-only ideal MAC savings are sequence-dependent | Fresh-V3 ordinary error `0.0677`, cosine `0.9977`, p90 `0.2914`; all ordinary fidelity/structure gates passed | Radial and intended-null contrast recovery failed; signed sensitivity was underpowered, so the formal V3 outcome is panel-inconclusive |
 | Gemma C2 contrast-packed provider development | Ranks `8/16/32` store `1,980/4,276/8,676` scalars (`86.84%/71.58%/42.34%` below the prior dense-64 component); canonical rank-8/rank-16 MACs are `52.35%/29.85%` below rank 32 | Every rank passed ordinary fidelity and `24/24` exact-null pairs; radial passes were `12/16`, `13/16`, `7/16`, while signed passes were `0/7` at every rank | Held-out development selection only; no candidate passed, V4 remains unopened |
 | Gemma rank-16 objective-balance diagnostic | Same `4,276`-scalar candidate form; no new resource or deployment claim | Unit-RMS treatments passed `12/12` ordinary, `24/24` null, and `16/16` radial fit checks, but only `2–3/8` signed checks | Fit-only diagnostic; global loss scale is not the sole blocker and C3 remains unopened |
+| Gemma rank-64 capacity control | `19,012` stored scalars and `3,190,528` canonical MACs versus rank 16's `4,276` and `1,315,072`; no reduction claim | Descriptively `12/12` ordinary, `24/24` null, `16/16` radial, and `3/8` signed; ordinary error `0.00672074`, cosine `0.99997745` | Invalid comparison: initial pointwise share missed the frozen balance gate, so no capacity conclusion, replication, width ladder, or C3 is authorized |
 
 There are three important distinctions:
 

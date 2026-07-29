@@ -1898,6 +1898,94 @@ published JSON is tensor-free and contains no raw teacher targets, JVP
 tensors, prompt text, token IDs, tokenizer, natural activation rows,
 source-model state, V2/V3 targets, or C2 selection data.
 
+### Authenticated rank-64 capacity control
+
+The preregistered rank-64 control changed only the outer modal packing rank
+from 16 to 64. The learned `64→16→64` packer became `64→64→64`; the
+executor input/output widths, expert count and rank, router width, causal
+support, D3 unit-RMS objective, fit data, seed schedule, 600 steps, and
+learning rate remained frozen. It loaded the authenticated D3 artifact only
+for provenance and shared data identities. D3 provider weights were forbidden
+as initialization, so this was a cold-start structural control.
+
+The primary candidate failed one—and only one—treatment-validity condition:
+
+| candidate | initial pointwise share | initial contrast share | largest active non-null share | frozen balance gate |
+|---|---:|---:|---:|---|
+| D3 rank 16 | `12.768013%` | `87.231987%` | `46.713755%` | pass |
+| D3 rank 64 | `8.742727%` | `91.257272%` | `51.276526%` | fail |
+
+The rank-64 pointwise contribution fell below the preregistered `10–40%`
+interval. Its contrast contribution still exceeded `50%`, its largest active
+non-null term remained below `65%`, and every other treatment-validity flag
+passed. The formal outcome is
+`invalid_rank_comparison_primary_treatment_validity_failed`. The frozen
+failure semantics are `invalid_rank_comparison_no_capacity_conclusion`;
+post-result threshold relaxation is forbidden, and the replication seed did
+not run.
+
+The completed measurements remain useful only as descriptive diagnostics:
+
+| rank | ordinary error / cosine | ordinary | null | radial | signed | signed macro / worst error |
+|---:|---:|---:|---:|---:|---:|---:|
+| 16 D3 | `0.00769406 / 0.99997058` | `12/12` | `24/24` | `16/16` | `3/8` | `0.380298 / 0.738002` |
+| 64 control | `0.00672074 / 0.99997745` | `12/12` | `24/24` | `16/16` | `3/8` | `0.414150 / 0.869743` |
+
+Both ranks passed exactly the same signed identities: `01`, `04`, and `06`.
+Rank 64 therefore improved ordinary reconstruction but did not descriptively
+improve signed transport under this run. That pattern still cannot be used to
+say that outer-packing capacity is or is not causal, because the two
+treatments did not satisfy the frozen initial-state comparison contract.
+
+The control was deliberately not a compression candidate:
+
+| rank | stored scalars | canonical MACs (`B=1`, `S=128`) |
+|---:|---:|---:|
+| 16 | `4,276` | `1,315,072` |
+| 64 | `19,012` | `3,190,528` |
+
+Consequently the run authorizes no width ladder, C3 panel, compression claim,
+full-model replacement claim, or speed claim. The next discriminating rung is
+a paired rank-16/rank-64 initialization control. It recreates the exact D3
+rank-16 cold start as one arm and embeds that observable function into a
+trainable rank-64 arm. The 48 added channels start behind zero decoder rows:
+their decoder gradients must be nonzero on step one, and their upstream path
+must receive gradient by step two. Initial endpoint outputs, provider-chart
+JVPs, metrics, and contribution shares must match rank 16 before the width
+comparison is valid. This design still requires a committed executable
+protocol before either arm can run.
+
+The implementation was preregistered in commit `4795d84`. Authenticated
+bindings are:
+
+- protocol:
+  `03b1e595836ee325b83f5c2fc7355b31f7e5e6deceba92f9ad98ae27c29e6cf5`;
+- code bundle:
+  `e139fe6e7b7a55ffc325e0ddf49f23acce8aa9cbeacac312f64fbb0328f7ca9e`;
+- logical artifact:
+  `cccc3fc51ce123a74cea9238bd359e8c09872f2432300d684c02a84d6f8a84fa`;
+- tensor file:
+  `3d44215ae206f85cf778ee85944b36bd58e0255299685b05bf689c27e5ba0f07`;
+  and
+- report:
+  `8d49ed2b8591645d0c4e0a641a1d5253c8171b0129fd3d9be0cefcaf4a2e13f7`.
+
+```bash
+fisher-graph-gemma-l3-l4-rank64-capacity-dev describe
+
+fisher-graph-gemma-l3-l4-rank64-capacity-dev run \
+  --device cpu \
+  --dtype float32
+```
+
+This is a synthetic, same-fit invalid control, not held-out generalization,
+C3/V4, natural-prompt fidelity, shadow NLL, full-model replacement,
+compression, downstream-task accuracy, wall-clock speed, or kernel latency.
+The ignored tensor artifact contains provider parameters; its adjacent
+tensor-free JSON report contains no raw teacher targets, JVP tensors, prompt
+text, token IDs, tokenizer, natural activation rows, source-model state,
+V2/V3 targets, or C2 selection data.
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block
