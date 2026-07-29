@@ -98,10 +98,11 @@ fit-only signed Fisher/GFA graph organizes those retained generators into
 four routable packs. Turning on all packs reproduces the same SVD operator;
 the graph changes only generator layout and conditional execution.
 
-The frozen Gemma plan uses packs `8 / 8 / 8 / 21`. Its deployable edge state
-contains `279,744` float coefficients versus `393,216` dense fit-knot
-coefficients (`28.86%` fewer). For a complete 32-lag response with interpolated
-cores cached, all-on rank-45 execution uses `72.51%` of the dense linear MACs.
+The frozen Gemma plan uses packs `8 / 8 / 8 / 21`. Its deployment-form edge
+state contains `279,744` float coefficients versus `393,216` dense fit-knot
+coefficients (`28.86%` fewer). For a complete 32-lag response with
+interpolated cores cached, all-on rank-45 execution uses `72.51%` of the dense
+linear MACs.
 
 The routing curve was corrected for an important C2 data confound: exact-zero
 padding is about 91% of the raw rows and is excluded before rate scoring. On
@@ -121,17 +122,46 @@ high-fidelity point against the contiguous control, but the contiguous
 control wins at the more aggressive threshold. Eight size-matched random
 controls also remain in the artifact. The router uses conservative
 operator-norm certificates and reuses the source projection, but its cost is
-excluded from the displayed cached-core MAC ratios.
+excluded from the displayed cached-core MAC ratios. A later float-execution
+audit found that the exact-arithmetic certificate does not yet bound the
+implemented accumulation tightly enough, so routing is disabled in the
+locked one-shot rung.
 
 The opened C2 split makes this development evidence, not fresh confirmation.
-No natural-prompt NLL, whole-block replacement, whole-model compression,
-wall-clock latency, or GPU speed was measured. The ignored artifact is bound
-by logical hash
+A subsequent source-authoritative shadow did measure one Calibration-A
+natural prompt. It rejected the current edge: the all-on modal error was
+`4.8208`, a true 64-mode projection oracle still had `0.9741` full-width
+error, and exact X4 injection still changed NLL by `+2.0121` per token because
+the residual carrier was incomplete. This is development diagnosis, not
+held-out confirmation, whole-block replacement, whole-model compression,
+wall-clock latency, or GPU speed. The ignored graph artifact is bound by
+logical hash
 `b3e011d8067ff3538888851c476fba03c57f4e9f172f923c20fdd90ac0799f84`,
 tensor file
 `d77a60532b660160413331ceddbe8d970c2828d53ff5788642250ff3c5d49fa1`,
 and report
 `5c958c54fbcd55239cc1f5943dcb1bf138bbd4116233783bf7020e1023f4998a`.
+
+The one-shot path is now fail-closed around that diagnosis. Its only supported
+Calibration-B entry point preflights the exact runtime, live adapter, and
+locally loaded Gemma tokenizer; atomically claims the manifest in one fixed
+per-user host ledger; and only then loads each of the 96 prompts by identity.
+It owns tokenization, the required `3 + 1 + 1` source/oracle forwards per
+prompt, streaming evaluation, and terminal receipt creation. No independent
+held-out issuer, evaluator, report callback, or caller-supplied observation
+can produce a supported success receipt. The tokenizer check binds its backend
+program, full token-to-ID vocabulary, added/special tokens, and library
+versions—not only its name and configuration.
+
+Per-example receipts bind the prompt identity, exact token tensors,
+model/executor fingerprints, causal grid, both oracle interventions, and every
+tensor being scored. The internal evaluator requires the complete frozen
+96-example panel, all valid next-token boundaries, the real `262,144`-token
+Gemma output vocabulary, and unique receipts while streaming scalar
+statistics. Only the scalar report and immutable terminal receipt escape.
+Hashes are reproducible integrity/audit receipts, not hostile in-process
+attestation, and the host ledger is not a cross-machine authority. The
+transaction has not been invoked here, so Calibration B remains unopened.
 
 ```bash
 fisher-graph-gemma-l3-l4-graph-organized-svd-dev
@@ -451,7 +481,8 @@ This work is described in
 | Gemma L3→L4 spectral map, rank 64 | Source-σ-weighted ranks are `11 / 18 / 34` at `90% / 95% / 99%` energy; no deployed reduction | Local-to-`1σ` mean cosine `0.9996`; two-origin mean similarity `0.672` | Prompt-free fixed-reference analysis only; position-conditioned |
 | Gemma phase-aware source-mode GFA | No deployed reduction; phase-aware low graph bands `0:8` / `0:16` contain `48.09%` / `60.32%` of local response energy versus `9.24%` / `21.40%` for the phase-blind magnitude control | Local phase-aware graph ranks are `45 / 52 / 62` versus `57 / 61 / 63` for the control; local-to-`1σ` low-8 projector overlap is `0.9995` | Same-artifact pooled source-response diagnostic only; no directed transfer, held-out prediction, executor, compression, or speed claim |
 | Gemma fit-only signed-GFA rate curve | Rank 45 stores `283,456` coefficients versus `393,216` dense fit knots (`27.91%` fewer); cached-core linear MACs are `20.67%` lower, but the current uncached interpolation path performs `2.20×` the dense kernel-application multiplies | Frozen-origin selection error `0.1900`, worst cosine `0.9810`; the same-budget SVD error is `0.0506` and every signed-GFA cutoff loses to SVD | The signed graph beats magnitude, native-prefix, permuted, and eight random controls, but does not pass the controlled compression gate; organization/fidelity evidence only |
-| Gemma graph-organized global SVD | Rank-45 deployable edge state is `279,744` versus `393,216` dense coefficients (`28.86%` fewer); all-on cached-core MACs are `72.51%` of dense, and 95%-bound routing lowers this to `70.61%` | On nonzero C2 selection directions, all-on measured-response error is `0.03179`; signed 95%-bound routing is `0.03206` at mean active rank `43.78` | Executable hybrid and conditional rate curve; opened synthetic development data, router cost excluded, no NLL, latency, whole-block, or whole-model claim |
+| Gemma graph-organized global SVD | Rank-45 deployment-form edge state is `279,744` versus `393,216` dense coefficients (`28.86%` fewer); all-on cached-core MACs are `72.51%` of dense, and 95%-bound routing lowers this to `70.61%` | On nonzero C2 selection directions, all-on measured-response error is `0.03179`; signed 95%-bound routing is `0.03206` at mean active rank `43.78` | Executable hybrid and conditional rate curve; opened synthetic development data, router cost excluded, no NLL, latency, whole-block, or whole-model claim |
+| Gemma graph-organized one-shot shadow | No deployment saving claimed; the candidate runtime needs three source-model passes and the full qualification observation needs two additional oracle passes | On one Calibration-A development prompt, all-on modal error is `4.8208` with cosine `0.5404` and `ΔNLL/token +3.0853`; the true rank-64 projection oracle still has `0.9741` full-width error, and exact X4 injection still has `ΔNLL/token +2.0121` | Strong fail-closed shadow harness; current edge rejected for target-subspace capacity and residual-carrier incompleteness, with deployment and routing unauthorized |
 | Gemma conditional spectral modal-delta executor | `39,936` edge coefficients versus `786,432` for a matched dense two-branch family (`94.92%` fewer); provider and model excluded | Fresh origin-20 local cosine `0.9819`; diagonal correction reduces finite error `0.2278 → 0.2006` | Prompt-free fixed-reference interior interpolation only; no-refit assessment |
 | Gemma mixed-mode chord assessment | No deployed reduction; frozen candidate unchanged | Fresh origin-28 error `0.1863`, cosine `0.9834`; cross nonadditivity `11.27%`; interaction-oracle gain `23.10%` | Diagonal-only correction materially falsified; compact bilinear branch nominated |
 | Gemma bilinear modal-generator executor | Bilinear branch stores `6,880` coefficients versus `172,032` dense (`96.00%` fewer); all three edge branches store `46,816` versus `958,464` matched dense (`95.12%` fewer) | Fresh origin-20 error `0.2090 → 0.1694` (`18.96%` reduction), cosine `0.9871`; recovers `94.10%` of \(C_{11}\) oracle headroom | Positive no-refit mixed-mode edge transport; fixed-reference and known-pair scope only |
