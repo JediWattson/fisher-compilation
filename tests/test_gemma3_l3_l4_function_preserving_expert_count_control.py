@@ -958,6 +958,241 @@ def test_run_validates_two_step_preflight_before_any_full_fit(
     ]
 
 
+@pytest.fixture(scope="module")
+def live_two_step_problem() -> object:
+    _require_sources()
+    protocol, *_ = runner._authenticated_declarations()
+    return runner._prepare_live_fit_problem(
+        source_expert_rank_path=runner.DEFAULT_SOURCE_EXPERT_RANK,
+        source_diagnostic_path=runner.DEFAULT_SOURCE_DIAGNOSTIC,
+        source_rank64_path=runner.DEFAULT_SOURCE_RANK64,
+        basis_package_path=runner.DEFAULT_BASIS_PACKAGE,
+        basis_package_file_sha256=(
+            runner.DEFAULT_BASIS_PACKAGE_FILE_SHA256
+        ),
+        basis_package_payload_sha256=(
+            runner.DEFAULT_BASIS_PACKAGE_PAYLOAD_SHA256
+        ),
+        cache_dir=None,
+        device_name="cpu",
+        dtype="float32",
+        _protocol_override=protocol,
+    )
+
+
+@pytest.mark.parametrize("pair_role", ["primary", "replication"])
+def test_expert2_two_step_delegates_exactly_to_expert_rank_treatment(
+    pair_role: str,
+    live_two_step_problem: object,
+) -> None:
+    problem = live_two_step_problem
+    protocol = problem.protocol  # type: ignore[attr-defined]
+    seed = (
+        protocol.training.primary_seed
+        if pair_role == "primary"
+        else protocol.training.replication_seed
+    )
+    data = runner.contrast_fit._prepare_fit_data(
+        fit_batches=problem.fit_batches,  # type: ignore[attr-defined]
+        contrast_pairs=problem.fit_pairs,  # type: ignore[attr-defined]
+        require_fit_split=True,
+    )
+    control = runner._new_control_model(
+        modal_center=problem.modal_center,  # type: ignore[attr-defined]
+        gain_log_center=problem.gain_log_center,  # type: ignore[attr-defined]
+        gain_log_scale=problem.gain_log_scale,  # type: ignore[attr-defined]
+        residual_width=problem.basis.residual_width,  # type: ignore[attr-defined]
+        rms_epsilon=problem.epsilon,  # type: ignore[attr-defined]
+        target_center=problem.target_center,  # type: ignore[attr-defined]
+        target_scale=problem.target_scale,  # type: ignore[attr-defined]
+        seed=seed,
+    )
+    plan, count_gradient, count_parity = (
+        runner._fit_authenticated_expert_rank_control(
+            control,
+            data=data,
+            target_center=problem.target_center,  # type: ignore[attr-defined]
+            target_scale=problem.target_scale,  # type: ignore[attr-defined]
+            metric_weight=problem.unit_gauge.metric_weight,  # type: ignore[attr-defined]
+            objective=runner._objective(protocol),
+            steps=2,
+            learning_rate=protocol.training.learning_rate,
+            seed=seed,
+            pair_role=pair_role,
+            synthetic_binding_sha256=(  # type: ignore[attr-defined]
+                problem.fit_data_binding_sha256
+            ),
+            protocol=protocol,
+        )
+    )
+    source_protocol = (
+        runner.default_function_preserving_expert_rank_control_protocol()
+    )
+    source_frozen = source_protocol.preflight.for_role(pair_role)
+    source_two_step = source_frozen["two_step_postfit_parity"]
+    count_two_step = protocol.preflight.for_role(pair_role)[
+        "control_two_step"
+    ]
+    assert isinstance(source_two_step, dict)
+    assert isinstance(count_two_step, dict)
+    expected_metrics_sha256 = source_two_step["metrics_sha256"]
+    expected_executor_sha256 = source_two_step[
+        "concatenated_executor_sha256"
+    ]
+
+    assert count_two_step == {
+        "metrics_sha256": expected_metrics_sha256,
+        "executor_sha256": expected_executor_sha256,
+    }
+    assert plan.final_metrics.artifact_sha256 == expected_metrics_sha256
+    assert (
+        runner.contrast_fit._executor_artifact_sha256(
+            plan.executor_artifact
+        )
+        == expected_executor_sha256
+    )
+
+    count_gradient_fields = {
+        name: value
+        for name, value in count_gradient.items()
+        if name.startswith("step") and name.endswith("_norm")
+    }
+    assert count_gradient["pair_role"] == pair_role
+    assert count_gradient["artifact_kind"] == (
+        "fisher_graph.expert_count_gradient_openness"
+    )
+    assert count_gradient["format_version"] == runner._FORMAT_VERSION
+    assert count_gradient["applicable"] is False
+    assert count_gradient["passed"] is True
+    assert count_gradient_fields
+    assert set(count_gradient_fields.values()) == {0.0}
+    assert all(count_gradient["flags"].values())
+    unhashed_gradient = dict(count_gradient)
+    gradient_sha256 = unhashed_gradient.pop("artifact_sha256")
+    assert gradient_sha256 == runner._json_sha256(
+        unhashed_gradient,
+        domain=runner._AUDIT_DOMAIN,
+    )
+
+    expected_count_parity = {
+        "artifact_kind": (
+            "fisher_graph.expert_count_wrapper_concat_parity"
+        ),
+        "format_version": runner._FORMAT_VERSION,
+        "pair_role": pair_role,
+        "stage": "not_applicable_control",
+        "applicable": False,
+        "passed": True,
+    }
+    expected_count_parity["artifact_sha256"] = runner._json_sha256(
+        expected_count_parity,
+        domain=runner._AUDIT_DOMAIN,
+    )
+    assert count_parity == expected_count_parity
+
+
+def test_primary_source_plan_guard_precedes_expert4_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = (
+        runner.default_function_preserving_expert_count_control_protocol()
+    )
+    frozen = protocol.preflight.for_role("primary")
+    problem = SimpleNamespace(
+        protocol=protocol,
+        fit_batches=(),
+        fit_pairs=(),
+        modal_center=object(),
+        gain_log_center=0.0,
+        gain_log_scale=1.0,
+        basis=SimpleNamespace(residual_width=1),
+        epsilon=1e-6,
+        target_center=object(),
+        target_scale=object(),
+        unit_gauge=SimpleNamespace(metric_weight=object()),
+        fit_data_binding_sha256="0" * 64,
+    )
+    control = object()
+    treatment = object()
+    e4_fit_called = False
+
+    monkeypatch.setattr(
+        runner.contrast_fit,
+        "_prepare_fit_data",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_new_control_model",
+        lambda **_kwargs: control,
+    )
+    monkeypatch.setattr(
+        runner,
+        "_new_treatment_model",
+        lambda **_kwargs: treatment,
+    )
+    monkeypatch.setattr(
+        runner,
+        "_initial_equivalence",
+        lambda *_args, **_kwargs: {
+            "passed": True,
+            "artifact_sha256": frozen["initialization_audit_sha256"],
+        },
+    )
+    forged_control_plan = SimpleNamespace(
+        artifact_sha256="f" * 64,
+        initial_metrics=SimpleNamespace(
+            artifact_sha256=(
+                protocol.source
+                .expert_rank_primary_e2r64_initial_metrics_sha256
+            )
+        ),
+        final_metrics=SimpleNamespace(
+            artifact_sha256=(
+                protocol.source
+                .expert_rank_primary_e2r64_final_metrics_sha256
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_fit_authenticated_expert_rank_control",
+        lambda *_args, **_kwargs: (
+            forged_control_plan,
+            {"passed": True},
+            {"passed": True},
+        ),
+    )
+
+    def forbidden_e4_fit(
+        *_args: object,
+        **_kwargs: object,
+    ) -> object:
+        nonlocal e4_fit_called
+        e4_fit_called = True
+        raise AssertionError("E4 fit ran before the E2 source-plan guard")
+
+    monkeypatch.setattr(
+        runner,
+        "_fit_from_initialized_model",
+        forbidden_e4_fit,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "primary E2 did not exactly replay the authenticated "
+            "expert-rank treatment plan"
+        ),
+    ):
+        runner._evaluate_pair(
+            pair_role="primary",
+            seed=protocol.training.primary_seed,
+            problem=problem,
+        )
+    assert e4_fit_called is False
+
+
 def test_dormant_child_lift_is_function_preserving_and_gradient_open(
     complete_payload: tuple[dict[str, object], dict[str, object]],
 ) -> None:

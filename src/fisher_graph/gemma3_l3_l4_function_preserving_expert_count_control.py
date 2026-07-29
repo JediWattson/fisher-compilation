@@ -1696,6 +1696,109 @@ def _fit_from_initialized_model(
     return plan, audit, postfit_parity
 
 
+def _fit_authenticated_expert_rank_control(
+    model: contrast_fit._PackedTrainingModule,
+    *,
+    data: contrast_fit._PreparedFitData,
+    target_center: Tensor,
+    target_scale: Tensor,
+    metric_weight: Tensor,
+    objective: ContrastAwareObjective,
+    steps: int,
+    learning_rate: float,
+    seed: int,
+    pair_role: str,
+    synthetic_binding_sha256: str,
+    protocol: FunctionPreservingExpertCountControlProtocol,
+) -> tuple[
+    ContrastAwareReferenceProviderPlan,
+    dict[str, object],
+    dict[str, object],
+]:
+    """Fit E2 through the exact authenticated expert-rank treatment path."""
+
+    if not isinstance(
+        model.executor,
+        expert_rank._ResidualExpertRankLift,
+    ):
+        raise TypeError(
+            "expert-count control is not the expert-rank treatment wrapper"
+        )
+    source_protocol = (
+        default_function_preserving_expert_rank_control_protocol()
+    )
+    plan, source_gradient, source_parity = (
+        expert_rank._fit_from_initialized_model(
+            model,
+            data=data,
+            target_center=target_center,
+            target_scale=target_scale,
+            metric_weight=metric_weight,
+            objective=objective,
+            steps=steps,
+            learning_rate=learning_rate,
+            seed=seed,
+            pair_role=pair_role,
+            synthetic_binding_sha256=synthetic_binding_sha256,
+            audit_added_rank=True,
+            protocol=source_protocol,
+        )
+    )
+    source_frozen = source_protocol.preflight.for_role(pair_role)
+    if (
+        source_gradient.get("artifact_sha256")
+        != source_frozen["treatment_gradient_audit_sha256"]
+        or source_gradient.get("passed") is not True
+        or source_parity.get("passed") is not True
+    ):
+        raise RuntimeError(
+            "authenticated expert-rank control fit path drifted"
+        )
+    if steps == source_frozen["preflight_steps"]:
+        source_two_step = source_frozen["two_step_postfit_parity"]
+        if (
+            not isinstance(source_two_step, Mapping)
+            or source_parity.get("artifact_sha256")
+            != source_frozen["two_step_postfit_parity_sha256"]
+            or plan.final_metrics.artifact_sha256
+            != source_two_step["metrics_sha256"]
+            or contrast_fit._executor_artifact_sha256(
+                plan.executor_artifact
+            )
+            != source_two_step["concatenated_executor_sha256"]
+        ):
+            raise RuntimeError(
+                "authenticated expert-rank two-step finalization drifted"
+            )
+
+    frozen_count_gradient = protocol.preflight.for_role(pair_role)[
+        "treatment_gradient"
+    ]
+    if not isinstance(frozen_count_gradient, Mapping):
+        raise TypeError("expert-count frozen gradient fields are invalid")
+    count_gradient = _gradient_audit(
+        applicable=False,
+        pair_role=pair_role,
+        values={name: 0.0 for name in frozen_count_gradient},
+        protocol=protocol,
+    )
+    count_parity = {
+        "artifact_kind": (
+            "fisher_graph.expert_count_wrapper_concat_parity"
+        ),
+        "format_version": _FORMAT_VERSION,
+        "pair_role": pair_role,
+        "stage": "not_applicable_control",
+        "applicable": False,
+        "passed": True,
+    }
+    count_parity["artifact_sha256"] = _json_sha256(
+        count_parity,
+        domain=_AUDIT_DOMAIN,
+    )
+    return plan, count_gradient, count_parity
+
+
 def _authenticated_declarations(
     *,
     protocol_override: (
@@ -2220,7 +2323,7 @@ def _run_fit_only_preflight(
             control_plan,
             control_gradient,
             control_postfit_parity,
-        ) = _fit_from_initialized_model(
+        ) = _fit_authenticated_expert_rank_control(
             control,
             data=data,
             target_center=problem.target_center,
@@ -2234,7 +2337,6 @@ def _run_fit_only_preflight(
             synthetic_binding_sha256=(
                 problem.fit_data_binding_sha256
             ),
-            audit_added_rank=False,
             protocol=protocol,
         )
         (
@@ -2788,7 +2890,7 @@ def _evaluate_pair(
     ):
         raise RuntimeError("expert-count initial preflight binding drifted")
     control_plan, control_gradient, control_parity = (
-        _fit_from_initialized_model(
+        _fit_authenticated_expert_rank_control(
             control_model,
             data=data,
             target_center=problem.target_center,
@@ -2800,10 +2902,30 @@ def _evaluate_pair(
             seed=seed,
             pair_role=pair_role,
             synthetic_binding_sha256=problem.fit_data_binding_sha256,
-            audit_added_rank=False,
             protocol=protocol,
         )
     )
+    if (
+        pair_role == "primary"
+        and (
+            control_plan.artifact_sha256
+            != protocol.source.expert_rank_primary_e2r64_plan_sha256
+            or control_plan.initial_metrics.artifact_sha256
+            != (
+                protocol.source
+                .expert_rank_primary_e2r64_initial_metrics_sha256
+            )
+            or control_plan.final_metrics.artifact_sha256
+            != (
+                protocol.source
+                .expert_rank_primary_e2r64_final_metrics_sha256
+            )
+        )
+    ):
+        raise RuntimeError(
+            "expert-count primary E2 did not exactly replay the "
+            "authenticated expert-rank treatment plan"
+        )
     treatment_plan, treatment_gradient, treatment_parity = (
         _fit_from_initialized_model(
             treatment_model,

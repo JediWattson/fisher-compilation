@@ -477,6 +477,10 @@ class PairedExpertCountTrainingSpec:
                 "regenerate_d3_outer64_expert_rank64_split_cold_start_per_seed"
             ),
             "source_final_provider_initialization_allowed": False,
+            "e2_control_fit_path": (
+                "delegate_exact_expert_rank_treatment_optimizer_and_"
+                "concatenated_executor_metric_finalization"
+            ),
             "primary_schedule": (
                 "e2_r64_exact_expert_rank_primary_replay_then_e4_dormant_"
                 "child_lift"
@@ -776,7 +780,7 @@ class ExpertCountPreflightBindings:
         "49e86f324cd5368f15d6d26e7fae851cf6b1332188fced706d28e90f8e94c362"
     )
     primary_control_postfit_metrics_sha256: str = (
-        "1ec5504323fa14a250af8de56c9eb5c575a90cb9ad008e8819ad6b7f24315dbb"
+        "d110675f411b01a8c7114afe51e05002a4663155dd786cc318cf22e904f274bb"
     )
     primary_postfit_concatenated_executor_sha256: str = (
         "55c1d61c7b61361a318253c34c500114f8af4c1876e301fa9688476603823b09"
@@ -919,7 +923,7 @@ class ExpertCountPreflightBindings:
         "aa6340de201ef4cd9c26da8646058c16c072ade852409f5d5de1dcad770495ca"
     )
     replication_control_postfit_metrics_sha256: str = (
-        "73cce51e57a29bea19c984d5b8373993d5b9e74dec475170b257f79291a08971"
+        "ec5bc7dd3af449b3ebb2ebcb0bcc8d54b0bb54c811bc2f5c55c9de4545f5c646"
     )
     replication_postfit_concatenated_executor_sha256: str = (
         "5a506673387d71a7fea1b23589b6c0706aa40efa63e0ca59aa4fd9b6866b52a8"
@@ -1609,5 +1613,5 @@ def default_function_preserving_expert_count_control_protocol(
 
 # Literal trust anchor for the declaration; never computed during import.
 DEFAULT_FUNCTION_PRESERVING_EXPERT_COUNT_CONTROL_PROTOCOL_SHA256 = (
-    "3d4cfbc2e69434e5cfb5845ad59ae3087457b175faa02afefa7edad5935acc27"
+    "84c423f4f4b3020ff07d2340379707586c51f706b046edf96e4a0a95adf8c6bc"
 )

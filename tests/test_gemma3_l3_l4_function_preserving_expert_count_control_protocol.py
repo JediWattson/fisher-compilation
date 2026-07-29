@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from fisher_graph.gemma3_l3_l4_function_preserving_expert_rank_control_protocol import (
+    default_function_preserving_expert_rank_control_protocol,
+)
 from fisher_graph.gemma3_l3_l4_function_preserving_expert_count_control_protocol import (
     DEFAULT_FUNCTION_PRESERVING_EXPERT_COUNT_CONTROL_PROTOCOL_SHA256,
     EXPERT_COUNT_CONTROL_EXECUTION_DEVICE,
@@ -35,7 +38,7 @@ def test_protocol_literal_trust_anchor_and_strict_round_trip() -> None:
         DEFAULT_FUNCTION_PRESERVING_EXPERT_COUNT_CONTROL_PROTOCOL_SHA256
     )
     assert protocol.protocol_sha256 == (
-        "3d4cfbc2e69434e5cfb5845ad59ae3087457b175faa02afefa7edad5935acc27"
+        "84c423f4f4b3020ff07d2340379707586c51f706b046edf96e4a0a95adf8c6bc"
     )
     assert (
         FunctionPreservingExpertCountControlProtocol.from_state_dict(
@@ -127,6 +130,10 @@ def test_training_freezes_d3_objective_data_and_schedule() -> None:
         "regenerate_d3_outer64_expert_rank64_split_cold_start_per_seed"
     )
     assert state["source_final_provider_initialization_allowed"] is False
+    assert state["e2_control_fit_path"] == (
+        "delegate_exact_expert_rank_treatment_optimizer_and_concatenated_"
+        "executor_metric_finalization"
+    )
     assert state["optimizer"] == "fresh_adam_per_arm"
 
 
@@ -211,6 +218,9 @@ def test_source_expert_rank_receipt_plan_result_and_metrics_are_exact() -> None:
 
 def test_two_step_fit_only_preflight_is_frozen_for_both_seeds() -> None:
     protocol = default_function_preserving_expert_count_control_protocol()
+    expert_rank_protocol = (
+        default_function_preserving_expert_rank_control_protocol()
+    )
     preflight = protocol.preflight
     primary = preflight.for_role("primary")
     replication = preflight.for_role("replication")
@@ -238,6 +248,33 @@ def test_two_step_fit_only_preflight_is_frozen_for_both_seeds() -> None:
     assert replication["two_step_postfit_parity_sha256"] == (
         "9134c050e07de59ff0a182801c4e6135ddb4976ce1700a0a4a5f92bd1bc97e6e"
     )
+    assert primary["control_two_step"] == {
+        "metrics_sha256": (
+            "d110675f411b01a8c7114afe51e05002a4663155dd786cc318cf22e904f274bb"
+        ),
+        "executor_sha256": (
+            "49e86f324cd5368f15d6d26e7fae851cf6b1332188fced706d28e90f8e94c362"
+        ),
+    }
+    assert replication["control_two_step"] == {
+        "metrics_sha256": (
+            "ec5bc7dd3af449b3ebb2ebcb0bcc8d54b0bb54c811bc2f5c55c9de4545f5c646"
+        ),
+        "executor_sha256": (
+            "aa6340de201ef4cd9c26da8646058c16c072ade852409f5d5de1dcad770495ca"
+        ),
+    }
+    for role, binding in (
+        ("primary", primary),
+        ("replication", replication),
+    ):
+        source = expert_rank_protocol.preflight.for_role(role)[
+            "two_step_postfit_parity"
+        ]
+        assert binding["control_two_step"] == {
+            "metrics_sha256": source["metrics_sha256"],
+            "executor_sha256": source["concatenated_executor_sha256"],
+        }
     for binding in (primary, replication):
         initial = binding["initial_equivalence"]
         gradient = binding["treatment_gradient"]
