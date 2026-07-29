@@ -2174,6 +2174,137 @@ fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev run \
   --dtype float32
 ```
 
+### Authenticated function-preserving expert-count control
+
+The next control held outer/modal rank 64, expert rank 64, router width 16,
+encoder, decoder, routing and causality semantics, the D3 unit-RMS objective,
+fit data and ordering, optimizer, learning rate, seeds, and 600-step budget
+fixed. The control used two experts and exactly replayed the authenticated
+function-preserving expert-rank treatment. The treatment changed only routed
+expert count, from two to four.
+
+This was another nested, function-preserving comparison. Each source expert
+was copied into an active child and a dormant child. Copying the parent router
+logit to both children splits its softmax probability in half without a bias
+adjustment. The active child output was doubled and the dormant child output
+was initialized to zero, so their summed contribution exactly reproduced the
+parent. The split applied independently to the base-16 and extra-48 expert
+banks, then the fitted banks were concatenated into the standard rank-64
+executor used for scoring and publication.
+
+The preregistered validity checks passed:
+
+- the initial control/treatment maximum observable and provider-chart JVP
+  absolute errors were both `1.7763568394002505e-15`, and the weighted
+  objective difference was exactly `0`;
+- split-wrapper versus concatenated-executor initial maximum output and JVP
+  absolute errors were `8.881784197001252e-16` and
+  `1.7763568394002505e-15`;
+- at step one, the dormant extra output bank had gradient norm
+  `0.9816547293074461` and parameter delta norm
+  `0.039183069909569664`, while its input bank remained exactly zero as
+  required;
+- at step two, the dormant extra input bank had gradient norm
+  `0.007502102819059041` and parameter delta norm
+  `0.05917074421390244`; and
+- after the full treatment fit, split/concatenated maximum output and JVP
+  absolute errors were `3.552713678800501e-15` and
+  `7.105427357601002e-15`, with exactly zero weighted-objective difference.
+
+The two-expert control also reproduced the authenticated source plan
+`57268369d21a66e464f7155a5f9b99868b1240e5f1ca0e3d59b2d40f5d5373de`
+and final metrics
+`92e16d27f160144fc24cab76dbcfee58e5c88df143fbb1d7916dc8092a4ac882`
+exactly before four-expert fitting or any scoring was allowed.
+Every paired-treatment flag therefore passed and
+`primary_treatment_valid=true`.
+
+| expert count | ordinary error / cosine | ordinary | null | radial pass / macro / worst | signed pass / macro / worst | final weighted objective |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 exact replay | `0.0062163149 / 0.9999811625` | `12/12` | `24/24` | `16/16 / 0.0630768682 / 0.0935633655` | `3/8 / 0.3839030254 / 0.7520430925` | `0.1641059523` |
+| 4 matched lift | `0.0055568794 / 0.9999846009` | `12/12` | `24/24` | `16/16 / 0.0548195084 / 0.0795928794` | `3/8 / 0.3623069997 / 0.6684090816` | `0.1446333421` |
+
+Four experts improved ordinary Fisher-weighted relative error by `10.6081%`,
+radial macro error by `13.0909%`, radial worst error by `14.9316%`, signed
+macro error by `5.6254%`, signed worst error by `11.1209%`, and the final
+weighted objective by `11.8659%`. The pointwise, sensitivity-relative,
+sensitivity-direction, and midpoint-JVP training terms improved by
+`10.0051%`, `12.8067%`, `13.0502%`, and `9.6908%`. These gains were not
+uniform: the maximum ordinary per-probe p90 relative error worsened by
+`4.5314%`, and maximum signed orthogonal leakage rose from `0.424396` to
+`0.460152`.
+
+Most importantly, the continuous gains did not cross another categorical
+gate. Both arms passed exactly the same signed identities:
+
+- `development_c2.fit.signed_sensitivity.base_01.pair.00`;
+- `development_c2.fit.signed_sensitivity.base_04.pair.00`; and
+- `development_c2.fit.signed_sensitivity.base_06.pair.00`.
+
+The resource cost also increased materially:
+
+| expert count | executor scalars | total stored scalars | canonical core MACs | canonical total MACs (`B=1`, `S=128`) | fit-panel total MACs |
+|---:|---:|---:|---:|---:|---:|
+| 2 | `23,106` | `31,492` | `4,499,008` | `5,555,776` | `610,001,520` |
+| 4 | `39,780` | `48,166` | `7,929,024` | `8,985,792` | `1,000,735,200` |
+
+The four-expert treatment stores `16,674` more scalars (`52.9468%`) and uses
+`3,430,016` more canonical total MACs (`61.7378%`). Fit-panel mathematical
+MACs rose `64.0545%`. These are declared ideal sparse mathematical operations,
+not measured kernel latency or wall-clock time.
+
+The formal outcome is `primary_both_fail`. The four-expert treatment was
+valid and substantially better on continuous error, but it did not make the
+full fit-capability contract pass. Conditional replication therefore did not
+run, no two-seed expert-count attribution or descending expert-count ladder
+is authorized, and four experts are insufficient under this matched budget.
+The preregistered `both_fail` branch authorizes only a separately
+preregistered eight-expert full-count oracle. It does not authorize C3/V4,
+held-out or natural-prompt generalization, shadow NLL, full-model replacement,
+rank reduction, compression, downstream-task accuracy, kernel speed, or
+wall-clock speed.
+
+The executable protocol was preregistered in commit `0f3166d`. A first
+publication attempt correctly failed closed during its final strict reload:
+the two-expert arm had used the same optimizer and produced the same
+concatenated executor as its authenticated source, but its wrapper-computed
+final metric receipt was representation-different from the source's
+concatenated-executor receipt. Cleanup left no outcome artifact, and no result
+was accepted or inspected. Commit `d69024c` made the two-expert arm delegate
+to the exact authenticated source optimizer and finalization path, added live
+two-seed source-replay regressions, moved the primary source guard ahead of
+four-expert fitting and scoring, and refroze the protocol before the accepted
+run. The focused `47/47` tests, `256/256` lineage tests, full repository suite,
+and live two-seed no-scoring preflight all passed after that correction.
+
+The accepted protocol binding is
+`84c423f4f4b3020ff07d2340379707586c51f706b046edf96e4a0a95adf8c6bc`
+and its code bundle is
+`e6a22bb29f468c9f8ab02fd308e6eb648cd9da09f95b3ed041a7aa364b62b127`.
+The durable external result receipt is:
+
+- logical artifact:
+  `8c07a30129f2bb7c5e704e54ffc7e23fc947a27367d164490002e26aa699a015`;
+- tensor file:
+  `1dda9cdae257a18155c49a8daac90ef13401d7928a1a506a5d3027e2b35ebf4f`;
+  and
+- report:
+  `cef24e40718ef2c6983d3fd08f45a1e5b5f87e2a2b07f710bc297570726d0723`.
+
+The public strict loader independently authenticated that exact triple and
+recomputed `outcome=primary_both_fail` with
+`e8_expert_count_control_authorized=true`. The 24,558,359-byte tensor
+artifact and adjacent tensor-free JSON report remain ignored under
+`.local-runs/` and must not be committed.
+
+```bash
+fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev describe
+
+fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev run \
+  --device cpu \
+  --dtype float32
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block

@@ -31,55 +31,61 @@ research compiler, not a production compression library.
 
 ## Current finding
 
-The authenticated function-preserving expert-rank control held outer rank 64,
-expert count 2, router width 16, and the complete D3 fit contract fixed while
-raising each expert's inner rank from 16 to 64. The treatment began as exactly
-the same function and provider-chart Jacobian as the control: initial
-observable and JVP errors were exactly `0`. Its 48 added expert coordinates
-were placed behind zero output weights, then passed the preregistered
-two-step gradient-openness check. The split training wrapper and published
-concatenated executor also matched after fitting to maximum output and JVP
-absolute errors of `7.11e-15` and `7.88e-15`.
+The authenticated function-preserving expert-count control held outer rank
+64, expert rank 64, router width 16, and the complete D3 fit contract fixed
+while raising the routed expert count from two to four. Every parent expert
+was split into an active child and a dormant child. Duplicating its router
+logit halves each child's probability; doubling the active child's output and
+zeroing the dormant child's output preserves the parent contribution. The
+primary observable and provider-chart JVP therefore matched at initialization
+to maximum absolute errors of `1.78e-15`, with exactly zero weighted-objective
+difference. The dormant paths also passed the preregistered two-step
+gradient-openness checks.
 
 | arm | stored scalars / canonical MACs | ordinary error / cosine | null | radial pass / macro error | signed pass / macro / worst error | weighted training objective |
 |---|---:|---:|---:|---:|---:|---:|
-| expert rank 16 replay | `19,012 / 3,190,528` | `0.00652994 / 0.99997878` | `24/24` | `16/16 / 0.071013` | `3/8 / 0.386891 / 0.775428` | `0.167569` |
-| expert rank 64 matched lift | `31,492 / 5,555,776` | `0.00621631 / 0.99998116` | `24/24` | `16/16 / 0.063077` | `3/8 / 0.383903 / 0.752043` | `0.164106` |
+| 2-expert exact source replay | `31,492 / 5,555,776` | `0.00621631 / 0.99998116` | `24/24` | `16/16 / 0.063077` | `3/8 / 0.383903 / 0.752043` | `0.164106` |
+| 4-expert matched lift | `48,166 / 8,985,792` | `0.00555688 / 0.99998460` | `24/24` | `16/16 / 0.054820` | `3/8 / 0.362307 / 0.668409` | `0.144633` |
 
 Both arms passed all `12/12` ordinary, `24/24` exact-null, and `16/16`
-radial checks. The larger expert core improved ordinary error by `4.80%`,
-radial macro error by `11.18%`, and the weighted training objective by
-`2.07%`. It nevertheless passed only the same three signed identities as the
-control: `base_01`, `base_04`, and `base_06`. The valid formal outcome is
-`primary_both_fail`; the conditional replication did not run because only an
-expert-rank-16-fail / expert-rank-64-pass primary result could open it.
+radial checks. Four experts improved ordinary error by `10.61%`, radial macro
+error by `13.09%`, signed macro error by `5.63%`, signed worst error by
+`11.12%`, and the weighted training objective by `11.87%`. Those are real
+continuous improvements, but they did not recover another categorical
+identity: both arms passed only `base_01`, `base_04`, and `base_06` of the
+eight signed checks. The maximum ordinary per-probe p90 error also worsened by
+`4.53%`.
 
-This is a causal negative result for inner expert rank alone under the matched
-600-step fit budget. Rank 64 costs `65.64%` more stored scalars and `74.13%`
-more declared canonical MACs than rank 16, yet did not recover another signed
-identity. The result authorizes a separately preregistered fixed-outer-rank
-expert-count control. It authorizes no descending expert-rank ladder, C3,
-held-out generalization, full-model replacement, compression, rank reduction,
-or wall-clock speed claim.
+The valid formal outcome is `primary_both_fail`. The conditional replication
+did not run because only a valid 2-expert-fail / 4-expert-pass primary result
+could open it. Four experts cost `52.95%` more stored scalars and `61.74%`
+more declared canonical MACs than two. This is therefore a causal negative
+result for four routed experts under the matched 600-step budget, not
+compression or speed evidence. It authorizes only a separately preregistered
+eight-expert full-count oracle. It authorizes no descending expert-count
+ladder, C3, held-out generalization, full-model replacement, compression,
+rank reduction, or wall-clock speed claim.
 
 The durable external result receipt is logical artifact
-`9759407bf2f2c0a1deb1d29aba7fdbf453bdda8a727aa1e672452a00299a48a9`,
+`8c07a30129f2bb7c5e704e54ffc7e23fc947a27367d164490002e26aa699a015`,
 tensor file
-`2139696efebcee68dd379f8226e04cb5edce57c10571f7db5b697700854a2a61`,
+`1dda9cdae257a18155c49a8daac90ef13401d7928a1a506a5d3027e2b35ebf4f`,
 and report
-`f2a8cb19f5aeebf9e5a1b46ac880655611db45138ab9943216ed9d2acea78c7c`.
+`cef24e40718ef2c6983d3fd08f45a1e5b5f87e2a2b07f710bc297570726d0723`.
 The protocol binding is
-`94b24068fa583c627faa7d06838c6cd80065f6180c3047ee2923ed95b587014c`
+`84c423f4f4b3020ff07d2340379707586c51f706b046edf96e4a0a95adf8c6bc`
 and the code bundle is
-`bcdd356aea62fedbdffd57bca39e1287f6da1374bb7477a2b28de374c9afebc3`;
-the executable protocol was preregistered in commit `a3ab937`.
-The tensor artifact and tensor-free JSON report remain ignored under
-`.local-runs/`; the receipt recorded here is the durable trust root.
+`e6a22bb29f468c9f8ab02fd308e6eb648cd9da09f95b3ed041a7aa364b62b127`;
+the executable protocol was preregistered in commit `0f3166d` and its exact
+source-replay finalization was corrected and refrozen in commit `d69024c`
+before the accepted run. The tensor artifact and tensor-free JSON report
+remain ignored under `.local-runs/`; the receipt recorded here is the durable
+trust root.
 
 ```bash
-fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev describe
+fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev describe
 
-fisher-graph-gemma-l3-l4-function-preserving-expert-rank-dev run \
+fisher-graph-gemma-l3-l4-function-preserving-expert-count-dev run \
   --device cpu \
   --dtype float32
 ```
@@ -402,6 +408,7 @@ This work is described in
 | Gemma rank-64 capacity control | `19,012` stored scalars and `3,190,528` canonical MACs versus rank 16's `4,276` and `1,315,072`; no reduction claim | Descriptively `12/12` ordinary, `24/24` null, `16/16` radial, and `3/8` signed; ordinary error `0.00672074`, cosine `0.99997745` | Invalid comparison: initial pointwise share missed the frozen balance gate, so no capacity conclusion, replication, width ladder, or C3 is authorized |
 | Gemma function-preserving width control | Rank 64 uses `19,012` scalars / `3,190,528` canonical MACs versus rank 16's `4,276` / `1,315,072` (`4.446×` storage and `2.426×` MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; rank 64 improved ordinary error `0.00769406 → 0.00652994` while signed macro error changed `0.380298 → 0.386891` | Outer width alone is insufficient under the matched fit budget; expert/core control authorized, with no replication, width ladder, C3, or compression claim |
 | Gemma function-preserving expert-rank control | Expert rank 64 uses `31,492` scalars / `5,555,776` canonical MACs versus expert rank 16's `19,012` / `3,190,528` (`65.64%` more storage and `74.13%` more MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; expert rank 64 improved ordinary error `0.00652994 → 0.00621631` and signed macro error `0.386891 → 0.383903` | Inner expert rank alone is insufficient under the matched fit budget; expert-count control authorized, with no replication, descending rank ladder, C3, compression, or speed claim |
+| Gemma function-preserving expert-count control | Four experts use `48,166` scalars / `8,985,792` canonical MACs versus two experts' `31,492` / `5,555,776` (`52.95%` more storage and `61.74%` more MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; four experts improved ordinary error `0.00621631 → 0.00555688`, signed macro error `0.383903 → 0.362307`, and the weighted objective `0.164106 → 0.144633` | Four experts are insufficient under the matched fit budget; only a separately preregistered eight-expert full-count oracle is authorized, with no replication, descending count ladder, C3, compression, or speed claim |
 
 There are three important distinctions:
 
