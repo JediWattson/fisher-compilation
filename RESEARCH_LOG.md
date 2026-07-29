@@ -1986,6 +1986,87 @@ tensor-free JSON report contains no raw teacher targets, JVP tensors, prompt
 text, token IDs, tokenizer, natural activation rows, source-model state,
 V2/V3 targets, or C2 selection data.
 
+### Authenticated function-preserving width control
+
+The next preregistered control removed the initial-balance confound from the
+cold-start rank-64 experiment. Its rank-16 arm deterministically regenerated
+the exact D3 initialization and replayed D3's ordered fit sequence. The
+rank-64 arm embedded that same function: the first 16 channels copied the
+rank-16 encoder, executor path, and decoder, while 48 added channels began
+behind zero decoder rows. This made outer width the controlled change without
+freezing the extra path.
+
+The equivalence and gradient preconditions passed before the 600-step fits:
+
+- maximum initial observable absolute error was exactly `0`;
+- maximum absolute provider-chart JVP error over 32 comparisons was
+  `8.881784197001252e-16`;
+- initial training metrics and contribution shares matched exactly;
+- the extra decoder received gradient on step one; and
+- the extra encoder and executor path received gradient on step two.
+
+The rank-16 arm also exactly replayed D3's frozen final plan and metrics.
+Every paired-treatment flag passed, so this comparison is valid rather than a
+descriptive follow-up to the prior invalid cold-start control.
+
+| arm | stored scalars / canonical MACs | ordinary error / cosine | ordinary | null | radial pass / macro | signed pass / macro / worst | final weighted objective |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| rank 16 D3 replay | `4,276 / 1,315,072` | `0.0076940593 / 0.9999705802` | `12/12` | `24/24` | `16/16 / 0.083418937` | `3/8 / 0.380297591 / 0.738001574` | `0.222770938` |
+| rank 64 matched lift | `19,012 / 3,190,528` | `0.0065299364 / 0.9999787839` | `12/12` | `24/24` | `16/16 / 0.071013149` | `3/8 / 0.386890694 / 0.775427638` | `0.167569073` |
+
+The wider arm improved ordinary reconstruction, radial macro error, and the
+weighted training objective. It nevertheless passed exactly the same three
+signed identities as rank 16, while its signed macro and worst errors were
+slightly higher. Both arms therefore failed the complete fit-capability
+contract. The formal outcome is `primary_both_fail`, with
+`primary_treatment_valid=true`.
+
+This isolates the result the cold-start control could not: under the same
+data, objective, ordering, optimizer, learning rate, and 600-step budget,
+outer modal width alone is insufficient to recover categorical signed
+transport. The conditional replication was not executed because the frozen
+rule opened it only for a rank-16-fail/rank-64-pass primary result. A
+compressed-width ladder is likewise not authorized.
+
+The rank-64 arm stores `4.446×` as many scalars as rank 16
+(`19,012 / 4,276`) and requires `2.426×` the declared canonical MACs
+(`3,190,528 / 1,315,072`). The smooth-error improvement is therefore a
+capacity diagnostic, not a compression result. The valid `both_fail` branch
+authorizes the next expert/core control: keep the matched outer-width
+comparison discipline, but test whether the conditional executor's inner
+expert count or core rank is the limiting capacity. This result does not
+authorize C3/V4, natural-prompt generalization, shadow NLL, full-model
+replacement, compression, downstream-task accuracy, or a wall-clock speed
+claim.
+
+The implementation was preregistered in commit `195c1f0`. Its protocol
+binding is
+`c3ad81c84d41108839b5fcab13e3b5d47d99a55ae9a9223c3f116edb6b457597`
+and its code bundle is
+`5c314fff7959f659257911ca0190605ea4ef41c556bd18a27108acb48d2545a4`.
+The durable external result receipt is:
+
+- logical artifact:
+  `9e07c7208b3b690a8024bd809a0d80c2842145cfa73e655bb737e5497913ce47`;
+- tensor file:
+  `5a3c8de7bd6731a78904a14c488648f6641d6b3cbe96167438f633b65f9104c5`;
+  and
+- report:
+  `6aacad6f05e3b43bbeba62b6ce7ae35897af6af60d53f9dfa96eec951ad6965f`.
+
+The run-generated receipt checked immediate publication integrity but is not
+itself an external scientific trust root. Recording the exact triple above
+outside the ignored artifact supplies that durable authority. The provider
+tensors and tensor-free JSON remain ignored under `.local-runs/`.
+
+```bash
+fisher-graph-gemma-l3-l4-function-preserving-width-dev describe
+
+fisher-graph-gemma-l3-l4-function-preserving-width-dev run \
+  --device cpu \
+  --dtype float32
+```
+
 The analysis reports contain only pooled activation means/covariances, derived
 Fisher modes and codecs, exact trace accounting, bounded transport/JVP/factor
 state or scalar evaluation curves, and provenance. The strict cross-block

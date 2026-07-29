@@ -31,63 +31,54 @@ research compiler, not a production compression library.
 
 ## Current finding
 
-The authenticated rank-64 capacity control changed only the outer modal
-packer from rank 16 to rank 64 under D3's unit-RMS objective, fit data,
-schedule, and gates. It was intended to distinguish an outer-packing capacity
-limit from a failure shared by the executor, objective, or optimization. The
-run did not produce that comparison: its sole treatment-validity failure was
-the frozen initial objective-balance gate.
+The authenticated function-preserving width control removed the initial-state
+confound from the prior rank-16/rank-64 comparison. It exactly replayed D3's
+rank-16 cold start and embedded the same observable function into a
+gradient-open rank-64 arm. Initial observable error was exactly `0`; the
+maximum provider-chart JVP absolute error was `8.88e-16`; and the added
+rank-64 decoder, encoder, and executor paths passed their preregistered
+gradient-openness checks.
 
-| treatment | initial pointwise / contrast share | largest active share | ordinary | null | radial | signed | treatment valid |
-|---|---:|---:|---:|---:|---:|---:|---|
-| D3 rank 16 | `12.768013% / 87.231987%` | `46.713755%` | `12/12` | `24/24` | `16/16` | `3/8` | pass |
-| D3 rank 64 | `8.742727% / 91.257272%` | `51.276526%` | `12/12` | `24/24` | `16/16` | `3/8` | fail |
+| arm | stored scalars / canonical MACs | ordinary error / cosine | null | radial pass / macro error | signed pass / macro / worst error | weighted training objective |
+|---|---:|---:|---:|---:|---:|---:|
+| rank 16 D3 replay | `4,276 / 1,315,072` | `0.00769406 / 0.99997058` | `24/24` | `16/16 / 0.083419` | `3/8 / 0.380298 / 0.738002` | `0.222771` |
+| rank 64 matched lift | `19,012 / 3,190,528` | `0.00652994 / 0.99997878` | `24/24` | `16/16 / 0.071013` | `3/8 / 0.386891 / 0.775428` | `0.167569` |
 
-The rank-64 pointwise share fell below the preregistered `10–40%` interval.
-Contrast share remained above `50%`, the largest active non-null component
-remained below `65%`, and every other treatment-validity flag passed. The
-formal outcome is
-`invalid_rank_comparison_primary_treatment_validity_failed`; replication did
-not run. Threshold relaxation after seeing the result is forbidden.
+Both arms passed all `12/12` ordinary, `24/24` exact-null, and `16/16`
+radial checks. Rank 64 improved the smooth fit measures—ordinary error,
+radial macro error, and the weighted training objective—but it passed only
+the same three signed identities as rank 16. Its signed macro and worst error
+were also slightly worse. The valid formal outcome is `primary_both_fail`;
+the conditional replication did not run because only a rank-16-fail /
+rank-64-pass result could open it.
 
-Descriptively, rank 64 reached ordinary relative error `0.00672074` and cosine
-`0.99997745`, then passed all null and radial checks. Its signed macro and
-worst errors were `0.414150` and `0.869743`, compared with D3 rank 16's
-`0.380298` and `0.738002`. Both passed exactly signed identities `01`, `04`,
-and `06`. Those observations cannot support a causal capacity conclusion
-because the initial-state treatment contract failed.
+This is now a causal negative result for outer width under the matched
+600-step fit budget: quadrupling outer rank alone did not recover categorical
+signed fidelity. The rank-64 arm stores `4.446×` as many scalars and requires
+`2.426×` the declared canonical MACs, so it is also not a compression
+candidate. The result authorizes the preregistered expert/core control, which
+will test capacity inside the conditional executor rather than widening the
+outer modal packer. It authorizes no compressed-width ladder, C3, held-out
+generalization, full-model replacement, compression, or wall-clock speed
+claim.
 
-Rank 64 stores `19,012` scalars and requires `3,190,528` declared canonical
-MACs at `B=1`, `S=128`, versus rank 16's `4,276` scalars and `1,315,072`
-MACs. It is a capacity diagnostic, not compression. This result does not
-authorize a width ladder, C3, a compression claim, or a threshold change.
-
-The next rung is a paired rank-16/rank-64 initialization control. It will
-recreate the exact D3 rank-16 cold start, replay it as one arm, and lift that
-same observable function into a trainable rank-64 arm. The added channels
-start hidden only by zero decoder rows, receive decoder gradients on step one,
-and must reach upstream parameters by step two. Initial outputs, provider-chart
-JVPs, metrics, and contribution shares must match rank 16 exactly before the
-width comparison is valid. The design is frozen conceptually; its executable
-protocol must still be committed before either arm runs.
-
-Authenticated bindings are protocol
-`03b1e595836ee325b83f5c2fc7355b31f7e5e6deceba92f9ad98ae27c29e6cf5`,
-code bundle
-`e139fe6e7b7a55ffc325e0ddf49f23acce8aa9cbeacac312f64fbb0328f7ca9e`,
-logical artifact
-`cccc3fc51ce123a74cea9238bd359e8c09872f2432300d684c02a84d6f8a84fa`,
+The durable external result receipt is logical artifact
+`9e07c7208b3b690a8024bd809a0d80c2842145cfa73e655bb737e5497913ce47`,
 tensor file
-`3d44215ae206f85cf778ee85944b36bd58e0255299685b05bf689c27e5ba0f07`,
+`5a3c8de7bd6731a78904a14c488648f6641d6b3cbe96167438f633b65f9104c5`,
 and report
-`8d49ed2b8591645d0c4e0a641a1d5253c8171b0129fd3d9be0cefcaf4a2e13f7`.
+`6aacad6f05e3b43bbeba62b6ce7ae35897af6af60d53f9dfa96eec951ad6965f`.
+The protocol binding is
+`c3ad81c84d41108839b5fcab13e3b5d47d99a55ae9a9223c3f116edb6b457597`
+and the code bundle is
+`5c314fff7959f659257911ca0190605ea4ef41c556bd18a27108acb48d2545a4`.
 The tensor artifact and tensor-free JSON report remain ignored under
-`.local-runs/`.
+`.local-runs/`; the receipt recorded here is the durable trust root.
 
 ```bash
-fisher-graph-gemma-l3-l4-rank64-capacity-dev describe
+fisher-graph-gemma-l3-l4-function-preserving-width-dev describe
 
-fisher-graph-gemma-l3-l4-rank64-capacity-dev run \
+fisher-graph-gemma-l3-l4-function-preserving-width-dev run \
   --device cpu \
   --dtype float32
 ```
@@ -408,6 +399,7 @@ This work is described in
 | Gemma C2 contrast-packed provider development | Ranks `8/16/32` store `1,980/4,276/8,676` scalars (`86.84%/71.58%/42.34%` below the prior dense-64 component); canonical rank-8/rank-16 MACs are `52.35%/29.85%` below rank 32 | Every rank passed ordinary fidelity and `24/24` exact-null pairs; radial passes were `12/16`, `13/16`, `7/16`, while signed passes were `0/7` at every rank | Held-out development selection only; no candidate passed, V4 remains unopened |
 | Gemma rank-16 objective-balance diagnostic | Same `4,276`-scalar candidate form; no new resource or deployment claim | Unit-RMS treatments passed `12/12` ordinary, `24/24` null, and `16/16` radial fit checks, but only `2–3/8` signed checks | Fit-only diagnostic; global loss scale is not the sole blocker and C3 remains unopened |
 | Gemma rank-64 capacity control | `19,012` stored scalars and `3,190,528` canonical MACs versus rank 16's `4,276` and `1,315,072`; no reduction claim | Descriptively `12/12` ordinary, `24/24` null, `16/16` radial, and `3/8` signed; ordinary error `0.00672074`, cosine `0.99997745` | Invalid comparison: initial pointwise share missed the frozen balance gate, so no capacity conclusion, replication, width ladder, or C3 is authorized |
+| Gemma function-preserving width control | Rank 64 uses `19,012` scalars / `3,190,528` canonical MACs versus rank 16's `4,276` / `1,315,072` (`4.446×` storage and `2.426×` MACs); no reduction claim | Valid matched start: both passed ordinary, null, and radial gates but only the same `3/8` signed identities; rank 64 improved ordinary error `0.00769406 → 0.00652994` while signed macro error changed `0.380298 → 0.386891` | Outer width alone is insufficient under the matched fit budget; expert/core control authorized, with no replication, width ladder, C3, or compression claim |
 
 There are three important distinctions:
 
