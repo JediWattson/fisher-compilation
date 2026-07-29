@@ -2208,8 +2208,9 @@ The preregistered validity checks passed:
   `0.007502102819059041` and parameter delta norm
   `0.05917074421390244`; and
 - after the full treatment fit, split/concatenated maximum output and JVP
-  absolute errors were `3.552713678800501e-15` and
-  `7.105427357601002e-15`, with exactly zero weighted-objective difference.
+  absolute errors were `1.2434497875801753e-14` and
+  `1.1546319456101628e-14`, with weighted-objective absolute difference
+  `2.7755575615628914e-17`.
 
 The two-expert control also reproduced the authenticated source plan
 `57268369d21a66e464f7155a5f9b99868b1240e5f1ca0e3d59b2d40f5d5373de`
