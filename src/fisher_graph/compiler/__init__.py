@@ -93,8 +93,10 @@ from .progressive import (
     ResidualTarget,
     SelectionDevelopmentView,
     SelectionEvaluator,
+    finalize_progressive_guard,
     freeze_progressive_candidate,
     run_progressive_compilation,
+    run_progressive_development_search,
 )
 
 __all__ = [
@@ -167,6 +169,7 @@ __all__ = [
     "SequenceRequest",
     "capabilities_from_manifest_v1",
     "fit_variable_length_causal_modal_executor",
+    "finalize_progressive_guard",
     "freeze_progressive_candidate",
     "load_runtime_manifest",
     "manifest_from_legacy_runtime",
@@ -179,6 +182,7 @@ __all__ = [
     "runtime_manifest_bytes",
     "request_from_context",
     "run_progressive_compilation",
+    "run_progressive_development_search",
     "save_runtime_manifest",
     "split_teacher_boundary_batches",
     "valid_query_position_mse",

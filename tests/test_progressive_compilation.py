@@ -19,10 +19,13 @@ from fisher_graph.compiler.progressive import (
     ProgressiveFidelityTargets,
     ProgressiveResourceBudget,
     ProgressiveResourceFootprint,
+    ProgressiveStagingTransition,
     ResidualMap,
     ResidualTarget,
+    finalize_progressive_guard,
     freeze_progressive_candidate,
     run_progressive_compilation,
+    run_progressive_development_search,
 )
 
 
@@ -133,6 +136,11 @@ def _protocol(
             fit_family_ids=("fit-a", "fit-b"),
             selection_family_ids=("selection-a", "selection-b"),
             guard_family_ids=("guard-a", "guard-b"),
+        ),
+        development_role_binding_sha256s=(
+            ("calibration_a_fit", _sha(204)),
+            ("calibration_a_guard", _sha(205)),
+            ("calibration_a_selection", _sha(206)),
         ),
         forbidden_assessment_manifest_sha256s=(_sha(5),),
         fidelity_targets=ProgressiveFidelityTargets(
@@ -258,6 +266,11 @@ def _evaluation(
         fidelity=fidelity,
         resources=candidate.resources,
         challenger_receipt_sha256=challenger_receipt_sha256,
+        guard_claim_sha256=(
+            _sha(1300 + candidate.iteration)
+            if role == "calibration_a_guard"
+            else None
+        ),
     )
 
 
@@ -468,6 +481,59 @@ def test_repair_then_compact_loop_uses_one_final_guard() -> None:
     )
 
 
+def test_development_search_freezes_before_separate_guard_finalizer() -> None:
+    protocol = _protocol(compact_after_fidelity=False)
+    seed = _seed()
+    seed_selection = _evaluation(protocol, seed, _fidelity(0.8))
+    guard_calls = 0
+
+    development = run_progressive_development_search(
+        protocol=protocol,
+        seed_candidate=seed,
+        seed_selection_evaluation=seed_selection,
+        map_residual=lambda *_: pytest.fail("fit loop should not run"),
+        propose_mutations=lambda *_: pytest.fail(
+            "proposal loop should not run"
+        ),
+        build_candidate=lambda *_: pytest.fail("builder should not run"),
+        evaluate_selection=lambda *_: pytest.fail(
+            "selection should not run"
+        ),
+    )
+
+    assert development.status == "ready_for_guard_claim"
+    assert development.frozen_challenger is not None
+    assert development.guard_evaluation is None
+    development.validate_against(protocol)
+    with pytest.raises(ValueError, match="ready_for_candidate_binding"):
+        freeze_progressive_candidate(
+            protocol=protocol,
+            result=development,
+        )
+
+    def guard(challenger, view):
+        nonlocal guard_calls
+        guard_calls += 1
+        assert view.role == "calibration_a_guard"
+        return _guard_evaluation(
+            protocol,
+            challenger,
+            _fidelity(0.9),
+        )
+
+    finalized = finalize_progressive_guard(
+        protocol=protocol,
+        result=development,
+        evaluate_guard=guard,
+    )
+
+    assert guard_calls == 1
+    assert finalized.status == "ready_for_candidate_binding"
+    assert finalized.frozen_challenger == development.frozen_challenger
+    assert finalized.guard_evaluation is not None
+    finalized.validate_against(protocol)
+
+
 def test_guard_is_a_single_terminal_veto_not_another_selector() -> None:
     protocol = _protocol(compact_after_fidelity=False)
     seed = _seed()
@@ -503,6 +569,305 @@ def test_guard_is_a_single_terminal_veto_not_another_selector() -> None:
     assert result.final_candidate == seed
     with pytest.raises(ValueError, match="ready_for_candidate_binding"):
         freeze_progressive_candidate(protocol=protocol, result=result)
+
+
+def test_diagnostic_fidelity_axes_are_reported_but_do_not_veto() -> None:
+    base = _protocol()
+    targets = replace(
+        base.fidelity_targets,
+        execution_fidelity_axis_names=(
+            "candidate_behavior.absolute_delta_nll_per_token",
+        ),
+    )
+    fidelity = replace(
+        _fidelity(0.8),
+        operator_nrmse=4.0,
+        projection_full_width_relative_error=3.0,
+    )
+
+    assert targets.passes(fidelity) is True
+    assert targets.execution_fidelity_ratios(fidelity) == {
+        "candidate_behavior.absolute_delta_nll_per_token": 0.8,
+    }
+    diagnostics = targets.structural_diagnostic_ratios(fidelity)
+    assert diagnostics["operator_nrmse"] == 4.0
+    assert diagnostics["projection.full_width_relative_error"] == 3.0
+    assert targets.to_dict()["acceptance"][
+        "structural_diagnostic_axis_names"
+    ]
+
+
+def test_preregistered_staging_transition_can_unlock_later_repair() -> None:
+    base = _protocol(compact_after_fidelity=False, max_iterations=2)
+    targets = replace(
+        base.fidelity_targets,
+        execution_fidelity_axis_names=(
+            "candidate_behavior.absolute_delta_nll_per_token",
+        ),
+    )
+    protocol = replace(
+        base,
+        fidelity_targets=targets,
+        staging_transitions=(
+            ProgressiveStagingTransition(
+                transition_id="unit-x4-h4",
+                parent_iteration=0,
+                mutation_kind="add_residual_edge",
+                parent_mutation_kind="seed",
+                required_successor_mutation_kind="widen_carrier",
+                target_location="block/0",
+                target_rank_count=1,
+                completion_target_location="block/1",
+                completion_target_rank_count=1,
+                target_axis_names=(
+                    "boundary.relative_error",
+                    "boundary.worst_family_relative_error",
+                ),
+                invariant_axis_names=("operator_nrmse",),
+                permitted_regression_axis_names=tuple(
+                    sorted(
+                        set(
+                            targets.normalized_ratios(_fidelity(0.0))
+                        )
+                        - {
+                            "boundary.relative_error",
+                            "boundary.worst_family_relative_error",
+                            "operator_nrmse",
+                        }
+                    )
+                ),
+                completion_axis_names=(
+                    "candidate_behavior.absolute_delta_nll_per_token",
+                ),
+                minimum_relative_burden_reduction=0.02,
+            ),
+        ),
+        artifact_sha256="",
+    )
+    seed = _seed()
+    seed_fidelity = replace(
+        _fidelity(4.0),
+        boundary_relative_error=4.0,
+        worst_family_boundary_relative_error=4.0,
+    )
+    guard_calls = 0
+
+    def propose(candidate, residual_map, phase):
+        mutation_kind = (
+            "add_residual_edge"
+            if candidate.mutation_kind == "seed"
+            else "widen_carrier"
+        )
+        return (
+            _proposal(
+                candidate,
+                residual_map,
+                phase=phase,
+                mutation_kind=mutation_kind,
+                resources=_resources(650 - candidate.iteration * 10),
+            ),
+        )
+
+    def evaluate_selection(candidate, _):
+        fidelity = (
+            replace(
+                _fidelity(5.0),
+                boundary_relative_error=3.0,
+                worst_family_boundary_relative_error=3.0,
+            )
+            if candidate.mutation_kind == "add_residual_edge"
+            else replace(
+                _fidelity(0.8),
+                boundary_relative_error=3.0,
+                worst_family_boundary_relative_error=3.0,
+            )
+        )
+        return _evaluation(protocol, candidate, fidelity)
+
+    def evaluate_guard(challenger, _):
+        nonlocal guard_calls
+        guard_calls += 1
+        return _guard_evaluation(protocol, challenger, _fidelity(0.8))
+
+    result = run_progressive_compilation(
+        protocol=protocol,
+        seed_candidate=seed,
+        seed_selection_evaluation=_evaluation(
+            protocol,
+            seed,
+            seed_fidelity,
+        ),
+        map_residual=_map,
+        propose_mutations=propose,
+        build_candidate=_build,
+        evaluate_selection=evaluate_selection,
+        evaluate_guard=evaluate_guard,
+    )
+
+    assert result.status == "ready_for_candidate_binding"
+    assert result.final_candidate.mutation_kind == "widen_carrier"
+    assert tuple(item.decision for item in result.iterations) == (
+        "accepted_staging_transition",
+        "accepted_staging_completion",
+    )
+    assert guard_calls == 1
+    result.validate_against(protocol)
+
+
+def test_staging_transition_cannot_open_guard_before_its_successor() -> None:
+    base = _protocol(compact_after_fidelity=False, max_iterations=2)
+    protocol = replace(
+        base,
+        fidelity_targets=replace(
+            base.fidelity_targets,
+            execution_fidelity_axis_names=(
+                "candidate_behavior.absolute_delta_nll_per_token",
+            ),
+        ),
+        staging_transitions=(
+            ProgressiveStagingTransition(
+                transition_id="unit-x4-h4",
+                parent_iteration=0,
+                mutation_kind="add_residual_edge",
+                parent_mutation_kind="seed",
+                required_successor_mutation_kind="widen_carrier",
+                target_location="block/0",
+                target_rank_count=1,
+                completion_target_location="block/1",
+                completion_target_rank_count=1,
+                target_axis_names=(
+                    "boundary.relative_error",
+                    "boundary.worst_family_relative_error",
+                ),
+                permitted_regression_axis_names=tuple(
+                    sorted(
+                        set(
+                            base.fidelity_targets.normalized_ratios(
+                                _fidelity(0.0)
+                            )
+                        )
+                        - {
+                            "boundary.relative_error",
+                            "boundary.worst_family_relative_error",
+                        }
+                    )
+                ),
+                completion_axis_names=(
+                    "candidate_behavior.absolute_delta_nll_per_token",
+                ),
+                minimum_relative_burden_reduction=0.02,
+            ),
+        ),
+        artifact_sha256="",
+    )
+    seed = _seed()
+    guard_calls = 0
+
+    def guard(*_):
+        nonlocal guard_calls
+        guard_calls += 1
+        raise AssertionError("guard must remain closed")
+
+    result = run_progressive_compilation(
+        protocol=protocol,
+        seed_candidate=seed,
+        seed_selection_evaluation=_evaluation(
+            protocol,
+            seed,
+            replace(
+                _fidelity(4.0),
+                boundary_relative_error=4.0,
+                worst_family_boundary_relative_error=4.0,
+            ),
+        ),
+        map_residual=_map,
+        propose_mutations=lambda candidate, residual_map, phase: (
+            (
+                _proposal(
+                    candidate,
+                    residual_map,
+                    phase=phase,
+                    mutation_kind="add_residual_edge",
+                    resources=_resources(650),
+                ),
+            )
+            if candidate.mutation_kind == "seed"
+            else ()
+        ),
+        build_candidate=_build,
+        evaluate_selection=lambda candidate, _: _evaluation(
+            protocol,
+            candidate,
+            replace(
+                _fidelity(0.8),
+                boundary_relative_error=3.0,
+                worst_family_boundary_relative_error=3.0,
+            ),
+        ),
+        evaluate_guard=guard,
+    )
+
+    assert result.status == "stalled_fidelity"
+    assert result.final_candidate.mutation_kind == "add_residual_edge"
+    assert tuple(item.decision for item in result.iterations) == (
+        "accepted_staging_transition",
+        "no_quality_eligible_candidate",
+    )
+    assert guard_calls == 0
+    result.validate_against(protocol)
+
+
+def test_passing_measurement_seed_materializes_complete_runtime_in_repair() -> None:
+    seed_resources = _resources(700, complete=False)
+    protocol = _protocol(
+        compact_after_fidelity=False,
+        seed_resources=seed_resources,
+    )
+    seed = _seed(resources=seed_resources)
+    observed_phases: list[str] = []
+
+    def propose(candidate, residual_map, phase):
+        observed_phases.append(phase)
+        return (
+            _proposal(
+                candidate,
+                residual_map,
+                phase=phase,
+                mutation_kind="add_residual_edge",
+                resources=_resources(650),
+            ),
+        )
+
+    result = run_progressive_compilation(
+        protocol=protocol,
+        seed_candidate=seed,
+        seed_selection_evaluation=_evaluation(
+            protocol,
+            seed,
+            _fidelity(0.8),
+        ),
+        map_residual=_map,
+        propose_mutations=propose,
+        build_candidate=_build,
+        evaluate_selection=lambda candidate, _: _evaluation(
+            protocol,
+            candidate,
+            _fidelity(0.9),
+        ),
+        evaluate_guard=lambda challenger, _: _guard_evaluation(
+            protocol,
+            challenger,
+            _fidelity(0.9),
+        ),
+    )
+
+    assert observed_phases == ["repair"]
+    assert result.status == "ready_for_candidate_binding"
+    assert result.final_candidate.resources.cost_complete is True
+    assert result.iterations[0].decision == (
+        "accepted_deployment_materialization"
+    )
+    result.validate_against(protocol)
 
 
 def test_guard_must_bind_the_previously_frozen_challenger() -> None:

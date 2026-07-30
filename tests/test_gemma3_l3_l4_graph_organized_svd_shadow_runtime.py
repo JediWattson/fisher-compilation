@@ -8,6 +8,11 @@ import torch
 from torch import Tensor, nn
 
 from fisher_graph.adapters import Gemma3CausalLMAdapter
+from fisher_graph.compiler.calibration import CalibrationBatch
+from fisher_graph.compiler.progressive import (
+    ProgressiveCandidate,
+    ProgressiveResourceFootprint,
+)
 from fisher_graph.conditional_spectral_generator import (
     fit_conditional_spectral_generator,
 )
@@ -17,9 +22,22 @@ from fisher_graph.gemma3_l3_l4_basis_package import (
 )
 import fisher_graph.gemma3_l3_l4_graph_organized_svd_experiment as experiment
 from fisher_graph.gemma3_l3_l4_graph_organized_svd_shadow_runtime import (
+    Gemma3L3L4CorrectionProvider,
     Gemma3L3L4GraphOrganizedSVDShadowRuntime,
     gemma3_l3_l4_shadow_model_inputs_sha256,
     validate_gemma3_l3_l4_shadow_model_inputs_sha256,
+)
+from fisher_graph.gemma3_l3_l4_progressive_worker import (
+    GemmaCarrierResidualAnalysis,
+    GemmaProgressiveExample,
+    LegacyRank64GemmaProgressiveExecutable,
+)
+from fisher_graph.gemma3_l3_l4_two_head_lowerer import (
+    GEMMA_TWO_HEAD_COMPUTE_SCOPE,
+    GEMMA_TWO_HEAD_PARAMETER_SCOPE,
+    GEMMA_TWO_HEAD_RUNTIME_DTYPE,
+    GEMMA_TWO_HEAD_RUNTIME_ID,
+    GemmaL3L4TwoHeadMutationLowerer,
 )
 from fisher_graph.graph_spectral_source_basis import fit_graph_source_bases
 
@@ -329,6 +347,131 @@ def _candidate_and_basis(
     return candidate, basis, signed
 
 
+def _seed_candidate_and_resources(
+    runtime: Gemma3L3L4GraphOrganizedSVDShadowRuntime,
+    adapter: Gemma3CausalLMAdapter,
+) -> ProgressiveCandidate:
+    resources = ProgressiveResourceFootprint(
+        candidate_execution_sha256=adapter.execution_fingerprint(),
+        accounting_artifact_sha256="81" * 32,
+        parameter_scope=GEMMA_TWO_HEAD_PARAMETER_SCOPE,
+        compute_scope=GEMMA_TWO_HEAD_COMPUTE_SCOPE,
+        runtime_id=GEMMA_TWO_HEAD_RUNTIME_ID,
+        runtime_dtype=GEMMA_TWO_HEAD_RUNTIME_DTYPE,
+        sequence_scope_sha256="82" * 32,
+        compiled_learned_parameters=10,
+        retained_source_learned_parameters=100,
+        support_learned_parameters=1,
+        compiled_runtime_parameter_bytes=80,
+        retained_source_runtime_parameter_bytes=800,
+        support_runtime_parameter_bytes=8,
+        compiled_logical_macs_per_token=10,
+        retained_source_logical_macs_per_token=100,
+        support_logical_macs_per_token=1,
+        cost_complete=False,
+        incomplete_cost_reasons=(
+            "multi_pass_shadow_measurement",
+            "native_boundary_fallback",
+            "no_one_pass_serving_executable",
+        ),
+    )
+    return ProgressiveCandidate(
+        candidate_id="tiny-rank64-seed",
+        iteration=0,
+        artifact_sha256=runtime.candidate_artifact_sha256,
+        execution_sha256=adapter.execution_fingerprint(),
+        runtime_binding_sha256=runtime.runtime_binding_sha256,
+        resources=resources,
+        mutation_kind="seed",
+    )
+
+
+def _canonical_residual_directions(
+    residual: Tensor,
+    gradient: Tensor,
+    *,
+    count: int,
+) -> tuple[Tensor, Tensor, Tensor, float]:
+    covariance = residual.T @ residual / residual.shape[0]
+    fisher = gradient.T @ gradient / gradient.shape[0]
+    eigenvalues, eigenvectors = torch.linalg.eigh(
+        (covariance + covariance.T) * 0.5
+    )
+    order = torch.argsort(eigenvalues, descending=True)
+    selected_count = min(
+        count,
+        int((eigenvalues > 0).sum()),
+        residual.shape[1],
+    )
+    assert selected_count > 0
+    values = eigenvalues[order[:selected_count]].clamp_min(0).contiguous()
+    directions = eigenvectors[:, order[:selected_count]].T.contiguous()
+    pivots = directions.abs().argmax(dim=1)
+    signs = directions.gather(1, pivots.unsqueeze(1)).squeeze(1)
+    directions = (
+        directions
+        * torch.where(
+            signs < 0,
+            -torch.ones_like(signs),
+            torch.ones_like(signs),
+        ).unsqueeze(1)
+    ).contiguous()
+    couplings = torch.einsum(
+        "kw,wx,kx->k",
+        directions,
+        fisher,
+        directions,
+    ).clamp_min(0)
+    return (
+        directions,
+        values,
+        couplings,
+        float(eigenvalues.clamp_min(0).sum()),
+    )
+
+
+def _analysis_from_observation(
+    observation,
+    candidate: ProgressiveCandidate,
+    *,
+    index: int,
+) -> GemmaCarrierResidualAnalysis:
+    sequence = observation.two_head_fit_sequence
+    assert sequence is not None
+    h4 = _canonical_residual_directions(
+        sequence.h4_residual_rows,
+        observation.carrier_loss_gradient_rows,
+        count=2,
+    )
+    x4 = _canonical_residual_directions(
+        sequence.x4_residual_rows,
+        sequence.x4_loss_gradient[sequence.target_affected_mask],
+        count=2,
+    )
+    return GemmaCarrierResidualAnalysis(
+        protocol_sha256=f"{90 + index:064x}",
+        fit_manifest_sha256=f"{100 + index:064x}",
+        candidate_artifact_sha256=candidate.artifact_sha256,
+        candidate_receipt_sha256=candidate.receipt_sha256,
+        runtime_binding_sha256=candidate.runtime_binding_sha256,
+        location="layer.4.output",
+        directions=h4[0],
+        residual_eigenvalues=h4[1],
+        loss_couplings=h4[2],
+        total_residual_energy=h4[3],
+        family_row_counts=(("fit-family", sequence.affected_rows),),
+        observation_sha256s=(observation.artifact_sha256,),
+        complete_boundary_oracle_max_abs_logit_error=(
+            observation.complete_boundary_oracle_max_abs_logit_error
+        ),
+        x4_directions=x4[0],
+        x4_residual_eigenvalues=x4[1],
+        x4_loss_couplings=x4[2],
+        x4_total_residual_energy=x4[3],
+        fit_sequences=(sequence.detached_copy(),),
+    )
+
+
 @pytest.fixture
 def prepared():
     torch.manual_seed(1403)
@@ -363,6 +506,546 @@ def prepared():
         "position_ids": torch.arange(4).unsqueeze(0).expand(2, -1),
     }
     return runtime, adapter, basis, model_inputs
+
+
+def test_progressive_probe_collects_real_carrier_fisher_rows(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    valid = model_inputs["attention_mask"].to(dtype=torch.bool)
+    targets = torch.full_like(model_inputs["input_ids"], -100)
+    supervised = valid[:, :-1] & valid[:, 1:]
+    targets[:, :-1] = torch.where(
+        supervised,
+        model_inputs["input_ids"][:, 1:],
+        torch.full_like(model_inputs["input_ids"][:, 1:], -100),
+    )
+    batch = CalibrationBatch(
+        model_inputs=model_inputs,
+        targets=targets,
+        valid_positions=valid,
+        example_ids=("fit.tiny",),
+    )
+    example = GemmaProgressiveExample(
+        example_id="fit.tiny",
+        family_id="fit-family",
+        batch=batch,
+    )
+    adapter.module.requires_grad_(False)
+    executable = LegacyRank64GemmaProgressiveExecutable(
+        adapter=adapter,
+        runtime=runtime,
+        candidate_execution_sha256=adapter.execution_fingerprint(),
+    )
+    before = adapter.model_fingerprint()
+
+    evaluation = executable.observe(
+        example,
+        collect_carrier_fisher=False,
+    )
+    fit = executable.observe(
+        example,
+        collect_carrier_fisher=True,
+    )
+
+    assert evaluation.carrier_residual_rows is None
+    assert evaluation.carrier_loss_gradient_rows is None
+    assert fit.carrier_residual_rows is not None
+    assert fit.carrier_loss_gradient_rows is not None
+    assert fit.carrier_residual_rows.shape == (
+        fit.affected_target_rows,
+        runtime.residual_width,
+    )
+    assert fit.carrier_loss_gradient_rows.shape == (
+        fit.affected_target_rows,
+        runtime.residual_width,
+    )
+    assert fit.two_head_fit_sequence is not None
+    assert fit.two_head_fit_sequence.source_modes.shape == (
+        model_inputs["input_ids"].shape[1],
+        runtime.source_modes,
+    )
+    assert torch.equal(
+        fit.two_head_fit_sequence.h4_residual_rows,
+        fit.carrier_residual_rows,
+    )
+    assert torch.equal(
+        fit.two_head_fit_sequence.h4_loss_gradient[
+            fit.two_head_fit_sequence.target_affected_mask
+        ],
+        fit.carrier_loss_gradient_rows,
+    )
+    assert fit.complete_boundary_oracle_max_abs_logit_error == 0.0
+    assert fit.source_logits.shape[0] == fit.targets.shape[0]
+    assert fit.runtime_binding_sha256 == runtime.runtime_binding_sha256
+    assert adapter.model_fingerprint() == before
+
+
+def test_exported_bridge_executes_once_without_native_x4_fallback(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    shadow = runtime.execute_model_shadow(
+        adapter,
+        model_inputs,
+        arm="all_on",
+    )
+    bridge = runtime.export_one_pass_bridge()
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        one_pass = bridge.execute(adapter, model_inputs)
+
+    assert forward.call_count == 1
+    assert one_pass.model_forward_count == 1
+    assert torch.equal(one_pass.prefix.source_modes, shadow.source_modes)
+    assert torch.equal(one_pass.prefix.clamped_y3, shadow.clamped_y3)
+    assert torch.equal(
+        one_pass.reference_x4,
+        shadow.reference_x4,
+    )
+    affected = shadow.target_affected_mask
+    assert torch.equal(
+        one_pass.candidate_x4[affected],
+        shadow.candidate_x4[affected],
+    )
+    assert torch.equal(
+        one_pass.candidate_x4[~affected].view(torch.uint8),
+        one_pass.reference_x4[~affected].view(torch.uint8),
+    )
+    assert bridge.prepared_float_scalar_count > 0
+    assert bridge.prepared_runtime_parameter_bytes > 0
+    assert bridge.logical_macs_per_token_upper_bound > 0
+    assert one_pass.logits.requires_grad is False
+    assert one_pass.candidate_x4.requires_grad is False
+    assert one_pass.candidate_h4.requires_grad is False
+
+
+def test_one_pass_bridge_rejects_prepared_graph_scalar_drift(
+    prepared,
+) -> None:
+    runtime, _adapter, _basis, _inputs = prepared
+    bridge = runtime.export_one_pass_bridge()
+
+    bridge._graph.lag_count += 1
+
+    with pytest.raises(RuntimeError, match="header drifted"):
+        bridge.validate_integrity()
+
+
+def test_one_pass_h4_vjp_matches_a_finite_displacement(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        measured, gradient = bridge.execute_h4_vjp(
+            adapter,
+            model_inputs,
+            objective=lambda run: run.logits.square().sum(),
+        )
+
+    assert forward.call_count == 1
+    assert measured.artifact_sha256 == ordinary.artifact_sha256
+    assert gradient.shape == ordinary.candidate_h4.shape
+    assert torch.isfinite(gradient).all()
+
+    generator = torch.Generator().manual_seed(1731)
+    direction = torch.randn(
+        ordinary.candidate_h4.shape,
+        generator=generator,
+        dtype=ordinary.candidate_h4.dtype,
+        device=ordinary.candidate_h4.device,
+    )
+    direction = torch.where(
+        ordinary.prefix.target_affected_mask.unsqueeze(-1),
+        direction,
+        torch.zeros_like(direction),
+    )
+
+    class _DirectionalHead(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+
+        def __init__(self, scale: float, suffix: str) -> None:
+            self.artifact_sha256 = suffix * 64
+            self._correction = direction * scale
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return self._correction
+
+    epsilon = 1.0e-5
+    plus = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_DirectionalHead(epsilon, "a"),
+    )
+    minus = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_DirectionalHead(-epsilon, "b"),
+    )
+    finite_difference = (
+        plus.logits.square().sum() - minus.logits.square().sum()
+    ) / (2.0 * epsilon)
+    vjp_direction = (gradient * direction).sum()
+
+    torch.testing.assert_close(
+        vjp_direction,
+        finite_difference,
+        atol=1.0e-7,
+        rtol=1.0e-6,
+    )
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+
+
+def test_one_pass_bridge_rejects_an_unbound_correction_callable(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+
+    with pytest.raises(TypeError, match="authenticated correction provider"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            x4_head=lambda prefix: torch.zeros_like(prefix.clamped_y3),
+        )
+
+
+def test_one_pass_bridge_rejects_a_head_that_mutates_prefix_state(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+
+    class _MutatingHead(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.mlp.normalized_input"
+        artifact_sha256 = "ab" * 32
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            prefix.source_modes[0, 0, 0] += 1
+            return torch.zeros_like(prefix.clamped_y3)
+
+    with pytest.raises(RuntimeError, match="prefix tensor payload drifted"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            x4_head=_MutatingHead(),
+        )
+
+    bridge.validate_integrity()
+
+
+def test_one_pass_bridge_rejects_a_head_that_mutates_realized_state(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+
+    class _MutatingStateHead(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.mlp.normalized_input"
+        artifact_sha256 = "ac" * 32
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            realized_state[0, 0, 0] += 1
+            return torch.zeros_like(prefix.clamped_y3)
+
+    with pytest.raises(RuntimeError, match="mutated its realized activation"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            x4_head=_MutatingStateHead(),
+        )
+
+    bridge.validate_integrity()
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+
+
+def test_two_head_lowerer_builds_one_pass_x4_then_conditional_h4(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    valid = model_inputs["attention_mask"].to(dtype=torch.bool)
+    targets = torch.full_like(model_inputs["input_ids"], -100)
+    supervised = valid[:, :-1] & valid[:, 1:]
+    targets[:, :-1] = torch.where(
+        supervised,
+        model_inputs["input_ids"][:, 1:],
+        torch.full_like(model_inputs["input_ids"][:, 1:], -100),
+    )
+    example = GemmaProgressiveExample(
+        example_id="fit.two-head",
+        family_id="fit-family",
+        batch=CalibrationBatch(
+            model_inputs=model_inputs,
+            targets=targets,
+            valid_positions=valid,
+            example_ids=("fit.two-head",),
+        ),
+    )
+    adapter.module.requires_grad_(False)
+    source_probe = LegacyRank64GemmaProgressiveExecutable(
+        adapter=adapter,
+        runtime=runtime,
+        candidate_execution_sha256=adapter.execution_fingerprint(),
+    )
+    seed = _seed_candidate_and_resources(runtime, adapter)
+    seed_fit = source_probe.observe(
+        example,
+        collect_carrier_fisher=True,
+    )
+    seed_analysis = _analysis_from_observation(
+        seed_fit,
+        seed,
+        index=0,
+    )
+    seed_map = seed_analysis.residual_map(iteration=0)
+    lowerer = GemmaL3L4TwoHeadMutationLowerer(
+        adapter=adapter,
+        shadow_runtime=runtime,
+        source_probe=source_probe,
+        head_rank=2,
+        lag_count=3,
+        ridge=1.0e-6,
+        h4_fit_objective="candidate_nll_vjp_metric_ridge_v1",
+        h4_conditioning=(
+            "l3_source_modes_plus_realized_h4_decoder_modes_v1"
+        ),
+        proposal_schedule="x4_then_h4",
+    )
+
+    proposals = lowerer.propose(
+        parent=seed,
+        residual_map=seed_map,
+        analysis=seed_analysis,
+        phase="repair",
+    )
+
+    assert tuple(proposal.mutation_kind for proposal in proposals) == (
+        "add_residual_edge",
+    )
+    assert all(proposal.resources.cost_complete for proposal in proposals)
+    x4_proposal = proposals[0]
+    x4_candidate, x4_executable = lowerer.build(
+        parent=seed,
+        proposal=x4_proposal,
+        analysis=seed_analysis,
+    )
+    assert x4_candidate.resources.retained_source_learned_parameters == sum(
+        parameter.numel() for parameter in adapter.module.parameters()
+    )
+    assert x4_candidate.resources.compiled_learned_parameters > 0
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        x4_execution = x4_executable.execute(model_inputs)
+
+    assert forward.call_count == 1
+    assert x4_execution.x4_head_sha256 is not None
+    assert x4_execution.h4_head_sha256 is None
+
+    # The graph affects logical rows 0..4, while a seven-token sequence has
+    # six supervised next-token boundaries.  Behavioral fidelity must include
+    # the sixth, out-of-support logit so collateral error cannot be hidden.
+    long_inputs = {
+        "input_ids": torch.tensor(
+            [[0, 3, 4, 5, 6, 7, 8]],
+            dtype=torch.int64,
+        ),
+        "attention_mask": torch.ones(1, 7, dtype=torch.bool),
+        "position_ids": torch.arange(7).unsqueeze(0),
+    }
+    long_targets = torch.full_like(long_inputs["input_ids"], -100)
+    long_targets[:, :-1] = long_inputs["input_ids"][:, 1:]
+    long_example = GemmaProgressiveExample(
+        example_id="fit.all-supervised",
+        family_id="fit-family",
+        batch=CalibrationBatch(
+            model_inputs=long_inputs,
+            targets=long_targets,
+            valid_positions=long_inputs["attention_mask"],
+            example_ids=("fit.all-supervised",),
+        ),
+    )
+    all_token_observation = x4_executable.observe(
+        long_example,
+        collect_carrier_fisher=False,
+    )
+
+    assert all_token_observation.affected_target_rows == 5
+    assert all_token_observation.targets.numel() == 6
+    assert all_token_observation.source_logits.shape[0] == 6
+    assert all_token_observation.candidate_logits.shape[0] == 6
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        selection_observation = x4_executable.observe(
+            example,
+            collect_carrier_fisher=False,
+        )
+
+    assert forward.call_count == 6
+    assert not torch.equal(
+        selection_observation.candidate_target_modes,
+        seed_fit.candidate_target_modes,
+    )
+
+    x4_fit = x4_executable.observe(
+        example,
+        collect_carrier_fisher=True,
+    )
+    x4_sequence = x4_fit.two_head_fit_sequence
+    assert x4_sequence is not None
+    candidate_h4_gradient = x4_sequence.candidate_h4_loss_gradient
+    assert candidate_h4_gradient is not None
+    assert candidate_h4_gradient.shape == x4_sequence.h4_loss_gradient.shape
+    assert torch.isfinite(candidate_h4_gradient).all()
+    assert not torch.equal(
+        candidate_h4_gradient[x4_sequence.target_affected_mask],
+        x4_sequence.h4_loss_gradient[x4_sequence.target_affected_mask],
+    )
+    assert torch.equal(
+        x4_fit.carrier_loss_gradient_rows,
+        candidate_h4_gradient[x4_sequence.target_affected_mask],
+    )
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+    x4_analysis = _analysis_from_observation(
+        x4_fit,
+        x4_candidate,
+        index=1,
+    )
+    x4_map = x4_analysis.residual_map(iteration=1)
+    second_proposals = lowerer.propose(
+        parent=x4_candidate,
+        residual_map=x4_map,
+        analysis=x4_analysis,
+        phase="repair",
+    )
+
+    assert len(second_proposals) == 1
+    assert second_proposals[0].mutation_kind == "widen_carrier"
+    joint_candidate, joint_executable = lowerer.build(
+        parent=x4_candidate,
+        proposal=second_proposals[0],
+        analysis=x4_analysis,
+    )
+    joint = joint_executable.execute(model_inputs)
+
+    assert joint_candidate.iteration == 2
+    assert joint.x4_head_sha256 == x4_execution.x4_head_sha256
+    assert joint.h4_head_sha256 is not None
+    assert joint.model_forward_count == 1
+    joint_artifact = lowerer.artifact_for(joint_candidate)
+    h4_head = joint_artifact.head("layer.4.output")
+    assert h4_head is not None
+    assert h4_head.conditioning == (
+        "l3_source_modes_plus_realized_h4_decoder_modes_v1"
+    )
+    assert h4_head.state_kernel.shape == (h4_head.rank, h4_head.rank)
+    manual_correction = h4_head.correction(
+        x4_execution.prefix,
+        x4_execution.candidate_h4,
+    )
+    torch.testing.assert_close(
+        joint.candidate_h4,
+        x4_execution.candidate_h4 + manual_correction,
+        atol=0.0,
+        rtol=0.0,
+    )
+
+    active_rows = torch.nonzero(
+        x4_execution.prefix.target_affected_mask[0],
+        as_tuple=False,
+    ).flatten()
+    assert active_rows.numel() >= 2
+    final_active = int(active_rows[-1])
+    perturbed_h4 = x4_execution.candidate_h4.clone()
+    perturbation = torch.zeros_like(perturbed_h4)
+    perturbation[0, final_active] = h4_head.decoder[0].to(
+        perturbation
+    )
+    perturbed_h4 += perturbation
+    perturbed_correction = h4_head.correction(
+        x4_execution.prefix,
+        perturbed_h4,
+    )
+    assert torch.equal(
+        manual_correction[0, :final_active],
+        perturbed_correction[0, :final_active],
+    )
+    expected_change = torch.zeros_like(manual_correction)
+    expected_change[0, final_active] = (
+        (
+            perturbation[0, final_active].to(torch.float64)
+            @ h4_head.decoder.T
+        )
+        @ h4_head.state_kernel
+        @ h4_head.decoder
+    ).to(expected_change)
+    torch.testing.assert_close(
+        perturbed_correction - manual_correction,
+        expected_change,
+        atol=1.0e-12,
+        rtol=1.0e-12,
+    )
 
 
 def test_model_input_hash_is_exact_order_independent_and_nonmutating(

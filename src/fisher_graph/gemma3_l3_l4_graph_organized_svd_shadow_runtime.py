@@ -30,7 +30,7 @@ rejected because its numerical certificate and accounting are not yet trusted.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 import hashlib
 import json
@@ -62,6 +62,10 @@ __all__ = [
     "Gemma3L3L4GraphOrganizedSVDShadowAccounting",
     "Gemma3L3L4GraphOrganizedSVDShadowResult",
     "Gemma3L3L4GraphOrganizedSVDShadowRuntime",
+    "Gemma3L3L4CorrectionProvider",
+    "Gemma3L3L4OnePassBridge",
+    "Gemma3L3L4OnePassExecution",
+    "Gemma3L3L4OnePassPrefix",
     "OracleSuffixRole",
     "ShadowArm",
     "gemma3_l3_l4_shadow_model_inputs_sha256",
@@ -74,7 +78,32 @@ _PLAN_KEY = "signed_gfa"
 _X3_SITE = "layer.3.mlp.normalized_input"
 _Y3_SITE = "layer.3.mlp.operator_output"
 _X4_SITE = "layer.4.mlp.normalized_input"
+_H4_SITE = "layer.4.output"
 _ARMS = frozenset({"identity", "all_on"})
+
+
+class Gemma3L3L4CorrectionProvider:
+    """Nominal interface for an integrity-bound X4 or H4 correction head.
+
+    The bridge accepts a head object rather than a free callback plus a
+    caller-asserted hash.  This keeps execution provenance attached to the
+    object whose tensors are authenticated immediately before and after use.
+    """
+
+    __slots__ = ()
+
+    site: str
+    artifact_sha256: str
+
+    def validate_integrity(self) -> None:
+        raise NotImplementedError
+
+    def correction(
+        self,
+        prefix: Gemma3L3L4OnePassPrefix,
+        realized_state: Tensor,
+    ) -> Tensor:
+        raise NotImplementedError
 _MAX_R4_CONDITION = 1.0e8
 _MAX_DUAL_IDENTITY_ERROR = 1.0e-10
 _INTERNAL_TENSOR_DOMAIN = (
@@ -94,6 +123,12 @@ _ORACLE_SUFFIX_RESULT_DOMAIN = (
 )
 _MODEL_INPUTS_DOMAIN = (
     b"fisher-graph:gemma3-l3-l4-svd-shadow-model-inputs:v1\0"
+)
+_ONE_PASS_BRIDGE_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-one-pass-bridge:v1\0"
+)
+_ONE_PASS_RESULT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-one-pass-result:v1\0"
 )
 _LOCKED_FACTORIZED_ADAPTER_EXECUTION_SHA256 = (
     "911f9869077be1fec2f8610f2f2cbe4c5c6e01a8d632573bec52f2fcc12d1df9"
@@ -1144,7 +1179,7 @@ class Gemma3L3L4GraphOrganizedSVDShadowRuntime:
             "basis.R4": self._r4,
             "decoder.target_dual": self._target_decoder,
         }
-        if not isinstance(self._graph, PreparedGraphOrganizedSVD):
+        if type(self._graph) is not PreparedGraphOrganizedSVD:
             raise RuntimeError("prepared graph runtime type drifted")
         graph_buffers = dict(self._graph.named_buffers(recurse=True))
         if set(graph_buffers) != {
@@ -1260,6 +1295,19 @@ class Gemma3L3L4GraphOrganizedSVDShadowRuntime:
             "P4_used_as_target_decoder": False,
             "candidate_serving_authorized": False,
         }
+
+    def export_one_pass_bridge(self) -> Gemma3L3L4OnePassBridge:
+        """Clone the authenticated all-on carrier into a one-prefill bridge.
+
+        The returned bridge has deliberately different semantics from this
+        measurement runtime: it preserves the clamped reference carrier
+        outside graph support and never asks for an authoritative native X4
+        fallback.  Consequently its ``execute`` method owns exactly one model
+        forward.
+        """
+
+        self.validate_integrity()
+        return Gemma3L3L4OnePassBridge(self)
 
     def encode_target_delta(self, full_width_delta: Tensor) -> Tensor:
         """Encode finite full-width X4 deltas into authenticated target modes."""
@@ -2033,3 +2081,898 @@ class Gemma3L3L4GraphOrganizedSVDShadowRuntime:
         self.validate_result_binding(result)
         self.validate_integrity()
         return result
+
+
+@dataclass(frozen=True, slots=True)
+class Gemma3L3L4OnePassPrefix:
+    """Authenticated state prepared before the layer-4 X4 intervention."""
+
+    source_modes: Tensor
+    clamped_y3: Tensor
+    predicted_target_modal_delta: Tensor
+    decoded_base_x4_delta: Tensor
+    logical_positions: Tensor
+    valid_target_mask: Tensor
+    source_eligible_mask: Tensor
+    target_affected_mask: Tensor
+    bridge_binding_sha256: str
+    artifact_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        _require_sha256(
+            self.bridge_binding_sha256,
+            label="one-pass bridge binding",
+        )
+        if (
+            not isinstance(self.source_modes, Tensor)
+            or self.source_modes.ndim != 3
+            or not self.source_modes.is_floating_point()
+            or not isinstance(self.clamped_y3, Tensor)
+            or self.clamped_y3.ndim != 3
+            or not self.clamped_y3.is_floating_point()
+            or not isinstance(self.predicted_target_modal_delta, Tensor)
+            or self.predicted_target_modal_delta.ndim != 3
+            or not self.predicted_target_modal_delta.is_floating_point()
+            or not isinstance(self.decoded_base_x4_delta, Tensor)
+            or self.decoded_base_x4_delta.shape != self.clamped_y3.shape
+            or not self.decoded_base_x4_delta.is_floating_point()
+        ):
+            raise ValueError("one-pass prefix floating geometry is invalid")
+        grid = self.clamped_y3.shape[:2]
+        if (
+            self.source_modes.shape[:2] != grid
+            or self.predicted_target_modal_delta.shape[:2] != grid
+            or not isinstance(self.logical_positions, Tensor)
+            or self.logical_positions.shape != grid
+            or self.logical_positions.dtype not in (torch.int32, torch.int64)
+            or not isinstance(self.valid_target_mask, Tensor)
+            or self.valid_target_mask.shape != grid
+            or self.valid_target_mask.dtype != torch.bool
+            or not isinstance(self.source_eligible_mask, Tensor)
+            or self.source_eligible_mask.shape != grid
+            or self.source_eligible_mask.dtype != torch.bool
+            or not isinstance(self.target_affected_mask, Tensor)
+            or self.target_affected_mask.shape != grid
+            or self.target_affected_mask.dtype != torch.bool
+            or bool(
+                (
+                    self.source_eligible_mask
+                    & ~self.valid_target_mask
+                ).any()
+            )
+            or bool(
+                (
+                    self.target_affected_mask
+                    & ~self.valid_target_mask
+                ).any()
+            )
+        ):
+            raise ValueError("one-pass prefix execution grid is invalid")
+        for value, mask, label in (
+            (self.source_modes, self.source_eligible_mask, "source modes"),
+            (self.clamped_y3, self.source_eligible_mask, "clamped Y3"),
+            (
+                self.predicted_target_modal_delta,
+                self.target_affected_mask,
+                "target modes",
+            ),
+            (
+                self.decoded_base_x4_delta,
+                self.target_affected_mask,
+                "decoded X4",
+            ),
+        ):
+            selected = mask.to(value.device)
+            if bool(selected.any()) and not bool(
+                torch.isfinite(value[selected]).all()
+            ):
+                raise ValueError(f"{label} must be finite on active rows")
+        computed = self._computed_sha256()
+        if self.artifact_sha256:
+            if _require_sha256(
+                self.artifact_sha256,
+                label="one-pass prefix artifact",
+            ) != computed:
+                raise ValueError("one-pass prefix artifact hash mismatch")
+        else:
+            object.__setattr__(self, "artifact_sha256", computed)
+
+    def _computed_sha256(self) -> str:
+        payload = {
+            "bridge_binding_sha256": self.bridge_binding_sha256,
+            "tensor_sha256s": {
+                name: _runtime_tensor_sha256(value)
+                for name, value in (
+                    ("source_modes", self.source_modes),
+                    ("clamped_y3", self.clamped_y3),
+                    (
+                        "predicted_target_modal_delta",
+                        self.predicted_target_modal_delta,
+                    ),
+                    (
+                        "decoded_base_x4_delta",
+                        self.decoded_base_x4_delta,
+                    ),
+                    ("logical_positions", self.logical_positions),
+                    ("valid_target_mask", self.valid_target_mask),
+                    ("source_eligible_mask", self.source_eligible_mask),
+                    ("target_affected_mask", self.target_affected_mask),
+                )
+            },
+        }
+        return hashlib.sha256(
+            _ONE_PASS_RESULT_DOMAIN
+            + b"prefix\0"
+            + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        if self._computed_sha256() != self.artifact_sha256:
+            raise RuntimeError("one-pass prefix tensor payload drifted")
+
+
+@dataclass(frozen=True, slots=True)
+class Gemma3L3L4OnePassExecution:
+    """One complete prefill execution of the bridge and optional heads."""
+
+    logits: Tensor
+    reference_x4: Tensor
+    candidate_x4: Tensor
+    candidate_h4: Tensor
+    prefix: Gemma3L3L4OnePassPrefix
+    model_inputs_sha256: str
+    bridge_binding_sha256: str
+    x4_head_sha256: str | None
+    h4_head_sha256: str | None
+    model_forward_count: int = 1
+    artifact_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.model_inputs_sha256, label="one-pass model inputs")
+        _require_sha256(
+            self.bridge_binding_sha256,
+            label="one-pass bridge binding",
+        )
+        self.prefix.validate_integrity()
+        if self.prefix.bridge_binding_sha256 != self.bridge_binding_sha256:
+            raise ValueError("one-pass prefix belongs to another bridge")
+        for name in ("x4_head_sha256", "h4_head_sha256"):
+            value = getattr(self, name)
+            if value is not None:
+                _require_sha256(value, label=name)
+        if (
+            not isinstance(self.logits, Tensor)
+            or self.logits.ndim != 3
+            or not self.logits.is_floating_point()
+            or not isinstance(self.reference_x4, Tensor)
+            or self.reference_x4.ndim != 3
+            or not self.reference_x4.is_floating_point()
+            or self.candidate_x4.shape != self.reference_x4.shape
+            or self.candidate_h4.shape != self.reference_x4.shape
+            or not self.candidate_x4.is_floating_point()
+            or not self.candidate_h4.is_floating_point()
+            or self.logits.shape[:2] != self.reference_x4.shape[:2]
+            or self.model_forward_count != 1
+        ):
+            raise ValueError("one-pass execution geometry is invalid")
+        valid = self.prefix.valid_target_mask
+        for value, label in (
+            (self.logits, "logits"),
+            (self.reference_x4, "reference X4"),
+            (self.candidate_x4, "candidate X4"),
+            (self.candidate_h4, "candidate H4"),
+        ):
+            selected = valid.to(value.device)
+            if bool(selected.any()) and not bool(
+                torch.isfinite(value[selected]).all()
+            ):
+                raise ValueError(f"one-pass {label} must be finite")
+        computed = self._computed_sha256()
+        if self.artifact_sha256:
+            if _require_sha256(
+                self.artifact_sha256,
+                label="one-pass execution artifact",
+            ) != computed:
+                raise ValueError("one-pass execution artifact hash mismatch")
+        else:
+            object.__setattr__(self, "artifact_sha256", computed)
+
+    def _computed_sha256(self) -> str:
+        return hashlib.sha256(
+            _ONE_PASS_RESULT_DOMAIN
+            + b"execution\0"
+            + _canonical_json_bytes(
+                {
+                    "model_inputs_sha256": self.model_inputs_sha256,
+                    "bridge_binding_sha256": self.bridge_binding_sha256,
+                    "prefix_sha256": self.prefix.artifact_sha256,
+                    "x4_head_sha256": self.x4_head_sha256,
+                    "h4_head_sha256": self.h4_head_sha256,
+                    "model_forward_count": self.model_forward_count,
+                    "tensor_sha256s": {
+                        name: _runtime_tensor_sha256(value)
+                        for name, value in (
+                            ("logits", self.logits),
+                            ("reference_x4", self.reference_x4),
+                            ("candidate_x4", self.candidate_x4),
+                            ("candidate_h4", self.candidate_h4),
+                        )
+                    },
+                }
+            )
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self.prefix.validate_integrity()
+        if self._computed_sha256() != self.artifact_sha256:
+            raise RuntimeError("one-pass execution tensor payload drifted")
+
+
+class Gemma3L3L4OnePassBridge:
+    """Serving-safe clone of the locked rank-64 all-on bridge.
+
+    Unlike the source-authoritative shadow runtime, this class never consumes
+    native X4 from a separate pass.  Rows outside graph support remain the
+    clamped reference produced by the same forward.
+    """
+
+    def __init__(
+        self,
+        source: Gemma3L3L4GraphOrganizedSVDShadowRuntime,
+    ) -> None:
+        if not isinstance(
+            source,
+            Gemma3L3L4GraphOrganizedSVDShadowRuntime,
+        ):
+            raise TypeError("source must be the locked L3/L4 shadow runtime")
+        source.validate_integrity()
+        self._parent_runtime_binding_sha256 = source.runtime_binding_sha256
+        self._candidate_sha256 = source.candidate_artifact_sha256
+        self._live_model_sha256 = source.live_model_sha256
+        self._adapter_execution_sha256 = source.adapter_execution_sha256
+        self._device = source._device
+        self._residual_width = source.residual_width
+        self._source_modes = source.source_modes
+        self._target_modes = source.target_modes
+        self._fit_knot_origins = source._plan.fit_knot_origins
+        self._lag_count = source._plan.lag_count
+        self._source_rank = source._plan.source_rank
+        self._x3_mean = source._x3_mean.detach().clone().contiguous()
+        self._r3 = source._r3.detach().clone().contiguous()
+        self._p3 = source._p3.detach().clone().contiguous()
+        self._target_decoder = (
+            source._target_decoder.detach().clone().contiguous()
+        )
+        self._graph = source._plan.prepare(
+            device=self._device,
+            dtype=torch.float64,
+        )
+        self._binding_sha256 = self._computed_binding_sha256()
+        self._expected_header = self._header()
+        self._expected_tensor_sha256s = {
+            name: _runtime_tensor_sha256(value)
+            for name, value in self._internal_tensors().items()
+        }
+        self.validate_integrity()
+
+    @property
+    def bridge_binding_sha256(self) -> str:
+        return self._binding_sha256
+
+    @property
+    def parent_runtime_binding_sha256(self) -> str:
+        return self._parent_runtime_binding_sha256
+
+    @property
+    def source_modes(self) -> int:
+        return self._source_modes
+
+    @property
+    def target_modes(self) -> int:
+        return self._target_modes
+
+    @property
+    def source_rank(self) -> int:
+        return self._source_rank
+
+    @property
+    def residual_width(self) -> int:
+        return self._residual_width
+
+    @property
+    def lag_count(self) -> int:
+        return self._lag_count
+
+    @property
+    def fit_knot_origins(self) -> tuple[int, ...]:
+        return self._fit_knot_origins
+
+    @property
+    def prepared_float_scalar_count(self) -> int:
+        return sum(
+            int(value.numel())
+            for value in self._internal_tensors().values()
+            if value.is_floating_point()
+        )
+
+    @property
+    def prepared_integer_value_count(self) -> int:
+        return sum(
+            int(value.numel())
+            for value in self._internal_tensors().values()
+            if not value.is_floating_point()
+        )
+
+    @property
+    def prepared_runtime_parameter_bytes(self) -> int:
+        return sum(
+            int(value.numel() * value.element_size())
+            for value in self._internal_tensors().values()
+        )
+
+    @property
+    def logical_macs_per_token_upper_bound(self) -> int:
+        return (
+            2 * self.residual_width * self.source_modes
+            + self.source_modes * self.source_rank
+            + self.lag_count * self.source_rank * self.target_modes
+            + self.target_modes * self.residual_width
+        )
+
+    def _internal_tensors(self) -> dict[str, Tensor]:
+        graph = dict(self._graph.named_buffers(recurse=True))
+        if set(graph) != {
+            "source_scales",
+            "source_basis",
+            "knot_cores",
+            "core_operator_norm_bounds",
+            "pack_offsets",
+        }:
+            raise RuntimeError("one-pass prepared graph buffer set drifted")
+        return {
+            "basis.x3_mean": self._x3_mean,
+            "basis.R3": self._r3,
+            "basis.P3": self._p3,
+            "decoder.target_dual": self._target_decoder,
+            **{f"graph.{name}": value for name, value in graph.items()},
+        }
+
+    def _header(self) -> tuple[object, ...]:
+        return (
+            self._parent_runtime_binding_sha256,
+            self._candidate_sha256,
+            self._live_model_sha256,
+            self._adapter_execution_sha256,
+            str(self._device),
+            self._residual_width,
+            self._source_modes,
+            self._source_rank,
+            self._target_modes,
+            self._fit_knot_origins,
+            self._lag_count,
+            self._graph.plan_sha256,
+            self._graph.fit_knot_origins,
+            self._graph.source_modes,
+            self._graph.source_rank,
+            self._graph.target_modes,
+            self._graph.pack_count,
+            self._graph.lag_count,
+            self._binding_sha256,
+            "one_model_forward",
+            "reference_x4_outside_target_support",
+            "float64_reference_plus_decoded_delta_then_single_live_dtype_cast",
+        )
+
+    def _computed_binding_sha256(self) -> str:
+        return hashlib.sha256(
+            _ONE_PASS_BRIDGE_DOMAIN
+            + _canonical_json_bytes(
+                {
+                    "format_version": 2,
+                    "parent_runtime_binding_sha256": (
+                        self._parent_runtime_binding_sha256
+                    ),
+                    "candidate_artifact_sha256": self._candidate_sha256,
+                    "live_model_sha256": self._live_model_sha256,
+                    "adapter_execution_sha256": (
+                        self._adapter_execution_sha256
+                    ),
+                    "analysis_device": str(self._device),
+                    "residual_width": self._residual_width,
+                    "source_modes": self._source_modes,
+                    "source_rank": self._source_rank,
+                    "target_modes": self._target_modes,
+                    "fit_knot_origins": self._fit_knot_origins,
+                    "lag_count": self._lag_count,
+                    "model_forward_count": 1,
+                    "fallback_policy": (
+                        "same_pass_reference_x4_outside_target_support"
+                    ),
+                    "base_x4_accumulation_policy": (
+                        "float64_reference_plus_decoded_delta_then_"
+                        "single_live_dtype_cast"
+                    ),
+                }
+            )
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        if not isinstance(self._graph, PreparedGraphOrganizedSVD):
+            raise RuntimeError("one-pass prepared graph type drifted")
+        if dict(self._graph.named_parameters(recurse=True)):
+            raise RuntimeError("one-pass prepared graph gained parameters")
+        if (
+            self._computed_binding_sha256() != self._binding_sha256
+            or self._header() != self._expected_header
+        ):
+            raise RuntimeError("one-pass bridge header drifted")
+        tensors = self._internal_tensors()
+        if set(tensors) != set(self._expected_tensor_sha256s):
+            raise RuntimeError("one-pass bridge tensor set drifted")
+        for name, value in tensors.items():
+            if (
+                not value.is_contiguous()
+                or value.device != self._device
+                or (
+                    value.is_floating_point()
+                    and not bool(torch.isfinite(value).all())
+                )
+                or _runtime_tensor_sha256(value)
+                != self._expected_tensor_sha256s[name]
+            ):
+                raise RuntimeError(f"one-pass bridge tensor {name} drifted")
+
+    def _authenticate_adapter(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+    ) -> None:
+        if not isinstance(adapter, Gemma3CausalLMAdapter):
+            raise TypeError("adapter must be a Gemma3CausalLMAdapter")
+        if adapter.module.training or any(
+            module.training for module in adapter.module.modules()
+        ):
+            raise ValueError("source Gemma must remain completely in eval mode")
+        if (
+            adapter.model_fingerprint() != self._live_model_sha256
+            or adapter.execution_fingerprint()
+            != self._adapter_execution_sha256
+        ):
+            raise ValueError(
+                "live Gemma or adapter execution differs from the bridge"
+            )
+        sites = {site.id: site for site in adapter.activation_sites}
+        required = (_X3_SITE, _Y3_SITE, _X4_SITE, _H4_SITE)
+        if any(
+            name not in sites or not sites[name].intervenable
+            for name in required
+        ):
+            raise ValueError("Gemma one-pass intervention ABI drifted")
+
+    def _masks(
+        self,
+        logical_positions: Tensor,
+        valid_mask: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        source = (
+            valid_mask
+            & (logical_positions >= self.fit_knot_origins[0])
+            & (logical_positions <= self.fit_knot_origins[-1])
+        )
+        target = torch.zeros_like(valid_mask)
+        for batch in range(valid_mask.shape[0]):
+            source_positions = logical_positions[batch][source[batch]]
+            if source_positions.numel() == 0:
+                continue
+            indices = torch.nonzero(
+                valid_mask[batch],
+                as_tuple=False,
+            ).flatten()
+            target_positions = logical_positions[batch][indices]
+            differences = (
+                target_positions.unsqueeze(1)
+                - source_positions.unsqueeze(0)
+            )
+            target[batch, indices] = (
+                (differences >= 0) & (differences < self.lag_count)
+            ).any(dim=1)
+        return source, target
+
+    def _prepare_prefix(
+        self,
+        *,
+        x3: Tensor,
+        native_y3: Tensor,
+        logical_positions: Tensor,
+        valid_mask: Tensor,
+    ) -> Gemma3L3L4OnePassPrefix:
+        if (
+            x3.ndim != 3
+            or x3.shape != native_y3.shape
+            or x3.shape[-1] != self.residual_width
+            or not x3.is_floating_point()
+            or native_y3.dtype != x3.dtype
+            or native_y3.device != x3.device
+            or logical_positions.shape != x3.shape[:2]
+            or logical_positions.device != x3.device
+            or logical_positions.dtype not in (torch.int32, torch.int64)
+            or valid_mask.shape != x3.shape[:2]
+            or valid_mask.device != x3.device
+            or valid_mask.dtype != torch.bool
+        ):
+            raise ValueError("one-pass X3/Y3 execution geometry is invalid")
+        for batch in range(x3.shape[0]):
+            positions = logical_positions[batch][valid_mask[batch]]
+            if (
+                positions.numel() == 0
+                or bool((positions < 0).any())
+                or (
+                    positions.numel() > 1
+                    and not bool(torch.all(positions[1:] > positions[:-1]))
+                )
+            ):
+                raise ValueError(
+                    "valid logical positions must be nonnegative and increasing"
+                )
+        source, target = self._masks(logical_positions, valid_mask)
+        modes = torch.zeros(
+            (*x3.shape[:2], self.source_modes),
+            device=self._device,
+            dtype=torch.float64,
+        )
+        decoded_l3 = torch.zeros(
+            x3.shape,
+            device=self._device,
+            dtype=torch.float64,
+        )
+        source_analysis = source.to(self._device)
+        if bool(source_analysis.any()):
+            selected = x3[source].to(self._device, torch.float64)
+            selected_modes = (selected - self._x3_mean) @ self._r3.T
+            modes[source_analysis] = selected_modes
+            decoded_l3[source_analysis] = selected_modes @ self._p3.T
+        clamped = native_y3.clone()
+        if bool(source.any()):
+            clamped[source] = (
+                native_y3[source].to(self._device, torch.float64)
+                - decoded_l3[source_analysis]
+            ).to(device=native_y3.device, dtype=native_y3.dtype)
+        prediction = torch.zeros(
+            (*x3.shape[:2], self.target_modes),
+            device=self._device,
+            dtype=torch.float64,
+        )
+        if bool(source.any()):
+            prediction = self._graph(
+                modes,
+                logical_positions=logical_positions.to(self._device),
+                valid_mask=valid_mask.to(self._device),
+                source_mask=source.to(self._device),
+            )
+        decoded_x4 = torch.zeros(
+            x3.shape,
+            device=self._device,
+            dtype=torch.float64,
+        )
+        target_analysis = target.to(self._device)
+        if bool(target_analysis.any()):
+            decoded_x4[target_analysis] = (
+                prediction[target_analysis] @ self._target_decoder
+            )
+        return Gemma3L3L4OnePassPrefix(
+            source_modes=modes,
+            clamped_y3=clamped,
+            predicted_target_modal_delta=prediction,
+            decoded_base_x4_delta=decoded_x4,
+            logical_positions=logical_positions.detach().clone(),
+            valid_target_mask=valid_mask.detach().clone(),
+            source_eligible_mask=source.detach().clone(),
+            target_affected_mask=target.detach().clone(),
+            bridge_binding_sha256=self.bridge_binding_sha256,
+        )
+
+    @staticmethod
+    def _head_correction(
+        provider: Gemma3L3L4CorrectionProvider | None,
+        *,
+        prefix: Gemma3L3L4OnePassPrefix,
+        expected_site: str,
+        label: str,
+        reference: Tensor,
+    ) -> tuple[Tensor, str | None]:
+        prefix.validate_integrity()
+        if provider is None:
+            return torch.zeros_like(reference), None
+        if not isinstance(provider, Gemma3L3L4CorrectionProvider):
+            raise TypeError(
+                f"{label} must implement the authenticated correction "
+                "provider interface"
+            )
+        provider.validate_integrity()
+        if provider.site != expected_site:
+            raise ValueError(f"{label} is bound to the wrong activation site")
+        head_sha256 = provider.artifact_sha256
+        _require_sha256(head_sha256, label=f"{label} artifact")
+        reference_sha256 = _runtime_tensor_sha256(reference)
+        correction = provider.correction(prefix, reference)
+        provider.validate_integrity()
+        prefix.validate_integrity()
+        if _runtime_tensor_sha256(reference) != reference_sha256:
+            raise RuntimeError(f"{label} mutated its realized activation")
+        if (
+            not isinstance(correction, Tensor)
+            or correction.shape != reference.shape
+            or not correction.is_floating_point()
+        ):
+            raise ValueError(
+                f"{label} correction must match the residual stream"
+            )
+        active = prefix.target_affected_mask.to(correction.device)
+        if bool(active.any()) and not bool(
+            torch.isfinite(correction[active]).all()
+        ):
+            raise ValueError(f"{label} correction is nonfinite")
+        inactive = ~active
+        if bool(inactive.any()) and not bool(
+            (correction[inactive] == 0).all()
+        ):
+            raise ValueError(f"{label} correction must be zero off support")
+        return (
+            correction.to(device=reference.device, dtype=reference.dtype),
+            head_sha256,
+        )
+
+    def _execute(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        *,
+        x4_head: Gemma3L3L4CorrectionProvider | None = None,
+        h4_head: Gemma3L3L4CorrectionProvider | None = None,
+        h4_vjp_objective: Callable[[AdapterRun], Tensor] | None = None,
+    ) -> tuple[Gemma3L3L4OnePassExecution, Tensor | None]:
+        """Execute one bridge pass, optionally retaining only the H4 VJP."""
+
+        self.validate_integrity()
+        self._authenticate_adapter(adapter)
+        model_inputs_sha256 = (
+            gemma3_l3_l4_shadow_model_inputs_sha256(model_inputs)
+        )
+        sequence = adapter.prepare_sequence(model_inputs)
+        x3: Tensor | None = None
+        prefix: Gemma3L3L4OnePassPrefix | None = None
+        reference_x4: Tensor | None = None
+        candidate_x4: Tensor | None = None
+        candidate_h4: Tensor | None = None
+        x4_head_sha256: str | None = None
+        h4_head_sha256: str | None = None
+
+        def at_x3(original: Tensor) -> Tensor:
+            nonlocal x3
+            if x3 is not None:
+                raise RuntimeError("one-pass X3 intervention repeated")
+            x3 = original
+            return original
+
+        def at_y3(original: Tensor) -> Tensor:
+            nonlocal prefix
+            if x3 is None or prefix is not None:
+                raise RuntimeError("one-pass Y3 intervention order drifted")
+            prefix = self._prepare_prefix(
+                x3=x3,
+                native_y3=original,
+                logical_positions=sequence.logical_positions,
+                valid_mask=sequence.query_valid_mask,
+            )
+            return prefix.clamped_y3
+
+        def at_x4(original: Tensor) -> Tensor:
+            nonlocal reference_x4, candidate_x4, x4_head_sha256
+            if prefix is None or reference_x4 is not None:
+                raise RuntimeError("one-pass X4 intervention order drifted")
+            reference_x4 = original
+            candidate_x4 = original.clone()
+            active = prefix.target_affected_mask
+            if bool(active.any()):
+                active_on_analysis = active.to(
+                    prefix.decoded_base_x4_delta.device
+                )
+                base = prefix.decoded_base_x4_delta[
+                    active_on_analysis
+                ]
+                # Match the authenticated shadow arithmetic exactly: add the
+                # float64 decoded delta to a float64 reference carrier, then
+                # cast once into the live residual dtype.  Casting the delta
+                # first introduces a distinct float32 rounding path.
+                reference = original[active].to(
+                    device=base.device,
+                    dtype=torch.float64,
+                )
+                candidate_x4[active] = (reference + base).to(
+                    device=original.device,
+                    dtype=original.dtype,
+                )
+            correction, x4_head_sha256 = self._head_correction(
+                x4_head,
+                prefix=prefix,
+                expected_site=_X4_SITE,
+                label="X4 head",
+                reference=original,
+            )
+            if bool(active.any()):
+                candidate_x4[active] += correction[active]
+            if h4_vjp_objective is not None:
+                candidate_x4 = candidate_x4.detach()
+            return candidate_x4
+
+        def at_h4(original: Tensor) -> Tensor:
+            nonlocal candidate_h4, h4_head_sha256
+            if prefix is None or candidate_x4 is None or candidate_h4 is not None:
+                raise RuntimeError("one-pass H4 intervention order drifted")
+            candidate_h4 = original.clone()
+            correction, h4_head_sha256 = self._head_correction(
+                h4_head,
+                prefix=prefix,
+                expected_site=_H4_SITE,
+                label="H4 head",
+                reference=original,
+            )
+            active = prefix.target_affected_mask
+            if bool(active.any()):
+                candidate_h4[active] += correction[active]
+            if h4_vjp_objective is not None:
+                candidate_h4 = (
+                    candidate_h4.detach().requires_grad_(True)
+                )
+            return candidate_h4
+
+        h4_gradient: Tensor | None = None
+        try:
+            context = (
+                torch.enable_grad()
+                if h4_vjp_objective is not None
+                else torch.no_grad()
+            )
+            with context:
+                run = adapter.forward(
+                    model_inputs,
+                    capture_sites=(),
+                    interventions={
+                        _X3_SITE: at_x3,
+                        _Y3_SITE: at_y3,
+                        _X4_SITE: at_x4,
+                        _H4_SITE: at_h4,
+                    },
+                )
+                if h4_vjp_objective is not None:
+                    if candidate_h4 is None:
+                        raise RuntimeError(
+                            "H4 VJP pass did not reach the H4 boundary"
+                        )
+                    loss = h4_vjp_objective(run)
+                    if (
+                        not isinstance(loss, Tensor)
+                        or loss.ndim != 0
+                        or not loss.is_floating_point()
+                        or not bool(torch.isfinite(loss))
+                    ):
+                        raise ValueError(
+                            "H4 VJP objective must return one finite scalar"
+                        )
+                    (h4_gradient,) = torch.autograd.grad(
+                        loss,
+                        (candidate_h4,),
+                        retain_graph=False,
+                        create_graph=False,
+                    )
+        finally:
+            self.validate_integrity()
+            self._authenticate_adapter(adapter)
+        validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+            model_inputs,
+            model_inputs_sha256,
+        )
+        if (
+            prefix is None
+            or reference_x4 is None
+            or candidate_x4 is None
+            or candidate_h4 is None
+            or x3 is None
+        ):
+            raise RuntimeError("one-pass bridge did not reach every boundary")
+        prefix.validate_integrity()
+        if (
+            not torch.equal(
+                run.sequence.logical_positions,
+                sequence.logical_positions,
+            )
+            or not torch.equal(
+                run.sequence.query_valid_mask,
+                sequence.query_valid_mask,
+            )
+        ):
+            raise RuntimeError("prepared and executed sequence grids differ")
+        inactive = ~prefix.target_affected_mask
+        if not _bitwise_equal(
+            candidate_x4[inactive],
+            reference_x4[inactive],
+        ):
+            raise RuntimeError(
+                "one-pass bridge modified reference X4 outside support"
+            )
+        detached_prefix = Gemma3L3L4OnePassPrefix(
+            source_modes=prefix.source_modes.detach(),
+            clamped_y3=prefix.clamped_y3.detach(),
+            predicted_target_modal_delta=(
+                prefix.predicted_target_modal_delta.detach()
+            ),
+            decoded_base_x4_delta=(
+                prefix.decoded_base_x4_delta.detach()
+            ),
+            logical_positions=prefix.logical_positions.detach(),
+            valid_target_mask=prefix.valid_target_mask.detach(),
+            source_eligible_mask=prefix.source_eligible_mask.detach(),
+            target_affected_mask=prefix.target_affected_mask.detach(),
+            bridge_binding_sha256=prefix.bridge_binding_sha256,
+            artifact_sha256=prefix.artifact_sha256,
+        )
+        execution = Gemma3L3L4OnePassExecution(
+            logits=run.logits.detach(),
+            reference_x4=reference_x4.detach(),
+            candidate_x4=candidate_x4.detach(),
+            candidate_h4=candidate_h4.detach(),
+            prefix=detached_prefix,
+            model_inputs_sha256=model_inputs_sha256,
+            bridge_binding_sha256=self.bridge_binding_sha256,
+            x4_head_sha256=x4_head_sha256,
+            h4_head_sha256=h4_head_sha256,
+        )
+        return (
+            execution,
+            None
+            if h4_gradient is None
+            else h4_gradient.detach().contiguous(),
+        )
+
+    def execute(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        *,
+        x4_head: Gemma3L3L4CorrectionProvider | None = None,
+        h4_head: Gemma3L3L4CorrectionProvider | None = None,
+    ) -> Gemma3L3L4OnePassExecution:
+        """Execute the base bridge and optional residual heads in one prefill."""
+
+        execution, gradient = self._execute(
+            adapter,
+            model_inputs,
+            x4_head=x4_head,
+            h4_head=h4_head,
+        )
+        if gradient is not None:
+            raise RuntimeError("serving execution unexpectedly retained H4 VJP")
+        return execution
+
+    def execute_h4_vjp(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        *,
+        objective: Callable[[AdapterRun], Tensor],
+        x4_head: Gemma3L3L4CorrectionProvider | None = None,
+        h4_head: Gemma3L3L4CorrectionProvider | None = None,
+    ) -> tuple[Gemma3L3L4OnePassExecution, Tensor]:
+        """Execute an authenticated fit-only pass and return dLoss/dH4."""
+
+        if not callable(objective):
+            raise TypeError("objective must be callable")
+        execution, gradient = self._execute(
+            adapter,
+            model_inputs,
+            x4_head=x4_head,
+            h4_head=h4_head,
+            h4_vjp_objective=objective,
+        )
+        if gradient is None:
+            raise RuntimeError("H4 VJP execution omitted its gradient")
+        return execution, gradient

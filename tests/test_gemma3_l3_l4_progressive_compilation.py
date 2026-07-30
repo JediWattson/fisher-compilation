@@ -92,11 +92,20 @@ def test_factory_binds_exact_legacy_seed_and_forbids_b_manifest() -> None:
     resources = _resources()
     progressive = make_gemma3_l3_l4_progressive_protocol(
         corpus=_corpus(),
+        seed_runtime_binding_sha256=legacy_metadata[
+            "runtime_binding_contract"
+        ]["artifact_sha256"],
+        fit_panel_binding_sha256=_sha(30),
+        selection_panel_binding_sha256=_sha(31),
+        guard_preclaim_binding_sha256=_sha(32),
         resource_budget=_budget(),
         seed_resources=resources,
     )
     seed = current_gemma3_l3_l4_progressive_seed(
         resources=resources,
+        runtime_binding_sha256=(
+            progressive.seed_runtime_binding_sha256
+        ),
     )
 
     assert progressive.source_model_sha256 == (
@@ -171,6 +180,10 @@ def test_factory_rejects_a_runtime_binding_for_another_execution(
     ):
         make_gemma3_l3_l4_progressive_protocol(
             corpus=_corpus(),
+            seed_runtime_binding_sha256=_sha(40),
+            fit_panel_binding_sha256=_sha(30),
+            selection_panel_binding_sha256=_sha(31),
+            guard_preclaim_binding_sha256=_sha(32),
             resource_budget=_budget(),
             seed_resources=_resources(),
         )
@@ -188,6 +201,10 @@ def test_factory_rejects_resource_accounting_for_another_execution() -> None:
     ):
         make_gemma3_l3_l4_progressive_protocol(
             corpus=_corpus(),
+            seed_runtime_binding_sha256=_sha(40),
+            fit_panel_binding_sha256=_sha(30),
+            selection_panel_binding_sha256=_sha(31),
+            guard_preclaim_binding_sha256=_sha(32),
             resource_budget=_budget(),
             seed_resources=resources,
         )
@@ -249,7 +266,7 @@ def test_operator_default_uses_the_full_width_projection_gate() -> None:
     assert targets.operator_nrmse_max == 0.05
 
 
-def test_known_projection_and_carrier_failures_cannot_be_ready() -> None:
+def test_immutable_projection_and_carrier_failures_remain_diagnostic() -> None:
     targets = gemma3_l3_l4_progressive_fidelity_targets()
     passing_behavior = ProgressiveBehavioralFidelity(
         absolute_delta_nll_per_token=0.0,
@@ -283,12 +300,23 @@ def test_known_projection_and_carrier_failures_cannot_be_ready() -> None:
         minimum_family_source_full_width_signal_l2_norm=1.0,
     )
 
-    assert targets.passes(known_failure) is False
+    assert targets.passes(known_failure) is True
     ratios = targets.normalized_ratios(known_failure)
     assert ratios["projection.full_width_relative_error"] > 1.0
     assert (
         ratios["carrier_oracle_behavior.absolute_delta_nll_per_token"]
         > 1.0
+    )
+    assert set(targets.execution_fidelity_ratios(known_failure)) == {
+        "candidate_behavior.absolute_delta_nll_per_token",
+        "candidate_behavior.per_prompt_p10_top1_agreement_to_source",
+        "candidate_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+        "candidate_behavior.source_to_candidate_kl_per_token",
+        "candidate_behavior.top1_agreement_to_source",
+    }
+    assert (
+        "projection.full_width_relative_error"
+        in targets.structural_diagnostic_ratios(known_failure)
     )
 
 
@@ -300,6 +328,10 @@ def test_development_corpus_cannot_reuse_registered_b_manifest() -> None:
     with pytest.raises(ValueError, match="assessment manifest"):
         make_gemma3_l3_l4_progressive_protocol(
             corpus=corpus,
+            seed_runtime_binding_sha256=_sha(40),
+            fit_panel_binding_sha256=_sha(30),
+            selection_panel_binding_sha256=_sha(31),
+            guard_preclaim_binding_sha256=_sha(32),
             resource_budget=_budget(),
             seed_resources=_resources(),
         )

@@ -31,6 +31,106 @@ research compiler, not a production compression library.
 
 ## Current finding
 
+The fixed alpha-0.5 H4 generator has now been rejected by its fresh
+family-disjoint finite-NLL selection gate. The one-shot panel contained 16
+new prompts across eight new families. It compared the accepted X4 parent,
+the matched lag-only alpha-0 baseline, and the frozen alpha-0.5 challenger
+against the same direct factorized-model source outputs.
+
+| arm | H4 params / MACs per token | absolute aggregate ΔNLL/token | source→candidate KL/token | top-1 agreement | prompt p90 absolute ΔNLL | absolute gate |
+|---|---:|---:|---:|---:|---:|:---:|
+| accepted X4 only | `0 / 0` | `0.222797` | `1.286448` | `45.85%` | `1.030822` | fail |
+| matched alpha 0 + B | `13,312 / 13,312` | `0.532629` | `1.396646` | `41.29%` | `1.388934` | fail |
+| alpha 0.5 challenger | `34,048 / 34,048` | `0.408207` | `1.276282` | `43.05%` | `0.968875` | fail |
+
+Relative to the matched alpha-0 control, alpha 0.5 reduced the family-macro
+mean prompt error by `13.30%` and won exactly `6/8` families. That confirms
+that realized H4 state contains useful incremental signal. It did not
+generalize uniformly: symbolic equivalence regressed `14.91%` and unit
+consistency regressed `29.62%`, far outside the preregistered `2%`
+worst-family limit. The challenger also failed all five absolute source
+fidelity gates. The accepted X4-only context remained better on aggregate
+ΔNLL and top-1 agreement while requiring no H4 head.
+
+The formal result is therefore `qualified: false`. Guard evaluation stays
+closed, and there is no model-level compression, deployment, or latency
+claim. The durable report is bound by logical hash
+`63bcc5f6b03cee408164583a01109023aeb2352e3a4fa15e23ddbc2d7b842f35`,
+finite-NLL hash
+`3d842a558d5fb31b5ed99623c2527867a3b6936dd55e427c88c5da4939fbb044`,
+and file hash
+`43accd933ea8fce333d056abe7d197a8dd7178049a4c8c9d2a8c9ff2a539ad14`.
+
+The follow-up reusable-fit attribution now separates the two compiled
+boundaries instead of treating the rejected stack as one unit. It crosses
+the base bridge versus the accepted X4 repair with no H4 head, the lag-only
+`B` head, and the independent-state H4 head. One direct factorized-model
+source plus six factorial cells over 16 examples produced exactly 112
+forwards and 96 scalar/hash-only comparisons:
+
+| X4 / H4 arm | compiled auxiliary params | logical MACs/token | prompt-absolute ΔNLL/token | KL/token | top-1 | X4 RMSE | H4 RMSE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| base / none | 403,328 | 217,920 | 0.395952 | 1.304834 | 41.14% | 0.562206 | 32.0043 |
+| base / lag `B` | 416,640 | 231,232 | 0.300136 | 1.002118 | 45.03% | 0.562206 | 25.4643 |
+| base / independent state | 437,376 | 251,968 | 0.302431 | 1.001871 | 44.94% | 0.562206 | 24.1366 |
+| accepted X4 / none | 424,832 | 239,424 | 0.288211 | 1.275279 | 40.88% | 0.457586 | 34.9819 |
+| accepted X4 / lag `B` | 438,144 | 252,736 | 0.265847 | 0.891692 | 45.72% | 0.457586 | 14.5398 |
+| accepted X4 / independent state | 458,880 | 273,472 | 0.265434 | 0.892949 | 45.38% | 0.457586 | 14.4005 |
+
+This identifies two real but overlapping repairs. The accepted X4 head
+reduced prompt-absolute NLL error by `27.21%` and X4 RMSE by `18.61%`
+relative to the base bridge. Adding lag `B` to that accepted parent reduced
+prompt error another `7.76%` and H4 RMSE by `58.44%`. The independent-state
+path then reduced H4 RMSE only another `0.96%` and prompt error only `0.16%`,
+while adding 20,736 parameters and MACs over `B`; it also slightly worsened
+KL and top-1 agreement and won only four of eight fit families.
+
+The important diagnosis is objective mismatch, not absence of signal.
+Accepted X4 plus either H4 head brings signed aggregate ΔNLL close to zero,
+but prompt-absolute error stays near `0.266`: positive and negative prompt
+errors are canceling. Euclidean H4 alignment can improve dramatically
+without comparable finite-NLL fidelity. The next iterative compiler rung
+should therefore retain accepted X4, use lag `B` as the cost-aware H4
+baseline, and fit the next residual directly against per-prompt
+source-authoritative behavior rather than adding more independent H4
+capacity. This factorial is reusable-fit diagnosis only—not held-out
+generalization, qualification, compression, or speed evidence. Its report
+is bound by logical hash
+`9fde13193b3ee915845247de3821e84ec84dbae368a2e3554e4c9423927878ed`
+and file hash
+`2e9fc09804af10199739ad6c14df658a6a81550e4e14b5eeb9170c52d5a809ab`.
+
+The first explicit residual-boost iteration is also complete. It froze the
+accepted-X4 plus lag-`B` parent, fit four causal logical-position scales with
+eight leave-one-family-out folds, and evaluated each prompt with the provider
+that never saw its family. The live campaign made exactly 64 model forwards
+and added only four scalar slots plus at most 640 logical MACs/token. The
+candidate was **not retained**: family-macro mean prompt-absolute NLL error
+rose from `0.268343` to `0.299215` (`-11.50%` relative improvement), only
+`2/8` families won, and the worst family regressed `70.64%`. KL worsened
+`2.21%`, top-1 agreement fell from `45.72%` to `44.90%`, prompt p90 error
+rose `4.30%`, and prompt p10 top-1 agreement fell from `40.00%` to `37.68%`.
+
+This failure is unusually informative. The parent-point Jacobian predicted
+the exact candidate with correlation `0.998966`, RMSE `0.021381`, and
+`100%` sign agreement; its predicted prompt error was already `11.10%`
+worse. The finite displacement did not invalidate the linear model. Instead,
+position-only lag-`B` amplitudes failed to generalize across families. The
+first two buckets were outside target support in every fold, while the two
+supported scales changed sign or magnitude by held family. The frozen parent
+therefore remains iteration zero. The next candidate should introduce a
+small causal prompt/state-conditioned **direction**, not more global
+position damping or a path-integrated Jacobian. The development report is
+replay-bound to every fold fit, OOF provider/execution/observation, and
+resource receipt. Its collection hash is
+`dee8864210f6047e3f05b67515a5f77b54a1ccbe332de5b9eb96519eca33714c`,
+logical report hash is
+`1e1e284d354dd6048406b99a335bc2065e6767e706b8e781791bb1fd365c49ca`,
+and file hash is
+`4ace545b0dea88aeebbbe7e8ddd57a89ff986e56a1817ab4500ad44fa056afb3`.
+
+### Parallel capacity-control rung
+
 The authenticated function-preserving expert-count control held outer rank
 64, expert rank 64, router width 16, and the complete D3 fit contract fixed
 while raising the routed expert count from two to four. Every parent expert
@@ -171,21 +271,219 @@ candidates enter a repair phase; candidates inside the fidelity envelope
 enter a Pareto compaction phase. Every accepted transition is parent-bound and
 charges compiled, support, and retained-source parameters, bytes, and logical
 MACs. Declared-incomplete or scope-incomparable accounting cannot authorize a
-candidate; the future model-specific worker must still derive the accounting
-receipt from the executable rather than trusting caller totals.
+candidate.
 
-Repeated selection does not spend the final guard. The campaign uses separate
-pairwise family-disjoint `calibration_a_fit`,
-`calibration_a_selection`, and `calibration_a_guard` roles. The complete
-lineage is frozen before the controller invokes its single A-guard callback,
-and only a passing, budget-compliant result can emit a candidate-binding
-development handoff. The generic in-process controller is not itself a
-cross-run one-shot authority; the real Gemma worker must add a claim-first
-A-guard ledger around that callback. The existing
-Calibration-B manifest is registered only as a forbidden identity and remains
-unopened. Because the legacy one-shot runtime is bound to the old failed
-candidate, a new progressive winner will require a candidate-bound shadow
-protocol/runtime before it can consume that final one-shot.
+The Gemma-specific worker and first candidate-bound lowerer are now present.
+The worker materializes three
+strict A-only panels, streams source-authoritative seed/projection/carrier
+metrics, and maps distinct residuals at `layer.4.mlp.normalized_input` and the
+complete `layer.4.output` boundary. A single native autograd pass differentiates
+next-token NLL with respect to both X4 and H4; the private A-fit archive keeps
+full L3 source modes, logical positions, masks, native/candidate boundaries,
+and gradients while scalar receipts retain only hashes and ranked geometry.
+After X4 is accepted, a separate fit-only pass can replay that exact
+candidate, detach its realized H4 as the autograd leaf, and measure the
+candidate-conditioned H4 NLL VJP. The bridge requires this gradient pass to
+produce a bitwise-identical execution artifact to the ordinary candidate
+pass, and it never retains model-parameter gradients.
+
+The mapper uses family/example-balanced residual PCA with a bounded NLL-VJP
+alignment tilt and post-hoc activation-gradient-Gram scores. It uses the
+native tangent at the seed and the candidate-conditioned tangent after X4;
+this is not a Fisher eigendecomposition or held-out JVP validation. The lowerer fits
+homogeneous causal finite-displacement ridge kernels and builds immutable X4
+or H4 repair heads. Its executable bridge owns one Gemma prefill forward: Y3
+is clamped, the rank-64 base graph and X4 head run at X4, the H4 head runs
+later in the same nonlinear carrier, and unsupported rows preserve the
+same-pass reference rather than a hidden native-X4 fallback. Joint X4+H4
+candidates are constructed sequentially—remeasure after X4, then fit H4—so
+the H4 target reflects the first head. The baseline H4 repair reads only L3
+source modes. The optional realized-state arm also reads the immutable
+post-X4, pre-H4-correction activation in the same forward, projects it through
+the existing H4 decoder, and mixes those coordinates through an authenticated
+`rank × rank` state kernel. Exact scoped parameters, bytes, and linear/modal
+MAC upper bounds include the retained Gemma carrier.
+
+This is a tested executable overlay, not a qualified compression result: it retains
+the factorized Gemma model and adds bridge/head state. It is also an
+integrity-heavy research prefill path, not a latency result: full-model and
+tensor hashing, Python dispatch, transfers, temporary memory, cached
+autoregressive decode, and wall-clock speed are outside the declared
+linear/modal MAC scope. The legacy multi-pass shadow remains the
+source-authoritative evaluator.
+
+Repeated selection does not spend the final guard. The implemented campaign
+uses separate pairwise family-disjoint `calibration_a_fit`,
+`calibration_a_selection`, and `calibration_a_guard` roles. A guard-incapable
+development runner can freeze an eligible challenger at
+`ready_for_guard_claim`; only a separate finalizer accepts the one-shot guard
+callback. In that mode the Gemma worker receives no guard authority, provider,
+or materialized guard panel. The claim-gated path still requires an external
+durable claim-first authority, and only a guard-passing, budget-compliant
+result can emit a candidate-binding handoff. The existing Calibration-B
+manifest is registered only as a forbidden identity and remains unopened.
+Because the legacy one-shot runtime is bound to the old failed candidate, a
+new progressive winner will require a candidate-bound shadow protocol/runtime
+before it can consume that final one-shot.
+
+The first real CPU campaign is now recorded as adaptive development. It
+preregistered a forced X4 → remeasure → H4 transition, separated actual
+candidate-output qualification from ancestor/modal diagnostics, and bound the
+earlier pilot transcript as lineage. X4 reduced aggregate and worst-family
+boundary relative error by 11.8% and 4.2%, so it was accepted as the staging
+step. The original L3-only H4 candidate improved KL and aggregate top-1
+agreement but badly regressed absolute and tail NLL, so it was rejected
+against the pre-X4 anchor:
+
+| selection candidate | abs. ΔNLL | KL | top-1 agreement | p90 abs. ΔNLL |
+|---|---:|---:|---:|---:|
+| rank-64 seed | 0.0937 | 1.3092 | 0.4189 | 0.4333 |
+| X4 rank-8 | 0.1450 | 1.2833 | 0.3962 | 0.3894 |
+| X4 + H4 rank-8 (L3-only input) | 0.3778 | 0.9644 | 0.4792 | 0.7927 |
+
+The result is `stalled_fidelity`: no challenger or handoff was emitted, and
+the rotated manifest-global guard remains unopened and unclaimed. The X4
+runtime accounts for 212.50M parameters and 212.25M logical MACs/token,
+20.74% and 20.82% below raw Gemma respectively, but almost all of that saving
+comes from the retained factorized carrier—not from the residual head. The
+first loss-aware follow-up has also run. It replaces only the H4 coefficient
+fit with the bounded metric `I + u uᵀ`, where `u` is the normalized
+source-native NLL gradient; deployed shape and cost remain unchanged.
+
+| H4 fit / input | fit linearized-NLL RMSE | fit normalized-direction RMSE | fit hidden RMSE | selection abs. ΔNLL | selection KL | top-1 | p90 abs. ΔNLL |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| hidden-residual ridge / L3 | 2.822196 | 2.937411 | 0.000533 | 0.377753 | 0.964429 | 0.479245 | 0.792749 |
+| source-NLL-VJP metric / L3 | 2.821386 | 2.936489 | 0.018397 | 0.377860 | 0.964445 | 0.479245 | 0.792909 |
+| candidate-H4-VJP remap + metric / L3 | 2.720673 | 3.337574 | 0.021149 | 0.377742 | 0.964426 | 0.479245 | 0.792648 |
+| candidate-H4-VJP + realized-H4 decoder modes | 2.720673 | 3.337573 | 0.021148 | 0.389134 | 0.948135 | 0.467925 | 0.799620 |
+
+The candidate-tangent-conditioned arm uses the post-X4 VJP in both residual
+direction mapping and the bounded coefficient metric. It reduced fit
+linearized-NLL RMSE by `3.60%` versus ridge, but normalized-direction RMSE
+worsened `13.62%` and hidden error became `39.69×` ridge. Its held-out
+changes were microscopic: absolute ΔNLL improved by `0.0000111`, KL by
+`0.0000035`, p90 ΔNLL by `0.0001013`, and top-1 did not change. The H4 child
+therefore failed every execution-fidelity axis and was rejected with
+`stalled_fidelity`; X4 remains active.
+
+The realized-state arm then held rank, lag count, VJP objective, corpus, and
+one-forward execution fixed. For current pre-correction H4 state `h_t`, output
+decoder `D`, lagged L3 modes `s`, and state kernel `A`, it executes
+`q_t = h_t Dᵀ` and
+`Δh_t = [Σ_l s_(t-l) K_l + q_t A] D`. The pointwise term reads no future
+position and introduces no feedback loop. At rank 8 it adds exactly 64
+parameters, 512 runtime bytes, and 5,184 logical MACs/token.
+
+That feature was active but did not add meaningful fit power: hidden RMSE
+improved only `0.00154%`, while the two NLL fit errors changed by less than
+`0.000003%`. Held-out KL improved `1.69%`, but absolute ΔNLL worsened `3.02%`,
+p90 ΔNLL worsened `0.88%`, and top-1 fell from `127/265` to `124/265`.
+Every execution-fidelity axis still failed, the H4 child was rejected, and X4
+remains active with `stalled_fidelity`.
+
+The fit-only incremental-signal rung has now isolated that confound. It
+collected the accepted-X4 trace once, then swept lags `1/2/4/8/16/32` and
+independent H4 input ranks `8/16/32` under nested leave-one-family-out
+residualization. Its CLI accepts neither a selection nor guard input. The
+lag-32 design did exactly saturate every outer-fold row space, so all lag-32
+H4 cells added numerical rank zero. Lags 1 through 16 left row-space capacity
+and every requested H4 rank was identifiable.
+
+Lag 4 showed the clearest real signal, but not a stable enough one:
+
+| lag-4 H4 input | macro linearized-NLL improvement | family wins | worst family | projected-residual improvement | head params | head MACs/token |
+|---|---:|---:|---:|---:|---:|---:|
+| reused output decoder, r8 | 1.847% | 3/4 | -2.594% | 14.422% | 7,232 | 12,352 |
+| independent H4, r8 | 1.582% | 3/4 | -1.706% | 14.495% | 12,352 | 12,352 |
+| independent H4, r16 | 2.722% | 3/4 | -4.317% | 19.444% | 17,536 | 17,536 |
+| independent H4, r32 | 3.785% | 3/4 | -2.405% | 31.690% | 27,904 | 27,904 |
+
+The r8 arm stayed inside the 2% worst-family bound but missed the required 2%
+macro gain. Ranks 16 and 32 cleared the macro threshold but failed the
+worst-family bound. The terminal result is therefore
+`no_crossfit_incremental_signal`: zero of 24 cells qualified, no selection
+panel was opened, and no head was deployed. This is developmental evidence
+that realized H4 contains useful incremental directions around lag 4, but
+with family-dependent transfer—not yet a compression, latency, or nonlinear
+gating result. The report is bound by logical hash
+`57f79eb3bde8f3eaddaaf93e1fabe1c71325dc39e2f0db675c3837f735be2641`
+and file hash
+`103d2c7cc04f16769d845c75d10c81a8889c155638fdf9527478645aa83fc0b8`.
+
+That larger replication has now run on 16 new prompts across 8 new families
+and 1,008 affected rows. The fit role was replaced without opening either
+protected role; the selection and guard preclaim views remain exactly
+unchanged. The 3/4 consistency rule generalized to 6/8 wins. Lag 4 did not
+replicate, but the effect reappeared at larger causal context:
+
+| independent H4 input | macro linearized-NLL improvement | family wins | worst family | projected-residual improvement | head params/MACs |
+|---|---:|---:|---:|---:|---:|
+| lag 4, r32 | -0.594% | 3/8 | -5.070% | -3.515% | 27,904 |
+| lag 8, r16 | 2.352% | 7/8 | -6.016% | 7.481% | 19,584 |
+| lag 8, r32 | 2.675% | 6/8 | -9.022% | 18.540% | 29,952 |
+| lag 16, r32 | 4.379% | 7/8 | -3.000% | 19.018% | 34,048 |
+
+The lag-16/r32 arm cleared the macro, win-count, rank, and secondary-metric
+gates, but its one losing family exceeded the 2% regression limit. The result
+therefore remains `no_crossfit_incremental_signal`: zero of 24 cells
+qualified, no selection panel was opened, and no runtime head was emitted.
+This is stronger evidence that realized H4 contains transferable incremental
+signal, but it also rejects the earlier claim that lag 4 is a stable fixed
+architecture.
+
+The next isolated rung locked that single lag-16/r32 head and evaluated only
+the preregistered residual-H4 scales `0.25/0.5/0.75/1.0`. The encoder and
+state kernel were fit once per family fold; alpha only scaled the fixed
+incremental prediction. Alpha 0 remained the matched L3-only control, and
+alpha 1 exactly reproduced the expanded source cell, including every scalar,
+encoder hash, and state-kernel hash.
+
+| fixed residual-H4 scale | macro linearized-NLL improvement | family wins | worst family | projected-residual improvement | normalized-direction improvement | eligible |
+|---:|---:|---:|---:|---:|---:|:---:|
+| 0.25 | 1.840% | 7/8 | -0.016% | 7.522% | 1.697% | no |
+| **0.50** | **3.198%** | **7/8** | **-0.527%** | **13.424%** | **2.769%** | **yes** |
+| 0.75 | 4.049% | 7/8 | -1.527% | 17.353% | 3.193% | yes |
+| 1.00 | 4.379% | 7/8 | -3.000% | 19.018% | 2.958% | no |
+
+The fixed rule selected the smallest passing value, alpha `0.5`. This is a
+real fit-only robustness pass: it retained more than the required 2% macro
+signal while moving the lone family regression comfortably inside the 2%
+bound. It froze a tensor-hash-only recipe with 34,048 parameters and 34,048
+logical MACs/token. Damping changes neither storage nor compute for a nonzero
+head because the scale folds into the kernels offline.
+
+That fit-only result authorized one fresh, family-disjoint finite-NLL
+selection of the single alpha-0.5 head. The recipe was deterministically
+materialized as two authenticated executors: a `13,312`-parameter/MAC
+lag-only alpha-0 control and a `34,048`-parameter/MAC independent-state
+alpha-0.5 challenger. The materialization report is bound by logical hash
+`27944f6e35cbf8e7828af56ef2589df486d55ec5654a92487438d077f3d01c94`
+and file hash
+`7dcde44cd0b01f0e810bc034d5f9a05ec395c95c77b2ba94e4f4d53970236a20`.
+
+The fresh selection has now run once. Alpha 0.5 improved the paired
+family-macro mean prompt error by `13.30%` and won `6/8` families, but its
+worst family regressed `29.62%` and it failed every absolute source-fidelity
+gate. Selection therefore rejected the head and guard remains unopened. This
+is evidence for a useful but unstable incremental H4 direction, not a
+model-level compression, latency, or downstream-fidelity claim.
+
+The damping report is bound by logical hash
+`dc85bb184b88a394d89d6e907ae496a3e920a011f9b7b7fb7e4f6b9a7d8e7a65`,
+analysis hash
+`1e01682390c135cd5616f966aa66fead3306bf785d88f5775a9ab6a1a4d439fd`,
+and file hash
+`1ddd80255c014d23a598ad4ec4543218a6437a39a6af3f50697ed98ed64fd94b`.
+
+The expanded source report is bound by logical hash
+`0dbccb00cc17995fe458a7eea6083ca030726c88b5b7df5884a0ae34087a107d`
+and file hash
+`91d38b7ee2abd2693a0855e4fd10d082812d70e78cfee05e04ecd27c918ca584`.
+The replacement guard remains unopened and unclaimed. The one-shot selection
+report is bound by logical hash
+`63bcc5f6b03cee408164583a01109023aeb2352e3a4fa15e23ddbc2d7b842f35`
+and file hash
+`43accd933ea8fce333d056abe7d197a8dd7178049a4c8c9d2a8c9ff2a539ad14`.
 
 The controller, Gemma seed binding, acceptance rules, and next executable rung
 are described in

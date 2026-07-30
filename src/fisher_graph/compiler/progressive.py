@@ -36,7 +36,7 @@ from typing import Literal, Protocol
 PROGRESSIVE_COMPILATION_SCHEMA = (
     "fisher_graph.compiler.progressive_compilation"
 )
-PROGRESSIVE_COMPILATION_FORMAT_VERSION = 1
+PROGRESSIVE_COMPILATION_FORMAT_VERSION = 3
 
 ProgressivePhase = Literal["repair", "compact"]
 MutationKind = Literal[
@@ -52,6 +52,7 @@ MutationKind = Literal[
     "remove_source_island",
 ]
 ProgressiveStatus = Literal[
+    "ready_for_guard_claim",
     "ready_for_candidate_binding",
     "rejected_by_guard",
     "stalled_fidelity",
@@ -76,9 +77,38 @@ _COMPACT_MUTATIONS = frozenset(
         "remove_source_island",
     }
 )
+_FIDELITY_AXIS_NAMES = (
+    "boundary.cosine",
+    "boundary.minimum_family_source_signal",
+    "boundary.relative_error",
+    "boundary.valid_target_coverage",
+    "boundary.worst_family_cosine",
+    "boundary.worst_family_relative_error",
+    "candidate_behavior.absolute_delta_nll_per_token",
+    "candidate_behavior.per_prompt_p10_top1_agreement_to_source",
+    "candidate_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "candidate_behavior.source_to_candidate_kl_per_token",
+    "candidate_behavior.top1_agreement_to_source",
+    "carrier_oracle_behavior.absolute_delta_nll_per_token",
+    "carrier_oracle_behavior.per_prompt_p10_top1_agreement_to_source",
+    "carrier_oracle_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "carrier_oracle_behavior.source_to_candidate_kl_per_token",
+    "carrier_oracle_behavior.top1_agreement_to_source",
+    "operator_nrmse",
+    "projection.full_width_cosine",
+    "projection.full_width_relative_error",
+    "projection.minimum_family_source_signal",
+    "projection.worst_family_cosine",
+    "projection.worst_family_relative_error",
+    "projection_oracle_behavior.absolute_delta_nll_per_token",
+    "projection_oracle_behavior.per_prompt_p10_top1_agreement_to_source",
+    "projection_oracle_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "projection_oracle_behavior.source_to_candidate_kl_per_token",
+    "projection_oracle_behavior.top1_agreement_to_source",
+)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$")
-_HASH_DOMAIN = b"fisher-graph:progressive-compilation:v1\0"
+_HASH_DOMAIN = b"fisher-graph:progressive-compilation:v2\0"
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -908,7 +938,7 @@ class ProgressiveFidelity:
 
 @dataclass(frozen=True, slots=True)
 class ProgressiveFidelityTargets:
-    """Complete gates and the normalized burden used during repair."""
+    """Measured targets plus the explicit axes that gate deployment."""
 
     candidate_behavior: ProgressiveBehavioralTargets
     projection_oracle_behavior: ProgressiveBehavioralTargets
@@ -925,6 +955,7 @@ class ProgressiveFidelityTargets:
     worst_family_projection_relative_error_max: float
     worst_family_projection_cosine_min: float
     minimum_family_source_full_width_signal_l2_norm: float
+    execution_fidelity_axis_names: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -966,6 +997,24 @@ class ProgressiveFidelityTargets:
                     f"{name} must be below 1 for normalized repair scoring"
                 )
             object.__setattr__(self, name, value)
+        if self.execution_fidelity_axis_names is not None:
+            names = self.execution_fidelity_axis_names
+            if type(names) is not tuple or not names:
+                raise ValueError(
+                    "execution_fidelity_axis_names must be a nonempty "
+                    "tuple or None"
+                )
+            if names != tuple(sorted(set(names))):
+                raise ValueError(
+                    "execution_fidelity_axis_names must be sorted and unique"
+                )
+            unknown = tuple(
+                name for name in names if name not in _FIDELITY_AXIS_NAMES
+            )
+            if unknown:
+                raise ValueError(
+                    f"unknown hard fidelity axes: {unknown!r}"
+                )
 
     @staticmethod
     def _minimum_ratio(observed: float, minimum: float) -> float:
@@ -1053,14 +1102,67 @@ class ProgressiveFidelityTargets:
         )
         return ratios
 
-    def burden(self, fidelity: ProgressiveFidelity) -> float:
-        return max(self.normalized_ratios(fidelity).values())
+    @property
+    def resolved_execution_fidelity_axis_names(self) -> tuple[str, ...]:
+        """Return the canonical axes that qualify executable behavior."""
 
-    def passes(self, fidelity: ProgressiveFidelity) -> bool:
+        return (
+            _FIDELITY_AXIS_NAMES
+            if self.execution_fidelity_axis_names is None
+            else self.execution_fidelity_axis_names
+        )
+
+    @property
+    def structural_diagnostic_axis_names(self) -> tuple[str, ...]:
+        """Return structural measurements outside the execution claim."""
+
+        execution = frozenset(
+            self.resolved_execution_fidelity_axis_names
+        )
+        return tuple(
+            name for name in _FIDELITY_AXIS_NAMES if name not in execution
+        )
+
+    def execution_fidelity_ratios(
+        self,
+        fidelity: ProgressiveFidelity,
+    ) -> dict[str, float]:
+        """Return only preregistered candidate-output qualification ratios."""
+
+        ratios = self.normalized_ratios(fidelity)
+        return {
+            name: ratios[name]
+            for name in self.resolved_execution_fidelity_axis_names
+        }
+
+    def structural_diagnostic_ratios(
+        self,
+        fidelity: ProgressiveFidelity,
+    ) -> dict[str, float]:
+        """Return non-veto structure metrics without hiding failures."""
+
+        ratios = self.normalized_ratios(fidelity)
+        return {
+            name: ratios[name]
+            for name in self.structural_diagnostic_axis_names
+        }
+
+    def burden(self, fidelity: ProgressiveFidelity) -> float:
+        return max(self.execution_fidelity_ratios(fidelity).values())
+
+    def passes_execution_fidelity(
+        self,
+        fidelity: ProgressiveFidelity,
+    ) -> bool:
         return all(
             value <= 1.0
-            for value in self.normalized_ratios(fidelity).values()
+            for value in self.execution_fidelity_ratios(fidelity).values()
         )
+
+    def passes(self, fidelity: ProgressiveFidelity) -> bool:
+        """Compatibility alias for the explicit execution-fidelity claim."""
+
+        return self.passes_execution_fidelity(fidelity)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -1105,6 +1207,185 @@ class ProgressiveFidelityTargets:
                     self.minimum_family_source_full_width_signal_l2_norm
                 ),
             },
+            "acceptance": {
+                "qualification_claim": (
+                    "candidate_execution_fidelity_only"
+                ),
+                "execution_fidelity_axis_names": (
+                    self.resolved_execution_fidelity_axis_names
+                ),
+                "structural_diagnostic_axis_names": (
+                    self.structural_diagnostic_axis_names
+                ),
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressiveStagingTransition:
+    """A preregistered non-final mutation that unlocks a later repair."""
+
+    transition_id: str
+    parent_iteration: int
+    mutation_kind: MutationKind
+    parent_mutation_kind: MutationKind
+    required_successor_mutation_kind: MutationKind
+    target_location: str
+    target_rank_count: int
+    completion_target_location: str
+    completion_target_rank_count: int
+    target_axis_names: tuple[str, ...]
+    invariant_axis_names: tuple[str, ...] = ()
+    permitted_regression_axis_names: tuple[str, ...] = ()
+    completion_axis_names: tuple[str, ...] = ()
+    minimum_relative_burden_reduction: float = 0.0
+
+    def __post_init__(self) -> None:
+        _identifier(self.transition_id, label="transition_id")
+        _nonnegative_integer(
+            self.parent_iteration,
+            label="parent_iteration",
+        )
+        if self.mutation_kind not in _REPAIR_MUTATIONS:
+            raise ValueError(
+                "staging transition must use a repair mutation kind"
+            )
+        all_mutations = _REPAIR_MUTATIONS | _COMPACT_MUTATIONS | {"seed"}
+        if self.parent_mutation_kind not in all_mutations:
+            raise ValueError("unsupported staging parent mutation kind")
+        if self.required_successor_mutation_kind not in _REPAIR_MUTATIONS:
+            raise ValueError(
+                "staging successor must use a repair mutation kind"
+            )
+        if self.required_successor_mutation_kind == self.mutation_kind:
+            raise ValueError(
+                "staging successor must differ from the staging mutation"
+            )
+        _identifier(self.target_location, label="target_location")
+        _positive_integer(self.target_rank_count, label="target_rank_count")
+        _identifier(
+            self.completion_target_location,
+            label="completion_target_location",
+        )
+        _positive_integer(
+            self.completion_target_rank_count,
+            label="completion_target_rank_count",
+        )
+        names = self.target_axis_names
+        if (
+            type(names) is not tuple
+            or not names
+            or names != tuple(sorted(set(names)))
+        ):
+            raise ValueError(
+                "staging target axes must be a sorted nonempty unique tuple"
+            )
+        unknown = tuple(
+            name for name in names if name not in _FIDELITY_AXIS_NAMES
+        )
+        if unknown:
+            raise ValueError(f"unknown staging fidelity axes: {unknown!r}")
+        invariants = self.invariant_axis_names
+        if (
+            type(invariants) is not tuple
+            or invariants != tuple(sorted(set(invariants)))
+        ):
+            raise ValueError(
+                "staging invariant axes must be a sorted unique tuple"
+            )
+        unknown_invariants = tuple(
+            name for name in invariants if name not in _FIDELITY_AXIS_NAMES
+        )
+        if unknown_invariants:
+            raise ValueError(
+                "unknown staging invariant fidelity axes: "
+                f"{unknown_invariants!r}"
+            )
+        overlap = tuple(sorted(set(names) & set(invariants)))
+        if overlap:
+            raise ValueError(
+                f"staging target and invariant axes overlap: {overlap!r}"
+            )
+        permitted = self.permitted_regression_axis_names
+        if (
+            type(permitted) is not tuple
+            or permitted != tuple(sorted(set(permitted)))
+        ):
+            raise ValueError(
+                "staging permitted-regression axes must be a sorted "
+                "unique tuple"
+            )
+        unknown_permitted = tuple(
+            name for name in permitted if name not in _FIDELITY_AXIS_NAMES
+        )
+        if unknown_permitted:
+            raise ValueError(
+                "unknown staging permitted-regression axes: "
+                f"{unknown_permitted!r}"
+            )
+        groups = (set(names), set(invariants), set(permitted))
+        if any(
+            groups[left] & groups[right]
+            for left in range(len(groups))
+            for right in range(left + 1, len(groups))
+        ):
+            raise ValueError("staging axis groups must be pairwise disjoint")
+        partition = groups[0] | groups[1] | groups[2]
+        if partition != set(_FIDELITY_AXIS_NAMES):
+            raise ValueError(
+                "staging target, invariant, and permitted-regression axes "
+                "must partition every measured fidelity axis"
+            )
+        completion = self.completion_axis_names
+        if (
+            type(completion) is not tuple
+            or not completion
+            or completion != tuple(sorted(set(completion)))
+        ):
+            raise ValueError(
+                "completion_axis_names must be a sorted nonempty unique tuple"
+            )
+        if not set(completion) <= set(permitted):
+            raise ValueError(
+                "completion axes must be staging-permitted regression axes"
+            )
+        reduction = _unit_interval(
+            self.minimum_relative_burden_reduction,
+            label="minimum_relative_burden_reduction",
+        )
+        if reduction >= 1.0:
+            raise ValueError(
+                "minimum staging reduction must be below one"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "transition_id": self.transition_id,
+            "parent_iteration": self.parent_iteration,
+            "mutation_kind": self.mutation_kind,
+            "parent_mutation_kind": self.parent_mutation_kind,
+            "required_successor_mutation_kind": (
+                self.required_successor_mutation_kind
+            ),
+            "target_location": self.target_location,
+            "target_rank_count": self.target_rank_count,
+            "completion_target_location": (
+                self.completion_target_location
+            ),
+            "completion_target_rank_count": (
+                self.completion_target_rank_count
+            ),
+            "target_axis_names": self.target_axis_names,
+            "invariant_axis_names": self.invariant_axis_names,
+            "permitted_regression_axis_names": (
+                self.permitted_regression_axis_names
+            ),
+            "completion_axis_names": self.completion_axis_names,
+            "minimum_relative_burden_reduction": (
+                self.minimum_relative_burden_reduction
+            ),
+            "final_fidelity_gate_bypassed": True,
+            "resource_budget_bypassed": False,
         }
 
 
@@ -1120,6 +1401,7 @@ class ProgressiveCompilationProtocol:
     seed_resource_receipt_sha256: str
     seed_lineage_sha256s: tuple[str, ...]
     corpus: DevelopmentCorpus
+    development_role_binding_sha256s: tuple[tuple[str, str], ...]
     forbidden_assessment_manifest_sha256s: tuple[str, ...]
     fidelity_targets: ProgressiveFidelityTargets
     resource_budget: ProgressiveResourceBudget
@@ -1127,6 +1409,7 @@ class ProgressiveCompilationProtocol:
     max_proposals_per_iteration: int = 8
     minimum_repair_relative_burden_reduction: float = 0.02
     maximum_repair_axis_regression_fraction: float = 0.25
+    staging_transitions: tuple[ProgressiveStagingTransition, ...] = ()
     compact_after_fidelity: bool = True
     artifact_sha256: str = field(default="", repr=False)
 
@@ -1158,6 +1441,31 @@ class ProgressiveCompilationProtocol:
         )
         if not isinstance(self.corpus, DevelopmentCorpus):
             raise TypeError("corpus must be DevelopmentCorpus")
+        expected_roles = (
+            "calibration_a_fit",
+            "calibration_a_guard",
+            "calibration_a_selection",
+        )
+        if (
+            type(self.development_role_binding_sha256s) is not tuple
+            or len(self.development_role_binding_sha256s) != 3
+            or tuple(
+                role
+                for role, _binding
+                in self.development_role_binding_sha256s
+            )
+            != expected_roles
+        ):
+            raise ValueError(
+                "development role bindings must contain canonical fit, "
+                "guard, and selection identities"
+            )
+        for role, binding in self.development_role_binding_sha256s:
+            _identifier(role, label="development role")
+            _require_sha256(
+                binding,
+                label=f"{role} development binding",
+            )
         forbidden = _canonical_sha256s(
             self.forbidden_assessment_manifest_sha256s,
             label="forbidden_assessment_manifest_sha256s",
@@ -1201,6 +1509,43 @@ class ProgressiveCompilationProtocol:
             self.maximum_repair_axis_regression_fraction,
             label="maximum_repair_axis_regression_fraction",
         )
+        if type(self.staging_transitions) is not tuple:
+            raise TypeError("staging_transitions must be a tuple")
+        staging_ids = []
+        staging_kinds = []
+        staging_parent_iterations = []
+        for transition in self.staging_transitions:
+            if not isinstance(transition, ProgressiveStagingTransition):
+                raise TypeError(
+                    "staging_transitions must contain "
+                    "ProgressiveStagingTransition values"
+                )
+            staging_ids.append(transition.transition_id)
+            staging_kinds.append(transition.mutation_kind)
+            staging_parent_iterations.append(transition.parent_iteration)
+        if staging_ids != sorted(set(staging_ids)):
+            raise ValueError(
+                "staging transitions must be sorted by unique transition ID"
+            )
+        if len(set(staging_kinds)) != len(staging_kinds):
+            raise ValueError(
+                "staging transitions must use unique mutation kinds"
+            )
+        if (
+            len(set(staging_parent_iterations))
+            != len(staging_parent_iterations)
+        ):
+            raise ValueError(
+                "staging transitions must use unique parent iterations"
+            )
+        if any(
+            self.max_iterations < transition.parent_iteration + 2
+            for transition in self.staging_transitions
+        ):
+            raise ValueError(
+                "max_iterations must leave room for each staging "
+                "transition and its required successor"
+            )
         if type(self.compact_after_fidelity) is not bool:
             raise TypeError("compact_after_fidelity must be boolean")
         computed = _payload_sha256(
@@ -1241,6 +1586,9 @@ class ProgressiveCompilationProtocol:
                 "lineage_sha256s": self.seed_lineage_sha256s,
             },
             "corpus": self.corpus.to_dict(),
+            "development_role_binding_sha256s": (
+                self.development_role_binding_sha256s
+            ),
             "forbidden_assessment_manifest_sha256s": (
                 self.forbidden_assessment_manifest_sha256s
             ),
@@ -1256,6 +1604,10 @@ class ProgressiveCompilationProtocol:
                 ),
                 "maximum_repair_axis_regression_fraction": (
                     self.maximum_repair_axis_regression_fraction
+                ),
+                "staging_transitions": tuple(
+                    transition.to_dict()
+                    for transition in self.staging_transitions
                 ),
                 "compact_after_fidelity": self.compact_after_fidelity,
                 "failing_phase": "map_repair_selection_validate",
@@ -1282,6 +1634,14 @@ class ProgressiveCompilationProtocol:
             family_ids=self.corpus.fit_family_ids,
         )
 
+    def development_role_binding_sha256(self, role: str) -> str:
+        """Return the exact materialized/preclaim binding for one A role."""
+
+        try:
+            return dict(self.development_role_binding_sha256s)[role]
+        except KeyError as error:
+            raise ValueError(f"unknown development role: {role!r}") from error
+
     def guard_view(self) -> GuardDevelopmentView:
         return GuardDevelopmentView(
             protocol_sha256=self.artifact_sha256,
@@ -1296,6 +1656,38 @@ class ProgressiveCompilationProtocol:
             manifest_sha256=self.corpus.selection_manifest_sha256,
             example_count=self.corpus.selection_example_count,
             family_ids=self.corpus.selection_family_ids,
+        )
+
+    def staging_transition_for(
+        self,
+        mutation_kind: MutationKind,
+    ) -> ProgressiveStagingTransition | None:
+        """Return the frozen non-final transition policy for a mutation."""
+
+        return next(
+            (
+                transition
+                for transition in self.staging_transitions
+                if transition.mutation_kind == mutation_kind
+            ),
+            None,
+        )
+
+    def staging_transition_for_parent(
+        self,
+        candidate: ProgressiveCandidate,
+    ) -> ProgressiveStagingTransition | None:
+        """Return the one-use transition scheduled at this exact parent."""
+
+        return next(
+            (
+                transition
+                for transition in self.staging_transitions
+                if transition.parent_iteration == candidate.iteration
+                and transition.parent_mutation_kind
+                == candidate.mutation_kind
+            ),
+            None,
         )
 
     def validate_integrity(self) -> None:
@@ -1655,6 +2047,7 @@ class CandidateEvaluation:
     fidelity: ProgressiveFidelity
     resources: ProgressiveResourceFootprint
     challenger_receipt_sha256: str | None = None
+    guard_claim_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -1682,14 +2075,22 @@ class CandidateEvaluation:
                 "evaluation coverage manifest binding differs"
             )
         if self.development_role == "calibration_a_selection":
-            if self.challenger_receipt_sha256 is not None:
+            if (
+                self.challenger_receipt_sha256 is not None
+                or self.guard_claim_sha256 is not None
+            ):
                 raise ValueError(
-                    "selection evaluation cannot bind a frozen challenger"
+                    "selection evaluation cannot bind a frozen challenger "
+                    "or guard claim"
                 )
         else:
             _require_sha256(
                 self.challenger_receipt_sha256,
                 label="challenger_receipt_sha256",
+            )
+            _require_sha256(
+                self.guard_claim_sha256,
+                label="guard_claim_sha256",
             )
         if not isinstance(self.fidelity, ProgressiveFidelity):
             raise TypeError("fidelity must be ProgressiveFidelity")
@@ -1720,6 +2121,7 @@ class CandidateEvaluation:
             "challenger_receipt_sha256": (
                 self.challenger_receipt_sha256
             ),
+            "guard_claim_sha256": self.guard_claim_sha256,
             "fidelity": self.fidelity.to_dict(),
             "resources": self.resources.to_dict(),
             "tensor_payload_exposed": False,
@@ -2100,6 +2502,7 @@ class ProgressiveCompilationResult:
                 "candidate"
             )
         if self.status not in (
+            "ready_for_guard_claim",
             "ready_for_candidate_binding",
             "rejected_by_guard",
             "stalled_fidelity",
@@ -2132,15 +2535,28 @@ class ProgressiveCompilationResult:
                 or guard.resources != self.final_candidate.resources
             ):
                 raise ValueError("final guard evaluation binding differs")
-        guard_terminal = self.status in (
+        guarded_terminal = self.status in (
             "ready_for_candidate_binding",
             "rejected_by_guard",
         )
         if (
-            guard_terminal
-            != (self.guard_evaluation is not None)
-            or guard_terminal
-            != (self.frozen_challenger is not None)
+            guarded_terminal != (self.guard_evaluation is not None)
+            or (
+                self.status == "ready_for_guard_claim"
+            )
+            != (
+                self.frozen_challenger is not None
+                and self.guard_evaluation is None
+            )
+            or (
+                self.status
+                not in (
+                    "ready_for_guard_claim",
+                    "ready_for_candidate_binding",
+                    "rejected_by_guard",
+                )
+            )
+            != (self.frozen_challenger is None)
         ):
             raise ValueError(
                 "challenger or guard presence differs from terminal status"
@@ -2153,13 +2569,14 @@ class ProgressiveCompilationResult:
                 != final_receipt
                 or self.frozen_challenger.selection_evaluation.receipt_sha256
                 != self.final_selection_evaluation.receipt_sha256
-                or self.guard_evaluation is None
-                or self.guard_evaluation.challenger_receipt_sha256
+            ):
+                raise ValueError("frozen challenger binding differs")
+            if (
+                self.guard_evaluation is not None
+                and self.guard_evaluation.challenger_receipt_sha256
                 != self.frozen_challenger.receipt_sha256
             ):
-                raise ValueError(
-                    "frozen challenger or guard binding differs"
-                )
+                raise ValueError("frozen challenger or guard binding differs")
 
         proposal_receipts = tuple(
             proposal.receipt_sha256
@@ -2397,6 +2814,11 @@ class ProgressiveCompilationResult:
         active_candidate = seed
         active_evaluation = seed_evaluation
         accepted_count = 0
+        pending_successor_mutation_kind: MutationKind | None = None
+        pending_staging_transition: (
+            ProgressiveStagingTransition | None
+        ) = None
+        staging_completion_anchor: CandidateEvaluation | None = None
         replayed_terminal_status: ProgressiveStatus | None = None
 
         if len(self.iterations) > protocol.max_iterations:
@@ -2411,22 +2833,34 @@ class ProgressiveCompilationResult:
             resources_before = protocol.resource_budget.allows(
                 active_candidate.resources
             )
+            scheduled_transition = (
+                protocol.staging_transition_for_parent(active_candidate)
+            )
             if (
                 fidelity_before
                 and resources_before
                 and not protocol.compact_after_fidelity
+                and pending_successor_mutation_kind is None
+                and scheduled_transition is None
             ):
                 raise ValueError(
                     "iteration appears after the loop should have "
                     "terminated"
                 )
             expected_phase: ProgressivePhase = (
-                "compact" if fidelity_before else "repair"
+                "compact"
+                if (
+                    fidelity_before
+                    and resources_before
+                    and pending_successor_mutation_kind is None
+                    and scheduled_transition is None
+                )
+                else "repair"
             )
             if receipt.phase != expected_phase:
                 raise ValueError(
                     "iteration phase differs from the active-head "
-                    "fidelity state"
+                    "fidelity/resource state"
                 )
 
             residual_map = maps_by_receipt.get(
@@ -2460,6 +2894,32 @@ class ProgressiveCompilationResult:
             if len(proposals) > protocol.max_proposals_per_iteration:
                 raise ValueError(
                     "archived proposal count exceeds the protocol"
+                )
+            if (
+                pending_successor_mutation_kind is not None
+                and any(
+                    proposal.mutation_kind
+                    != pending_successor_mutation_kind
+                    for proposal in proposals
+                )
+            ):
+                raise ValueError(
+                    "staging successor iteration proposed a different "
+                    "mutation kind"
+                )
+            if scheduled_transition is not None:
+                _validate_transition_proposals(
+                    proposals=proposals,
+                    residual_map=residual_map,
+                    transition=scheduled_transition,
+                    completion=False,
+                )
+            elif pending_staging_transition is not None:
+                _validate_transition_proposals(
+                    proposals=proposals,
+                    residual_map=residual_map,
+                    transition=pending_staging_transition,
+                    completion=True,
                 )
 
             evaluated: list[
@@ -2535,7 +2995,12 @@ class ProgressiveCompilationResult:
             selected = _select_evaluation(
                 protocol=protocol,
                 phase=receipt.phase,
+                parent_candidate=active_candidate,
                 parent=active_evaluation,
+                staging_completion_anchor=staging_completion_anchor,
+                staging_completion_transition=(
+                    pending_staging_transition
+                ),
                 candidates=evaluated,
             )
             if selected is None:
@@ -2558,7 +3023,12 @@ class ProgressiveCompilationResult:
                     raise ValueError(
                         "rejected iteration is not terminal"
                     )
-                if fidelity_before and resources_before:
+                if (
+                    fidelity_before
+                    and resources_before
+                    and pending_successor_mutation_kind is None
+                    and scheduled_transition is None
+                ):
                     replayed_terminal_status = (
                         "ready_for_candidate_binding"
                     )
@@ -2567,7 +3037,10 @@ class ProgressiveCompilationResult:
                 else:
                     replayed_terminal_status = "stalled_fidelity"
             else:
-                _, child, evaluation = selected
+                proposal, child, evaluation = selected
+                was_staging_completion = (
+                    pending_successor_mutation_kind is not None
+                )
                 if (
                     receipt.accepted_candidate_receipt_sha256
                     != child.receipt_sha256
@@ -2578,12 +3051,47 @@ class ProgressiveCompilationResult:
                         "accepted child differs from deterministic selection"
                     )
                 expected_decision = (
-                    "accepted_fidelity_repair"
-                    if receipt.phase == "repair"
-                    else "accepted_pareto_compaction"
+                    "accepted_staging_completion"
+                    if was_staging_completion
+                    else (
+                        _repair_decision(
+                            protocol=protocol,
+                            proposal=proposal,
+                            parent_candidate=active_candidate,
+                            parent=active_evaluation,
+                            child=evaluation,
+                        )
+                        if receipt.phase == "repair"
+                        else "accepted_pareto_compaction"
+                    )
                 )
                 if receipt.decision != expected_decision:
                     raise ValueError("iteration acceptance decision differs")
+                if pending_successor_mutation_kind is not None:
+                    if (
+                        proposal.mutation_kind
+                        != pending_successor_mutation_kind
+                    ):
+                        raise ValueError(
+                            "accepted candidate does not discharge the "
+                            "staging successor"
+                        )
+                    pending_successor_mutation_kind = None
+                    pending_staging_transition = None
+                    staging_completion_anchor = None
+                elif expected_decision == "accepted_staging_transition":
+                    transition = protocol.staging_transition_for(
+                        proposal.mutation_kind
+                    )
+                    if transition is None:
+                        raise ValueError(
+                            "staging decision lacks a frozen transition"
+                        )
+                    pending_successor_mutation_kind = (
+                        transition.required_successor_mutation_kind
+                    )
+                    pending_staging_transition = transition
+                    staging_completion_anchor = active_evaluation
                 active_candidate = child
                 active_evaluation = evaluation
                 accepted_count += 1
@@ -2622,13 +3130,26 @@ class ProgressiveCompilationResult:
             if len(self.iterations) == protocol.max_iterations:
                 replayed_terminal_status = (
                     "ready_for_candidate_binding"
-                    if selection_passed and resource_passed
+                    if (
+                        selection_passed
+                        and resource_passed
+                        and pending_successor_mutation_kind is None
+                        and protocol.staging_transition_for_parent(
+                            active_candidate
+                        )
+                        is None
+                    )
                     else "max_iterations"
                 )
             elif (
                 selection_passed
                 and resource_passed
                 and not protocol.compact_after_fidelity
+                and pending_successor_mutation_kind is None
+                and protocol.staging_transition_for_parent(
+                    active_candidate
+                )
+                is None
             ):
                 replayed_terminal_status = (
                     "ready_for_candidate_binding"
@@ -2639,14 +3160,8 @@ class ProgressiveCompilationResult:
                     "policy permits"
                 )
 
-        if self.guard_evaluation is not None:
-            if (
-                replayed_terminal_status
-                != "ready_for_candidate_binding"
-            ):
-                raise ValueError(
-                    "guard was opened before legal loop termination"
-                )
+        expected_challenger: FrozenCalibrationAChallenger | None = None
+        if replayed_terminal_status == "ready_for_candidate_binding":
             expected_challenger = FrozenCalibrationAChallenger(
                 protocol_sha256=protocol.artifact_sha256,
                 seed_candidate_receipt_sha256=(
@@ -2679,6 +3194,11 @@ class ProgressiveCompilationResult:
                     in self.selection_evaluation_archive
                 ),
             )
+        if self.guard_evaluation is not None:
+            if expected_challenger is None:
+                raise ValueError(
+                    "guard was opened before legal loop termination"
+                )
             if (
                 self.frozen_challenger is None
                 or self.frozen_challenger.receipt_sha256
@@ -2706,14 +3226,21 @@ class ProgressiveCompilationResult:
             if self.status != expected_status:
                 raise ValueError("guard outcome and result status differ")
         else:
-            if (
-                replayed_terminal_status
-                == "ready_for_candidate_binding"
+            if expected_challenger is not None:
+                if (
+                    self.status != "ready_for_guard_claim"
+                    or self.frozen_challenger is None
+                    or self.frozen_challenger.receipt_sha256
+                    != expected_challenger.receipt_sha256
+                ):
+                    raise ValueError(
+                        "guard-deferred result does not bind the "
+                        "recomputed frozen challenger"
+                    )
+            elif (
+                self.frozen_challenger is not None
+                or self.status != replayed_terminal_status
             ):
-                raise ValueError(
-                    "legally ready result lacks its terminal guard"
-                )
-            if self.status != replayed_terminal_status:
                 raise ValueError(
                     "unguarded result status differs from loop replay"
                 )
@@ -2733,6 +3260,7 @@ class FrozenProgressiveCandidateHandoff:
     calibration_a_challenger_receipt_sha256: str
     selection_evaluation_receipt_sha256: str
     guard_evaluation_receipt_sha256: str
+    guard_claim_sha256: str
     resources: ProgressiveResourceFootprint
     fidelity: ProgressiveFidelity
     assessment_accessed: bool = False
@@ -2748,6 +3276,7 @@ class FrozenProgressiveCandidateHandoff:
             "calibration_a_challenger_receipt_sha256",
             "selection_evaluation_receipt_sha256",
             "guard_evaluation_receipt_sha256",
+            "guard_claim_sha256",
         ):
             _require_sha256(getattr(self, name), label=name)
         _identifier(self.candidate_id, label="candidate_id")
@@ -2799,6 +3328,7 @@ class FrozenProgressiveCandidateHandoff:
             "guard_evaluation_receipt_sha256": (
                 self.guard_evaluation_receipt_sha256
             ),
+            "guard_claim_sha256": self.guard_claim_sha256,
             "resources": self.resources.to_dict(),
             "fidelity": self.fidelity.to_dict(),
             "assessment_accessed": False,
@@ -2829,9 +3359,10 @@ def _validate_evaluation(
         if (
             expected_challenger_receipt_sha256 is not None
             or evaluation.challenger_receipt_sha256 is not None
+            or evaluation.guard_claim_sha256 is not None
         ):
             raise ValueError(
-                "selection evaluation cannot bind a challenger"
+                "selection evaluation cannot bind a challenger or guard claim"
             )
     else:
         expected_challenger = _require_sha256(
@@ -2840,6 +3371,10 @@ def _validate_evaluation(
         )
         if evaluation.challenger_receipt_sha256 != expected_challenger:
             raise ValueError("guard challenger binding differs")
+        _require_sha256(
+            evaluation.guard_claim_sha256,
+            label="guard_claim_sha256",
+        )
     expected_manifest = (
         protocol.corpus.selection_manifest_sha256
         if expected_role == "calibration_a_selection"
@@ -2943,6 +3478,69 @@ def _validate_proposal(
         raise ValueError("proposal references an unknown residual target")
 
 
+def _proposal_matches_transition_site(
+    *,
+    proposal: MutationProposal,
+    residual_map: ResidualMap,
+    transition: ProgressiveStagingTransition,
+    completion: bool,
+) -> bool:
+    expected_kind = (
+        transition.required_successor_mutation_kind
+        if completion
+        else transition.mutation_kind
+    )
+    expected_location = (
+        transition.completion_target_location
+        if completion
+        else transition.target_location
+    )
+    expected_count = (
+        transition.completion_target_rank_count
+        if completion
+        else transition.target_rank_count
+    )
+    if (
+        proposal.mutation_kind != expected_kind
+        or len(proposal.target_ranks) != expected_count
+        or any(
+            rank >= len(residual_map.targets)
+            for rank in proposal.target_ranks
+        )
+    ):
+        return False
+    return all(
+        residual_map.targets[rank].location == expected_location
+        for rank in proposal.target_ranks
+    )
+
+
+def _validate_transition_proposals(
+    *,
+    proposals: tuple[MutationProposal, ...],
+    residual_map: ResidualMap,
+    transition: ProgressiveStagingTransition,
+    completion: bool,
+) -> None:
+    if not completion and len(proposals) != 1:
+        raise ValueError(
+            "scheduled staging iteration must emit exactly one proposal"
+        )
+    if any(
+        not _proposal_matches_transition_site(
+            proposal=proposal,
+            residual_map=residual_map,
+            transition=transition,
+            completion=completion,
+        )
+        for proposal in proposals
+    ):
+        label = "completion" if completion else "staging"
+        raise ValueError(
+            f"{label} proposal kind, location, or rank count differs"
+        )
+
+
 def _validate_built_candidate(
     *,
     parent: ProgressiveCandidate,
@@ -2967,15 +3565,26 @@ def _validate_built_candidate(
         raise ValueError("mutation must produce a new candidate artifact")
 
 
-def _repair_is_eligible(
+def _ordinary_repair_is_eligible(
     *,
     protocol: ProgressiveCompilationProtocol,
     parent: CandidateEvaluation,
     child: CandidateEvaluation,
 ) -> bool:
     targets = protocol.fidelity_targets
-    parent_ratios = targets.normalized_ratios(parent.fidelity)
-    child_ratios = targets.normalized_ratios(child.fidelity)
+    if (
+        not parent.resources.cost_complete
+        and child.resources.cost_complete
+        and targets.passes(child.fidelity)
+        and protocol.resource_budget.allows(child.resources)
+    ):
+        # A measurement-only seed can already lie inside the fidelity
+        # envelope while remaining undeployable.  Permit one complete,
+        # budget-compliant materialization without pretending that it reduced
+        # fidelity burden relative to the non-serving parent.
+        return True
+    parent_ratios = targets.execution_fidelity_ratios(parent.fidelity)
+    child_ratios = targets.execution_fidelity_ratios(child.fidelity)
     parent_burden = max(parent_ratios.values())
     child_burden = max(child_ratios.values())
     required = parent_burden * (
@@ -2990,6 +3599,124 @@ def _repair_is_eligible(
         if child_ratio > allowed:
             return False
     return True
+
+
+def _staging_repair_is_eligible(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    proposal: MutationProposal,
+    parent_candidate: ProgressiveCandidate,
+    parent: CandidateEvaluation,
+    child: CandidateEvaluation,
+) -> bool:
+    transition = protocol.staging_transition_for(
+        proposal.mutation_kind
+    )
+    if (
+        transition is None
+        or parent_candidate.mutation_kind
+        != transition.parent_mutation_kind
+        or parent_candidate.iteration != transition.parent_iteration
+        or not child.resources.cost_complete
+    ):
+        return False
+    targets = protocol.fidelity_targets
+    parent_ratios = targets.normalized_ratios(parent.fidelity)
+    child_ratios = targets.normalized_ratios(child.fidelity)
+    reduction = transition.minimum_relative_burden_reduction
+    if any(
+        child_ratios[name] >= parent_ratios[name] * (1.0 - reduction)
+        for name in transition.target_axis_names
+    ):
+        return False
+    return all(
+        child_ratios[name] == parent_ratios[name]
+        for name in transition.invariant_axis_names
+    )
+
+
+def _repair_is_eligible(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    proposal: MutationProposal,
+    parent_candidate: ProgressiveCandidate,
+    parent: CandidateEvaluation,
+    child: CandidateEvaluation,
+) -> bool:
+    scheduled = protocol.staging_transition_for_parent(parent_candidate)
+    if (
+        scheduled is not None
+        and proposal.mutation_kind == scheduled.mutation_kind
+    ):
+        return _staging_repair_is_eligible(
+            protocol=protocol,
+            proposal=proposal,
+            parent_candidate=parent_candidate,
+            parent=parent,
+            child=child,
+        )
+    return _ordinary_repair_is_eligible(
+        protocol=protocol,
+        parent=parent,
+        child=child,
+    )
+
+
+def _staging_completion_is_eligible(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    transition: ProgressiveStagingTransition,
+    anchor: CandidateEvaluation,
+    child: CandidateEvaluation,
+) -> bool:
+    if not child.resources.cost_complete:
+        return False
+    targets = protocol.fidelity_targets
+    if targets.passes_execution_fidelity(child.fidelity):
+        return True
+    anchor_ratios = targets.normalized_ratios(anchor.fidelity)
+    child_ratios = targets.normalized_ratios(child.fidelity)
+    axes = transition.completion_axis_names
+    anchor_burden = max(anchor_ratios[name] for name in axes)
+    child_burden = max(child_ratios[name] for name in axes)
+    required = anchor_burden * (
+        1.0 - protocol.minimum_repair_relative_burden_reduction
+    )
+    if child_burden > required:
+        return False
+    regression = protocol.maximum_repair_axis_regression_fraction
+    return all(
+        child_ratios[name] <= anchor_ratios[name] * (1.0 + regression)
+        for name in axes
+    )
+
+
+def _repair_decision(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    proposal: MutationProposal,
+    parent_candidate: ProgressiveCandidate,
+    parent: CandidateEvaluation,
+    child: CandidateEvaluation,
+) -> str:
+    if _staging_repair_is_eligible(
+        protocol=protocol,
+        proposal=proposal,
+        parent_candidate=parent_candidate,
+        parent=parent,
+        child=child,
+    ):
+        # A declared staging mutation always opens its required-successor
+        # debt, even when it happens to improve the final execution axes too.
+        return "accepted_staging_transition"
+    if (
+        not parent.resources.cost_complete
+        and child.resources.cost_complete
+        and protocol.fidelity_targets.passes(child.fidelity)
+        and protocol.resource_budget.allows(child.resources)
+    ):
+        return "accepted_deployment_materialization"
+    return "accepted_fidelity_repair"
 
 
 def _compact_is_eligible(
@@ -3029,7 +3756,12 @@ def _select_evaluation(
     *,
     protocol: ProgressiveCompilationProtocol,
     phase: ProgressivePhase,
+    parent_candidate: ProgressiveCandidate,
     parent: CandidateEvaluation,
+    staging_completion_anchor: CandidateEvaluation | None = None,
+    staging_completion_transition: (
+        ProgressiveStagingTransition | None
+    ) = None,
     candidates: Sequence[
         tuple[MutationProposal, ProgressiveCandidate, CandidateEvaluation]
     ],
@@ -3040,20 +3772,34 @@ def _select_evaluation(
 ] | None:
     eligible = []
     for item in candidates:
-        _, _, evaluation = item
-        accepted = (
-            _repair_is_eligible(
+        proposal, _, evaluation = item
+        if staging_completion_anchor is not None:
+            if staging_completion_transition is None:
+                raise ValueError(
+                    "staging completion anchor lacks its transition"
+                )
+            accepted = _staging_completion_is_eligible(
                 protocol=protocol,
-                parent=parent,
+                transition=staging_completion_transition,
+                anchor=staging_completion_anchor,
                 child=evaluation,
             )
-            if phase == "repair"
-            else _compact_is_eligible(
-                protocol=protocol,
-                parent=parent,
-                child=evaluation,
+        else:
+            accepted = (
+                _repair_is_eligible(
+                    protocol=protocol,
+                    proposal=proposal,
+                    parent_candidate=parent_candidate,
+                    parent=parent,
+                    child=evaluation,
+                )
+                if phase == "repair"
+                else _compact_is_eligible(
+                    protocol=protocol,
+                    parent=parent,
+                    child=evaluation,
+                )
             )
-        )
         if accepted:
             eligible.append(item)
     if not eligible:
@@ -3091,7 +3837,7 @@ def _select_evaluation(
     return min(eligible, key=key)
 
 
-def run_progressive_compilation(
+def _run_progressive_search(
     *,
     protocol: ProgressiveCompilationProtocol,
     seed_candidate: ProgressiveCandidate,
@@ -3100,9 +3846,9 @@ def run_progressive_compilation(
     propose_mutations: MutationProposer,
     build_candidate: CandidateBuilder,
     evaluate_selection: SelectionEvaluator,
-    evaluate_guard: GuardEvaluator,
+    evaluate_guard: GuardEvaluator | None,
 ) -> ProgressiveCompilationResult:
-    """Run repeated fit/selection loops and one frozen final-guard veto."""
+    """Run the shared loop, optionally ending before the guard capability."""
 
     if not isinstance(protocol, ProgressiveCompilationProtocol):
         raise TypeError(
@@ -3135,10 +3881,11 @@ def run_progressive_compilation(
         ("propose_mutations", propose_mutations),
         ("build_candidate", build_candidate),
         ("evaluate_selection", evaluate_selection),
-        ("evaluate_guard", evaluate_guard),
     ):
         if not callable(callback):
             raise TypeError(f"{label} must be callable")
+    if evaluate_guard is not None and not callable(evaluate_guard):
+        raise TypeError("evaluate_guard must be callable or None")
 
     current_candidate = seed_candidate
     current_evaluation = seed_selection_evaluation
@@ -3148,6 +3895,9 @@ def run_progressive_compilation(
     candidate_archive = [seed_candidate]
     selection_archive = [seed_selection_evaluation]
     budget_blocked = False
+    pending_successor_mutation_kind: MutationKind | None = None
+    pending_staging_transition: ProgressiveStagingTransition | None = None
+    staging_completion_anchor: CandidateEvaluation | None = None
     status: ProgressiveStatus = "max_iterations"
 
     for _ in range(protocol.max_iterations):
@@ -3157,16 +3907,28 @@ def run_progressive_compilation(
         resource_passed = protocol.resource_budget.allows(
             current_candidate.resources
         )
+        scheduled_transition = protocol.staging_transition_for_parent(
+            current_candidate
+        )
         if (
             fidelity_passed
             and resource_passed
             and not protocol.compact_after_fidelity
+            and pending_successor_mutation_kind is None
+            and scheduled_transition is None
         ):
             status = "ready_for_candidate_binding"
             break
 
         phase: ProgressivePhase = (
-            "compact" if fidelity_passed else "repair"
+            "compact"
+            if (
+                fidelity_passed
+                and resource_passed
+                and pending_successor_mutation_kind is None
+                and scheduled_transition is None
+            )
+            else "repair"
         )
         residual_map = map_residual(
             current_candidate,
@@ -3191,12 +3953,38 @@ def run_progressive_compilation(
         proposals = tuple(raw_proposals)
         if len(proposals) > protocol.max_proposals_per_iteration:
             raise ValueError("proposal count exceeds the protocol maximum")
+        if (
+            pending_successor_mutation_kind is not None
+            and any(
+                proposal.mutation_kind
+                != pending_successor_mutation_kind
+                for proposal in proposals
+            )
+        ):
+            raise ValueError(
+                "staging successor iteration proposed a different "
+                "mutation kind"
+            )
         for proposal in proposals:
             _validate_proposal(
                 candidate=current_candidate,
                 residual_map=residual_map,
                 phase=phase,
                 proposal=proposal,
+            )
+        if scheduled_transition is not None:
+            _validate_transition_proposals(
+                proposals=proposals,
+                residual_map=residual_map,
+                transition=scheduled_transition,
+                completion=False,
+            )
+        elif pending_staging_transition is not None:
+            _validate_transition_proposals(
+                proposals=proposals,
+                residual_map=residual_map,
+                transition=pending_staging_transition,
+                completion=True,
             )
         proposal_ids = tuple(proposal.proposal_id for proposal in proposals)
         proposal_receipts = tuple(
@@ -3252,7 +4040,10 @@ def run_progressive_compilation(
         selected = _select_evaluation(
             protocol=protocol,
             phase=phase,
+            parent_candidate=current_candidate,
             parent=current_evaluation,
+            staging_completion_anchor=staging_completion_anchor,
+            staging_completion_transition=pending_staging_transition,
             candidates=evaluated,
         )
         if selected is None:
@@ -3282,7 +4073,12 @@ def run_progressive_compilation(
                     ),
                 )
             )
-            if fidelity_passed and resource_passed:
+            if (
+                fidelity_passed
+                and resource_passed
+                and pending_successor_mutation_kind is None
+                and scheduled_transition is None
+            ):
                 status = "ready_for_candidate_binding"
             elif budget_blocked:
                 status = "stalled_budget"
@@ -3290,7 +4086,25 @@ def run_progressive_compilation(
                 status = "stalled_fidelity"
             break
 
-        _, accepted_candidate, accepted_evaluation = selected
+        accepted_proposal, accepted_candidate, accepted_evaluation = selected
+        was_staging_completion = (
+            pending_successor_mutation_kind is not None
+        )
+        accepted_decision = (
+            "accepted_staging_completion"
+            if was_staging_completion
+            else (
+                _repair_decision(
+                    protocol=protocol,
+                    proposal=accepted_proposal,
+                    parent_candidate=current_candidate,
+                    parent=current_evaluation,
+                    child=accepted_evaluation,
+                )
+                if phase == "repair"
+                else "accepted_pareto_compaction"
+            )
+        )
         receipts.append(
             ProgressiveIterationReceipt(
                 iteration=accepted_candidate.iteration,
@@ -3309,13 +4123,34 @@ def run_progressive_compilation(
                 accepted_evaluation_receipt_sha256=(
                     accepted_evaluation.receipt_sha256
                 ),
-                decision=(
-                    "accepted_fidelity_repair"
-                    if phase == "repair"
-                    else "accepted_pareto_compaction"
-                ),
+                decision=accepted_decision,
             )
         )
+        if pending_successor_mutation_kind is not None:
+            if (
+                accepted_proposal.mutation_kind
+                != pending_successor_mutation_kind
+            ):
+                raise ValueError(
+                    "accepted candidate does not discharge the staging "
+                    "successor"
+                )
+            pending_successor_mutation_kind = None
+            pending_staging_transition = None
+            staging_completion_anchor = None
+        elif accepted_decision == "accepted_staging_transition":
+            transition = protocol.staging_transition_for(
+                accepted_proposal.mutation_kind
+            )
+            if transition is None:
+                raise ValueError(
+                    "staging decision lacks a frozen transition"
+                )
+            pending_successor_mutation_kind = (
+                transition.required_successor_mutation_kind
+            )
+            pending_staging_transition = transition
+            staging_completion_anchor = current_evaluation
         current_candidate = accepted_candidate
         current_evaluation = accepted_evaluation
     else:
@@ -3326,6 +4161,9 @@ def run_progressive_compilation(
             and protocol.resource_budget.allows(
                 current_candidate.resources
             )
+            and pending_successor_mutation_kind is None
+            and protocol.staging_transition_for_parent(current_candidate)
+            is None
         ):
             status = "ready_for_candidate_binding"
         else:
@@ -3364,23 +4202,26 @@ def run_progressive_compilation(
                 for evaluation in selection_archive
             ),
         )
-        guard_evaluation = evaluate_guard(
-            frozen_challenger,
-            protocol.guard_view(),
-        )
-        _validate_evaluation(
-            protocol=protocol,
-            candidate=current_candidate,
-            evaluation=guard_evaluation,
-            expected_role="calibration_a_guard",
-            expected_challenger_receipt_sha256=(
-                frozen_challenger.receipt_sha256
-            ),
-        )
-        if not protocol.fidelity_targets.passes(
-            guard_evaluation.fidelity
-        ):
-            status = "rejected_by_guard"
+        if evaluate_guard is None:
+            status = "ready_for_guard_claim"
+        else:
+            guard_evaluation = evaluate_guard(
+                frozen_challenger,
+                protocol.guard_view(),
+            )
+            _validate_evaluation(
+                protocol=protocol,
+                candidate=current_candidate,
+                evaluation=guard_evaluation,
+                expected_role="calibration_a_guard",
+                expected_challenger_receipt_sha256=(
+                    frozen_challenger.receipt_sha256
+                ),
+            )
+            if not protocol.fidelity_targets.passes(
+                guard_evaluation.fidelity
+            ):
+                status = "rejected_by_guard"
 
     return ProgressiveCompilationResult(
         protocol_sha256=protocol.artifact_sha256,
@@ -3398,6 +4239,127 @@ def run_progressive_compilation(
         candidate_archive=tuple(candidate_archive),
         selection_evaluation_archive=tuple(selection_archive),
         status=status,
+    )
+
+
+def run_progressive_development_search(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    seed_candidate: ProgressiveCandidate,
+    seed_selection_evaluation: CandidateEvaluation,
+    map_residual: ResidualMapper,
+    propose_mutations: MutationProposer,
+    build_candidate: CandidateBuilder,
+    evaluate_selection: SelectionEvaluator,
+) -> ProgressiveCompilationResult:
+    """Run fit/selection only, with no callback capable of opening the guard."""
+
+    return _run_progressive_search(
+        protocol=protocol,
+        seed_candidate=seed_candidate,
+        seed_selection_evaluation=seed_selection_evaluation,
+        map_residual=map_residual,
+        propose_mutations=propose_mutations,
+        build_candidate=build_candidate,
+        evaluate_selection=evaluate_selection,
+        evaluate_guard=None,
+    )
+
+
+def finalize_progressive_guard(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    result: ProgressiveCompilationResult,
+    evaluate_guard: GuardEvaluator,
+) -> ProgressiveCompilationResult:
+    """Open one guard for an already frozen development challenger."""
+
+    if not isinstance(protocol, ProgressiveCompilationProtocol):
+        raise TypeError(
+            "protocol must be ProgressiveCompilationProtocol"
+        )
+    protocol.validate_integrity()
+    if not isinstance(result, ProgressiveCompilationResult):
+        raise TypeError("result must be ProgressiveCompilationResult")
+    if not callable(evaluate_guard):
+        raise TypeError("evaluate_guard must be callable")
+    result.validate_against(protocol)
+    if (
+        result.status != "ready_for_guard_claim"
+        or result.guard_evaluation is not None
+        or result.frozen_challenger is None
+    ):
+        raise ValueError(
+            "only a ready_for_guard_claim result can open the guard"
+        )
+    guard_evaluation = evaluate_guard(
+        result.frozen_challenger,
+        protocol.guard_view(),
+    )
+    _validate_evaluation(
+        protocol=protocol,
+        candidate=result.final_candidate,
+        evaluation=guard_evaluation,
+        expected_role="calibration_a_guard",
+        expected_challenger_receipt_sha256=(
+            result.frozen_challenger.receipt_sha256
+        ),
+    )
+    finalized = ProgressiveCompilationResult(
+        protocol_sha256=result.protocol_sha256,
+        seed_candidate_receipt_sha256=(
+            result.seed_candidate_receipt_sha256
+        ),
+        seed_selection_evaluation_receipt_sha256=(
+            result.seed_selection_evaluation_receipt_sha256
+        ),
+        final_candidate=result.final_candidate,
+        final_selection_evaluation=(
+            result.final_selection_evaluation
+        ),
+        frozen_challenger=result.frozen_challenger,
+        guard_evaluation=guard_evaluation,
+        iterations=result.iterations,
+        residual_map_archive=result.residual_map_archive,
+        proposal_archive=result.proposal_archive,
+        candidate_archive=result.candidate_archive,
+        selection_evaluation_archive=(
+            result.selection_evaluation_archive
+        ),
+        status=(
+            "ready_for_candidate_binding"
+            if protocol.fidelity_targets.passes(
+                guard_evaluation.fidelity
+            )
+            else "rejected_by_guard"
+        ),
+    )
+    finalized.validate_against(protocol)
+    return finalized
+
+
+def run_progressive_compilation(
+    *,
+    protocol: ProgressiveCompilationProtocol,
+    seed_candidate: ProgressiveCandidate,
+    seed_selection_evaluation: CandidateEvaluation,
+    map_residual: ResidualMapper,
+    propose_mutations: MutationProposer,
+    build_candidate: CandidateBuilder,
+    evaluate_selection: SelectionEvaluator,
+    evaluate_guard: GuardEvaluator,
+) -> ProgressiveCompilationResult:
+    """Run repeated fit/selection loops and one frozen final-guard veto."""
+
+    return _run_progressive_search(
+        protocol=protocol,
+        seed_candidate=seed_candidate,
+        seed_selection_evaluation=seed_selection_evaluation,
+        map_residual=map_residual,
+        propose_mutations=propose_mutations,
+        build_candidate=build_candidate,
+        evaluate_selection=evaluate_selection,
+        evaluate_guard=evaluate_guard,
     )
 
 
@@ -3482,6 +4444,7 @@ def freeze_progressive_candidate(
         guard_evaluation_receipt_sha256=(
             result.guard_evaluation.receipt_sha256
         ),
+        guard_claim_sha256=result.guard_evaluation.guard_claim_sha256,
         resources=result.final_candidate.resources,
         fidelity=result.guard_evaluation.fidelity,
     )
@@ -3513,12 +4476,15 @@ __all__ = [
     "ProgressivePhase",
     "ProgressiveResourceBudget",
     "ProgressiveResourceFootprint",
+    "ProgressiveStagingTransition",
     "ProgressiveStatus",
     "ResidualMap",
     "ResidualMapper",
     "ResidualTarget",
     "SelectionDevelopmentView",
     "SelectionEvaluator",
+    "finalize_progressive_guard",
     "freeze_progressive_candidate",
     "run_progressive_compilation",
+    "run_progressive_development_search",
 ]

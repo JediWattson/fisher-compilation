@@ -12,6 +12,7 @@ constructed and authenticated.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 
 from .compiler.progressive import (
     DevelopmentCorpus,
@@ -21,6 +22,7 @@ from .compiler.progressive import (
     ProgressiveFidelityTargets,
     ProgressiveResourceBudget,
     ProgressiveResourceFootprint,
+    ProgressiveStagingTransition,
 )
 from .gemma3_l3_l4_graph_organized_svd_shadow_protocol import (
     default_gemma3_l3_l4_graph_organized_svd_shadow_protocol,
@@ -30,6 +32,45 @@ from .gemma3_l3_l4_graph_organized_svd_shadow_protocol import (
 GEMMA3_L3_L4_PROGRESSIVE_PROTOCOL_ID = (
     "gemma3.l3-l4.graph-organized-svd.progressive.v1"
 )
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_CANDIDATE_BEHAVIOR_HARD_GATE_AXES = (
+    "candidate_behavior.absolute_delta_nll_per_token",
+    "candidate_behavior.per_prompt_p10_top1_agreement_to_source",
+    "candidate_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "candidate_behavior.source_to_candidate_kl_per_token",
+    "candidate_behavior.top1_agreement_to_source",
+)
+_X4_FROZEN_DIAGNOSTIC_AXES = (
+    "boundary.minimum_family_source_signal",
+    "boundary.valid_target_coverage",
+    "carrier_oracle_behavior.absolute_delta_nll_per_token",
+    "carrier_oracle_behavior.per_prompt_p10_top1_agreement_to_source",
+    "carrier_oracle_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "carrier_oracle_behavior.source_to_candidate_kl_per_token",
+    "carrier_oracle_behavior.top1_agreement_to_source",
+    "operator_nrmse",
+    "projection.full_width_cosine",
+    "projection.full_width_relative_error",
+    "projection.minimum_family_source_signal",
+    "projection.worst_family_cosine",
+    "projection.worst_family_relative_error",
+    "projection_oracle_behavior.absolute_delta_nll_per_token",
+    "projection_oracle_behavior.per_prompt_p10_top1_agreement_to_source",
+    "projection_oracle_behavior.per_prompt_p90_absolute_delta_nll_per_token",
+    "projection_oracle_behavior.source_to_candidate_kl_per_token",
+    "projection_oracle_behavior.top1_agreement_to_source",
+)
+_X4_PERMITTED_REGRESSION_AXES = (
+    "boundary.cosine",
+    "boundary.worst_family_cosine",
+    *_CANDIDATE_BEHAVIOR_HARD_GATE_AXES,
+)
+
+
+def _require_sha256(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise ValueError(f"{label} must be a lowercase SHA-256")
+    return value
 
 
 def _mapping(value: object, *, label: str) -> Mapping[str, object]:
@@ -389,12 +430,19 @@ def gemma3_l3_l4_progressive_fidelity_targets(
                 "minimum_family_source_full_width_signal_l2_norm"
             ]
         ),
+        execution_fidelity_axis_names=(
+            _CANDIDATE_BEHAVIOR_HARD_GATE_AXES
+        ),
     )
 
 
 def make_gemma3_l3_l4_progressive_protocol(
     *,
     corpus: DevelopmentCorpus,
+    seed_runtime_binding_sha256: str,
+    fit_panel_binding_sha256: str,
+    selection_panel_binding_sha256: str,
+    guard_preclaim_binding_sha256: str,
     resource_budget: ProgressiveResourceBudget,
     seed_resources: ProgressiveResourceFootprint,
     operator_nrmse_max: float | None = None,
@@ -402,6 +450,7 @@ def make_gemma3_l3_l4_progressive_protocol(
     max_proposals_per_iteration: int = 8,
     minimum_repair_relative_burden_reduction: float = 0.02,
     maximum_repair_axis_regression_fraction: float = 0.25,
+    residual_head_rank: int = 8,
     compact_after_fidelity: bool = True,
 ) -> ProgressiveCompilationProtocol:
     """Bind the generic A-only loop to the exact current Gemma seed."""
@@ -417,6 +466,10 @@ def make_gemma3_l3_l4_progressive_protocol(
         raise ValueError(
             "seed resource accounting does not bind the legacy execution"
         )
+    progressive_runtime = _require_sha256(
+        seed_runtime_binding_sha256,
+        label="progressive seed runtime binding",
+    )
     return ProgressiveCompilationProtocol(
         protocol_id=GEMMA3_L3_L4_PROGRESSIVE_PROTOCOL_ID,
         source_model_sha256=str(binding["source_model_sha256"]),
@@ -426,14 +479,20 @@ def make_gemma3_l3_l4_progressive_protocol(
         seed_candidate_execution_sha256=str(
             binding["seed_candidate_execution_sha256"]
         ),
-        seed_runtime_binding_sha256=str(
-            binding["seed_runtime_binding_sha256"]
-        ),
+        seed_runtime_binding_sha256=progressive_runtime,
         seed_resource_receipt_sha256=seed_resources.receipt_sha256,
         seed_lineage_sha256s=tuple(
             binding["seed_lineage_sha256s"]  # type: ignore[arg-type]
         ),
         corpus=corpus,
+        development_role_binding_sha256s=(
+            ("calibration_a_fit", fit_panel_binding_sha256),
+            ("calibration_a_guard", guard_preclaim_binding_sha256),
+            (
+                "calibration_a_selection",
+                selection_panel_binding_sha256,
+            ),
+        ),
         forbidden_assessment_manifest_sha256s=(
             str(binding["calibration_b_manifest_sha256"]),
         ),
@@ -449,6 +508,31 @@ def make_gemma3_l3_l4_progressive_protocol(
         maximum_repair_axis_regression_fraction=(
             maximum_repair_axis_regression_fraction
         ),
+        staging_transitions=(
+            ProgressiveStagingTransition(
+                transition_id="gemma-l3-l4-x4-then-h4-rank-head",
+                parent_iteration=0,
+                mutation_kind="add_residual_edge",
+                parent_mutation_kind="seed",
+                required_successor_mutation_kind="widen_carrier",
+                target_location="layer.4.mlp.normalized_input",
+                target_rank_count=residual_head_rank,
+                completion_target_location="layer.4.output",
+                completion_target_rank_count=residual_head_rank,
+                target_axis_names=(
+                    "boundary.relative_error",
+                    "boundary.worst_family_relative_error",
+                ),
+                invariant_axis_names=_X4_FROZEN_DIAGNOSTIC_AXES,
+                permitted_regression_axis_names=(
+                    _X4_PERMITTED_REGRESSION_AXES
+                ),
+                completion_axis_names=(
+                    _CANDIDATE_BEHAVIOR_HARD_GATE_AXES
+                ),
+                minimum_relative_burden_reduction=0.02,
+            ),
+        ),
         compact_after_fidelity=compact_after_fidelity,
     )
 
@@ -456,6 +540,7 @@ def make_gemma3_l3_l4_progressive_protocol(
 def current_gemma3_l3_l4_progressive_seed(
     *,
     resources: ProgressiveResourceFootprint,
+    runtime_binding_sha256: str,
 ) -> ProgressiveCandidate:
     """Wrap the authenticated legacy 64-mode candidate as iteration zero."""
 
@@ -469,8 +554,9 @@ def current_gemma3_l3_l4_progressive_seed(
         execution_sha256=str(
             binding["seed_candidate_execution_sha256"]
         ),
-        runtime_binding_sha256=str(
-            binding["seed_runtime_binding_sha256"]
+        runtime_binding_sha256=_require_sha256(
+            runtime_binding_sha256,
+            label="progressive seed runtime binding",
         ),
         resources=resources,
         mutation_kind="seed",
