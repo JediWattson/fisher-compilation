@@ -163,6 +163,34 @@ Hashes are reproducible integrity/audit receipts, not hostile in-process
 attestation, and the host ledger is not a cross-machine authority. The
 transaction has not been invoked here, so Calibration B remains unopened.
 
+That failed rank-64 candidate can now be used as iteration zero of a
+residual-guided progressive compiler rather than treated as an all-or-nothing
+answer. The model-independent controller repeats fit-only residual mapping,
+typed graph mutations, and family-disjoint A-selection measurements. Failing
+candidates enter a repair phase; candidates inside the fidelity envelope
+enter a Pareto compaction phase. Every accepted transition is parent-bound and
+charges compiled, support, and retained-source parameters, bytes, and logical
+MACs. Declared-incomplete or scope-incomparable accounting cannot authorize a
+candidate; the future model-specific worker must still derive the accounting
+receipt from the executable rather than trusting caller totals.
+
+Repeated selection does not spend the final guard. The campaign uses separate
+pairwise family-disjoint `calibration_a_fit`,
+`calibration_a_selection`, and `calibration_a_guard` roles. The complete
+lineage is frozen before the controller invokes its single A-guard callback,
+and only a passing, budget-compliant result can emit a candidate-binding
+development handoff. The generic in-process controller is not itself a
+cross-run one-shot authority; the real Gemma worker must add a claim-first
+A-guard ledger around that callback. The existing
+Calibration-B manifest is registered only as a forbidden identity and remains
+unopened. Because the legacy one-shot runtime is bound to the old failed
+candidate, a new progressive winner will require a candidate-bound shadow
+protocol/runtime before it can consume that final one-shot.
+
+The controller, Gemma seed binding, acceptance rules, and next executable rung
+are described in
+[`docs/progressive-compilation.md`](docs/progressive-compilation.md).
+
 ```bash
 fisher-graph-gemma-l3-l4-graph-organized-svd-dev
 ```
