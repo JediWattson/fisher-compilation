@@ -100,11 +100,16 @@ _MAGNITUDE_GRAPH_RANK_SEMANTICS = (
 _CONTROL_BASIS_RANK_SEMANTICS = (
     "fixed_orthonormal_control_source_basis_bound_to_fit_knots_only"
 )
+_GRAPH_WAVELET_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_gomp_localized_orthonormal_source_"
+    "subspace"
+)
 _GRAPH_RANK_SEMANTICS = frozenset(
     {
         _SIGNED_GRAPH_RANK_SEMANTICS,
         _MAGNITUDE_GRAPH_RANK_SEMANTICS,
         _CONTROL_BASIS_RANK_SEMANTICS,
+        _GRAPH_WAVELET_RANK_SEMANTICS,
     }
 )
 _RUNTIME_DTYPES = frozenset(
@@ -2036,6 +2041,7 @@ def fit_conditional_spectral_generator_with_source_basis(
         "signed_phase_graph_low_frequency",
         "phase_blind_magnitude_graph_low_frequency",
         "fixed_orthonormal_control",
+        "fit_only_graph_wavelet_gomp",
     ],
     source_basis_fit_weighted_kernels_sha256: str,
     response_binding_sha256: str,
@@ -2068,6 +2074,8 @@ def fit_conditional_spectral_generator_with_source_basis(
         rank_semantics = _MAGNITUDE_GRAPH_RANK_SEMANTICS
     elif source_basis_kind == "fixed_orthonormal_control":
         rank_semantics = _CONTROL_BASIS_RANK_SEMANTICS
+    elif source_basis_kind == "fit_only_graph_wavelet_gomp":
+        rank_semantics = _GRAPH_WAVELET_RANK_SEMANTICS
     else:
         raise ValueError("source_basis_kind is invalid")
     kernels = _canonical_float_tensor(

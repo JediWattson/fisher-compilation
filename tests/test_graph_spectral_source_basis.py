@@ -139,6 +139,34 @@ def test_full_rank_graph_plan_roundtrips_every_fit_kernel() -> None:
         )
 
 
+def test_graph_wavelet_source_basis_has_distinct_rank_semantics() -> None:
+    responses, scales = _responses()
+    graph = fit_graph_source_bases(
+        responses,
+        scales,
+        _ORIGINS,
+        _FIT_ORIGINS,
+        response_binding_sha256=_BINDING,
+    )
+    plan = fit_conditional_spectral_generator_with_source_basis(
+        responses,
+        scales,
+        _ORIGINS,
+        _FIT_ORIGINS,
+        torch.eye(responses.shape[0], dtype=torch.float64),
+        responses.shape[-1],
+        source_basis_kind="fit_only_graph_wavelet_gomp",
+        source_basis_fit_weighted_kernels_sha256=(
+            graph.fit_weighted_kernels_sha256
+        ),
+        response_binding_sha256=_BINDING,
+    )
+
+    assert plan.rank_semantics == (
+        "fit_only_graph_wavelet_gomp_localized_orthonormal_source_subspace"
+    )
+
+
 def test_signed_graph_preserves_opposition_that_magnitude_graph_erases() -> None:
     positive = torch.tensor(
         [

@@ -806,6 +806,7 @@ This work is described in
 | Gemma L3→L4 hierarchy, rank 64 | Pair state is `11.4%` of the flat pair; nominal saving is only `0.685%` of the flat-generator whole model and excludes the reference provider | Local-control cosine `0.763`, relative error `1.187` | Analysis only; finite transport fails |
 | Gemma L3→L4 spectral map, rank 64 | Source-σ-weighted ranks are `11 / 18 / 34` at `90% / 95% / 99%` energy; no deployed reduction | Local-to-`1σ` mean cosine `0.9996`; two-origin mean similarity `0.672` | Prompt-free fixed-reference analysis only; position-conditioned |
 | Gemma phase-aware source-mode GFA | No deployed reduction; phase-aware low graph bands `0:8` / `0:16` contain `48.09%` / `60.32%` of local response energy versus `9.24%` / `21.40%` for the phase-blind magnitude control | Local phase-aware graph ranks are `45 / 52 / 62` versus `57 / 61 / 63` for the control; local-to-`1σ` low-8 projector overlap is `0.9995` | Same-artifact pooled source-response diagnostic only; no directed transfer, held-out prediction, executor, compression, or speed claim |
+| Gemma fit-only graph-wavelet map | The analytic rank-45 plan payload is `283,456` float64 scalars (`29.38%` below the `401,408`-scalar full-rank plan; `287,936` with wavelet metadata) but misses fidelity; rank 52 is `326,912` (`18.56%`; `331,392` standalone) and misses the 20% plan-payload gate | Rank-52 fit-disjoint development-selection error is `0.15090`, cosine `0.98856`, and mean effective support `1.64` modes versus `15.64` for fit-energy GFA; GFA error is `0.12649` and SVD is `0.04091` | At rank 52, signed topology beats magnitude, native, permuted, and all eight random controls; no rank passes fidelity, topology, plan-payload, GFA, SVD, and compute gates, and full rank ties the random bases; localized mapping evidence only |
 | Gemma fit-only signed-GFA rate curve | Rank 45 stores `283,456` coefficients versus `393,216` dense fit knots (`27.91%` fewer); cached-core linear MACs are `20.67%` lower, but the current uncached interpolation path performs `2.20×` the dense kernel-application multiplies | Frozen-origin selection error `0.1900`, worst cosine `0.9810`; the same-budget SVD error is `0.0506` and every signed-GFA cutoff loses to SVD | The signed graph beats magnitude, native-prefix, permuted, and eight random controls, but does not pass the controlled compression gate; organization/fidelity evidence only |
 | Gemma graph-organized global SVD | Rank-45 deployment-form edge state is `279,744` versus `393,216` dense coefficients (`28.86%` fewer); all-on cached-core MACs are `72.51%` of dense, and 95%-bound routing lowers this to `70.61%` | On nonzero C2 selection directions, all-on measured-response error is `0.03179`; signed 95%-bound routing is `0.03206` at mean active rank `43.78` | Executable hybrid and conditional rate curve; opened synthetic development data, router cost excluded, no NLL, latency, whole-block, or whole-model claim |
 | Gemma graph-organized one-shot shadow | No deployment saving claimed; the candidate runtime needs three source-model passes and the full qualification observation needs two additional oracle passes | On one Calibration-A development prompt, all-on modal error is `4.8208` with cosine `0.5404` and `ΔNLL/token +3.0853`; the true rank-64 projection oracle still has `0.9741` full-width error, and exact X4 injection still has `ΔNLL/token +2.0121` | Strong fail-closed shadow harness; current edge rejected for target-subspace capacity and residual-carrier incompleteness, with deployment and routing unauthorized |
@@ -975,6 +976,9 @@ fisher-graph-gemma-l3-l4-spectral-dev \
 fisher-graph-gemma-l3-l4-phase-graph-spectral-dev describe
 fisher-graph-gemma-l3-l4-phase-graph-spectral-dev analyze
 
+fisher-graph-gemma-l3-l4-graph-wavelet-dev describe
+fisher-graph-gemma-l3-l4-graph-wavelet-dev analyze
+
 fisher-graph-gemma-l3-l4-graph-organized-svd-dev
 
 fisher-graph-gemma-l3-l4-conditional-spectral-dev compile
@@ -1031,6 +1035,7 @@ default to the ignored `.local-runs/` tree.
 - [Dense supermode compaction](docs/dense-supermode-compaction.md)
 - [Cross-block selective bundling](docs/cross-block-selective-bundling.md)
 - [Fisher-need conditional computation](docs/conditional-computation.md)
+- [Fit-only graph-wavelet mapping](docs/graph-wavelet-mapping.md)
 - [Graph-organized global SVD](docs/graph-organized-svd.md)
 
 ### Earlier Gemma foundations
