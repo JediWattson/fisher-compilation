@@ -24,12 +24,212 @@ inference by graph traversal
 The repository contains a verified end-to-end toy implementation, a
 source-free Gemma layer executor, a full Gemma MLP-stack generator baseline,
 and a recursive L3→L4 hierarchy with a prompt-blind state-conditioned
-reference-provider experiment and fresh sealed contrast assessment. It is a
-research compiler, not a production compression library.
+reference-provider experiment, fresh sealed contrast assessment, and
+autonomous linear and Fisher-conditioned complete-H4 residual shadows over
+Gemma's full downstream suffix and vocabulary. It is a research compiler,
+not a production compression library.
 
 [![Research ladder from the verified toy executor to the prompt-blind reference-provider fidelity result](docs/images/research-ladder.svg)](docs/images/research-ladder.svg)
 
 ## Current finding
+
+V14–V19 now separate five questions at the source-free complete-H4 boundary:
+whether the linear carrier benefits from more rank, whether a bounded
+two-coordinate conditional map is genuinely two-dimensional, whether
+Fisher-derived coordinates outperform an exactly parameter-matched
+activation-PCA control, and whether a pointwise-bounded per-token confidence
+pedal can rescue that map, and whether jointly fitting its direction and pedal
+against the exact finite downstream objective repairs the analytic fit. All
+arms use the same opened
+16-prompt/eight-family panel, outer leave-one-family-out fitting, real Gemma
+suffix, and 262,144-way language-model head. Native H4 and reverse-VJP
+gradients remain fit-only.
+
+| OOF arm, ordinary tokens | incremental provider params / MACs per token | ΔNLL/token | source→candidate KL/token | top-1 |
+|---|---:|---:|---:|---:|
+| K256 reverse-VJP parent | `360,704 / 524,288` | `+1.16923` | `1.25289` | `59.72%` |
+| K256 + rank-16 Fisher square | `377,604 / 541,184` | `+1.16930` | `1.25288` | `59.72%` |
+| K256 + rank-16 PCA square | `377,604 / 541,184` | `+1.16919` | `1.25285` | `59.72%` |
+| K256 + rank-16 Fisher unit/constant pedal | `377,608 / 541,187` | `+1.25292` | `1.30265` | `58.97%` |
+| K256 + rank-16 Fisher conditional pedal | `377,608 / 541,187` | `+1.24127` | `1.29057` | `59.08%` |
+| K256 + rank-16 PCA conditional pedal | `377,608 / 541,187` | `+1.19812` | `1.31281` | `59.94%` |
+| V19 Fisher finite-joint unit | `377,608 / 541,187` | `+1.26896` | `1.31974` | `59.29%` |
+| V19 Fisher finite-joint conditional/intercept, checkpoint 0 | `377,608 / 541,187` | `+1.19994` | `1.26568` | `59.72%` |
+| V19 PCA finite-joint conditional, checkpoint 0 | `377,608 / 541,187` | `+1.16287` | `1.26057` | `60.37%` |
+| K320 reverse-VJP | `471,360 / 675,840` | `+1.01993` | `1.10038` | `63.69%` |
+| K640 full-span reverse-VJP | `1,147,520 / 1,556,480` | `+0.81825` | `0.92572` | `66.70%` |
+
+The K640 ceiling is a broad but expensive linear gain: versus K320 it reduces
+ordinary ΔNLL by `19.77%`, KL by `15.87%`, and adds `3.01` top-1 points;
+loss improves in all eight families and top-1 in seven. It still remains far
+outside the frozen `0.05 / 0.05 / 95%` fidelity gates while using `2.43×`
+the provider scalars and `2.30×` the logical MACs/token.
+
+The V16 nonlinear result is more diagnostic than positive. Both Fisher and
+PCA routers pass the preregistered fit-predictability and held-family runtime
+geometry checks on every outer fold. Fisher's minimum fit-target R² is
+`0.890`; on the two unseen sequences in each fold, its worst second/first
+covariance-eigenvalue ratio is `0.375`, maximum absolute correlation is
+`0.428`, and minimum residual second-coordinate energy is `0.817`. The square
+therefore did not secretly collapse to a line on held families. However,
+the inherited four-corner `0.25` pointwise operator bound projects each
+Fisher conditional fit by a factor of only `0.000396–0.000628`; its in-fit
+residual-RMSE gain is just `0.0186–0.0290%`. Fisher then wins ordinary family
+loss in only `1/8` folds and is microscopically worse than both the parent and
+the matched PCA control. This rejects the tested bounded parameterization,
+not nonlinear conditioning in general.
+
+V18 replaced V16's global operator shrinkage with a rowwise direction
+`b = q min(1, 0.25 ||p|| / ||q||)` and a learned source-free pedal
+`a = clamp(bias + [c1,c2,c1c2] weight, 0, 1)`. The direction clip never
+suppresses an already-small `q`, and every emitted modal delta obeys
+`||a b|| <= 0.25 ||p||`. The pedal genuinely varies on every fit and
+held-family fold.
+Fisher's held direction-energy-weighted pedal mean spans `0.7937–0.9991`,
+its standard deviation spans `0.00425–0.28260`, and its minimum reaches
+`0.2572`.
+
+That conditionality is real but not sufficient. The fit-optimal Fisher
+constant saturates at `1`, making the constant and unit controls identical.
+The learned Fisher pedal improves family-macro absolute delta NLL by `0.943%`
+against that control and wins all eight families, narrowly missing the frozen
+`1%` materiality gate. Against the parent it instead worsens macro absolute
+delta NLL by `6.10%`, macro KL by `3.03%`, and aggregate top-1 by `0.644`
+points; it wins only `2/8` families. The matched PCA pedal also has lower macro
+absolute delta NLL (`1.18441` versus `1.22713`) and higher top-1 (`59.94%`
+versus `59.08%`). Fisher's analytic pedal targets average `1.173–1.239`, with
+`66.70–78.75%` of fit weight outside `[0,1]` and clipped to that interval, so
+this rung mostly learns small suppressions of an over-requested direction
+rather than a selective on/off rescue.
+
+The corrected V18 result is classified
+`fisher_pedal_pointwise_trust_insufficient`: Fisher conditional is
+microscopically worse than its constant on the fit objective in all eight
+folds, every absolute fidelity scope fails, and no provider is selected.
+The preliminary V17 receipt is preserved but is not scientific evidence: its
+held unit/constant summaries used exact scalar gates on floating weighted
+sums such as `0.9999999999999996`. V18 derives scalar-control summaries from
+their exact serving values and conditional summaries from realized float64
+mass, reproducing every V17 fidelity tensor exactly while removing those
+false failures.
+
+V19 then performed the proposed finite-objective joint fit. It initialized a
+rank-16 direction from twice the V18 direction product, used a sigmoid pedal
+initialized to `0.5`, and jointly updated the direction factors and pedal
+parameters with four fixed full-batch Adam steps. Checkpoints `0–4` were
+scored by the exact float64, full-vocabulary `KL(source || candidate)` through
+the real suffix, with checkpoint 0 retained as rollback authority.
+
+The rollback won on every fold. All eight Fisher fits and all eight PCA fits
+selected checkpoint 0; none improved its training objective, changed its
+selected direction or beta vector, or produced a nonconstant pedal. Fisher's
+mean checkpoint curve was
+`0.00244384 → 0.00781108 → 0.00344203 → 0.00451110 → 0.00376498`;
+PCA's was
+`0.00244640 → 0.00757989 → 0.00383734 → 0.00450950 → 0.00385273`.
+The first fixed Adam update therefore made the finite fit objective about
+`3.20× / 3.10×` worse, and later checkpoints never recovered below the
+initializer. The selected Fisher conditional pedal stayed exactly `0.5`, so
+it is behaviorally identical to the intercept control. V19 did not learn a
+conditional correction.
+
+The half-strength Fisher initializer is still informative: against the V18
+start it improves family-macro absolute delta NLL by `3.306%`, macro KL by
+`1.927%`, and top-1 by `0.644` points, winning `7/8` families. Against the
+K256 parent it instead worsens macro absolute delta NLL by `2.596%`, macro KL
+by `1.044%`, ties top-1, and wins only `2/8`; the worst family regression is
+`8.252%`. PCA checkpoint 0 nominally improves parent macro absolute delta NLL
+by `0.573%` and top-1 by `0.644` points, but worsens macro KL by `0.533%` and
+wins only `4/8` families. All ordinary, complete-H4-support, and graph-core
+absolute gates remain far outside threshold.
+
+The V19 classification is
+`finite_joint_pedal_outer_fidelity_insufficient`. V20a then ran the controlled
+fit-only logarithmic microstep ladder around checkpoint 0. All eight
+capability-excluded folds selected a positive `alpha = 0.1` correction and
+passed the signed mirror guard: five selected direction-only and three
+selected joint direction-plus-pedal updates. Family-equal fit KL fell from
+`0.00244384` to `0.00234591`, a `4.0071%` macro improvement; per-fold
+improvements ranged from `3.2031%` to `4.4064%`, while every matched negative
+step was worse. This isolates overshoot in the frozen V19 optimizer and shows
+that its learned Fisher direction contains a repeatable finite corrective
+signal.
+
+V20a is deliberately not held-family scoring. The excluded family is removed
+from capability access and objective selection, but the remaining seven
+families form that fold's fit objective. Its classification is
+`finite_microstep_preflight_passed_for_nested_validation`, authorizing only a
+nested V20b experiment that selects path and scale on inner families before
+scoring an untouched outer family once. Held fidelity, a fresh guard,
+Calibration B, provider materialization, serving, compression, speed, and
+end-to-end parameter/FLOP claims remain closed.
+
+V15 used exactly 80 full-model forwards, 16 VJP traversals, eight fold fits,
+and 16 off-support checks. V16 used 112 forwards, 16 VJP traversals, 24 fold
+fits, 16 held-family coordinate replays, and 48 off-support checks. V18 used
+144 forwards, 16 VJP traversals, 40 outer fits, 32 held runtime diagnostics,
+and 80 causal checks. V19 used 1,280 full-model forwards, 912 full-suffix
+backward traversals, 896 additional local-head contractions, 40 conceptual
+outer fits, and 96 causal checks. V20a used 2,622 full-model forwards, 128
+full-suffix backward traversals, 112 local-head contractions, 168 positive
+candidate executions, and nine matched negative executions. All integrity,
+leakage, V18 replay, and
+source-free runtime checks passed. None selected or serialized a provider;
+the fresh guard and Calibration B remain closed.
+These are full-vocabulary/full-suffix shadows
+from one H4 boundary, not layer deletion, whole-model compilation,
+compression, speed, or serving evidence. See the
+[V14–V20a record](docs/progressive-compilation.md#v14-autonomous-complete-h4-full-suffix-screen)
+for hashes, controls, and claim boundaries.
+
+### Earlier iterative-generator finding
+
+The latest development rung separated two possible explanations for the
+failed causal innovation controller: a badly scaled “pedal,” or the wrong
+temporal memory. A target-blind first pass over the already-open `16 × 8`
+development panel found robust raw innovation scales of roughly `75–84`, not
+the unit temperature used by v1:
+
+| feature source | robust real scale | robust imaginary scale |
+|---|---:|---:|
+| current token only | `74.543` | `81.596` |
+| EW half-life 4 | `83.556` | `82.346` |
+| EW half-life 16 | `76.408` | `82.400` |
+| EW half-life 64 | `77.024` | `82.890` |
+
+That confirms the original feature really was saturated. Its prompt-balanced
+`q90 |h|` was `0.996/0.997`, with only `8.25%/8.58%` of values in the useful
+central interval. All 12 target-blind calibrated variants passed the frozen
+health gate: their `q90 |h|` values were `0.625–0.882`, with
+`67.54–94.09%` central occupancy.
+
+Repairing the pedal did **not** repair held-family transfer. Nested
+family-held-out selection chose the exact static fallback in every fold for
+the scaled-L16, current-only, and full L4/L16/L64 portfolios. All three
+therefore reproduced the static macro RMSE `1.971997`: `1.002%` better than
+the parent (`1.991958`), but `0.242%` worse than the legacy shared-coordinate
+control (`1.967239`). Scale rescue, memory rescue, and temporal value all
+failed with `0/8` active selected folds, and no v2 recipe was nominated.
+
+This was not merely the one-standard-error rule being conservative. Static
+had the best mean inner-family score in all eight folds, and every finite
+fixed arm was worse out of family. The closest finite arm was the exact v1
+control at ridge `10`, which was still `0.0188%` worse than static. The best
+calibrated arm, EW64 at scale multiplier `0.5` and ridge `10`, was `0.0283%`
+worse. Mean degradation grew from `0.0363%` at ridge `10` to `0.1699%` at
+ridge `1` and `0.2719%` at ridge `0.1`. In the music analogy: we repaired the
+pedal travel, but every attempt to turn the effect up made the held-out mix
+worse. The missing ingredient is not scalar scale or one of these three
+memory lengths.
+
+The sealed diagnostic used 16 activation-only scale forwards, then 16 source
+forwards, 16 retained-parent token-VJP forwards, and 154 backward calls. It
+shared one tangent bank and gradient contraction across all 13 controls and
+made zero candidate, finite-displacement, or provider forwards. This remains
+development-only evidence; no finite, fidelity, runtime, or compression claim
+is authorized. See the
+[progressive compilation report](docs/progressive-compilation.md#innovation-v2-scale-and-memory-diagnostic)
+for the frozen protocol, artifact hashes, and full result.
 
 The fixed alpha-0.5 H4 generator has now been rejected by its fresh
 family-disjoint finite-NLL selection gate. The one-shot panel contained 16
@@ -128,6 +328,272 @@ logical report hash is
 `1e1e284d354dd6048406b99a335bc2065e6767e706b8e781791bb1fd365c49ca`,
 and file hash is
 `4ace545b0dea88aeebbbe7e8ddd57a89ff986e56a1817ab4500ad44fa056afb3`.
+
+The second iteration implements the requested prompt/state-conditioned
+correction without prompt IDs. It reads the accepted lag-`B` head's two
+strongest modal responses, maintains a two-scalar causal running balance,
+and applies one bounded `2 × 2` modal route before reusing the parent's
+decoder. The child has four learned scalars, two derived constants, two
+runtime-state scalars per sequence, and six marginal linear MACs/token. Its
+zero matrix is exactly the accepted parent. Its explicit carry supports
+incremental generation when the upstream parent executor supplies modal
+chunks using its own lag cache.
+
+This candidate produced the first positive family-disjoint iterative result,
+but it was conservatively **not retained**. Family-macro mean prompt-absolute
+ΔNLL improved `0.268343 → 0.265900` (`+0.91%`), prompt p90 error improved
+`2.71%`, and five of eight families won. The preregistered gate required six
+wins and no family worse than `-2%`; the worst family regressed `6.43%`.
+Every scientific gate passed: all eight fold designs had rank four, every
+route edge was supported, family-macro balance-feature standard deviation
+was `0.1547`, and the selected modes carried `87.15%` of measured lag-`B`
+modal energy. The parent-point prediction remained excellent
+(`r = 0.999985`, RMSE `0.002107` ΔNLL/token, `100%` sign agreement), so the
+remaining problem is conditional generalization rather than Jacobian error.
+All eight fits reached the `0.25` operator-norm trust boundary.
+
+The frozen parent therefore remains iteration zero, but this is a materially
+stronger result than position scaling: observable causal modal state does
+carry useful corrective information. The next candidate should split this
+shared rotation into a tiny causal regime/expert route, rather than add
+prompt identifiers or simply enlarge the same global step. The iteration-two
+report is bound by collection hash
+`f7ea40fd6bb5695ed9da5f21d8e8d279a8e257e00fb8b4c7bd204718b0c17b8c`,
+logical hash
+`2836d9bde0d39a5b1acbaab7d34fca69c5ad7eab9a1632a63900565eb8ff2207`,
+and file hash
+`0a269c7f6336bccb601a868c157cea4dd4dce2d413a55ae7531471679d9f45f1`.
+
+The third iteration tested that exact conditional split. It keeps the same
+causal balance state and frozen iteration-zero parent, but dispatches each
+active row to one of two independently bounded `2 × 2` routes according to
+whether the balance is negative or nonnegative. Only the selected expert is
+evaluated. The edge adds eight learned scalars, two derived constants, two
+runtime-state scalars per sequence, six marginal linear MACs/token, and at
+most six nonlinear scalar operations/token. Its all-zero matrices are
+exactly the parent.
+
+The live sign-expert result was **not retained**. Family-macro mean
+prompt-absolute ΔNLL changed `0.268343 → 0.269441` (`-0.41%`), only `4/8`
+families won, and the worst family regressed `3.35%`. This is weaker overall
+than Iteration 2's `+0.91%`, `5/8` wins, and `-6.43%` worst family, although
+the original state-invariant failure was repaired from `-6.43%` to `+3.06%`.
+That repair came with lost gains: counterfactual isolation moved from
+`+3.82%` to `-3.13%`, reference frame from `+0.05%` to `-3.35%`, and the
+temporal and uncertainty wins became smaller.
+
+The split itself was real rather than degenerate. Every fold had rank eight,
+all eight expert-route edges were supported, and the negative/nonnegative
+regimes received family-macro active-row fractions of `21.67%`/`78.33%`.
+All scientific and resource gates passed. Linearization was also excellent
+(`r = 0.999990`, RMSE `0.001729` ΔNLL/token, `100%` sign agreement) and
+predicted a small regression, so this is not a missed nonlinear gain. Both
+experts hit their `0.25` trust bound in every fold.
+
+The parent therefore remains iteration zero; there is no retained full-fit
+provider or deployment authorization. A direct fold comparison explains why
+the extra experts hurt: median design conditioning rose from `69.9` to
+`555.7`, while mean pairwise coefficient cosine fell from `0.972` to `0.686`.
+The next preregistered candidate should therefore pool rather than multiply
+experts: a four-scalar conformal route affine in the continuous balance,
+with both endpoints trust-bounded. This preserves conditionality, returns to
+Iteration 2's capacity, and avoids starving a hard sign branch. The
+iteration-three report is bound by collection hash
+`9789d185cca7001a399a02366b928cebfdc4d01bb0df22d8fa0f4a8ae4cfd1d0`,
+logical hash
+`c6642c16fd2620ad057b9fafcb53e21c02f29dd4dfb2f73c9e9aaf9e3f6d05a2`,
+and file hash
+`0c0bcdd2c83e89a5bfd69bda8816da27e2834b0750dcc1792aaaeec9b609c6aa`.
+
+Iteration 4 implemented that pooled route:
+`C(g) = C(a0, b0) + g C(a1, b1)`, with
+`delta_top(t) = g_t modal_top2(t) C(g_t)`. It uses the same four learned
+scalars as Iteration 2, but spends two on a shared conformal transform and
+two on a continuous balance-dependent contrast. A single global radial
+projection bounds both `g=-1` and `g=+1` endpoints at operator norm `0.25`,
+which bounds every intermediate state.
+
+The live result was the strongest broad generalization result in this
+iteration branch, but it was still **not retained**:
+
+| iteration | learned scalars | marginal linear MACs/token | macro ΔNLL improvement | family wins | worst family | median condition | fold cosine |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2: shared `2 × 2` route | 4 | 6 | `+0.91%` | `5/8` | `-6.43%` | `69.9` | `0.972` |
+| 3: sign experts | 8 | 6 | `-0.41%` | `4/8` | `-3.35%` | `555.7` | `0.686` |
+| 4: affine conformal route | 4 | 8 | `+0.32%` | `6/8` | `-3.32%` | `25.35` | `0.984` |
+
+Iteration 4 passed the required six-family win count and every scientific
+and resource gate. It failed only the preregistered worst-family floor:
+state-invariant prompts regressed `3.32%`, below the allowed `-2%`. The
+parent-point prediction was essentially exact (`r = 0.9999999`, RMSE
+`0.000164` ΔNLL/token, `100%` sign agreement), so this is not a nonlinear
+overshoot. The stable pooled direction is still missing a causal variable
+that distinguishes two state-invariant prompts requiring opposite
+corrections.
+
+The frozen parent therefore remains iteration zero. Any next conditional
+feature should be preregistered and tested on a new frozen development panel,
+because the current A-fit result has now exposed which family and prompts
+fail. The Iteration 4 report is bound by collection hash
+`4958b0f64094758c13740c5ffa11fac41652af2dc6e01232c3b80c32155fde5c`,
+logical hash
+`48c708e8b717610b4ec018f9c129494c08d9027b6f05afef612ab79d91e938f1`,
+and file hash
+`bad81101b0e07d75cca23ed85143d0f3d0c8649423fa84fdbefef08e55afd541`.
+
+Iteration 5 screened the proposed second causal statistic before spending a
+fresh panel. It retained balance `g`, added centered negative-balance
+occupancy `o`, and fit the six-scalar route
+`C(g,o) = C0 + g Cg + o Co`. Cumulative occupancy and a 16-token-half-life
+EW occupancy shared one parent VJP per development prompt. Both routes used
+family-balanced, column-standardized ridge and one radial trust projection
+over all four `(g,o)` corners.
+
+The screening stopped safely before fresh selection:
+
+| occupancy arm | predicted macro absolute ΔNLL/token | occupancy std | standardized condition | fold cosine |
+|---|---:|---:|---:|---:|
+| cumulative | `0.267743` | `0.242363` | `282.51` | `0.7492` |
+| EW, half-life 16 | `0.268012` | `0.313540` | `303.34` | `0.7406` |
+
+The concern that a running fraction might collapse toward zero was not the
+failure. Both arms saw both signs (`218` negative-balance and `790`
+nonnegative-balance rows), all six coordinates were supported, every fold
+had rank six, and the selected top modes still carried `87.1460%` of parent
+modal energy. The failure was identifiability: even after column
+standardization, median condition exceeded the frozen `100` ceiling, and
+mean fold-direction cosine stayed below the `0.90` floor. Neither arm was
+selected, the durable claim was never created, and the new 16-example panel
+remains unopened.
+
+This narrows the next move: do not lower the stability gates or merely add
+more occupancy variants.
+
+The first identifiability repair is now complete. For each arm and each
+14-prompt LOFO training fold, it split the Jacobian into the existing four
+columns `B` and occupancy pair `O`, fit the weighted projection
+`A = (sqrt(W) B)^+ sqrt(W) O`, and trained on `[B, O - B A]`. The result was
+then mapped exactly back to the unchanged runtime coefficients
+`theta = [gamma_B - A gamma_O, gamma_O]`. `A` is fit-only metadata: deployed
+parameter count, state, MACs, and route semantics do not change.
+
+| occupancy arm | direct condition | residualized condition | retained occupancy energy, median / minimum | mapped fold cosine | predicted macro absolute ΔNLL/token |
+|---|---:|---:|---:|---:|---:|
+| cumulative | `282.51` | `16.91` | `3.63% / 1.63%` | `0.7492` | `0.267743` |
+| EW, half-life 16 | `303.34` | `16.91` | `3.42% / 1.56%` | `0.7406` | `0.268012` |
+
+This separates numerical conditioning from scientific identifiability.
+Residualization worked algebraically and reduced condition by about `94%`,
+but it removed mostly duplicated signal. The small independent remainder
+missed the preregistered `5%` retained-energy floor, the common deployed
+direction remained far below the `0.90` cosine gate, and predicted NLL was
+unchanged to roughly `1e-8`. Neither arm passed. The prompt-free development
+report has logical hash
+`3ea83a89db0fe4f9f73f727783acddde3292a26a151e8d7057b8a6a4db6c1cbf`
+and ignored local file hash
+`a7b6f483c4dd6376ab7a61a36cd991e620e11fe5b935996ad32bc86fcb96ac1f`.
+
+No fresh claim was created. The previously prepared panel is also no longer
+eligible for confirmation: the residualized recipe differs from its frozen
+plan, and its private payload was exposed during a local boundary audit.
+Any future confirmation must use a newly frozen recipe and a newly blinded
+panel. A separate one-dimensional residual-SVD controller is the clean next
+development candidate; it must not be introduced as an adaptive fallback
+inside this failed run.
+
+### Exact token-loss Fisher rung
+
+The next development rung now keeps the cancellation information that the
+prompt-level fits discarded. For every supervised loss token it computes the
+exact directional row
+
+```text
+Q[t, k] = d token_nll[t] / d route_coordinate[k]
+```
+
+over the eight unique cumulative/EW occupancy tangents. The mean of those
+rows must exactly replay both older six-coordinate prompt Jacobians. Each
+prompt is then reduced to `Q^T Q / N`, its target cross-moment, target second
+moment, and mean score; raw token IDs, logits, activations, and gradients are
+not retained in the prompt Fisher record.
+
+The fixed 16-prompt A-fit collection uses 16 source forwards plus 16 retained
+parent-VJP forwards: exactly 32 model forwards. Each retained graph is
+traversed in chunks of eight loss-token cotangents, so a prompt with `N`
+supervised tokens uses `ceil(N / 8)` batched backward calls. Validation holds
+out whole prompt families. Families have equal mass, prompts have equal mass
+within a family, and tokens are never treated as independent split units.
+
+The resulting Fisher coupling is symmetric. An off-diagonal says that two
+already-declared causal tangents are co-sensitive; it cannot determine a new
+causal arrow. Any stable candidate still needs held-family finite-displacement
+and JVP/intervention orientation before it can become an executor edge.
+
+This rung is development-only. It performs no candidate or fresh-panel
+forwards, compiles no provider, and makes no parameter, MAC, latency, or
+compression claim. Run its local diagnostic with:
+
+```bash
+fisher-graph-gemma-l3-l4-iterative-token-fisher-dev --help
+```
+
+The exact A-fit run covered `1,157` supervised loss tokens in `32` model
+forwards and `153` batched backward calls. It resolved the earlier
+observability problem: both six-coordinate Fishers were full rank, median
+standardized condition was about `38`, every occupancy coordinate retained
+at least `9.12%` Fisher energy beyond the shared/balance span, and both arms
+produced the same six stable couplings across all eight LOFO folds. Those
+couplings form two dense three-node components, one real and one imaginary.
+
+It did **not** solve the mutation fit. Cumulative and EW macro held-family
+RMSE changed by `-0.573%` and `-0.542%`; each won only `2/8` families, and
+fold-coefficient cosine was only `0.565` and `0.607`. Neither arm passed, so
+no provider or runtime claim was produced. The result cleanly separates a
+successful Fisher map from a failed single-global-coefficient executor. The
+next development hypothesis is a low-capacity causal token-conditioned
+coefficient/router fit over the frozen coupling map, not compilation of the
+current coefficients.
+
+The ignored local report has logical hash
+`6ffaf61639626b47101324573fff646de187f45212b29c88f236749bb2beb65b`
+and file hash
+`d80d78580102168c031a200472bd8c0259a264f2e4d8fc269a5a73b1ccd363b9`.
+
+### Partially pooled corrective screen
+
+The follow-up freezes the six stable Fisher couplings and tests whether
+nested family-held-out shrinkage can stabilize the already token-conditioned
+balance/occupancy route. It keeps the two shared conformal coefficients and
+selects one common ridge for the four conditional deviations from
+`{0.1, 1, 10, infinity}`. The exact shared-only fallback (`infinity`) is a
+first-class option, and ridge selection happens inside every outer training
+fold. Conditional success also has explicit materiality floors: at least
+`0.5%` family-macro improvement over shared-only, with a family counted as an
+incremental win only after at least `0.1%` improvement. This prevents
+floating-point dust from authorizing a controller.
+
+All eight cumulative-primary folds selected shared-only. That raised
+fold-coefficient cosine from `0.565` to `0.955`, produced `6/8` family wins,
+and limited the worst regression to `-0.485%`, but macro held RMSE improved
+only `0.173%` and conditional behavior added exactly `0%` over the shared
+control. EW produced the same decision. The screen therefore rejects the
+current balance/occupancy variables as transferable corrective signals; it
+does not reject the stable Fisher map.
+
+This replay used zero new model forwards and remains adaptive development.
+No provider, causal edge orientation, graph traversal, or runtime claim was
+authorized. The next experiment needs a newly frozen causal feature and new
+family-disjoint token collection. See the
+[progressive compilation report](docs/progressive-compilation.md#partially-pooled-token-fisher-corrective-screen)
+for the nested protocol, gates, and exact hashes.
+
+Run the local replay with:
+
+```bash
+fisher-graph-gemma-l3-l4-iterative-fisher-corrective-dev \
+  --token-fisher-report-sha256 <logical-sha256> \
+  --token-fisher-report-file-sha256 <file-sha256>
+```
 
 ### Parallel capacity-control rung
 
@@ -807,6 +1273,23 @@ This work is described in
 | Gemma L3→L4 spectral map, rank 64 | Source-σ-weighted ranks are `11 / 18 / 34` at `90% / 95% / 99%` energy; no deployed reduction | Local-to-`1σ` mean cosine `0.9996`; two-origin mean similarity `0.672` | Prompt-free fixed-reference analysis only; position-conditioned |
 | Gemma phase-aware source-mode GFA | No deployed reduction; phase-aware low graph bands `0:8` / `0:16` contain `48.09%` / `60.32%` of local response energy versus `9.24%` / `21.40%` for the phase-blind magnitude control | Local phase-aware graph ranks are `45 / 52 / 62` versus `57 / 61 / 63` for the control; local-to-`1σ` low-8 projector overlap is `0.9995` | Same-artifact pooled source-response diagnostic only; no directed transfer, held-out prediction, executor, compression, or speed claim |
 | Gemma fit-only graph-wavelet map | The analytic rank-45 plan payload is `283,456` float64 scalars (`29.38%` below the `401,408`-scalar full-rank plan; `287,936` with wavelet metadata) but misses fidelity; rank 52 is `326,912` (`18.56%`; `331,392` standalone) and misses the 20% plan-payload gate | Rank-52 fit-disjoint development-selection error is `0.15090`, cosine `0.98856`, and mean effective support `1.64` modes versus `15.64` for fit-energy GFA; GFA error is `0.12649` and SVD is `0.04091` | At rank 52, signed topology beats magnitude, native, permuted, and all eight random controls; no rank passes fidelity, topology, plan-payload, GFA, SVD, and compute gates, and full rank ties the random bases; localized mapping evidence only |
+| Gemma graph-wavelet supermode mutation | Rank 45 folds 15 genuine `2→1` merges plus four singleton prunes into the same `283,456`-coefficient plan (`29.38%` below rank 64), with no separate runtime merge transform | Fit-disjoint selection error is `0.18422`, cosine `0.98289`, and squared-error recovery over equal-rank GOMP pruning is `18.70%`; recovery is positive at both selection origins | Dense loadings beat the same one-hot actions and all four permuted-topology controls, but fit-energy GFA (`0.17258`) and SVD (`0.05055`) remain better; open-development structural nominee only, with compute, NLL, and model-compression gates closed |
+| Gemma grouped graph-wavelet local SVD | Every rank-45 arm has the same `283,456` coefficients and `2,268,184` prepared bytes (`29.38%` below rank 64); graph partitions and local mixers are folded out of the runtime | Signed local-SVD errors are `0.13256 / 0.16044 / 0.17904` for max block widths `16 / 8 / 4`; the controlled width-8 arm has cosine `0.98705`, beats its one-hot control and all four permuted-topology controls, and recovers `24.15%` of pair-supermode squared error | Multiway local response synthesis works substantially better than pair merging; cluster GFA loses at every matched setting and global SVD (`0.05055`) remains the ceiling. Opened fixed-reference development only; compute, NLL, and model-compression gates remain closed |
+| Gemma signed-g8 graph-wavelet confirmation | Frozen rank 45 stores `283,456` coefficients and `2,268,184` prepared bytes (`29.38%` below rank 64); no whole-model or speed claim | On fresh prompt-free origins, error/cosine is `0.16059 / 0.98702`, better than all 63 random partitions and signed GFA (`0.17218`), with `p=0.015625` and `11.73%` median-null SSE recovery; the `6/8` group-win result misses the frozen `7/8` gate. On 16 reused Calibration-A prompts, incremental factorized-model shadow fidelity fails: `ΔNLL/token +2.72583`, KL `3.01776`, top-1 `40.49%`, target-modal error `5.5104` | The graph partition is meaningful in first-order response space, but the fixed-reference linear carrier does not reproduce real token-conditioned states. Calibration-B and held-out splits remain sealed; candidate serving and compression remain unauthorized |
+| Gemma rank-45 three-basis A shadow | Signed local SVD, signed GFA, and global SVD are exactly size-matched at `283,456` coefficients and `2,268,184` prepared bytes; this diagnostic makes no deployment-saving claim | All three fail ordinary and affected gates (`000`). Signed GFA has the lowest all-token delta NLL/KL (`+2.51838 / 2.80428`) and affected delta NLL/KL (`+2.95037 / 3.29210`), while global SVD has slightly higher top-1 (`42.43% / 32.66%`). The gains over local SVD are small, and global SVD does not axiswise dominate the graph arms | Corrected V2 A-fit-only classification is `no_rank45_basis_viable_attribution_inconclusive`: basis choice alone does not repair the executor, but rank-45 capacity cannot yet be separated from the shared fixed-reference carrier. Factorized-refit source only; no held-out, serving, compression, compute, or speed claim |
+| Gemma rank-64/X4 A-only ladder | Rank 64 stores `401,408` coefficients and prepares `3,211,800` bytes, `41.61% / 41.60%` more than rank 45; it is a capacity control, not compression | Rank 64 worsens the rank-45 global arm (`+2.76865` NLL, `3.05804` KL, `41.03%` top-1). The true target-64 projection improves to `+2.00137 / 2.35277 / 46.51%`, but exact native normalized-X4 on the clamped carrier still reaches only `+1.95224 / 2.31611 / 45.01%`; all ordinary and affected gates fail (`000`) | `exact_x4_continuation_invalid` means the normalized-MLP-input intervention is not a complete residual-state boundary, so upstream capacity, projection, and generator attribution remains invalid. The subsequent complete-H4 audit resolves that boundary ambiguity; Calibration-B and held-out splits remain sealed |
+| Gemma complete-H4 A-only identity audit | Diagnostic only: one model and tokenizer, six authenticated forwards per prompt, 96 forwards total; no deployment reduction | The corrected rank-64 and partial exact-X4 replays match V2 exactly. Injecting native `layer.4.output` recovers every full logit tensor bitwise across all 16 prompts: delta NLL `0`, KL `0`, top-1 `100%` in both ordinary and affected views (`11`) | `complete_h4_identity_validated`: H4 is a valid complete-state attribution boundary and the prior continuation error is in layer 4 or earlier. The incomplete H4 differs on 819 valid rows, including 17 beyond the graph's finite-lag target mask on 4 prompts. Learned-H4 reconstruction is next; no serving, compression, compute, latency, or speed claim |
+| Gemma complete-H4 rank-64 A-only projection | Rank 64 stores `40,960` basis coefficients (`163,840` bytes at float32) and costs `81,920` projection MACs per support row; the diagnostic used 144 forwards and 16 backwards and makes no model-reduction claim | It retains `99.21%` of row-weighted correction energy, but full/core/tail NRMSE is `0.09094 / 0.09092 / 0.30359`. Ordinary fidelity is `+0.05531` delta NLL, `0.08040` KL, and `85.39%` top-1; the complete-H4-support view is `+0.06413 / 0.09322 / 83.06%` | `11000 / rank64_h4_projection_insufficient`: identity and exact causal-support integrity pass, while geometry and both behavioral ledgers fail. This recovers most of the partial-X4 error, but rank 64—especially its causal tail—is not sufficient, so the learned generator and all held-out panels remain closed |
+| Gemma complete-H4 two-basis rank ladder | Each rank-192 arm stores `122,880` basis coefficients (`491,520` bytes at float32) and costs `245,760` projection MACs per support row; the complete eight-arm diagnostic used 272 forwards, 16 backwards, and `1,006,387,200` logical projection MACs, with no deployment-saving claim | The tilted rank-192 arm reaches full/core/tail NRMSE `0.00992 / 0.00991 / 0.08779`; pooled ordinary fidelity is `+0.00506` delta NLL, `0.00360` KL, and `96.35%` top-1, while complete-support fidelity is `+0.00587 / 0.00418 / 95.77%`. The unweighted arm is numerically indistinguishable | No arm passes the strict all-strata gate (`11100000` at every rank): the 17-row causal tail misses pooled and two family NRMSE gates, shell/sundial miss family top-1 gates, and one obsidian tail token misses the family NLL gate. Fisher tilting does not improve rank efficiency; learned generators, held-out panels, serving, and compression remain closed |
+| Gemma complete-H4 D320 + token-Fisher tail ladder | The first fully passing tested arm retains `320 + 256 = 576` of the `640` H4 directions (`90%` of this diagnostic span). Its ideal two-sided projection work is `737,280` MACs per support row versus `819,200` for the exact 640-span sentinel; these are capacity measurements, not serving parameters or measured latency | K256 improves the D320 family-macro absolute NLL gap by `97.61%`. Ordinary delta-NLL/KL/top-1 is `+0.00056 / 0.00364 / 96.89%`; complete-support is `+0.00065 / 0.00422 / 96.39%`; causal-tail is `-0.02168 / 0.00440 / 100%`. Full/core/tail NRMSE is `0.00362 / 0.00362 / 0.00688`; all established aggregate, prompt-robustness, and geometry gates pass | `adaptive_same_a_smallest_tail_rank_256_cleared_established_gates`: rank 64 and rank 320 reproduce the parent run exactly, all eight families improve, and K320 is bitwise native. The rank grid was chosen after seeing the first run, D320 itself contains all-A information, and held native tails instantiate every finite correction. This is authenticated hypothesis evidence only—not fresh confirmation, a deployable provider, or a compression claim. Endpoint linear prediction improves only about `29%` even at full rank, motivating the teacher-KL signed-joint/path-integrated rung |
+| Gemma candidate-conditioned K64 gains V3–V10 | No serving artifact, parameter reduction, or deployable MAC saving was produced. V10 used exactly `224` model forwards / `1,039` backwards and accounted for `7,756` candidate support-row executions; its D320/K64 projection MAC counts are analysis-only | V3 abstained; V4's selected coarse steps and V5's `1/64` microsteps did not transfer. V6 found stable state signal but lost to the scalar control. V7's joint global-plus-state field analytically beat that scalar in `7/8` folds, while V8 finite execution reversed it. V9 localized the reversal by tracing the actual cast-once scalar→joint H4 path. V10 replayed the identical 16 endpoints and 64 GL4 nodes with float64 teacher-KL arithmetic: path transport is only `0.0622%` of finite-D64 RMS, while D64−D32 endpoint precision is `2.004%` | Float64 objective arithmetic improves strict closure only from `8.90%` to `8.67%`; cosine remains strong at `0.9963`, but only `4/8` families clear the frozen `10%` family gate. Higher-order quadrature is therefore not earned, and objective precision is a real secondary signal rather than a complete explanation. The active no-fit rung audits the post-H4 live suffix/discrete cast path before any scalar-endpoint refit. This is not serving or compression. See the [V3–V10 record](docs/progressive-compilation.md#candidate-conditioned-k64-gain-refits-v3-v4-and-v5) |
+| Gemma post-H4 adjoint localization V11–V13 | Diagnostic only: V13 adds 64 suffix forwards, 832 segment calls, 436 chunked pullbacks, and 113,602,560 support contraction products; no serving resources are claimed | Native reverse-mode VJP reproduces V10 `P_v10` at `4.68e-16` relative RMSE, but differs from the exact same-suffix forward JVP by `2.5645e-4` integrated and `2.5635e-4` nodewise. All eight families miss the frozen `1e-4` gate; integrity and the fixed telescope pass | The original Fisher gradient source is vindicated. The residual is a live-float32 forward/reverse numerical-boundary envelope, far smaller than the open `8.67%` finite closure miss. V13 is an authenticated negative diagnostic, not compression; reverse VJP can be the Fisher-local derivative in a newly preregistered operational rung, while finite fidelity still requires a separate held-out correction |
+| Gemma autonomous complete-H4 residual V14 | Incremental provider-only size/work is `77,888 / 118,784` params/MACs per token at K64, `360,704 / 524,288` at K256, and `471,360 / 675,840` at K320. The A16 screen used 128 full-model forwards and 16 VJP traversals; retained Gemma and bridge/suffix costs are excluded | Outer-LOFO ordinary ΔNLL/KL/top-1 improves monotonically from the base graph's `+2.56889 / 2.88209 / 42.43%` to K320 Fisher's `+1.01993 / 1.10038 / 63.69%`. K320 reduces the two losses by `60.30% / 61.82%`; matched-rank Fisher weighting adds `9.53% / 8.86%` and `2.26` top-1 points over hidden-only K256 | The serving ABI is genuinely source-free at H4, but every K64–K320 recipe remains far outside the `0.05 / 0.05 / 95%` gates. No provider was selected, no sidecar was emitted, and guard/B stayed closed. This is one-boundary full-vocabulary/full-suffix shadow evidence—not whole-model compilation, layer deletion, compression, or speed. A single K640 LOFO capacity ceiling is the bounded next discriminator |
+| Gemma autonomous K640 capacity sentinel V15 | Full-span provider-only size/work is `1,147,520` scalars / `1,556,480` logical MACs per token (`2.43× / 2.30×` K320); retained Gemma and bridge/suffix costs are excluded | Outer-LOFO ordinary ΔNLL/KL/top-1 reaches `+0.81825 / 0.92572 / 66.70%`, improving K320 by `19.77% / 15.87% / 3.01` points. Loss improves in `8/8` families and top-1 in `7/8` | Full H4 span helps broadly but remains far outside every absolute gate. PCA rank truncation matters but cannot explain the remaining miss; no provider, guard, or B opening, and no compression or speed claim |
+| Gemma Fisher-square conditional residual V16 | Each K256+rank-16 child uses `377,604` scalars / `541,184` logical MACs per token, exactly matched between Fisher and PCA and only `16,900 / 16,896` above the parent. The screen used 112 forwards, 16 VJPs, and 24 fold fits | Parent/Fisher/PCA ordinary ΔNLL is `1.16923 / 1.16930 / 1.16919`; KL is `1.25289 / 1.25288 / 1.25285`; all three top-1 values are `59.72%`. Both routers pass fit and held-family 2-D geometry gates, but Fisher wins family loss in only `1/8` | The inherited `0.25` pointwise operator certificate projects Fisher fits to `0.000396–0.000628` of their unconstrained amplitude, leaving only `0.0186–0.0290%` in-fit RMSE gain. The tested square is rejected without blaming coordinate collapse; constrained or scale-calibrated residual fitting is the next hypothesis, not deployment or compression |
+| Gemma bounded Fisher-pedal conditional residual V18 | Every matched child uses `377,608` scalars / `541,187` logical matrix MACs per token, only four scalars and three MACs above V16. The screen used 144 forwards, 16 VJPs, 40 outer fits, 32 held diagnostics, and 80 causal checks | Parent/unit-or-constant/Fisher-conditional/PCA-conditional ordinary ΔNLL is `1.16923 / 1.25292 / 1.24127 / 1.19812`. Fisher conditional varies on all fit and held folds and improves its constant in `8/8` families, but the macro gain is only `0.943%`; it remains `6.10%` worse than the parent and loses to PCA on absolute ΔNLL | The rowwise `0.25` amplitude certificate works without global suppression, but analytic pedal targets mostly exceed one and the learned pedal stays near full-on. Classification is `fisher_pedal_pointwise_trust_insufficient`; no provider, serving, compression, or speed claim. V17 is retained only as an invalid floating-aggregation receipt; V18 is authoritative |
+| Gemma finite teacher-KL joint direction/pedal V19 | Every matched child remains `377,608` scalars / `541,187` provider matrix MACs per token. The exact screen used 1,280 forwards, 912 suffix backwards, 896 local contractions, 40 conceptual outer fits, and 96 causal checks | All 16 Fisher/PCA fits selected checkpoint 0. Fisher's mean exact-KL curve was `.00244384 → .00781108 → .00344203 → .00451110 → .00376498`; its selected half-strength initializer improves V18 start macro absolute ΔNLL by `3.306%` but remains `2.596%` worse than the parent and identical to the intercept. PCA checkpoint 0 is `0.573%` better than parent on macro absolute ΔNLL but `0.533%` worse on KL | `finite_joint_pedal_outer_fidelity_insufficient`: finite rollback worked, but no update descended, no direction/beta change was selected, and every pedal stayed exactly `0.5`. No full refit, sidecar, serving, compression, or speed claim. A nested finite microstep ladder is the next justified optimizer diagnostic |
+| Gemma finite Fisher microstep V20a | Fit-only preflight: 2,622 full-model forwards, 128 full-suffix backwards, 112 local-head contractions, 168 positive candidates, and nine signed mirrors. Candidate and provider sidecar remain null | All `8/8` capability-excluded folds passed and selected `alpha = 0.1`; direction-only won `5/8`, joint won `3/8`, and pedal-only won `0/8`. Family-equal fit KL improved `0.00244384 → 0.00234591` (`4.0071%`), with every fold improving `3.2031–4.4064%` and every negative mirror worsening | `finite_microstep_preflight_passed_for_nested_validation`: V19's direction is useful but its full update overshot. This authorizes nested family-disjoint V20b only; no held-fidelity, fresh-guard, Calibration-B, serving, compression, speed, parameter, or FLOP claim |
 | Gemma fit-only signed-GFA rate curve | Rank 45 stores `283,456` coefficients versus `393,216` dense fit knots (`27.91%` fewer); cached-core linear MACs are `20.67%` lower, but the current uncached interpolation path performs `2.20×` the dense kernel-application multiplies | Frozen-origin selection error `0.1900`, worst cosine `0.9810`; the same-budget SVD error is `0.0506` and every signed-GFA cutoff loses to SVD | The signed graph beats magnitude, native-prefix, permuted, and eight random controls, but does not pass the controlled compression gate; organization/fidelity evidence only |
 | Gemma graph-organized global SVD | Rank-45 deployment-form edge state is `279,744` versus `393,216` dense coefficients (`28.86%` fewer); all-on cached-core MACs are `72.51%` of dense, and 95%-bound routing lowers this to `70.61%` | On nonzero C2 selection directions, all-on measured-response error is `0.03179`; signed 95%-bound routing is `0.03206` at mean active rank `43.78` | Executable hybrid and conditional rate curve; opened synthetic development data, router cost excluded, no NLL, latency, whole-block, or whole-model claim |
 | Gemma graph-organized one-shot shadow | No deployment saving claimed; the candidate runtime needs three source-model passes and the full qualification observation needs two additional oracle passes | On one Calibration-A development prompt, all-on modal error is `4.8208` with cosine `0.5404` and `ΔNLL/token +3.0853`; the true rank-64 projection oracle still has `0.9741` full-width error, and exact X4 injection still has `ΔNLL/token +2.0121` | Strong fail-closed shadow harness; current edge rejected for target-subspace capacity and residual-carrier incompleteness, with deployment and routing unauthorized |
@@ -979,6 +1462,27 @@ fisher-graph-gemma-l3-l4-phase-graph-spectral-dev analyze
 fisher-graph-gemma-l3-l4-graph-wavelet-dev describe
 fisher-graph-gemma-l3-l4-graph-wavelet-dev analyze
 
+fisher-graph-gemma-l3-l4-graph-wavelet-supermode-dev describe
+fisher-graph-gemma-l3-l4-graph-wavelet-supermode-dev analyze
+
+fisher-graph-gemma-l3-l4-graph-wavelet-grouped-dev describe
+fisher-graph-gemma-l3-l4-graph-wavelet-grouped-dev analyze
+
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-freeze
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-null-bundle
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-confirm
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-shadow-dev
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-shadow-bases-dev
+fisher-graph-gemma-l3-l4-graph-wavelet-signed-g8-rank64-oracle-dev
+fisher-graph-gemma-l3-l4-complete-h4-identity-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-projection-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-basis-rank-ladder-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-autonomous-residual-v14-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-autonomous-k640-v15-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-fisher-square-v16-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-fisher-pedal-v18-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-finite-joint-pedal-v19-a-dev
+
 fisher-graph-gemma-l3-l4-graph-organized-svd-dev
 
 fisher-graph-gemma-l3-l4-conditional-spectral-dev compile
@@ -1036,6 +1540,9 @@ default to the ignored `.local-runs/` tree.
 - [Cross-block selective bundling](docs/cross-block-selective-bundling.md)
 - [Fisher-need conditional computation](docs/conditional-computation.md)
 - [Fit-only graph-wavelet mapping](docs/graph-wavelet-mapping.md)
+- [Graph-wavelet supermode mutation](docs/graph-wavelet-supermode-mutation.md)
+- [Grouped graph-wavelet basis comparison](docs/graph-wavelet-grouped-comparison.md)
+- [Signed-g8 graph-wavelet confirmation](docs/graph-wavelet-signed-g8-confirmation.md)
 - [Graph-organized global SVD](docs/graph-organized-svd.md)
 
 ### Earlier Gemma foundations

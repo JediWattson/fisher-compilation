@@ -54,6 +54,8 @@ from .shadow_fidelity import ShadowFidelityExample
 
 
 __all__ = [
+    "DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE",
+    "GemmaIterativeResidualCampaignRecipe",
     "GemmaIterativeResidualCampaignResult",
     "GemmaIterativeResidualLiveCollection",
     "collect_gemma_iterative_residual_campaign_live",
@@ -131,6 +133,415 @@ def _scalar_payload(value: object, *, label: str) -> Mapping[str, object]:
         result = dict(to_dict())
     _assert_scalar_hash_only(result, path=label)
     return result
+
+
+def _field_name(value: object, *, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[a-z][a-z0-9_]*", value) is None
+    ):
+        raise ValueError(f"{label} must be a snake-case field name")
+    return value
+
+
+def _provider_int(
+    provider: object,
+    *,
+    attribute: str,
+    fallback_attribute: str | None,
+    label: str,
+) -> int:
+    value = getattr(provider, attribute, None)
+    if value is None and fallback_attribute is not None:
+        value = getattr(provider, fallback_attribute, None)
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{label} must be a nonnegative integer")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class GemmaIterativeResidualCampaignRecipe:
+    """Strict scalar protocol for one candidate inside the live LOFO shell.
+
+    Model execution and source authority are invariant across recipes.  This
+    descriptor names the candidate's fixed-dimensional linearization, binds
+    provider-owned resource claims, and owns the recipe-specific OOF row.
+    """
+
+    recipe_id: str
+    fit_record_jacobian_field: str
+    fold_coefficient_field: str
+    coefficient_count: int
+    learned_parameter_attribute: str
+    learned_parameter_fallback_attribute: str | None
+    expected_learned_parameter_count: int
+    logical_macs_attribute: str
+    logical_macs_fallback_attribute: str | None
+    expected_logical_macs_per_token_upper_bound: int | None
+    logical_macs_must_equal_residual_width: bool
+    extra_resource_expectations: tuple[
+        tuple[str, str, int], ...
+    ] = ()
+    audit_recipe_fields: tuple[tuple[str, object], ...] = ()
+    provider_audit_fields: tuple[tuple[str, str], ...] = ()
+    parent_tensor_audit_fields: tuple[tuple[str, str], ...] = ()
+    fold_projection_field: str = "linearization_extrapolation"
+    fold_projection_count_audit_field: str = (
+        "fold_linearization_extrapolation_count"
+    )
+    projection_interpretation_audit_field: str = (
+        "coefficient_clipping_interpretation"
+    )
+    projection_interpretation: str = (
+        "linearization_extrapolation_not_free_improvement"
+    )
+    resource_envelope_error: str = (
+        "iterative provider exceeds its resource envelope"
+    )
+    linearization_error: str = (
+        "OOF linearization requires finite recipe coordinates"
+    )
+
+    def __post_init__(self) -> None:
+        _field_name(self.recipe_id, label="recipe_id")
+        _field_name(
+            self.fit_record_jacobian_field,
+            label="fit-record Jacobian field",
+        )
+        _field_name(
+            self.fold_coefficient_field,
+            label="fold coefficient field",
+        )
+        if (
+            type(self.coefficient_count) is not int
+            or self.coefficient_count <= 0
+            or type(self.expected_learned_parameter_count) is not int
+            or self.expected_learned_parameter_count <= 0
+        ):
+            raise ValueError(
+                "recipe coefficient and learned-parameter counts must be "
+                "positive"
+            )
+        for value, label in (
+            (self.learned_parameter_attribute, "learned parameter attribute"),
+            (self.logical_macs_attribute, "logical MAC attribute"),
+        ):
+            _field_name(value, label=label)
+        for value, label in (
+            (
+                self.learned_parameter_fallback_attribute,
+                "learned parameter fallback attribute",
+            ),
+            (
+                self.logical_macs_fallback_attribute,
+                "logical MAC fallback attribute",
+            ),
+        ):
+            if value is not None:
+                _field_name(value, label=label)
+        expected_macs = self.expected_logical_macs_per_token_upper_bound
+        if (
+            expected_macs is not None
+            and (type(expected_macs) is not int or expected_macs < 0)
+        ):
+            raise ValueError(
+                "expected logical MAC count must be nonnegative"
+            )
+        if (expected_macs is None) != self.logical_macs_must_equal_residual_width:
+            raise ValueError(
+                "recipe must bind logical MACs either to a fixed value or "
+                "to residual width"
+            )
+        if (
+            type(self.extra_resource_expectations) is not tuple
+            or type(self.audit_recipe_fields) is not tuple
+            or type(self.provider_audit_fields) is not tuple
+            or type(self.parent_tensor_audit_fields) is not tuple
+        ):
+            raise TypeError("recipe receipt descriptors must be tuples")
+
+        resource_keys: list[str] = []
+        for value in self.extra_resource_expectations:
+            if type(value) is not tuple or len(value) != 3:
+                raise ValueError(
+                    "extra resource expectations must be field, attribute, "
+                    "expected-value triples"
+                )
+            field, attribute, expected = value
+            resource_keys.append(
+                _field_name(field, label="extra resource field")
+            )
+            _field_name(attribute, label="extra resource attribute")
+            if type(expected) is not int or expected < 0:
+                raise ValueError(
+                    "extra resource expectations must be nonnegative integers"
+                )
+        if len(resource_keys) != len(set(resource_keys)):
+            raise ValueError("extra resource fields must be unique")
+
+        audit_keys: list[str] = []
+        for value in self.audit_recipe_fields:
+            if type(value) is not tuple or len(value) != 2:
+                raise ValueError(
+                    "audit recipe fields must be field-value pairs"
+                )
+            field, payload = value
+            audit_keys.append(_field_name(field, label="audit recipe field"))
+            _assert_scalar_hash_only(payload, path=f"recipe audit.{field}")
+        for descriptors, label in (
+            (self.provider_audit_fields, "provider audit"),
+            (self.parent_tensor_audit_fields, "parent tensor audit"),
+        ):
+            for value in descriptors:
+                if type(value) is not tuple or len(value) != 2:
+                    raise ValueError(
+                        f"{label} fields must be field-attribute pairs"
+                    )
+                field, attribute = value
+                audit_keys.append(_field_name(field, label=f"{label} field"))
+                _field_name(attribute, label=f"{label} attribute")
+        _field_name(
+            self.fold_projection_field,
+            label="fold projection field",
+        )
+        for value, label in (
+            (
+                self.fold_projection_count_audit_field,
+                "fold projection count audit field",
+            ),
+            (
+                self.projection_interpretation_audit_field,
+                "projection interpretation audit field",
+            ),
+        ):
+            audit_keys.append(_field_name(value, label=label))
+        if len(audit_keys) != len(set(audit_keys)):
+            raise ValueError("recipe audit fields must be unique")
+        for value, label in (
+            (
+                self.projection_interpretation,
+                "projection interpretation",
+            ),
+            (self.resource_envelope_error, "resource envelope error"),
+            (self.linearization_error, "linearization error"),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{label} must be nonempty")
+
+    def provider_coefficients(
+        self,
+        provider: Gemma3L3L4CorrectionProvider,
+    ) -> tuple[float, ...]:
+        try:
+            raw = getattr(provider, self.fold_coefficient_field)
+        except AttributeError as error:
+            raise ValueError(
+                "OOF provider omitted its recipe coefficients"
+            ) from error
+        try:
+            result = tuple(float(value) for value in raw)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "OOF provider recipe coefficients are invalid"
+            ) from error
+        if len(result) != self.coefficient_count or any(
+            not math.isfinite(value) for value in result
+        ):
+            raise ValueError(
+                "OOF provider must expose four finite coefficients"
+                if self is DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE
+                else "OOF provider must expose finite recipe coefficients"
+            )
+        return result
+
+    def provider_resource_receipt(
+        self,
+        provider: Gemma3L3L4CorrectionProvider,
+    ) -> dict[str, int]:
+        learned = _provider_int(
+            provider,
+            attribute=self.learned_parameter_attribute,
+            fallback_attribute=self.learned_parameter_fallback_attribute,
+            label="provider learned parameter count",
+        )
+        macs = _provider_int(
+            provider,
+            attribute=self.logical_macs_attribute,
+            fallback_attribute=self.logical_macs_fallback_attribute,
+            label="provider logical MAC count",
+        )
+        extras: dict[str, int] = {}
+        for field, attribute, expected in self.extra_resource_expectations:
+            observed = _provider_int(
+                provider,
+                attribute=attribute,
+                fallback_attribute=None,
+                label=f"provider {field}",
+            )
+            if observed != expected:
+                raise RuntimeError(self.resource_envelope_error)
+            extras[field] = observed
+        return {
+            "learned_parameter_count": learned,
+            "logical_macs_per_token_upper_bound": macs,
+            **extras,
+        }
+
+    def provider_audit_receipt(
+        self,
+        provider: Gemma3L3L4CorrectionProvider,
+    ) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for field, attribute in self.provider_audit_fields:
+            if not hasattr(provider, attribute):
+                raise ValueError(
+                    f"OOF provider omitted audit attribute {attribute}"
+                )
+            value = getattr(provider, attribute)
+            _assert_scalar_hash_only(value, path=f"provider audit.{field}")
+            result[field] = value
+        return result
+
+    def parent_tensor_audit_receipt(
+        self,
+        parent_h4: object,
+    ) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for field, attribute in self.parent_tensor_audit_fields:
+            value = getattr(parent_h4, attribute, None)
+            if not isinstance(value, Tensor):
+                raise ValueError(
+                    f"parent H4 omitted tensor audit attribute {attribute}"
+                )
+            result[field] = _tensor_sha256(value)
+        return result
+
+    def validate_resource_envelope(
+        self,
+        *,
+        resources: Mapping[str, int],
+        residual_width: int,
+    ) -> None:
+        if (
+            resources.get("learned_parameter_count")
+            != self.expected_learned_parameter_count
+        ):
+            raise RuntimeError(self.resource_envelope_error)
+        macs = resources.get("logical_macs_per_token_upper_bound")
+        if type(macs) is not int or macs < 0 or macs > 1_024:
+            raise RuntimeError(self.resource_envelope_error)
+        if self.logical_macs_must_equal_residual_width:
+            if macs != residual_width:
+                raise RuntimeError(
+                    "position-scale MAC receipt differs from residual width"
+                    if self
+                    is DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE
+                    else self.resource_envelope_error
+                )
+        elif macs != self.expected_logical_macs_per_token_upper_bound:
+            raise RuntimeError(self.resource_envelope_error)
+
+    def build_oof_row(
+        self,
+        *,
+        parent_observation: GemmaH4DampingFiniteNLLObservation,
+        candidate_observation: GemmaH4DampingFiniteNLLObservation,
+        fit_record: Mapping[str, object],
+        fold_receipt: Mapping[str, object],
+        provider_artifact_sha256: str,
+        candidate_execution_sha256: str,
+    ) -> dict[str, object]:
+        try:
+            jacobian = tuple(
+                float(value)
+                for value in fit_record[self.fit_record_jacobian_field]
+            )
+            coefficients = tuple(
+                float(value)
+                for value in fold_receipt[self.fold_coefficient_field]
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(self.linearization_error) from error
+        if (
+            len(jacobian) != self.coefficient_count
+            or len(coefficients) != self.coefficient_count
+            or any(
+                not math.isfinite(value)
+                for value in (*jacobian, *coefficients)
+            )
+        ):
+            raise ValueError(self.linearization_error)
+        parent_signed = (
+            parent_observation.candidate_summed_nll
+            - parent_observation.source_summed_nll
+        ) / parent_observation.supervised_tokens
+        exact_candidate_signed = (
+            candidate_observation.candidate_summed_nll
+            - candidate_observation.source_summed_nll
+        ) / candidate_observation.supervised_tokens
+        predicted_candidate_signed = parent_signed + math.fsum(
+            left * right
+            for left, right in zip(jacobian, coefficients, strict=True)
+        )
+        return {
+            "example_id": parent_observation.example_id,
+            "family_id": parent_observation.family_id,
+            "held_family_id": parent_observation.family_id,
+            "parent_signed_delta_nll_per_token": parent_signed,
+            "predicted_candidate_signed_delta_nll_per_token": (
+                predicted_candidate_signed
+            ),
+            "exact_candidate_signed_delta_nll_per_token": (
+                exact_candidate_signed
+            ),
+            self.fit_record_jacobian_field: jacobian,
+            self.fold_coefficient_field: coefficients,
+            "train_example_ids": fold_receipt["train_example_ids"],
+            "train_family_ids": fold_receipt["train_family_ids"],
+            "fit_record_sha256": fit_record["fit_record_sha256"],
+            "fold_receipt_sha256": fold_receipt["fold_receipt_sha256"],
+            "provider_artifact_sha256": provider_artifact_sha256,
+            "candidate_execution_sha256": candidate_execution_sha256,
+            "candidate_observation_sha256": (
+                candidate_observation.observation_sha256
+            ),
+        }
+
+
+DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE = (
+    GemmaIterativeResidualCampaignRecipe(
+        recipe_id="causal_position_scale",
+        fit_record_jacobian_field="jacobian_by_bin",
+        fold_coefficient_field="coefficients_by_bin",
+        coefficient_count=4,
+        learned_parameter_attribute=(
+            "marginal_prepared_float_scalar_count"
+        ),
+        learned_parameter_fallback_attribute="prepared_float_scalar_count",
+        expected_learned_parameter_count=4,
+        logical_macs_attribute=(
+            "marginal_logical_macs_per_token_upper_bound"
+        ),
+        logical_macs_fallback_attribute=(
+            "logical_macs_per_token_upper_bound"
+        ),
+        expected_logical_macs_per_token_upper_bound=None,
+        logical_macs_must_equal_residual_width=True,
+        audit_recipe_fields=(
+            ("position_bin_count", 4),
+            (
+                "position_bin_semantics",
+                "causal_logical_position_[0_3]_[4_7]_[8_15]_[16_plus]",
+            ),
+        ),
+        resource_envelope_error=(
+            "fixed four-bin provider exceeds its resource envelope"
+        ),
+        linearization_error=(
+            "OOF linearization requires four finite bins"
+        ),
+    )
+)
 
 
 class _ArtifactLike(Protocol):
@@ -443,6 +854,7 @@ def _provider_receipt(
     provider: Gemma3L3L4CorrectionProvider,
     held_family: str,
     training_records: Sequence[Mapping[str, object]],
+    recipe: GemmaIterativeResidualCampaignRecipe,
 ) -> dict[str, object]:
     provider.validate_integrity()
     if provider.site != _H4_SITE:
@@ -463,14 +875,7 @@ def _provider_receipt(
         or len(training_family_ids) != 7
     ):
         raise RuntimeError("OOF provider fit leaked its held family")
-    coefficients = tuple(
-        float(value)
-        for value in getattr(provider, "coefficients_by_bin")
-    )
-    if len(coefficients) != 4 or any(
-        not math.isfinite(value) for value in coefficients
-    ):
-        raise ValueError("OOF provider must expose four finite coefficients")
+    coefficients = recipe.provider_coefficients(provider)
     training_record_sha256s = tuple(
         sorted(
             str(
@@ -501,7 +906,7 @@ def _provider_receipt(
         != training_family_ids
         or tuple(payload.get("train_fit_record_sha256s", ()))
         != training_record_sha256s
-        or tuple(payload.get("coefficients_by_bin", ()))
+        or tuple(payload.get(recipe.fold_coefficient_field, ()))
         != coefficients
     ):
         raise RuntimeError("OOF fold-fit receipt differs from training")
@@ -518,6 +923,7 @@ def _retained_provider_receipt(
     parent_artifact_sha256: str,
     parent_h4_sha256: str,
     bridge_binding_sha256: str,
+    recipe: GemmaIterativeResidualCampaignRecipe,
 ) -> dict[str, object]:
     """Bind a successful all-development refit to the final report."""
 
@@ -533,6 +939,15 @@ def _retained_provider_receipt(
         or len(tuple(fit.get("train_family_ids", ()))) != 8
     ):
         raise ValueError("retained provider does not bind the full fit panel")
+    coefficients = recipe.provider_coefficients(provider)
+    if (
+        tuple(fit.get(recipe.fold_coefficient_field, ()))
+        != coefficients
+    ):
+        raise RuntimeError(
+            "retained provider full-fit receipt differs from provider"
+        )
+    provider_resources = recipe.provider_resource_receipt(provider)
     payload: dict[str, object] = {
         "provider_artifact_sha256": _require_sha256(
             provider.artifact_sha256,
@@ -550,15 +965,7 @@ def _retained_provider_receipt(
             bridge_binding_sha256,
             label="retained bridge",
         ),
-        "learned_parameter_count": int(
-            getattr(provider, "marginal_prepared_float_scalar_count")
-        ),
-        "logical_macs_per_token_upper_bound": int(
-            getattr(
-                provider,
-                "marginal_logical_macs_per_token_upper_bound",
-            )
-        ),
+        **provider_resources,
         "full_fit": fit,
     }
     payload["retention_receipt_sha256"] = _sha256(
@@ -589,10 +996,23 @@ def collect_gemma_iterative_residual_campaign_live(
     build_report: ReportBuilder,
     fit_full: FullFitter,
     lineage: Mapping[str, object] | None = None,
+    recipe: GemmaIterativeResidualCampaignRecipe | None = None,
 ) -> GemmaIterativeResidualCampaignResult:
     """Run the exact 64-forward fit-only LOFO campaign."""
 
     manifest = _panel_manifest(panel)
+    campaign_recipe = (
+        DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE
+        if recipe is None
+        else recipe
+    )
+    if not isinstance(
+        campaign_recipe,
+        GemmaIterativeResidualCampaignRecipe,
+    ):
+        raise TypeError(
+            "recipe must be a strict iterative residual campaign recipe"
+        )
     for label, callback in (
         ("make_fit_record", make_fit_record),
         ("fit_fold", fit_fold),
@@ -744,8 +1164,8 @@ def collect_gemma_iterative_residual_campaign_live(
     # Fit exactly one realization of the fixed recipe per held family.
     providers: dict[str, Gemma3L3L4CorrectionProvider] = {}
     fold_receipts: list[Mapping[str, object]] = []
-    fold_provider_parameter_counts: list[int] = []
-    fold_provider_mac_counts: list[int] = []
+    fold_provider_resource_receipts: list[Mapping[str, int]] = []
+    fold_provider_audit_receipts: list[Mapping[str, object]] = []
     fold_provider_sha256s: list[str] = []
     fold_provider_sha256_by_family: dict[str, str] = {}
     for held_family in sorted(set(manifest.values())):
@@ -772,29 +1192,15 @@ def collect_gemma_iterative_residual_campaign_live(
             provider=provider,
             held_family=held_family,
             training_records=training,
+            recipe=campaign_recipe,
         )
         providers[held_family] = provider
         fold_receipts.append(receipt)
-        fold_provider_parameter_counts.append(
-            int(
-                getattr(
-                    provider,
-                    "marginal_prepared_float_scalar_count",
-                    getattr(provider, "prepared_float_scalar_count"),
-                )
-            )
+        fold_provider_resource_receipts.append(
+            campaign_recipe.provider_resource_receipt(provider)
         )
-        fold_provider_mac_counts.append(
-            int(
-                getattr(
-                    provider,
-                    "marginal_logical_macs_per_token_upper_bound",
-                    getattr(
-                        provider,
-                        "logical_macs_per_token_upper_bound",
-                    ),
-                )
-            )
+        fold_provider_audit_receipts.append(
+            campaign_recipe.provider_audit_receipt(provider)
         )
         provider_sha256 = _require_sha256(
             provider.artifact_sha256,
@@ -889,30 +1295,59 @@ def collect_gemma_iterative_residual_campaign_live(
     canonical_folds = tuple(
         sorted(fold_receipts, key=lambda row: str(row["held_family_id"]))
     )
-    fold_parameter_counts = set(fold_provider_parameter_counts)
-    fold_mac_counts = set(fold_provider_mac_counts)
-    if len(fold_parameter_counts) != 1 or len(fold_mac_counts) != 1:
-        raise RuntimeError("OOF provider resource geometry differs by fold")
-    learned_parameter_count = next(iter(fold_parameter_counts))
-    logical_macs_per_token = next(iter(fold_mac_counts))
+    canonical_resource_receipts = {
+        _canonical_json_bytes(value)
+        for value in fold_provider_resource_receipts
+    }
+    canonical_provider_audit_receipts = {
+        _canonical_json_bytes(value)
+        for value in fold_provider_audit_receipts
+    }
     if (
-        learned_parameter_count != 4
-        or logical_macs_per_token < 0
-        or logical_macs_per_token > 1_024
+        len(canonical_resource_receipts) != 1
+        or len(canonical_provider_audit_receipts) != 1
     ):
-        raise RuntimeError(
-            "fixed four-bin provider exceeds its resource envelope"
+        raise RuntimeError("OOF provider resource geometry differs by fold")
+    fold_projection_values = tuple(
+        row.get(campaign_recipe.fold_projection_field)
+        for row in canonical_folds
+    )
+    if any(type(value) is not bool for value in fold_projection_values):
+        raise ValueError(
+            "OOF fold receipt omitted its recipe projection decision"
         )
+    fold_projection_count = sum(
+        bool(value) for value in fold_projection_values
+    )
+    provider_resources = dict(fold_provider_resource_receipts[0])
+    provider_audit = dict(fold_provider_audit_receipts[0])
+    learned_parameter_count = int(
+        provider_resources["learned_parameter_count"]
+    )
+    logical_macs_per_token = int(
+        provider_resources["logical_macs_per_token_upper_bound"]
+    )
     residual_width = int(
         getattr(bridge, "residual_width", logical_macs_per_token)
     )
-    if logical_macs_per_token != residual_width:
-        raise RuntimeError(
-            "position-scale MAC receipt differs from residual width"
-        )
+    if residual_width <= 0:
+        raise ValueError("bridge residual width must be positive")
+    campaign_recipe.validate_resource_envelope(
+        resources=provider_resources,
+        residual_width=residual_width,
+    )
     resource_payload: dict[str, object] = {
         "learned_parameter_count": learned_parameter_count,
         "logical_macs_per_token_upper_bound": logical_macs_per_token,
+        **{
+            key: value
+            for key, value in provider_resources.items()
+            if key
+            not in {
+                "learned_parameter_count",
+                "logical_macs_per_token_upper_bound",
+            }
+        },
         "serving_model_forward_count": 1,
         "parent_head_reused_not_duplicated": True,
         "parent_artifact_sha256": parent_artifact_sha256,
@@ -936,10 +1371,9 @@ def collect_gemma_iterative_residual_campaign_live(
         "example_count": _EXPECTED_EXAMPLE_COUNT,
         "family_count": _EXPECTED_FAMILY_COUNT,
         "outer_fold_count": _EXPECTED_FAMILY_COUNT,
-        "position_bin_count": 4,
-        "position_bin_semantics": (
-            "causal_logical_position_[0_3]_[4_7]_[8_15]_[16_plus]"
-        ),
+        **dict(campaign_recipe.audit_recipe_fields),
+        **provider_audit,
+        **campaign_recipe.parent_tensor_audit_receipt(parent_h4),
         "phase_a_source_forward_count": 16,
         "phase_a_parent_vjp_forward_count": 16,
         "phase_b_source_forward_count": 16,
@@ -1002,12 +1436,11 @@ def collect_gemma_iterative_residual_campaign_live(
         "fold_provider_artifact_sha256_by_family": dict(
             sorted(fold_provider_sha256_by_family.items())
         ),
-        "fold_linearization_extrapolation_count": sum(
-            bool(row["linearization_extrapolation"])
-            for row in canonical_folds
+        campaign_recipe.fold_projection_count_audit_field: (
+            fold_projection_count
         ),
-        "coefficient_clipping_interpretation": (
-            "linearization_extrapolation_not_free_improvement"
+        campaign_recipe.projection_interpretation_audit_field: (
+            campaign_recipe.projection_interpretation
         ),
         "selection_input_opened": False,
         "guard_input_opened": False,
@@ -1030,64 +1463,20 @@ def collect_gemma_iterative_residual_campaign_live(
         family_id = parent_observation.family_id
         record = records_by_example[example_id]
         fold = folds_by_family[family_id]
-        jacobian = tuple(
-            float(value) for value in record["jacobian_by_bin"]
-        )
-        coefficients = tuple(
-            float(value) for value in fold["coefficients_by_bin"]
-        )
-        if (
-            len(jacobian) != 4
-            or len(coefficients) != 4
-            or any(
-                not math.isfinite(value)
-                for value in (*jacobian, *coefficients)
-            )
-        ):
-            raise ValueError(
-                "OOF linearization requires four finite bins"
-            )
-        parent_signed = (
-            parent_observation.candidate_summed_nll
-            - parent_observation.source_summed_nll
-        ) / parent_observation.supervised_tokens
         candidate_observation = candidate_by_example[example_id]
-        exact_candidate_signed = (
-            candidate_observation.candidate_summed_nll
-            - candidate_observation.source_summed_nll
-        ) / candidate_observation.supervised_tokens
-        predicted_candidate_signed = parent_signed + math.fsum(
-            left * right
-            for left, right in zip(jacobian, coefficients, strict=True)
-        )
         oof_rows.append(
-            {
-                "example_id": example_id,
-                "family_id": family_id,
-                "held_family_id": family_id,
-                "parent_signed_delta_nll_per_token": parent_signed,
-                "predicted_candidate_signed_delta_nll_per_token": (
-                    predicted_candidate_signed
-                ),
-                "exact_candidate_signed_delta_nll_per_token": (
-                    exact_candidate_signed
-                ),
-                "jacobian_by_bin": jacobian,
-                "coefficients_by_bin": coefficients,
-                "train_example_ids": fold["train_example_ids"],
-                "train_family_ids": fold["train_family_ids"],
-                "fit_record_sha256": record["fit_record_sha256"],
-                "fold_receipt_sha256": fold["fold_receipt_sha256"],
-                "provider_artifact_sha256": (
+            campaign_recipe.build_oof_row(
+                parent_observation=parent_observation,
+                candidate_observation=candidate_observation,
+                fit_record=record,
+                fold_receipt=fold,
+                provider_artifact_sha256=(
                     fold_provider_sha256_by_family[family_id]
                 ),
-                "candidate_execution_sha256": (
+                candidate_execution_sha256=(
                     candidate_execution_sha256_by_example[example_id]
                 ),
-                "candidate_observation_sha256": (
-                    candidate_observation.observation_sha256
-                ),
-            }
+            )
         )
     canonical_oof = tuple(
         sorted(oof_rows, key=lambda row: str(row["example_id"]))
@@ -1143,7 +1532,23 @@ def collect_gemma_iterative_residual_campaign_live(
             parent_artifact_sha256=parent_artifact_sha256,
             parent_h4_sha256=parent_h4_sha256,
             bridge_binding_sha256=bridge.bridge_binding_sha256,
+            recipe=campaign_recipe,
         )
+        retained_resources = {
+            key: retained_receipt[key]
+            for key in provider_resources
+        }
+        if retained_resources != provider_resources:
+            raise RuntimeError(
+                "retained provider resource geometry differs from OOF folds"
+            )
+        if (
+            campaign_recipe.provider_audit_receipt(retained_provider)
+            != provider_audit
+        ):
+            raise RuntimeError(
+                "retained provider audit geometry differs from OOF folds"
+            )
         report = dict(
             build_report(
                 **report_arguments,
@@ -1181,6 +1586,7 @@ def run_gemma_iterative_residual_campaign(
     fit_full: FullFitter,
     output: Path | str,
     lineage: Mapping[str, object] | None = None,
+    recipe: GemmaIterativeResidualCampaignRecipe | None = None,
 ) -> GemmaIterativeResidualCampaignResult:
     """Run and publish one already-materialized fit-only live campaign."""
 
@@ -1199,6 +1605,7 @@ def run_gemma_iterative_residual_campaign(
         build_report=build_report,
         fit_full=fit_full,
         lineage=lineage,
+        recipe=recipe,
     )
     publish_gemma_iterative_residual_campaign_report(
         destination,
@@ -1219,6 +1626,13 @@ def publish_gemma_iterative_residual_campaign_report(
             "refusing to overwrite iterative residual campaign report"
         )
     _assert_scalar_hash_only(report, path="campaign report")
+    if _report_retained(report) and (
+        report.get("retained_full_fit") is None
+        and report.get("retained_full_fit_receipt") is None
+    ):
+        raise ValueError(
+            "retained campaign report requires its full-fit provider receipt"
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor, stage_name = tempfile.mkstemp(
         prefix=f".{destination.name}.",

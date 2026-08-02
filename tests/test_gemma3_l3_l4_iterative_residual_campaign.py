@@ -16,10 +16,13 @@ from fisher_graph.gemma3_l3_l4_graph_organized_svd_shadow_runtime import (
     gemma3_l3_l4_shadow_model_inputs_sha256,
 )
 from fisher_graph.gemma3_l3_l4_iterative_residual_campaign import (
+    DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE,
+    GemmaIterativeResidualCampaignRecipe,
     collect_gemma_iterative_residual_campaign_live,
     publish_gemma_iterative_residual_campaign_report,
     run_gemma_iterative_residual_campaign,
 )
+from fisher_graph.gemma3_l3_l4_two_head_lowerer import _tensor_sha256
 from fisher_graph.gemma3_l3_l4_progressive_worker import (
     GemmaProgressivePanel,
     make_gemma_progressive_panel,
@@ -261,6 +264,7 @@ class _FakeExecution(SimpleNamespace):
 
 class _FakeBridge:
     bridge_binding_sha256 = _hash("bridge")
+    residual_width = 80
 
     def __init__(self) -> None:
         self.parent_calls = 0
@@ -499,12 +503,176 @@ class _Callbacks:
         return provider
 
 
+class _FakeRouteH4Provider(Gemma3L3L4CorrectionProvider):
+    site = "layer.4.output"
+    conditioning = "l3_source_modes"
+    prepared_float_scalar_count = 6
+    marginal_prepared_float_scalar_count = 6
+    marginal_learned_float_scalar_count = 4
+    marginal_derived_prepared_float_scalar_count = 2
+    logical_macs_per_token_upper_bound = 6
+    marginal_logical_macs_per_token_upper_bound = 6
+    runtime_state_float_scalars_per_sequence = 2
+    nonlinear_scalar_ops_per_token_upper_bound = 5
+    linear_accumulator_scalar_ops_per_token_upper_bound = 4
+    zero_denominator_comparisons_per_token_upper_bound = 1
+    top_mode_indices = (0, 1)
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        fit_manifest_sha256: str,
+        coefficients_by_route_edge: tuple[float, float, float, float],
+    ) -> None:
+        self.artifact_sha256 = _hash(label)
+        self.fit_manifest_sha256 = fit_manifest_sha256
+        self.coefficients_by_route_edge = coefficients_by_route_edge
+        self.decoder = torch.tensor(
+            (
+                (1.0, 0.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0, 0.0),
+            ),
+            dtype=torch.float64,
+        )
+        self.lag_kernel = torch.tensor(
+            (
+                (
+                    (9.0, 0.0),
+                    (0.0, 4.0),
+                    (0.0, 0.0),
+                    (0.0, 0.0),
+                ),
+            ),
+            dtype=torch.float64,
+        )
+
+    def validate_integrity(self) -> None:
+        if len(self.coefficients_by_route_edge) != 4:
+            raise RuntimeError("fake route provider drifted")
+
+    def correction(self, prefix, realized_state):
+        self.validate_integrity()
+        result = torch.zeros_like(realized_state)
+        active = prefix.target_affected_mask
+        scale = 0.1 + 0.001 * sum(self.coefficients_by_route_edge)
+        result[active] = scale
+        return result
+
+
+class _FakeRouteFoldFit:
+    def __init__(
+        self,
+        *,
+        held_family_id: str,
+        records,
+        coefficients_by_route_edge: tuple[
+            float, float, float, float
+        ],
+    ) -> None:
+        payload: dict[str, object] = {
+            "held_family_id": held_family_id,
+            "train_example_ids": tuple(
+                sorted(str(row["example_id"]) for row in records)
+            ),
+            "train_family_ids": tuple(
+                sorted({str(row["family_id"]) for row in records})
+            ),
+            "train_fit_record_sha256s": tuple(
+                sorted(str(row["fit_record_sha256"]) for row in records)
+            ),
+            "coefficients_by_route_edge": coefficients_by_route_edge,
+            "unsupported_route_edge_indices": (),
+            "active_rows_by_route_edge": (280, 280, 280, 280),
+            "weighted_column_norm_by_route_edge": (1.0, 1.0, 1.0, 1.0),
+            "normal_condition_number": 1.0,
+            "linearized_rmse_before": 0.2,
+            "linearized_rmse_after": 0.1,
+            "trust_projection_applied": False,
+            "ridge": 1.0e-6,
+            "trust_bound": 0.25,
+        }
+        payload["fold_receipt_sha256"] = _hash(payload)
+        self.payload = payload
+
+    def to_dict(self):
+        return dict(self.payload)
+
+
+class _RouteCallbacks(_Callbacks):
+    def make_fit_record(
+        self,
+        *,
+        example,
+        parent_execution,
+        gradient,
+        lag_b_correction,
+        parent_observation,
+    ):
+        del parent_execution, gradient, lag_b_correction
+        payload: dict[str, object] = {
+            "example_id": example.example_id,
+            "family_id": example.family_id,
+            "model_inputs_sha256": example.model_inputs_sha256,
+            "jacobian_by_route_edge": (0.5, -0.25, 0.125, -0.0625),
+            "active_rows_by_route_edge": (20, 20, 20, 20),
+            "parent_signed_delta_nll_per_token": (
+                parent_observation.candidate_summed_nll
+                - parent_observation.source_summed_nll
+            )
+            / parent_observation.supervised_tokens,
+        }
+        payload["fit_record_sha256"] = _hash(payload)
+        return payload
+
+    def fit_fold(self, *, records, held_family, parent_h4):
+        del parent_h4
+        train_examples = tuple(
+            sorted(str(row["example_id"]) for row in records)
+        )
+        train_families = tuple(
+            sorted({str(row["family_id"]) for row in records})
+        )
+        self.fold_calls.append(
+            (held_family, train_examples, train_families)
+        )
+        coefficients = (0.1, 0.2, -0.1, 0.05)
+        provider = _FakeRouteH4Provider(
+            f"route-fold-{held_family}",
+            fit_manifest_sha256=self.panel.manifest_sha256,
+            coefficients_by_route_edge=coefficients,
+        )
+        provider.fold_fit = _FakeRouteFoldFit(
+            held_family_id=held_family,
+            records=records,
+            coefficients_by_route_edge=coefficients,
+        )
+        return provider
+
+    def fit_full(self, *, records, parent_h4):
+        del parent_h4
+        self.full_calls += 1
+        coefficients = (0.1, 0.2, -0.1, 0.05)
+        provider = _FakeRouteH4Provider(
+            "route-full-fit",
+            fit_manifest_sha256=self.panel.manifest_sha256,
+            coefficients_by_route_edge=coefficients,
+        )
+        provider.fold_fit = _FakeRouteFoldFit(
+            held_family_id="__full_fit__",
+            records=records,
+            coefficients_by_route_edge=coefficients,
+        )
+        return provider
+
+
 def _run(
     *,
     retained: bool = True,
     drift_second_source_phase: bool = False,
     provider_parameter_count: int = 4,
     mutate_record: bool = False,
+    recipe: GemmaIterativeResidualCampaignRecipe | None = None,
 ):
     panel = _panel()
     adapter = _FakeAdapter(
@@ -528,6 +696,7 @@ def _run(
         build_report=callbacks.build_report,
         fit_full=callbacks.fit_full,
         lineage={"fit_manifest_sha256": panel.manifest_sha256},
+        recipe=recipe,
     )
     return result, panel, adapter, bridge, callbacks
 
@@ -659,6 +828,235 @@ def test_campaign_executes_exact_64_forward_two_phase_lofo() -> None:
     json.dumps(result.report, allow_nan=False)
 
 
+def test_explicit_default_recipe_preserves_the_existing_collection() -> None:
+    implicit, *_implicit_rest = _run()
+    explicit, *_explicit_rest = _run(
+        recipe=DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE
+    )
+
+    assert explicit.report == implicit.report
+    assert explicit.collection.fit_records == implicit.collection.fit_records
+    assert explicit.collection.oof_rows == implicit.collection.oof_rows
+    assert explicit.collection.fold_receipts == implicit.collection.fold_receipts
+    assert explicit.collection.resources == implicit.collection.resources
+    assert explicit.collection.audit == implicit.collection.audit
+
+
+def _route_recipe(
+    *,
+    nonlinear_scalar_ops: int = 5,
+) -> GemmaIterativeResidualCampaignRecipe:
+    return GemmaIterativeResidualCampaignRecipe(
+        recipe_id="top2_causal_balance",
+        fit_record_jacobian_field="jacobian_by_route_edge",
+        fold_coefficient_field="coefficients_by_route_edge",
+        coefficient_count=4,
+        learned_parameter_attribute="marginal_learned_float_scalar_count",
+        learned_parameter_fallback_attribute=None,
+        expected_learned_parameter_count=4,
+        logical_macs_attribute=(
+            "marginal_logical_macs_per_token_upper_bound"
+        ),
+        logical_macs_fallback_attribute=None,
+        expected_logical_macs_per_token_upper_bound=6,
+        logical_macs_must_equal_residual_width=False,
+        extra_resource_expectations=(
+            (
+                "derived_constant_float_count",
+                "marginal_derived_prepared_float_scalar_count",
+                2,
+            ),
+            (
+                "runtime_state_float_count_per_sequence",
+                "runtime_state_float_scalars_per_sequence",
+                2,
+            ),
+            (
+                "nonlinear_scalar_ops_per_token_upper_bound",
+                "nonlinear_scalar_ops_per_token_upper_bound",
+                nonlinear_scalar_ops,
+            ),
+        ),
+        audit_recipe_fields=(
+            (
+                "execution_mode",
+                "fit_only_two_phase_family_blocked_iterative_state_router",
+            ),
+            ("route_matrix_shape", (2, 2)),
+            (
+                "route_edge_order",
+                ("0_to_0", "0_to_1", "1_to_0", "1_to_1"),
+            ),
+            (
+                "route_state_semantics",
+                "top2_parent_lag_b_modal_cumulative_balance_v1",
+            ),
+        ),
+        provider_audit_fields=(
+            (
+                "routed_parent_decoder_mode_indices",
+                "top_mode_indices",
+            ),
+        ),
+        parent_tensor_audit_fields=(
+            ("parent_h4_decoder_sha256", "decoder"),
+            ("parent_h4_lag_kernel_sha256", "lag_kernel"),
+        ),
+        fold_projection_field="trust_projection_applied",
+        fold_projection_count_audit_field="fold_trust_projection_count",
+        projection_interpretation_audit_field=(
+            "trust_projection_interpretation"
+        ),
+        projection_interpretation=(
+            "operator_norm_projection_is_linearization_extrapolation"
+        ),
+        resource_envelope_error=(
+            "top2 balance router exceeds its resource envelope"
+        ),
+        linearization_error=(
+            "OOF linearization requires four finite route edges"
+        ),
+    )
+
+
+def test_recipe_customizes_router_oof_resources_and_audit() -> None:
+    panel = _panel()
+    adapter = _FakeAdapter()
+    bridge = _FakeBridge()
+    parent = _FakeArtifact(panel)
+    parent.h4 = _FakeRouteH4Provider(
+        "route-lag-b-parent",
+        fit_manifest_sha256=panel.manifest_sha256,
+        coefficients_by_route_edge=(0.0, 0.0, 0.0, 0.0),
+    )
+    callbacks = _RouteCallbacks(panel, retained=True)
+    recipe = _route_recipe()
+
+    result = collect_gemma_iterative_residual_campaign_live(
+        panel=panel,
+        adapter=adapter,
+        bridge=bridge,
+        parent_artifact=parent,
+        make_fit_record=callbacks.make_fit_record,
+        fit_fold=callbacks.fit_fold,
+        build_report=callbacks.build_report,
+        fit_full=callbacks.fit_full,
+        lineage={"fit_manifest_sha256": panel.manifest_sha256},
+        recipe=recipe,
+    )
+
+    assert adapter.forward_count == 64
+    assert bridge.parent_calls == 16
+    assert bridge.candidate_calls == 16
+    assert result.collection.audit["total_model_forward_count"] == 64
+    assert result.collection.resources == {
+        "learned_parameter_count": 4,
+        "logical_macs_per_token_upper_bound": 6,
+        "derived_constant_float_count": 2,
+        "runtime_state_float_count_per_sequence": 2,
+        "nonlinear_scalar_ops_per_token_upper_bound": 5,
+        "serving_model_forward_count": 1,
+        "parent_head_reused_not_duplicated": True,
+        "parent_artifact_sha256": parent.artifact_sha256,
+        "parent_h4_head_sha256": parent.h4.artifact_sha256,
+        "candidate_provider_artifact_sha256_by_family": {
+            family: _hash(f"route-fold-{family}")
+            for family in panel.family_ids
+        },
+        "residual_width": 80,
+        "resource_receipt_sha256": result.collection.resources[
+            "resource_receipt_sha256"
+        ],
+    }
+    assert len(result.collection.resources["resource_receipt_sha256"]) == 64
+    audit = result.collection.audit
+    assert audit["execution_mode"] == (
+        "fit_only_two_phase_family_blocked_iterative_state_router"
+    )
+    assert audit["route_matrix_shape"] == (2, 2)
+    assert audit["route_edge_order"] == (
+        "0_to_0",
+        "0_to_1",
+        "1_to_0",
+        "1_to_1",
+    )
+    assert (
+        audit["route_state_semantics"]
+        == "top2_parent_lag_b_modal_cumulative_balance_v1"
+    )
+    assert audit["routed_parent_decoder_mode_indices"] == (0, 1)
+    assert audit["parent_h4_decoder_sha256"] == _tensor_sha256(
+        parent.h4.decoder
+    )
+    assert audit["parent_h4_lag_kernel_sha256"] == _tensor_sha256(
+        parent.h4.lag_kernel
+    )
+    assert audit["fold_trust_projection_count"] == 0
+    assert audit["trust_projection_interpretation"] == (
+        "operator_norm_projection_is_linearization_extrapolation"
+    )
+    assert "position_bin_count" not in audit
+    assert "fold_linearization_extrapolation_count" not in audit
+    assert "coefficient_clipping_interpretation" not in audit
+    assert all(
+        "jacobian_by_route_edge" in row
+        and "coefficients_by_route_edge" in row
+        and "jacobian_by_bin" not in row
+        and "coefficients_by_bin" not in row
+        for row in result.collection.oof_rows
+    )
+    for row in result.collection.oof_rows:
+        assert row[
+            "predicted_candidate_signed_delta_nll_per_token"
+        ] == pytest.approx(
+            row["parent_signed_delta_nll_per_token"]
+            + sum(
+                left * right
+                for left, right in zip(
+                    row["jacobian_by_route_edge"],
+                    row["coefficients_by_route_edge"],
+                    strict=True,
+                )
+            )
+        )
+    retained = result.report["retained_full_fit_receipt"]
+    assert retained["learned_parameter_count"] == 4
+    assert retained["logical_macs_per_token_upper_bound"] == 6
+    assert retained["derived_constant_float_count"] == 2
+    assert retained["runtime_state_float_count_per_sequence"] == 2
+    assert retained["nonlinear_scalar_ops_per_token_upper_bound"] == 5
+    _assert_tensor_free(result.report)
+
+
+def test_recipe_extra_provider_resource_claim_fails_closed() -> None:
+    panel = _panel()
+    adapter = _FakeAdapter()
+    bridge = _FakeBridge()
+    parent = _FakeArtifact(panel)
+    parent.h4 = _FakeRouteH4Provider(
+        "route-lag-b-parent",
+        fit_manifest_sha256=panel.manifest_sha256,
+        coefficients_by_route_edge=(0.0, 0.0, 0.0, 0.0),
+    )
+    callbacks = _RouteCallbacks(panel, retained=False)
+
+    with pytest.raises(
+        RuntimeError,
+        match="top2 balance router exceeds its resource envelope",
+    ):
+        collect_gemma_iterative_residual_campaign_live(
+            panel=panel,
+            adapter=adapter,
+            bridge=bridge,
+            parent_artifact=parent,
+            make_fit_record=callbacks.make_fit_record,
+            fit_fold=callbacks.fit_fold,
+            build_report=callbacks.build_report,
+            fit_full=callbacks.fit_full,
+            recipe=_route_recipe(nonlinear_scalar_ops=6),
+        )
+
+
 def test_every_fold_excludes_both_held_family_examples() -> None:
     _result, panel, _adapter, _bridge, callbacks = _run()
     family_examples: dict[str, set[str]] = {}
@@ -742,6 +1140,16 @@ def test_publisher_is_scalar_only_and_never_overwrites(
             tmp_path / "nan.json",
             {"metric": math.nan},
         )
+    with pytest.raises(ValueError, match="full-fit provider receipt"):
+        publish_gemma_iterative_residual_campaign_report(
+            tmp_path / "provisional-retained.json",
+            {
+                "schema": "unit",
+                "decision": {"retained": True},
+                "retained_full_fit": None,
+            },
+        )
+    assert not (tmp_path / "provisional-retained.json").exists()
 
 
 def test_public_runner_has_no_protected_role_or_search_capability() -> None:

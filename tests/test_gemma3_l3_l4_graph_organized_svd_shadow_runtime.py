@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -21,11 +23,17 @@ from fisher_graph.gemma3_l3_l4_basis_package import (
     Gemma3L3L4BasisPackage,
 )
 import fisher_graph.gemma3_l3_l4_graph_organized_svd_experiment as experiment
+from fisher_graph import (
+    gemma3_l3_l4_graph_organized_svd_shadow_runtime as shadow_runtime_module,
+)
 from fisher_graph.gemma3_l3_l4_graph_organized_svd_shadow_runtime import (
     Gemma3L3L4CorrectionProvider,
     Gemma3L3L4GraphOrganizedSVDShadowRuntime,
     gemma3_l3_l4_shadow_model_inputs_sha256,
     validate_gemma3_l3_l4_shadow_model_inputs_sha256,
+)
+from fisher_graph.gemma3_l3_l4_exact_x4_fit_observation import (
+    collect_gemma3_l3_l4_exact_x4_fit_observation,
 )
 from fisher_graph.gemma3_l3_l4_progressive_worker import (
     GemmaCarrierResidualAnalysis,
@@ -238,6 +246,9 @@ class _CausalLM(nn.Module):
 
 def _candidate_and_basis(
     source_model_sha256: str,
+    *,
+    measured_origins: tuple[int, int, int] = (0, 1, 2),
+    fit_origins: tuple[int, int] = (0, 2),
 ):
     generator = torch.Generator().manual_seed(703)
     responses = torch.randn(
@@ -252,15 +263,15 @@ def _candidate_and_basis(
     graph = fit_graph_source_bases(
         responses,
         scales,
-        (0, 1, 2),
-        (0, 2),
+        measured_origins,
+        fit_origins,
         response_binding_sha256="91" * 32,
     )
     base = fit_conditional_spectral_generator(
         responses,
         scales,
-        (0, 1, 2),
-        (0, 2),
+        measured_origins,
+        fit_origins,
         4,
         3,
         response_binding_sha256="91" * 32,
@@ -508,6 +519,181 @@ def prepared():
     return runtime, adapter, basis, model_inputs
 
 
+@pytest.fixture
+def shifted_complete_h4_prepared():
+    torch.manual_seed(1417)
+    adapter = Gemma3CausalLMAdapter(_CausalLM().double().eval())
+    candidate, basis, plan = _candidate_and_basis(
+        adapter.model_fingerprint(),
+        measured_origins=(2, 3, 4),
+        fit_origins=(2, 4),
+    )
+    runtime = Gemma3L3L4GraphOrganizedSVDShadowRuntime(
+        candidate,
+        basis,
+        expected_candidate_artifact_sha256=candidate.artifact_sha256,
+        expected_basis_payload_sha256=basis.basis_payload_sha256,
+        expected_plan_artifact_sha256=plan.artifact_sha256,
+        expected_live_model_sha256=adapter.model_fingerprint(),
+        expected_adapter_execution_sha256=adapter.execution_fingerprint(),
+        adapter_execution_binding_scope="generic_test",
+    )
+    model_inputs = {
+        "input_ids": torch.arange(8, dtype=torch.int64).unsqueeze(0),
+        "attention_mask": torch.tensor(
+            [[False, True, True, True, True, True, True, True]]
+        ),
+        "position_ids": torch.arange(8).unsqueeze(0),
+    }
+    return runtime, adapter, basis, model_inputs
+
+
+@pytest.fixture
+def shifted_complete_h4_float32_prepared():
+    torch.manual_seed(1417)
+    adapter = Gemma3CausalLMAdapter(_CausalLM().float().eval())
+    candidate, basis, plan = _candidate_and_basis(
+        adapter.model_fingerprint(),
+        measured_origins=(2, 3, 4),
+        fit_origins=(2, 4),
+    )
+    runtime = Gemma3L3L4GraphOrganizedSVDShadowRuntime(
+        candidate,
+        basis,
+        expected_candidate_artifact_sha256=candidate.artifact_sha256,
+        expected_basis_payload_sha256=basis.basis_payload_sha256,
+        expected_plan_artifact_sha256=plan.artifact_sha256,
+        expected_live_model_sha256=adapter.model_fingerprint(),
+        expected_adapter_execution_sha256=adapter.execution_fingerprint(),
+        adapter_execution_binding_scope="generic_test",
+    )
+    model_inputs = {
+        "input_ids": torch.arange(8, dtype=torch.int64).unsqueeze(0),
+        "attention_mask": torch.tensor(
+            [[False, True, True, True, True, True, True, True]]
+        ),
+        "position_ids": torch.arange(8).unsqueeze(0),
+    }
+    return runtime, adapter, basis, model_inputs
+
+
+def _next_token_supervision(
+    model_inputs: dict[str, Tensor],
+) -> tuple[Tensor, Tensor]:
+    input_ids = model_inputs["input_ids"]
+    valid = model_inputs["attention_mask"].to(dtype=torch.bool)
+    supervised = valid[:, :-1] & valid[:, 1:]
+    indices = torch.nonzero(supervised, as_tuple=False).to(torch.int64)
+    targets = input_ids[:, 1:][supervised].to(torch.int64).contiguous()
+    return indices.contiguous(), targets
+
+
+def _teacher_kl_rows(
+    candidate_logits: Tensor,
+    teacher_logits: Tensor,
+    indices: Tensor,
+) -> Tensor:
+    selected = indices.to(candidate_logits.device)
+    candidate = candidate_logits[selected[:, 0], selected[:, 1]]
+    if candidate.dtype in (torch.float16, torch.bfloat16):
+        candidate = candidate.float()
+    teacher = teacher_logits.detach().to(
+        device=candidate_logits.device,
+        dtype=candidate.dtype,
+    )[selected[:, 0], selected[:, 1]]
+    teacher_log_probabilities = torch.nn.functional.log_softmax(
+        teacher,
+        dim=-1,
+    )
+    candidate_log_probabilities = torch.nn.functional.log_softmax(
+        candidate,
+        dim=-1,
+    )
+    return (
+        teacher_log_probabilities.exp()
+        * (teacher_log_probabilities - candidate_log_probabilities)
+    ).sum(dim=-1)
+
+
+def _teacher_kl_rows_float64(
+    candidate_logits: Tensor,
+    teacher_logits: Tensor,
+    indices: Tensor,
+) -> Tensor:
+    selected = indices.to(candidate_logits.device)
+    candidate = candidate_logits[
+        selected[:, 0], selected[:, 1]
+    ].to(torch.float64)
+    teacher = teacher_logits.detach().to(candidate_logits.device)[
+        selected[:, 0], selected[:, 1]
+    ].to(torch.float64)
+    teacher_log_probabilities = torch.nn.functional.log_softmax(
+        teacher,
+        dim=-1,
+    )
+    candidate_log_probabilities = torch.nn.functional.log_softmax(
+        candidate,
+        dim=-1,
+    )
+    return (
+        teacher_log_probabilities.exp()
+        * (teacher_log_probabilities - candidate_log_probabilities)
+    ).sum(dim=-1)
+
+
+def _legacy_token_teacher_kl_vjp_sha256(result) -> str:
+    payload = {
+        "execution_sha256": result.execution.artifact_sha256,
+        "teacher_logits_sha256": result.teacher_logits_sha256,
+        "teacher_logits_shape": result.teacher_logits_shape,
+        "h4_head_sha256": result.h4_head_sha256,
+        "vjp_chunk_size": result.vjp_chunk_size,
+        "backward_call_count": result.backward_call_count,
+        "tensor_sha256s": {
+            name: shadow_runtime_module._runtime_tensor_sha256(value)
+            for name, value in (
+                ("supervised_indices", result.supervised_indices),
+                ("token_kl_divergences", result.token_kl_divergences),
+                ("h4_gradients", result.h4_gradients),
+            )
+        },
+    }
+    return hashlib.sha256(
+        shadow_runtime_module._ONE_PASS_RESULT_DOMAIN
+        + b"token-teacher-kl-vjp\0"
+        + shadow_runtime_module._canonical_json_bytes(payload)
+    ).hexdigest()
+
+
+def _tiny_complete_h4_projection(
+    pair,
+    *,
+    ordering: str = "descending_fisher_tilted_residual_eigenvalue",
+) -> tuple[Tensor, Tensor, str]:
+    width = int(pair.incomplete_h4.shape[-1])
+    basis = torch.eye(width, dtype=torch.float64).contiguous()
+    support = pair.complete_h4_support_mask
+    delta = torch.zeros_like(pair.incomplete_h4)
+    residual = (
+        pair.native_h4[support].to(dtype=torch.float64, device="cpu")
+        - pair.incomplete_h4[support].to(dtype=torch.float64, device="cpu")
+    )
+    projected = (residual @ basis.T) @ basis
+    delta[support] = projected.to(
+        dtype=pair.incomplete_h4.dtype,
+        device=pair.incomplete_h4.device,
+    )
+    artifact = (
+        shadow_runtime_module
+        .gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+            basis,
+            projection_rank=width,
+            projection_ordering=ordering,
+        )
+    )
+    return basis, delta, artifact
+
+
 def test_progressive_probe_collects_real_carrier_fisher_rows(
     prepared,
 ) -> None:
@@ -632,6 +818,137 @@ def test_exported_bridge_executes_once_without_native_x4_fallback(
     assert one_pass.candidate_h4.requires_grad is False
 
 
+def test_exact_x4_fit_observation_matches_authenticated_parent_pair(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    parent = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    bridge = runtime.export_one_pass_bridge()
+
+    with patch.object(adapter, "forward", wraps=adapter.forward) as forward:
+        observation = collect_gemma3_l3_l4_exact_x4_fit_observation(
+            bridge,
+            adapter,
+            inputs,
+            supervised_indices=supervised_indices,
+            supervised_targets=supervised_targets,
+        )
+
+    assert forward.call_count == 2
+    assert bridge.bridge_binding_sha256 == observation.bridge_binding_sha256
+    assert torch.equal(
+        observation.native_x4.contiguous().view(torch.uint8),
+        shadow.authoritative_x4.contiguous().view(torch.uint8),
+    )
+    assert observation.metadata()["model_forward_count"] == 2
+    assert observation.metadata()["backward_count"] == 1
+    assert observation.native_h4_sha256 == parent.native_h4_sha256
+    assert observation.incomplete_h4_sha256 == parent.incomplete_h4_sha256
+    assert observation.h4_gradient_sha256 == parent.h4_gradient_sha256
+    assert (
+        observation.partial_exact_x4_logits_sha256
+        == parent.partial_exact_x4_logits_sha256
+    )
+    assert observation.objective_receipt_sha256 == (
+        parent.objective_receipt_sha256
+    )
+    assert observation.objective_mean_nll == parent.objective_mean_nll
+    assert observation.model_inputs_sha256 == parent.model_inputs_sha256
+    assert observation.execution_grid_sha256 == parent.execution_grid_sha256
+    assert torch.equal(observation.prefix.source_modes, parent.source_modes)
+    assert torch.equal(
+        observation.complete_h4_support_mask,
+        parent.complete_h4_support_mask,
+    )
+    observation.validate_integrity()
+
+
+def test_exact_x4_fit_observation_rejects_bad_supervision_before_forward(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    bridge = runtime.export_one_pass_bridge()
+
+    with patch.object(adapter, "forward", wraps=adapter.forward) as forward:
+        with pytest.raises(ValueError, match="supervised_indices"):
+            collect_gemma3_l3_l4_exact_x4_fit_observation(
+                bridge,
+                adapter,
+                inputs,
+                supervised_indices=torch.tensor([0], dtype=torch.int64),
+                supervised_targets=torch.tensor([1], dtype=torch.int64),
+            )
+
+    assert forward.call_count == 0
+
+
+def test_exact_x4_fit_observation_detects_retained_tensor_drift(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    observation = collect_gemma3_l3_l4_exact_x4_fit_observation(
+        runtime.export_one_pass_bridge(),
+        adapter,
+        inputs,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+
+    observation.h4_gradient[0, 0, 0] += 1.0
+
+    with pytest.raises(RuntimeError, match="H4 gradient tensor payload drifted"):
+        observation.validate_integrity()
+
+
+def test_float32_exact_x4_fit_observation_matches_legacy_pair(
+    shifted_complete_h4_float32_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_float32_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    parent = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+
+    with patch.object(adapter, "forward", wraps=adapter.forward) as forward:
+        observation = collect_gemma3_l3_l4_exact_x4_fit_observation(
+            runtime.export_one_pass_bridge(),
+            adapter,
+            inputs,
+            supervised_indices=supervised_indices,
+            supervised_targets=supervised_targets,
+        )
+
+    assert forward.call_count == 2
+    assert torch.equal(
+        observation.native_x4.contiguous().view(torch.uint8),
+        shadow.authoritative_x4.contiguous().view(torch.uint8),
+    )
+    assert observation.native_h4_sha256 == parent.native_h4_sha256
+    assert observation.incomplete_h4_sha256 == parent.incomplete_h4_sha256
+    assert observation.h4_gradient_sha256 == parent.h4_gradient_sha256
+    assert observation.objective_receipt_sha256 == (
+        parent.objective_receipt_sha256
+    )
+    assert (
+        observation.partial_exact_x4_logits_sha256
+        == parent.partial_exact_x4_logits_sha256
+    )
+
+
 def test_one_pass_bridge_rejects_prepared_graph_scalar_drift(
     prepared,
 ) -> None:
@@ -722,6 +1039,1072 @@ def test_one_pass_h4_vjp_matches_a_finite_displacement(
     assert all(
         parameter.grad is None for parameter in adapter.module.parameters()
     )
+
+
+def test_one_pass_complete_h4_scope_writes_the_derived_causal_support_only(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_prepared
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    prefix_sha256 = ordinary.prefix.artifact_sha256
+    causal_support = ordinary.prefix.complete_h4_causal_support_mask()
+    graph_support = ordinary.prefix.target_affected_mask
+    causal_tail = causal_support & ~graph_support
+
+    assert ordinary.prefix.artifact_sha256 == prefix_sha256
+    assert bool(causal_tail.any())
+    assert not bool((causal_support & ~ordinary.prefix.valid_target_mask).any())
+
+    correction = torch.zeros_like(ordinary.candidate_h4)
+    correction[causal_support] = 0.125
+
+    class _CompleteH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "complete_h4_causal_support"
+        artifact_sha256 = "d" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return correction
+
+    result = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_CompleteH4Head(),
+    )
+    expected_h4 = ordinary.candidate_h4.clone()
+    expected_h4[causal_support] += correction[causal_support]
+
+    assert result.h4_head_sha256 == "d" * 64
+    assert result.prefix.artifact_sha256 == prefix_sha256
+    assert torch.equal(
+        result.candidate_x4.view(torch.uint8),
+        ordinary.candidate_x4.view(torch.uint8),
+    )
+    assert torch.equal(
+        result.candidate_h4.view(torch.uint8),
+        expected_h4.view(torch.uint8),
+    )
+    assert torch.equal(
+        result.candidate_h4[~causal_support].view(torch.uint8),
+        ordinary.candidate_h4[~causal_support].view(torch.uint8),
+    )
+
+
+def test_one_pass_complete_h4_uses_float64_add_then_one_live_dtype_cast(
+    shifted_complete_h4_float32_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = (
+        shifted_complete_h4_float32_prepared
+    )
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    assert ordinary.candidate_h4.dtype == torch.float32
+    support = ordinary.prefix.complete_h4_causal_support_mask()
+    support_elements = support.unsqueeze(-1).expand_as(ordinary.candidate_h4)
+
+    next_up = torch.nextafter(
+        ordinary.candidate_h4,
+        torch.full_like(ordinary.candidate_h4, torch.inf),
+    )
+    upward_gap = (
+        next_up.to(torch.float64)
+        - ordinary.candidate_h4.to(torch.float64)
+    )
+    # The increment is visible in float64 addition but smaller than half an
+    # ulp when the delta itself is rounded to float32.
+    candidate_delta = upward_gap * (0.5 + 2.0**-26)
+    cast_before_add = (
+        ordinary.candidate_h4
+        + candidate_delta.to(ordinary.candidate_h4.dtype)
+    )
+    add_then_cast = (
+        ordinary.candidate_h4.to(torch.float64) + candidate_delta
+    ).to(ordinary.candidate_h4.dtype)
+    distinguishing = support_elements & (cast_before_add != add_then_cast)
+    assert bool(distinguishing.any())
+    selected = torch.nonzero(distinguishing, as_tuple=False)[0]
+    selected_index = tuple(int(value) for value in selected)
+    correction = torch.zeros_like(
+        ordinary.candidate_h4,
+        dtype=torch.float64,
+    )
+    correction[selected_index] = candidate_delta[selected_index]
+
+    class _CompleteH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "complete_h4_causal_support"
+        artifact_sha256 = "2" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return correction
+
+    result = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_CompleteH4Head(),
+    )
+
+    assert result.candidate_h4[selected_index] == add_then_cast[selected_index]
+    assert result.candidate_h4[selected_index] != cast_before_add[selected_index]
+    assert torch.equal(
+        result.candidate_x4.view(torch.uint8),
+        ordinary.candidate_x4.view(torch.uint8),
+    )
+
+
+def test_one_pass_complete_h4_exact_residual_reconstructs_live_h4_bitwise(
+    shifted_complete_h4_float32_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = (
+        shifted_complete_h4_float32_prepared
+    )
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    support = ordinary.prefix.complete_h4_causal_support_mask()
+    support_elements = support.unsqueeze(-1).expand_as(ordinary.candidate_h4)
+    chosen_native_h4 = ordinary.candidate_h4.clone()
+    next_up = torch.nextafter(
+        chosen_native_h4,
+        torch.full_like(chosen_native_h4, torch.inf),
+    )
+    chosen_native_h4[support_elements] = next_up[support_elements]
+    correction = torch.zeros_like(
+        ordinary.candidate_h4,
+        dtype=torch.float64,
+    )
+    correction[support_elements] = (
+        chosen_native_h4[support_elements].to(torch.float64)
+        - ordinary.candidate_h4[support_elements].to(torch.float64)
+    )
+
+    class _ExactResidualH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "complete_h4_causal_support"
+        artifact_sha256 = "3" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return correction
+
+    result = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_ExactResidualH4Head(),
+    )
+
+    assert torch.equal(
+        result.candidate_h4.view(torch.uint8),
+        chosen_native_h4.view(torch.uint8),
+    )
+    assert torch.equal(
+        result.candidate_x4.view(torch.uint8),
+        ordinary.candidate_x4.view(torch.uint8),
+    )
+
+
+def test_one_pass_complete_h4_scope_is_explicit_and_h4_only(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_prepared
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    causal_tail = (
+        ordinary.prefix.complete_h4_causal_support_mask()
+        & ~ordinary.prefix.target_affected_mask
+    )
+    assert bool(causal_tail.any())
+    tail_correction = torch.zeros_like(ordinary.candidate_h4)
+    tail_correction[causal_tail] = 1.0
+
+    class _LegacyH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        artifact_sha256 = "e" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return tail_correction
+
+    with pytest.raises(ValueError, match="zero off support"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            h4_head=_LegacyH4Head(),
+        )
+
+    class _CompleteScopeX4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.mlp.normalized_input"
+        write_scope = "complete_h4_causal_support"
+        artifact_sha256 = "f" * 64
+        correction_called = False
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            self.correction_called = True
+            return torch.zeros_like(realized_state)
+
+    x4_head = _CompleteScopeX4Head()
+    with pytest.raises(ValueError, match="valid only for the H4 head"):
+        bridge.execute(adapter, model_inputs, x4_head=x4_head)
+    assert x4_head.correction_called is False
+
+    class _InvalidScopeH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "caller_selected_rows"
+        artifact_sha256 = "a" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return torch.zeros_like(realized_state)
+
+    with pytest.raises(ValueError, match="correction write scope"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            h4_head=_InvalidScopeH4Head(),
+        )
+
+    class _MutatingScopeH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        artifact_sha256 = "1" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            self.write_scope = "complete_h4_causal_support"
+            return torch.zeros_like(realized_state)
+
+    with pytest.raises(RuntimeError, match="provider identity drifted"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            h4_head=_MutatingScopeH4Head(),
+        )
+
+
+def test_one_pass_complete_h4_scope_rejects_off_causal_and_nonfinite_writes(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_prepared
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    causal_support = ordinary.prefix.complete_h4_causal_support_mask()
+    causal_tail = causal_support & ~ordinary.prefix.target_affected_mask
+    assert bool(causal_tail.any())
+    assert bool((~causal_support).any())
+
+    class _CompleteH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "complete_h4_causal_support"
+        artifact_sha256 = "b" * 64
+
+        def __init__(self, correction: Tensor) -> None:
+            self._correction = correction
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return self._correction
+
+    off_causal = torch.zeros_like(ordinary.candidate_h4)
+    off_causal[~causal_support] = 1.0
+    with pytest.raises(ValueError, match="zero off support"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            h4_head=_CompleteH4Head(off_causal),
+        )
+
+    nonfinite = torch.zeros_like(ordinary.candidate_h4)
+    nonfinite[causal_tail] = torch.nan
+    with pytest.raises(ValueError, match="correction is nonfinite"):
+        bridge.execute(
+            adapter,
+            model_inputs,
+            h4_head=_CompleteH4Head(nonfinite),
+        )
+
+
+def test_one_pass_complete_h4_tail_vjp_matches_a_finite_displacement(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_prepared
+    bridge = runtime.export_one_pass_bridge()
+    measured, gradient = bridge.execute_h4_vjp(
+        adapter,
+        model_inputs,
+        objective=lambda run: run.logits.square().sum(),
+    )
+    causal_tail = (
+        measured.prefix.complete_h4_causal_support_mask()
+        & ~measured.prefix.target_affected_mask
+    )
+    assert bool(causal_tail.any())
+    generator = torch.Generator().manual_seed(1741)
+    direction = torch.randn(
+        measured.candidate_h4.shape,
+        generator=generator,
+        dtype=measured.candidate_h4.dtype,
+        device=measured.candidate_h4.device,
+    )
+    direction = torch.where(
+        causal_tail.unsqueeze(-1),
+        direction,
+        torch.zeros_like(direction),
+    )
+    direction /= torch.linalg.vector_norm(direction)
+
+    class _TailHead(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        write_scope = "complete_h4_causal_support"
+
+        def __init__(self, scale: float, artifact: str) -> None:
+            self.artifact_sha256 = artifact
+            self._correction = direction * scale
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return self._correction
+
+    epsilon = 1.0e-5
+    plus = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_TailHead(epsilon, "c" * 64),
+    )
+    minus = bridge.execute(
+        adapter,
+        model_inputs,
+        h4_head=_TailHead(-epsilon, "d" * 64),
+    )
+    finite_difference = (
+        plus.logits.square().sum() - minus.logits.square().sum()
+    ) / (2.0 * epsilon)
+    vjp_direction = (gradient * direction).sum()
+
+    torch.testing.assert_close(
+        vjp_direction,
+        finite_difference,
+        atol=1.0e-7,
+        rtol=1.0e-6,
+    )
+
+
+def test_one_pass_token_nll_vjps_match_independent_scalar_vjps(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    targets = torch.full_like(model_inputs["input_ids"], -100)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:3]
+    targets[
+        supervised_indices[:, 0],
+        supervised_indices[:, 1],
+    ] = model_inputs["input_ids"][
+        supervised_indices[:, 0],
+        supervised_indices[:, 1],
+    ]
+
+    with (
+        patch.object(
+            adapter,
+            "forward",
+            wraps=adapter.forward,
+        ) as forward,
+        patch.object(
+            torch.autograd,
+            "grad",
+            wraps=torch.autograd.grad,
+        ) as autograd_grad,
+    ):
+        result = bridge.execute_h4_token_nll_vjps(
+            adapter,
+            model_inputs,
+            targets=targets,
+            vjp_chunk_size=2,
+        )
+
+    assert forward.call_count == 1
+    assert autograd_grad.call_count == 2
+    assert result.execution.artifact_sha256 == ordinary.artifact_sha256
+    assert result.model_forward_count == 1
+    assert result.token_count == 3
+    assert result.backward_call_count == 2
+    assert torch.equal(result.supervised_indices, supervised_indices)
+    assert result.h4_gradients.shape == (
+        3,
+        *ordinary.candidate_h4.shape,
+    )
+    assert result.h4_gradients.is_contiguous()
+    assert not result.h4_gradients.requires_grad
+    assert torch.isfinite(result.h4_gradients).all()
+    assert [
+        call.kwargs["retain_graph"]
+        for call in autograd_grad.call_args_list
+    ] == [True, False]
+    assert all(
+        call.kwargs["is_grads_batched"] is True
+        for call in autograd_grad.call_args_list
+    )
+    assert [
+        tuple(call.kwargs["grad_outputs"].shape)
+        for call in autograd_grad.call_args_list
+    ] == [(2, 3), (1, 3)]
+
+    selected_targets = targets[
+        supervised_indices[:, 0],
+        supervised_indices[:, 1],
+    ]
+    expected_losses = torch.nn.functional.cross_entropy(
+        result.execution.logits[
+            supervised_indices[:, 0],
+            supervised_indices[:, 1],
+        ],
+        selected_targets,
+        reduction="none",
+    )
+    torch.testing.assert_close(result.token_losses, expected_losses)
+
+    def token_losses(run):
+        return torch.nn.functional.cross_entropy(
+            run.logits[
+                supervised_indices[:, 0],
+                supervised_indices[:, 1],
+            ],
+            selected_targets,
+            reduction="none",
+        )
+
+    for token_index in range(result.token_count):
+        scalar_execution, scalar_gradient = bridge.execute_h4_vjp(
+            adapter,
+            model_inputs,
+            objective=lambda run, index=token_index: token_losses(run)[
+                index
+            ],
+        )
+        assert (
+            scalar_execution.artifact_sha256
+            == result.execution.artifact_sha256
+        )
+        torch.testing.assert_close(
+            result.h4_gradients[token_index],
+            scalar_gradient,
+            atol=0.0,
+            rtol=0.0,
+        )
+    result.validate_integrity()
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+
+
+def test_one_pass_token_teacher_kl_vjps_match_scalar_vjps(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:3].to(dtype=torch.int64).contiguous()
+    teacher_logits = ordinary.logits.clone()
+    vocabulary_perturbation = torch.linspace(
+        -0.4,
+        0.4,
+        ordinary.logits.shape[-1],
+        dtype=ordinary.logits.dtype,
+        device=ordinary.logits.device,
+    )
+    teacher_logits[
+        supervised_indices[:, 0], supervised_indices[:, 1]
+    ] += vocabulary_perturbation
+    teacher_logits.requires_grad_(True)
+
+    with (
+        patch.object(
+            adapter,
+            "forward",
+            wraps=adapter.forward,
+        ) as forward,
+        patch.object(
+            torch.autograd,
+            "grad",
+            wraps=torch.autograd.grad,
+        ) as autograd_grad,
+    ):
+        result = bridge.execute_h4_token_teacher_kl_vjps(
+            adapter,
+            model_inputs,
+            teacher_logits=teacher_logits,
+            supervised_indices=supervised_indices,
+            vjp_chunk_size=2,
+        )
+
+    assert forward.call_count == 1
+    assert autograd_grad.call_count == 2
+    assert result.execution.artifact_sha256 == ordinary.artifact_sha256
+    assert result.model_forward_count == 1
+    assert result.token_count == 3
+    assert result.backward_call_count == 2
+    assert result.h4_head_sha256 is None
+    assert torch.equal(result.supervised_indices, supervised_indices)
+    assert result.h4_gradients.shape == (
+        3,
+        *ordinary.candidate_h4.shape,
+    )
+    assert result.h4_gradients.is_contiguous()
+    assert not result.h4_gradients.requires_grad
+    assert torch.isfinite(result.h4_gradients).all()
+    assert [
+        call.kwargs["retain_graph"]
+        for call in autograd_grad.call_args_list
+    ] == [True, False]
+    assert all(
+        call.kwargs["is_grads_batched"] is True
+        for call in autograd_grad.call_args_list
+    )
+    assert [
+        tuple(call.kwargs["grad_outputs"].shape)
+        for call in autograd_grad.call_args_list
+    ] == [(2, 3), (1, 3)]
+
+    expected_divergences = _teacher_kl_rows(
+        result.execution.logits,
+        teacher_logits,
+        supervised_indices,
+    )
+    torch.testing.assert_close(
+        result.token_kl_divergences,
+        expected_divergences,
+        atol=0.0,
+        rtol=0.0,
+    )
+    for token_index in range(result.token_count):
+        scalar_execution, scalar_gradient = bridge.execute_h4_vjp(
+            adapter,
+            model_inputs,
+            objective=lambda run, index=token_index: _teacher_kl_rows(
+                run.logits,
+                teacher_logits,
+                supervised_indices,
+            )[index],
+        )
+        assert (
+            scalar_execution.artifact_sha256
+            == result.execution.artifact_sha256
+        )
+        torch.testing.assert_close(
+            result.h4_gradients[token_index],
+            scalar_gradient,
+            atol=0.0,
+            rtol=0.0,
+        )
+    result.validate_integrity()
+    assert teacher_logits.grad is None
+    assert not hasattr(result, "teacher_logits")
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+
+
+def test_one_pass_token_teacher_kl_vjps_default_precision_replays_legacy(
+    shifted_complete_h4_float32_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_float32_prepared
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:3].to(dtype=torch.int64).contiguous()
+    teacher_logits = ordinary.logits.clone()
+    teacher_logits[
+        supervised_indices[:, 0], supervised_indices[:, 1]
+    ] += torch.linspace(
+        -0.35,
+        0.35,
+        ordinary.logits.shape[-1],
+        dtype=ordinary.logits.dtype,
+        device=ordinary.logits.device,
+    )
+
+    omitted = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=teacher_logits,
+        supervised_indices=supervised_indices,
+        vjp_chunk_size=2,
+    )
+    explicit_none = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=teacher_logits,
+        supervised_indices=supervised_indices,
+        vjp_chunk_size=2,
+        objective_dtype=None,
+    )
+
+    expected = _teacher_kl_rows(
+        omitted.execution.logits,
+        teacher_logits,
+        supervised_indices,
+    )
+    assert omitted.objective_dtype is None
+    assert explicit_none.objective_dtype is None
+    assert omitted.token_kl_divergences.dtype == torch.float32
+    assert omitted.h4_gradients.dtype == ordinary.candidate_h4.dtype
+    torch.testing.assert_close(
+        omitted.token_kl_divergences,
+        expected,
+        atol=0.0,
+        rtol=0.0,
+    )
+    assert torch.equal(
+        omitted.token_kl_divergences,
+        explicit_none.token_kl_divergences,
+    )
+    assert torch.equal(omitted.h4_gradients, explicit_none.h4_gradients)
+    assert omitted.execution.artifact_sha256 == explicit_none.execution.artifact_sha256
+    assert omitted.artifact_sha256 == explicit_none.artifact_sha256
+    assert omitted.artifact_sha256 == _legacy_token_teacher_kl_vjp_sha256(omitted)
+
+
+def test_one_pass_token_teacher_kl_vjps_float64_objective_replays_exactly(
+    shifted_complete_h4_float32_prepared,
+) -> None:
+    runtime, adapter, _basis, model_inputs = shifted_complete_h4_float32_prepared
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:3].to(dtype=torch.int64).contiguous()
+    teacher_logits = ordinary.logits.clone()
+    teacher_logits[
+        supervised_indices[:, 0], supervised_indices[:, 1]
+    ] += torch.linspace(
+        -0.45,
+        0.45,
+        ordinary.logits.shape[-1],
+        dtype=ordinary.logits.dtype,
+        device=ordinary.logits.device,
+    )
+
+    with patch.object(
+        torch.autograd,
+        "grad",
+        wraps=torch.autograd.grad,
+    ) as autograd_grad:
+        result = bridge.execute_h4_token_teacher_kl_vjps(
+            adapter,
+            model_inputs,
+            teacher_logits=teacher_logits,
+            supervised_indices=supervised_indices,
+            vjp_chunk_size=2,
+            objective_dtype=torch.float64,
+        )
+
+    expected_divergences = _teacher_kl_rows_float64(
+        result.execution.logits,
+        teacher_logits,
+        supervised_indices,
+    )
+    assert result.objective_dtype == str(torch.float64)
+    assert result.token_kl_divergences.dtype == torch.float64
+    assert result.h4_gradients.dtype == result.execution.candidate_h4.dtype
+    assert result.h4_gradients.dtype == torch.float32
+    assert all(
+        call.kwargs["grad_outputs"].dtype == torch.float64
+        for call in autograd_grad.call_args_list
+    )
+    torch.testing.assert_close(
+        result.token_kl_divergences,
+        expected_divergences,
+        atol=0.0,
+        rtol=0.0,
+    )
+    for token_index in range(result.token_count):
+        scalar_execution, scalar_gradient = bridge.execute_h4_vjp(
+            adapter,
+            model_inputs,
+            objective=lambda run, index=token_index: _teacher_kl_rows_float64(
+                run.logits,
+                teacher_logits,
+                supervised_indices,
+            )[index],
+        )
+        assert scalar_execution.artifact_sha256 == result.execution.artifact_sha256
+        torch.testing.assert_close(
+            result.h4_gradients[token_index],
+            scalar_gradient,
+            atol=0.0,
+            rtol=0.0,
+        )
+    result.validate_integrity()
+
+
+def test_one_pass_token_teacher_kl_vjps_bind_float64_objective_policy(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:2].to(dtype=torch.int64).contiguous()
+    teacher_logits = ordinary.logits.clone()
+    teacher_logits[
+        supervised_indices[:, 0], supervised_indices[:, 1]
+    ] += torch.linspace(
+        -0.25,
+        0.25,
+        ordinary.logits.shape[-1],
+        dtype=ordinary.logits.dtype,
+        device=ordinary.logits.device,
+    )
+
+    legacy = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=teacher_logits,
+        supervised_indices=supervised_indices,
+    )
+    float64 = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=teacher_logits,
+        supervised_indices=supervised_indices,
+        objective_dtype=torch.float64,
+    )
+
+    assert legacy.objective_dtype is None
+    assert float64.objective_dtype == str(torch.float64)
+    assert legacy.execution.artifact_sha256 == float64.execution.artifact_sha256
+    assert torch.equal(
+        legacy.token_kl_divergences,
+        float64.token_kl_divergences,
+    )
+    assert torch.equal(legacy.h4_gradients, float64.h4_gradients)
+    assert legacy.artifact_sha256 == _legacy_token_teacher_kl_vjp_sha256(legacy)
+    assert legacy.artifact_sha256 != float64.artifact_sha256
+
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        replace(float64, objective_dtype=None)
+    with pytest.raises(ValueError, match="objective dtype must be"):
+        replace(
+            float64,
+            objective_dtype=str(torch.float32),
+            artifact_sha256="",
+        )
+    with pytest.raises(ValueError, match="produced another dtype"):
+        replace(
+            float64,
+            token_kl_divergences=float64.token_kl_divergences.float(),
+            artifact_sha256="",
+        )
+    tampered = replace(float64)
+    object.__setattr__(tampered, "objective_dtype", None)
+    with pytest.raises(RuntimeError, match="tensor payload drifted"):
+        tampered.validate_integrity()
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(ValueError, match="objective dtype must be"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=teacher_logits,
+                supervised_indices=supervised_indices,
+                objective_dtype=torch.float32,
+            )
+        assert forward.call_count == 0
+
+
+def test_one_pass_token_teacher_kl_vjps_are_zero_at_teacher_identity(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:3].to(dtype=torch.int64).contiguous()
+    teacher_logits = ordinary.logits.clone().requires_grad_(True)
+
+    result = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=teacher_logits,
+        supervised_indices=supervised_indices,
+        vjp_chunk_size=2,
+    )
+
+    torch.testing.assert_close(
+        result.token_kl_divergences,
+        torch.zeros_like(result.token_kl_divergences),
+        atol=1.0e-15,
+        rtol=0.0,
+    )
+    torch.testing.assert_close(
+        result.h4_gradients,
+        torch.zeros_like(result.h4_gradients),
+        atol=1.0e-14,
+        rtol=0.0,
+    )
+    assert teacher_logits.grad is None
+    assert all(
+        parameter.grad is None for parameter in adapter.module.parameters()
+    )
+
+
+def test_one_pass_token_teacher_kl_vjps_authenticate_the_h4_head(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    supervised_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:2].to(dtype=torch.int64).contiguous()
+
+    class _BoundH4Head(Gemma3L3L4CorrectionProvider):
+        site = "layer.4.output"
+        artifact_sha256 = "e" * 64
+
+        def validate_integrity(self) -> None:
+            return None
+
+        def correction(self, prefix, realized_state):
+            return torch.zeros_like(realized_state)
+
+    result = bridge.execute_h4_token_teacher_kl_vjps(
+        adapter,
+        model_inputs,
+        teacher_logits=ordinary.logits,
+        supervised_indices=supervised_indices,
+        vjp_chunk_size=2,
+        h4_head=_BoundH4Head(),
+    )
+
+    assert result.h4_head_sha256 == "e" * 64
+    assert result.execution.h4_head_sha256 == "e" * 64
+    with pytest.raises(ValueError, match="H4 head binding differs"):
+        replace(
+            result,
+            h4_head_sha256="f" * 64,
+            artifact_sha256="",
+        )
+    with pytest.raises(ValueError, match="teacher grid differs"):
+        replace(
+            result,
+            teacher_logits_shape=(
+                *result.teacher_logits_shape[:2],
+                result.teacher_logits_shape[2] - 1,
+            ),
+            artifact_sha256="",
+        )
+    with pytest.raises(ValueError, match="backward count differs"):
+        replace(
+            result,
+            backward_call_count=result.backward_call_count + 1,
+            artifact_sha256="",
+        )
+
+    class _WrongSiteH4Head(_BoundH4Head):
+        site = "layer.4.mlp.normalized_input"
+
+    with pytest.raises(ValueError, match="bound to the wrong activation site"):
+        bridge.execute_h4_token_teacher_kl_vjps(
+            adapter,
+            model_inputs,
+            teacher_logits=ordinary.logits,
+            supervised_indices=supervised_indices,
+            vjp_chunk_size=2,
+            h4_head=_WrongSiteH4Head(),
+        )
+
+
+def test_one_pass_token_teacher_kl_vjps_reject_invalid_grids(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    bridge = runtime.export_one_pass_bridge()
+    ordinary = bridge.execute(adapter, model_inputs)
+    valid_indices = torch.nonzero(
+        ordinary.prefix.valid_target_mask,
+        as_tuple=False,
+    )[:2].to(dtype=torch.int64).contiguous()
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(ValueError, match=r"shape \[B, S, V\]"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=ordinary.logits[..., 0],
+                supervised_indices=valid_indices,
+            )
+        with pytest.raises(ValueError, match="indices escape the model"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=ordinary.logits,
+                supervised_indices=torch.tensor(
+                    [[0, ordinary.logits.shape[1]]],
+                    dtype=torch.int64,
+                ),
+            )
+        with pytest.raises(ValueError, match="indices are not canonical"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=ordinary.logits,
+                supervised_indices=valid_indices.flip(0).contiguous(),
+            )
+        with pytest.raises(ValueError, match="nonempty int64"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=ordinary.logits,
+                supervised_indices=valid_indices.to(torch.float64),
+            )
+        with pytest.raises(ValueError, match="positive integer"):
+            bridge.execute_h4_token_teacher_kl_vjps(
+                adapter,
+                model_inputs,
+                teacher_logits=ordinary.logits,
+                supervised_indices=valid_indices,
+                vjp_chunk_size=True,
+            )
+        assert forward.call_count == 0
+
+    with pytest.raises(ValueError, match="teacher and candidate grids differ"):
+        bridge.execute_h4_token_teacher_kl_vjps(
+            adapter,
+            model_inputs,
+            teacher_logits=ordinary.logits[..., :-1],
+            supervised_indices=valid_indices,
+        )
+    with pytest.raises(ValueError, match="valid execution grid"):
+        bridge.execute_h4_token_teacher_kl_vjps(
+            adapter,
+            model_inputs,
+            teacher_logits=ordinary.logits,
+            supervised_indices=torch.tensor([[0, 0]], dtype=torch.int64),
+        )
+
+
+@pytest.mark.parametrize("chunk_size", (0, -1, True, 1.5))
+def test_one_pass_token_nll_vjps_reject_invalid_chunk_before_forward(
+    prepared,
+    chunk_size,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    targets = torch.full_like(model_inputs["input_ids"], -100)
+    targets[:, 0] = model_inputs["input_ids"][:, 0]
+    bridge = runtime.export_one_pass_bridge()
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(
+            ValueError,
+            match="chunk size must be a positive integer",
+        ):
+            bridge.execute_h4_token_nll_vjps(
+                adapter,
+                model_inputs,
+                targets=targets,
+                vjp_chunk_size=chunk_size,
+            )
+
+    assert forward.call_count == 0
+
+
+def test_one_pass_token_nll_vjps_reject_empty_supervision(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, batched_inputs = prepared
+    model_inputs = {
+        name: value[:1].clone()
+        for name, value in batched_inputs.items()
+    }
+    targets = torch.full_like(model_inputs["input_ids"], -100)
+    bridge = runtime.export_one_pass_bridge()
+
+    with pytest.raises(
+        ValueError,
+        match="targets escape the valid execution grid",
+    ):
+        bridge.execute_h4_token_nll_vjps(
+            adapter,
+            model_inputs,
+            targets=targets,
+            vjp_chunk_size=2,
+        )
 
 
 def test_one_pass_bridge_rejects_an_unbound_correction_callable(
@@ -1658,3 +3041,885 @@ def test_oracle_suffix_rejects_same_shape_model_input_substitution(
             )
 
     assert forward.call_count == 0
+
+
+def test_complete_h4_identity_audit_is_three_pass_and_hash_bound(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    shadow_artifact_sha256 = shadow.result_artifact_sha256
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        audit = runtime.execute_complete_h4_identity_audit(
+            adapter,
+            inputs,
+            shadow,
+        )
+
+    assert forward.call_count == 3
+    assert shadow.result_artifact_sha256 == shadow_artifact_sha256
+    runtime.validate_result_binding(shadow)
+    assert audit.complete_h4_logits_bitwise_authoritative is True
+    assert audit.complete_h4_max_abs_logit_error == 0.0
+    assert torch.equal(audit.complete_h4_logits, shadow.authoritative_logits)
+    assert not torch.equal(
+        audit.partial_exact_x4_logits,
+        shadow.authoritative_logits,
+    )
+    assert audit.native_h4_sha256 == audit.injected_h4_sha256
+    assert (
+        audit.native_h4_sha256
+        != audit.incomplete_carrier_h4_sha256
+    )
+    assert audit.boundary_callback_order == (
+        "partial_exact_x4.y3",
+        "partial_exact_x4.x4",
+        "complete_h4.y3",
+        "complete_h4.x4",
+        "complete_h4.h4",
+    )
+    metadata = audit.metadata()
+    assert metadata["execution_mode"] == (
+        "authenticated_complete_h4_identity_audit"
+    )
+    assert metadata["model_forward_count"] == 3
+    assert metadata["metrics_only"] is True
+    assert metadata["serving_authorized"] is False
+    assert metadata["boundary_callbacks_exactly_once"] is True
+    difference = audit.incomplete_h4_difference_mask
+    valid = shadow.valid_target_mask
+    target = shadow.target_affected_mask
+    audit.validate_incomplete_h4_difference_mask(difference)
+    tampered_difference = difference.clone()
+    tampered_difference.reshape(-1)[0] = ~tampered_difference.reshape(-1)[0]
+    with pytest.raises(ValueError, match="difference mask hash mismatch"):
+        audit.validate_incomplete_h4_difference_mask(tampered_difference)
+    assert difference.dtype == torch.bool
+    assert difference.shape == valid.shape
+    assert metadata["incomplete_h4_difference_rows"] == int(difference.sum())
+    assert metadata["incomplete_h4_difference_valid_rows"] == int(
+        (difference & valid).sum()
+    )
+    assert metadata["incomplete_h4_difference_padding_rows"] == int(
+        (difference & ~valid).sum()
+    )
+    assert metadata["incomplete_h4_difference_target_rows"] == int(
+        (difference & target).sum()
+    )
+    assert metadata[
+        "incomplete_h4_difference_outside_target_rows"
+    ] == int((difference & ~target).sum())
+    assert metadata["target_affected_h4_difference_observed"] is True
+    assert metadata["incomplete_h4_difference_nonvacuous"] is True
+
+
+def test_complete_h4_identity_audit_accepts_broader_padding_support(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    padding = ~shadow.valid_target_mask
+    assert bool(padding.any())
+    original_forward = adapter.forward
+    call_count = 0
+
+    def broaden_h4(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        interventions = dict(kwargs.get("interventions") or {})
+        if call_count == 2:
+
+            def perturb_padding(value: Tensor) -> Tensor:
+                broadened = value.clone()
+                broadened[padding] += 0.5
+                return broadened
+
+            interventions["layer.4.output"] = perturb_padding
+            kwargs["interventions"] = interventions
+        elif call_count == 3:
+            original_h4 = interventions["layer.4.output"]
+
+            def replay_broader_carrier(value: Tensor) -> Tensor:
+                broadened = value.clone()
+                broadened[padding] += 0.5
+                return original_h4(broadened)
+
+            interventions["layer.4.output"] = replay_broader_carrier
+            kwargs["interventions"] = interventions
+        return original_forward(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(adapter, "forward", side_effect=broaden_h4) as forward:
+        audit = runtime.execute_complete_h4_identity_audit(
+            adapter,
+            inputs,
+            shadow,
+        )
+
+    assert forward.call_count == 3
+    difference = audit.incomplete_h4_difference_mask
+    assert bool(difference[padding].all())
+    assert audit.incomplete_h4_difference_padding_rows == int(padding.sum())
+    assert audit.incomplete_h4_difference_outside_target_rows >= int(
+        padding.sum()
+    )
+    assert audit.incomplete_h4_difference_rows == (
+        audit.incomplete_h4_difference_valid_rows
+        + audit.incomplete_h4_difference_padding_rows
+    )
+    assert audit.incomplete_h4_difference_rows == (
+        audit.incomplete_h4_difference_target_rows
+        + audit.incomplete_h4_difference_outside_target_rows
+    )
+    assert audit.complete_h4_logits_bitwise_authoritative is True
+
+
+def test_complete_h4_identity_audit_allows_negative_scientific_outcome(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    audit = runtime.execute_complete_h4_identity_audit(
+        adapter,
+        inputs,
+        shadow,
+    )
+    perturbed = audit.complete_h4_logits.detach().clone()
+    perturbed[0, 0, 0] += 0.25
+    negative = replace(
+        audit,
+        complete_h4_logits=perturbed,
+        complete_h4_logits_bitwise_authoritative=False,
+        complete_h4_max_abs_logit_error=0.25,
+        complete_h4_logits_sha256="",
+        artifact_sha256="",
+    )
+
+    negative.validate_integrity()
+    assert negative.metadata()[
+        "complete_h4_logits_bitwise_authoritative"
+    ] is False
+    assert negative.metadata()["complete_h4_max_abs_logit_error"] == 0.25
+
+
+@pytest.mark.parametrize(
+    "target",
+    (
+        "partial_exact_x4_logits",
+        "complete_h4_logits",
+        "incomplete_h4_difference_mask",
+        "native_h4_sha256",
+        "incomplete_h4_difference_mask_sha256",
+        "incomplete_h4_difference_rows",
+        "boundary_callback_order",
+        "target_affected_h4_difference_observed",
+        "incomplete_h4_difference_nonvacuous",
+    ),
+)
+def test_complete_h4_identity_audit_detects_result_mutation(
+    prepared,
+    target: str,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    audit = runtime.execute_complete_h4_identity_audit(
+        adapter,
+        inputs,
+        shadow,
+    )
+
+    with torch.no_grad():
+        if target in {"partial_exact_x4_logits", "complete_h4_logits"}:
+            getattr(audit, target)[0, 0, 0] += 1.0
+        elif target == "incomplete_h4_difference_mask":
+            value = audit.incomplete_h4_difference_mask
+            value.reshape(-1)[0] = ~value.reshape(-1)[0]
+        elif target == "boundary_callback_order":
+            object.__setattr__(
+                audit,
+                target,
+                tuple(reversed(audit.boundary_callback_order)),
+            )
+        elif target in {
+            "target_affected_h4_difference_observed",
+            "incomplete_h4_difference_nonvacuous",
+        }:
+            object.__setattr__(audit, target, False)
+        elif target == "incomplete_h4_difference_rows":
+            object.__setattr__(
+                audit,
+                target,
+                audit.incomplete_h4_difference_rows + 1,
+            )
+        else:
+            object.__setattr__(audit, target, "0" * 64)
+
+    with pytest.raises(ValueError):
+        audit.validate_integrity()
+
+
+def test_complete_h4_identity_audit_rejects_skipped_callback(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    original_forward = adapter.forward
+    call_count = 0
+
+    def skip_h4(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 3:
+            interventions = dict(kwargs["interventions"])  # type: ignore[arg-type]
+            interventions.pop("layer.4.output")
+            kwargs["interventions"] = interventions
+        return original_forward(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(adapter, "forward", side_effect=skip_h4) as forward:
+        with pytest.raises(RuntimeError, match="callbacks were skipped"):
+            runtime.execute_complete_h4_identity_audit(
+                adapter,
+                inputs,
+                shadow,
+            )
+
+    assert forward.call_count == 3
+
+
+def test_complete_h4_identity_audit_rejects_repeated_callback(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    original_forward = adapter.forward
+    call_count = 0
+
+    def repeat_y3(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            interventions = dict(kwargs["interventions"])  # type: ignore[arg-type]
+            original = interventions["layer.3.mlp.operator_output"]
+
+            def repeated(value: Tensor) -> Tensor:
+                result = original(value)
+                original(value)
+                return result
+
+            interventions["layer.3.mlp.operator_output"] = repeated
+            kwargs["interventions"] = interventions
+        return original_forward(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(adapter, "forward", side_effect=repeat_y3):
+        with pytest.raises(RuntimeError, match="repeated or reordered"):
+            runtime.execute_complete_h4_identity_audit(
+                adapter,
+                inputs,
+                shadow,
+            )
+
+
+def test_complete_h4_identity_audit_rejects_mismatched_boundary(
+    prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    original_forward = adapter.forward
+    call_count = 0
+
+    def mismatch_x4(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            interventions = dict(kwargs["interventions"])  # type: ignore[arg-type]
+            original = interventions["layer.4.mlp.normalized_input"]
+
+            def mismatched(value: Tensor) -> Tensor:
+                return original(value + 1.0)
+
+            interventions["layer.4.mlp.normalized_input"] = mismatched
+            kwargs["interventions"] = interventions
+        return original_forward(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(adapter, "forward", side_effect=mismatch_x4):
+        with pytest.raises(RuntimeError, match="non-authenticated reference X4"):
+            runtime.execute_complete_h4_identity_audit(
+                adapter,
+                inputs,
+                shadow,
+            )
+
+
+def test_complete_h4_pair_is_two_pass_gradient_bound_and_causally_closed(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        pair = runtime.execute_complete_h4_pair(
+            adapter,
+            inputs,
+            shadow,
+            supervised_indices=supervised_indices,
+            supervised_targets=supervised_targets,
+        )
+
+    assert forward.call_count == 2
+    assert pair.native_h4.shape == pair.incomplete_h4.shape
+    assert pair.h4_gradient.shape == pair.incomplete_h4.shape
+    assert pair.h4_gradient.dtype == pair.incomplete_h4.dtype
+    assert bool(torch.isfinite(pair.h4_gradient).all())
+    assert bool((pair.h4_gradient != 0).any())
+    assert len(pair.partial_exact_x4_logits_sha256) == 64
+    assert pair.supervised_token_count == int(supervised_targets.numel())
+    assert pair.objective_reduction == "mean"
+    assert pair.objective_mean_nll > 0.0
+    assert len(pair.objective_receipt_sha256) == 64
+    assert not hasattr(pair, "partial_exact_x4_logits")
+    support = pair.complete_h4_support_mask
+    graph_support = pair.target_affected_mask
+    assert bool((support & ~graph_support).any())
+    assert bool((graph_support & ~support).any()) is False
+    difference = pair.incomplete_h4_difference_mask
+    assert bool((difference & ~support).any()) is False
+    assert bool((difference & ~pair.valid_target_mask).any()) is False
+    assert pair.metadata()["complete_h4_support_outside_graph_rows"] > 0
+    assert pair.metadata()["model_forward_count"] == 2
+    runtime.validate_complete_h4_pair_binding(pair, shadow)
+
+
+def test_complete_h4_pair_nll_gradient_matches_centered_finite_difference(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+
+    direction = torch.linspace(
+        -1.0,
+        1.0,
+        pair.incomplete_h4.numel(),
+        dtype=pair.incomplete_h4.dtype,
+        device=pair.incomplete_h4.device,
+    ).reshape_as(pair.incomplete_h4)
+    direction = direction / torch.linalg.vector_norm(direction)
+    indices = supervised_indices.to(device=pair.incomplete_h4.device)
+    targets = supervised_targets.to(device=pair.incomplete_h4.device)
+
+    def perturbed_mean_nll(scale: float) -> Tensor:
+        callback_order: list[str] = []
+
+        def at_y3(original: Tensor) -> Tensor:
+            callback_order.append("y3")
+            assert torch.equal(original, shadow.native_y3)
+            return shadow.clamped_y3
+
+        def at_x4(original: Tensor) -> Tensor:
+            callback_order.append("x4")
+            assert torch.equal(original, shadow.reference_x4)
+            return shadow.authoritative_x4
+
+        def at_h4(original: Tensor) -> Tensor:
+            callback_order.append("h4")
+            assert torch.equal(original, pair.incomplete_h4)
+            return pair.incomplete_h4 + scale * direction
+
+        with torch.no_grad():
+            run = adapter.forward(
+                inputs,
+                capture_sites=(),
+                interventions={
+                    "layer.3.mlp.operator_output": at_y3,
+                    "layer.4.mlp.normalized_input": at_x4,
+                    "layer.4.output": at_h4,
+                },
+                retain_gradients=False,
+            )
+            loss = torch.nn.functional.cross_entropy(
+                run.logits[indices[:, 0], indices[:, 1]],
+                targets,
+                ignore_index=pair.objective_ignore_index,
+                reduction="mean",
+            )
+        assert callback_order == ["y3", "x4", "h4"]
+        return loss
+
+    epsilon = 1.0e-5
+    finite_difference = (
+        perturbed_mean_nll(epsilon) - perturbed_mean_nll(-epsilon)
+    ) / (2.0 * epsilon)
+    gradient_direction = (pair.h4_gradient * direction).sum()
+
+    assert abs(float(gradient_direction)) > 1.0e-8
+    torch.testing.assert_close(
+        gradient_direction,
+        finite_difference,
+        atol=1.0e-9,
+        rtol=1.0e-6,
+    )
+
+
+def test_complete_h4_support_rejects_span_outside_locked_window() -> None:
+    positions = torch.tensor([[0, 511, 512]], dtype=torch.int64)
+    valid = torch.ones_like(positions, dtype=torch.bool)
+    sources = torch.tensor([[True, False, False]])
+
+    with pytest.raises(ValueError, match="exceeds the 512-token window"):
+        shadow_runtime_module._complete_h4_causal_support(
+            positions,
+            valid,
+            sources,
+        )
+
+
+@pytest.mark.parametrize("case", ("empty", "unsorted", "wrong_target"))
+def test_complete_h4_pair_rejects_noncanonical_supervision_before_forward(
+    shifted_complete_h4_prepared,
+    case: str,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    indices, targets = _next_token_supervision(inputs)
+    if case == "empty":
+        indices = torch.empty((0, 2), dtype=torch.int64)
+        targets = torch.empty((0,), dtype=torch.int64)
+        expected = "nonempty contiguous"
+    elif case == "unsorted":
+        indices = indices.flip(0).contiguous()
+        targets = targets.flip(0).contiguous()
+        expected = "batch-major sorted"
+    else:
+        targets = targets.clone()
+        targets[0] = _Config.vocab_size
+        expected = "vocabulary ids"
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(ValueError, match=expected):
+            runtime.execute_complete_h4_pair(
+                adapter,
+                inputs,
+                shadow,
+                supervised_indices=indices,
+                supervised_targets=targets,
+            )
+    assert forward.call_count == 0
+
+
+def test_complete_h4_pair_rejects_supervision_mutated_during_use(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    indices, targets = _next_token_supervision(inputs)
+    original_forward = adapter.forward
+    call_count = 0
+
+    def mutate_targets(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            targets[0] = (targets[0] + 1) % _Config.vocab_size
+        return original_forward(*args, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(adapter, "forward", side_effect=mutate_targets):
+        with pytest.raises(RuntimeError, match="supervision drifted"):
+            runtime.execute_complete_h4_pair(
+                adapter,
+                inputs,
+                shadow,
+                supervised_indices=indices,
+                supervised_targets=targets,
+            )
+    assert call_count == 2
+
+
+def test_complete_h4_correction_projection_and_exact_ceiling_are_one_pass(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    projection_basis, projected_delta, basis_artifact = (
+        _tiny_complete_h4_projection(pair)
+    )
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as projection_forward:
+        projection = runtime.execute_complete_h4_correction_arm(
+            adapter,
+            inputs,
+            shadow,
+            pair,
+            projected_delta,
+            role="projection_oracle",
+            projection_basis=projection_basis,
+            projection_basis_artifact_sha256=basis_artifact,
+            projection_fit_basis_artifact_sha256="ab" * 32,
+            projection_rank=int(projection_basis.shape[0]),
+            projection_ordering=(
+                "descending_fisher_tilted_residual_eigenvalue"
+            ),
+        )
+    assert projection_forward.call_count == 1
+    assert projection.role == "projection_oracle"
+    assert projection.metadata()["projection_rank"] == 8
+    assert projection.metadata()["metrics_only"] is True
+    assert projection.metadata()["serving_authorized"] is False
+    assert projection.projection_basis_artifact_sha256 == basis_artifact
+    assert projection.projection_fit_basis_artifact_sha256 == "ab" * 32
+    assert projection.projection_definition is not None
+    projection.validate_projected_delta(projected_delta)
+    projection.validate_projection_basis(projection_basis)
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as ceiling_forward:
+        ceiling = runtime.execute_complete_h4_correction_arm(
+            adapter,
+            inputs,
+            shadow,
+            pair,
+            role="exact_h4_ceiling",
+        )
+    assert ceiling_forward.call_count == 1
+    assert ceiling.logits_bitwise_authoritative is True
+    assert ceiling.max_abs_authoritative_logit_error == 0.0
+    assert torch.equal(ceiling.logits, shadow.authoritative_logits)
+    assert ceiling.injected_h4_sha256 == pair.native_h4_sha256
+    assert ceiling.projection_basis_sha256 is None
+    assert ceiling.projection_fit_basis_artifact_sha256 is None
+
+
+def test_complete_h4_projection_accepts_domain_separated_unweighted_ordering(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    ordering = "descending_unweighted_residual_eigenvalue"
+    basis, projected_delta, unweighted_artifact = (
+        _tiny_complete_h4_projection(pair, ordering=ordering)
+    )
+    tilted_artifact = (
+        shadow_runtime_module
+        .gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+            basis,
+            projection_rank=int(basis.shape[0]),
+            projection_ordering=(
+                "descending_fisher_tilted_residual_eigenvalue"
+            ),
+        )
+    )
+
+    arm = runtime.execute_complete_h4_correction_arm(
+        adapter,
+        inputs,
+        shadow,
+        pair,
+        projected_delta,
+        role="projection_oracle",
+        projection_basis=basis,
+        projection_basis_artifact_sha256=unweighted_artifact,
+        projection_fit_basis_artifact_sha256="cd" * 32,
+        projection_rank=int(basis.shape[0]),
+        projection_ordering=ordering,
+    )
+
+    assert tilted_artifact == (
+        "7fd165f5c15cd5d8f05eaeaad0d588c3c396c9fd8b48f0d936211509d7d096d5"
+    )
+    assert unweighted_artifact != tilted_artifact
+    assert arm.projection_ordering == ordering
+    assert arm.projection_basis_artifact_sha256 == unweighted_artifact
+    arm.validate_projection_basis(basis)
+
+    with pytest.raises(ValueError, match="authenticated residual-eigenvalue"):
+        shadow_runtime_module.gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+            basis,
+            projection_rank=int(basis.shape[0]),
+            projection_ordering="descending_unweighted_residual_eigenvalues",
+        )
+
+
+def test_complete_h4_projection_accepts_tail_informed_v3_global_projector(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    ordering = (
+        shadow_runtime_module.COMPLETE_H4_TAIL_INFORMED_PROJECTION_ORDERING
+    )
+    basis, projected_delta, tail_artifact = _tiny_complete_h4_projection(
+        pair,
+        ordering=ordering,
+    )
+    repeated_artifact = (
+        shadow_runtime_module
+        .gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+            basis.clone().contiguous(),
+            projection_rank=int(basis.shape[0]),
+            projection_ordering=ordering,
+        )
+    )
+    unweighted_artifact = (
+        shadow_runtime_module
+        .gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+            basis,
+            projection_rank=int(basis.shape[0]),
+            projection_ordering="descending_unweighted_residual_eigenvalue",
+        )
+    )
+
+    arm = runtime.execute_complete_h4_correction_arm(
+        adapter,
+        inputs,
+        shadow,
+        pair,
+        projected_delta,
+        role="projection_oracle",
+        projection_basis=basis,
+        projection_basis_artifact_sha256=tail_artifact,
+        projection_fit_basis_artifact_sha256="ef" * 32,
+        projection_rank=int(basis.shape[0]),
+        projection_ordering=ordering,
+    )
+
+    assert tail_artifact == repeated_artifact
+    assert tail_artifact != unweighted_artifact
+    assert arm.projection_ordering == ordering
+    assert arm.projection_basis_artifact_sha256 == tail_artifact
+    assert arm.projection_rank == int(basis.shape[0])
+    arm.validate_projection_basis(basis)
+
+
+def test_complete_h4_projection_rejects_arbitrary_supported_delta_and_basis(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    indices, targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=indices,
+        supervised_targets=targets,
+    )
+    basis, delta, basis_artifact = _tiny_complete_h4_projection(pair)
+    supported_row = torch.nonzero(
+        pair.complete_h4_support_mask,
+        as_tuple=False,
+    )[0]
+    delta[int(supported_row[0]), int(supported_row[1]), 0] += 1.0
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(
+            ValueError,
+            match="differs from authenticated projection",
+        ):
+            runtime.execute_complete_h4_correction_arm(
+                adapter,
+                inputs,
+                shadow,
+                pair,
+                delta,
+                role="projection_oracle",
+                projection_basis=basis,
+                projection_basis_artifact_sha256=basis_artifact,
+                projection_fit_basis_artifact_sha256="ab" * 32,
+                projection_rank=int(basis.shape[0]),
+                projection_ordering=(
+                    "descending_fisher_tilted_residual_eigenvalue"
+                ),
+            )
+    assert forward.call_count == 0
+
+    nonorthonormal = basis.clone()
+    nonorthonormal[0, 0] = 2.0
+    with pytest.raises(ValueError, match="orthonormal"):
+        runtime.execute_complete_h4_correction_arm(
+            adapter,
+            inputs,
+            shadow,
+            pair,
+            torch.zeros_like(pair.incomplete_h4),
+            role="projection_oracle",
+            projection_basis=nonorthonormal,
+            projection_basis_artifact_sha256=basis_artifact,
+            projection_fit_basis_artifact_sha256="ab" * 32,
+            projection_rank=int(nonorthonormal.shape[0]),
+            projection_ordering=(
+                "descending_fisher_tilted_residual_eigenvalue"
+            ),
+        )
+
+
+@pytest.mark.parametrize("row", (0, 1))
+def test_complete_h4_projection_rejects_padding_and_off_support_writes(
+    shifted_complete_h4_prepared,
+    row: int,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    assert not bool(pair.complete_h4_support_mask[0, row])
+    if row == 0:
+        assert not bool(pair.valid_target_mask[0, row])
+    else:
+        assert bool(pair.valid_target_mask[0, row])
+    projection_basis, invalid_delta, basis_artifact = (
+        _tiny_complete_h4_projection(pair)
+    )
+    invalid_delta[0, row, 0] = 1.0
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(
+            ValueError,
+            match="differs from authenticated projection",
+        ):
+            runtime.execute_complete_h4_correction_arm(
+                adapter,
+                inputs,
+                shadow,
+                pair,
+                invalid_delta,
+                role="projection_oracle",
+                projection_basis=projection_basis,
+                projection_basis_artifact_sha256=basis_artifact,
+                projection_fit_basis_artifact_sha256="ab" * 32,
+                projection_rank=int(projection_basis.shape[0]),
+                projection_ordering=(
+                    "descending_fisher_tilted_residual_eigenvalue"
+                ),
+            )
+    assert forward.call_count == 0
+
+
+def test_complete_h4_pair_and_arm_reject_tamper_input_and_result(
+    shifted_complete_h4_prepared,
+) -> None:
+    runtime, adapter, _basis, inputs = shifted_complete_h4_prepared
+    shadow = runtime.execute_model_shadow(adapter, inputs, arm="all_on")
+    supervised_indices, supervised_targets = _next_token_supervision(inputs)
+    pair = runtime.execute_complete_h4_pair(
+        adapter,
+        inputs,
+        shadow,
+        supervised_indices=supervised_indices,
+        supervised_targets=supervised_targets,
+    )
+    substituted = {name: value.clone() for name, value in inputs.items()}
+    substituted["input_ids"][0, 1] += 1
+
+    with patch.object(
+        adapter,
+        "forward",
+        wraps=adapter.forward,
+    ) as forward:
+        with pytest.raises(
+            ValueError,
+            match="model_inputs SHA-256 differs from shadow result",
+        ):
+            runtime.execute_complete_h4_correction_arm(
+                adapter,
+                substituted,
+                shadow,
+                pair,
+                role="exact_h4_ceiling",
+            )
+    assert forward.call_count == 0
+
+    object.__setattr__(shadow, "result_artifact_sha256", "0" * 64)
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        runtime.execute_complete_h4_correction_arm(
+            adapter,
+            inputs,
+            shadow,
+            pair,
+            role="exact_h4_ceiling",
+        )
+
+    # Restore only the immutable field needed to exercise pair tensor drift.
+    object.__setattr__(
+        shadow,
+        "result_artifact_sha256",
+        pair.shadow_result_artifact_sha256,
+    )
+    with pytest.raises(ValueError, match="objective receipt mismatch"):
+        replace(
+            pair,
+            supervised_targets_sha256="0" * 64,
+            artifact_sha256="",
+        )
+    pair.incomplete_h4[0, 2, 0] += 1.0
+    with pytest.raises(ValueError, match="incomplete H4 hash mismatch"):
+        runtime.execute_complete_h4_correction_arm(
+            adapter,
+            inputs,
+            shadow,
+            pair,
+            role="exact_h4_ceiling",
+        )

@@ -1129,11 +1129,11 @@ class GemmaCausalResidualHead(Gemma3L3L4CorrectionProvider):
         result.validate_integrity()
         return result
 
-    def correction(
+    def _validate_correction_geometry(
         self,
         prefix: Gemma3L3L4OnePassPrefix,
         realized_state: Tensor,
-    ) -> Tensor:
+    ) -> None:
         self.validate_integrity()
         prefix.validate_integrity()
         if (
@@ -1152,7 +1152,22 @@ class GemmaCausalResidualHead(Gemma3L3L4CorrectionProvider):
             and not bool(torch.isfinite(realized_state[active_state]).all())
         ):
             raise ValueError("realized H4 state is nonfinite on active rows")
-        result = torch.zeros_like(prefix.clamped_y3)
+
+    def modal_correction(
+        self,
+        prefix: Gemma3L3L4OnePassPrefix,
+        realized_state: Tensor,
+    ) -> Tensor:
+        """Return the authenticated correction before output decoding.
+
+        This is the fused modal boundary used by small child providers.  It
+        deliberately preserves the exact lag/state arithmetic of
+        :meth:`correction` while zeroing rows that the correction ABI forbids
+        a provider to write.
+        """
+
+        self._validate_correction_geometry(prefix, realized_state)
+        batches: list[Tensor] = []
         for batch in range(prefix.source_modes.shape[0]):
             modal = apply_causal_lag_convolution(
                 prefix.source_modes[batch],
@@ -1177,13 +1192,65 @@ class GemmaCausalResidualHead(Gemma3L3L4CorrectionProvider):
                     device=modal.device,
                     dtype=modal.dtype,
                 )
-            decoded = modal @ self.decoder.to(
-                device=modal.device,
-                dtype=modal.dtype,
+            active = prefix.target_affected_mask[batch].to(modal.device)
+            if bool((~active).any()):
+                modal = modal.clone()
+                modal[~active] = 0
+            batches.append(modal)
+        result = torch.stack(batches, dim=0).contiguous()
+        active = prefix.target_affected_mask.to(result.device)
+        if bool(active.any()) and not bool(torch.isfinite(result[active]).all()):
+            raise ValueError("residual head modal correction is nonfinite")
+        inactive = ~active
+        if bool(inactive.any()) and not bool((result[inactive] == 0).all()):
+            raise RuntimeError("residual head modal correction is off support")
+        self.validate_integrity()
+        prefix.validate_integrity()
+        return result
+
+    def decode_modal(
+        self,
+        prefix: Gemma3L3L4OnePassPrefix,
+        modal: Tensor,
+        *,
+        like: Tensor,
+    ) -> Tensor:
+        """Decode one modal correction through this head's frozen decoder."""
+
+        self.validate_integrity()
+        prefix.validate_integrity()
+        if (
+            prefix.bridge_binding_sha256 != self.bridge_binding_sha256
+            or not isinstance(modal, Tensor)
+            or modal.shape
+            != (*prefix.logical_positions.shape, self.rank)
+            or not modal.is_floating_point()
+            or not isinstance(like, Tensor)
+            or like.shape != prefix.clamped_y3.shape
+            or not like.is_floating_point()
+        ):
+            raise ValueError("residual head modal decode geometry differs")
+        active = prefix.target_affected_mask.to(modal.device)
+        if bool(active.any()) and not bool(torch.isfinite(modal[active]).all()):
+            raise ValueError("residual head modal decode is nonfinite")
+        inactive = ~active
+        if bool(inactive.any()) and not bool((modal[inactive] == 0).all()):
+            raise ValueError("residual head modal decode is off support")
+        result = torch.zeros_like(like)
+        decoder = self.decoder.to(
+            device=modal.device,
+            dtype=modal.dtype,
+        )
+        for batch in range(modal.shape[0]):
+            decoded = modal[batch] @ decoder
+            active_batch = prefix.target_affected_mask[batch].to(
+                decoded.device
             )
-            active = prefix.target_affected_mask[batch].to(decoded.device)
-            if bool(active.any()):
-                result[batch, active.to(result.device)] = decoded[active].to(
+            if bool(active_batch.any()):
+                result[
+                    batch,
+                    active_batch.to(result.device),
+                ] = decoded[active_batch].to(
                     device=result.device,
                     dtype=result.dtype,
                 )
@@ -1191,7 +1258,22 @@ class GemmaCausalResidualHead(Gemma3L3L4CorrectionProvider):
         if bool(inactive.any()) and not bool((result[inactive] == 0).all()):
             raise RuntimeError("residual head wrote outside target support")
         self.validate_integrity()
+        prefix.validate_integrity()
         return result
+
+    def correction(
+        self,
+        prefix: Gemma3L3L4OnePassPrefix,
+        realized_state: Tensor,
+    ) -> Tensor:
+        """Return the decoded correction with the historical byte semantics."""
+
+        modal = self.modal_correction(prefix, realized_state)
+        return self.decode_modal(
+            prefix,
+            modal,
+            like=prefix.clamped_y3,
+        )
 
 
 def fit_gemma_causal_residual_head(

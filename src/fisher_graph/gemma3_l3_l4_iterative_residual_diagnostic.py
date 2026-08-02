@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
@@ -57,6 +58,8 @@ from .gemma3_l3_l4_iterative_residual_boost import (
     fit_gemma_iterative_residual_full_provider,
 )
 from .gemma3_l3_l4_iterative_residual_campaign import (
+    DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE,
+    GemmaIterativeResidualCampaignRecipe,
     collect_gemma_iterative_residual_campaign_live,
     publish_gemma_iterative_residual_campaign_report,
 )
@@ -150,6 +153,239 @@ _FACTORIAL_RESOURCE_KEYS = frozenset(
         "lag_b_h4_prepared_float_scalar_count",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _GemmaIterativeDiagnosticRecipe:
+    """Internal wiring for one preregistered iterative candidate."""
+
+    campaign_recipe: GemmaIterativeResidualCampaignRecipe
+    make_fit_record: Callable[..., object]
+    fit_fold: Callable[..., object]
+    build_report: Callable[..., Mapping[str, object]]
+    fit_full: Callable[..., object]
+    validate_report: Callable[[Mapping[str, object]], None]
+    report_label: str
+    expected_parent_lineage: Mapping[str, str] = field(
+        default_factory=dict
+    )
+    extra_lineage: Mapping[str, str] = field(default_factory=dict)
+    extra_immutable_inputs: tuple[
+        tuple[str, Path, str], ...
+    ] = ()
+    source_code_files: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.campaign_recipe,
+            GemmaIterativeResidualCampaignRecipe,
+        ):
+            raise TypeError("diagnostic campaign recipe is invalid")
+        for name in (
+            "make_fit_record",
+            "fit_fold",
+            "build_report",
+            "fit_full",
+            "validate_report",
+        ):
+            if not callable(getattr(self, name)):
+                raise TypeError(f"diagnostic {name} must be callable")
+        if not isinstance(self.report_label, str) or not self.report_label:
+            raise ValueError("diagnostic report label must be nonempty")
+        for mapping_name in (
+            "expected_parent_lineage",
+            "extra_lineage",
+        ):
+            values = getattr(self, mapping_name)
+            if not isinstance(values, Mapping):
+                raise TypeError(
+                    f"diagnostic {mapping_name} must be a mapping"
+                )
+            for key, value in values.items():
+                if not isinstance(key, str) or not key:
+                    raise ValueError(
+                        f"diagnostic {mapping_name} key is invalid"
+                    )
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in value
+                    )
+                ):
+                    raise ValueError(
+                        f"diagnostic {mapping_name} hash is invalid"
+                    )
+        labels: set[str] = set()
+        for label, path, file_sha256 in self.extra_immutable_inputs:
+            if not isinstance(label, str) or not label or label in labels:
+                raise ValueError(
+                    "diagnostic immutable labels must be unique"
+                )
+            labels.add(label)
+            if not isinstance(path, Path):
+                raise TypeError("diagnostic immutable path must be a Path")
+            if (
+                not isinstance(file_sha256, str)
+                or len(file_sha256) != 64
+            ):
+                raise ValueError(
+                    "diagnostic immutable file hash is invalid"
+                )
+        if (
+            type(self.source_code_files) is not tuple
+            or len(self.source_code_files)
+            != len(set(self.source_code_files))
+            or any(
+                not isinstance(name, str) or not name
+                for name in self.source_code_files
+            )
+        ):
+            raise ValueError(
+                "diagnostic source-code file list must be canonical"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _GemmaDevelopmentCollectionRecipe:
+    """Internal wiring for a development-only collection over reusable A-fit.
+
+    Unlike ``_GemmaIterativeDiagnosticRecipe``, this recipe never constructs
+    or evaluates a candidate provider.  It exists so diagnostics such as the
+    exact token-loss Fisher collector can reuse the authenticated model/panel
+    setup without importing, opening, or claiming any selection panel.
+    """
+
+    collect: Callable[..., Mapping[str, object]]
+    validate_report: Callable[[Mapping[str, object]], None]
+    publish_report: Callable[[Path, Mapping[str, object]], None]
+    report_label: str
+    expected_parent_lineage: Mapping[str, str] = field(
+        default_factory=dict
+    )
+    extra_lineage: Mapping[str, str] = field(default_factory=dict)
+    extra_immutable_inputs: tuple[
+        tuple[str, Path, str], ...
+    ] = ()
+    source_code_files: tuple[str, ...] = ()
+    collection_panel_factory: Callable[..., object] | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("collect", "validate_report", "publish_report"):
+            if not callable(getattr(self, name)):
+                raise TypeError(f"development {name} must be callable")
+        if (
+            self.collection_panel_factory is not None
+            and not callable(self.collection_panel_factory)
+        ):
+            raise TypeError(
+                "development collection_panel_factory must be callable"
+            )
+        if not isinstance(self.report_label, str) or not self.report_label:
+            raise ValueError("development report label must be nonempty")
+        for mapping_name in (
+            "expected_parent_lineage",
+            "extra_lineage",
+        ):
+            values = getattr(self, mapping_name)
+            if not isinstance(values, Mapping):
+                raise TypeError(
+                    f"development {mapping_name} must be a mapping"
+                )
+            for key, value in values.items():
+                if not isinstance(key, str) or not key:
+                    raise ValueError(
+                        f"development {mapping_name} key is invalid"
+                    )
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in value
+                    )
+                ):
+                    raise ValueError(
+                        f"development {mapping_name} hash is invalid"
+                    )
+        labels: set[str] = set()
+        for label, path, file_sha256 in self.extra_immutable_inputs:
+            if not isinstance(label, str) or not label or label in labels:
+                raise ValueError(
+                    "development immutable labels must be unique"
+                )
+            labels.add(label)
+            if not isinstance(path, Path):
+                raise TypeError("development immutable path must be a Path")
+            if (
+                not isinstance(file_sha256, str)
+                or len(file_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in file_sha256
+                )
+            ):
+                raise ValueError(
+                    "development immutable file hash is invalid"
+                )
+        if (
+            type(self.source_code_files) is not tuple
+            or len(self.source_code_files)
+            != len(set(self.source_code_files))
+            or any(
+                not isinstance(name, str) or not name
+                for name in self.source_code_files
+            )
+        ):
+            raise ValueError(
+                "development source-code file list must be canonical"
+            )
+
+
+def _position_make_fit_record(
+    *,
+    parent_h4: object,
+    **kwargs: object,
+) -> object:
+    del parent_h4
+    return build_gemma_iterative_residual_fit_record(**kwargs)
+
+
+def _position_fit_fold(
+    *,
+    parent_artifact_sha256: str,
+    **kwargs: object,
+) -> object:
+    return fit_gemma_iterative_residual_fold_provider(
+        **kwargs,
+        parent_artifact_sha256=parent_artifact_sha256,
+    )
+
+
+def _position_fit_full(
+    *,
+    parent_artifact_sha256: str,
+    **kwargs: object,
+) -> object:
+    return fit_gemma_iterative_residual_full_provider(
+        **kwargs,
+        parent_artifact_sha256=parent_artifact_sha256,
+    )
+
+
+def _default_diagnostic_recipe() -> _GemmaIterativeDiagnosticRecipe:
+    return _GemmaIterativeDiagnosticRecipe(
+        campaign_recipe=(
+            DEFAULT_GEMMA_ITERATIVE_RESIDUAL_CAMPAIGN_RECIPE
+        ),
+        make_fit_record=_position_make_fit_record,
+        fit_fold=_position_fit_fold,
+        build_report=build_gemma_iterative_residual_report,
+        fit_full=_position_fit_full,
+        validate_report=validate_gemma_iterative_residual_report,
+        report_label="iterative residual",
+    )
 
 
 def _mapping(value: object, *, label: str) -> Mapping[str, object]:
@@ -417,15 +653,22 @@ def _validate_factorial_live_lineage(
         )
 
 
-def _source_code_sha256s() -> dict[str, str]:
+def _source_code_sha256s(
+    extra_names: Sequence[str] = (),
+) -> dict[str, str]:
     package = Path(__file__).resolve().parent
-    names = (
-        "gemma3_l3_l4_iterative_residual_diagnostic.py",
-        "gemma3_l3_l4_iterative_residual_campaign.py",
-        "gemma3_l3_l4_iterative_residual_boost.py",
-        "gemma3_l3_l4_iterative_residual_analysis.py",
-        "gemma3_l3_l4_graph_organized_svd_shadow_runtime.py",
-        "gemma3_l3_l4_h4_damping_materialization.py",
+    names = tuple(
+        dict.fromkeys(
+            (
+                "gemma3_l3_l4_iterative_residual_diagnostic.py",
+                "gemma3_l3_l4_iterative_residual_campaign.py",
+                "gemma3_l3_l4_iterative_residual_boost.py",
+                "gemma3_l3_l4_iterative_residual_analysis.py",
+                "gemma3_l3_l4_graph_organized_svd_shadow_runtime.py",
+                "gemma3_l3_l4_h4_damping_materialization.py",
+                *extra_names,
+            )
+        )
     )
     return {name: _file_sha256(package / name) for name in names}
 
@@ -450,13 +693,33 @@ def run_gemma_iterative_residual_diagnostic(
     ),
     output: Path | str = DEFAULT_OUTPUT,
     cache_dir: Path | str | None = None,
+    _diagnostic_recipe: (
+        _GemmaIterativeDiagnosticRecipe
+        | _GemmaDevelopmentCollectionRecipe
+        | None
+    ) = None,
 ) -> dict[str, object]:
     """Execute the frozen four-bin LOFO iteration on expanded A-fit only."""
 
+    diagnostic_recipe = (
+        _default_diagnostic_recipe()
+        if _diagnostic_recipe is None
+        else _diagnostic_recipe
+    )
+    if not isinstance(
+        diagnostic_recipe,
+        (
+            _GemmaIterativeDiagnosticRecipe,
+            _GemmaDevelopmentCollectionRecipe,
+        ),
+    ):
+        raise TypeError(
+            "_diagnostic_recipe must be a strict diagnostic recipe"
+        )
     destination = Path(output)
     if destination.exists():
         raise FileExistsError(
-            "refusing to overwrite iterative residual report"
+            f"refusing to overwrite {diagnostic_recipe.report_label} report"
         )
     factorial = _load_factorial_report(
         factorial_report_path,
@@ -615,6 +878,14 @@ def run_gemma_iterative_residual_diagnostic(
         "base_artifact": Path(base_artifact_path),
         "refit_artifact": Path(refit_artifact_path),
     }
+    for label, path, _file_hash in (
+        diagnostic_recipe.extra_immutable_inputs
+    ):
+        if label in immutable_paths:
+            raise ValueError(
+                "iterative extra immutable label collides with a base input"
+            )
+        immutable_paths[label] = path
     immutable_before = {
         name: _file_sha256(path) for name, path in immutable_paths.items()
     }
@@ -644,9 +915,73 @@ def run_gemma_iterative_residual_diagnostic(
             recollection["refit_artifact_file_sha256"]
         ),
     }
+    immutable_expected.update(
+        {
+            label: file_hash
+            for label, _path, file_hash in (
+                diagnostic_recipe.extra_immutable_inputs
+            )
+        }
+    )
     if immutable_before != immutable_expected:
         raise ValueError("iterative immutable input binding differs")
-    code_before = _source_code_sha256s()
+    code_before = _source_code_sha256s(
+        diagnostic_recipe.source_code_files
+    )
+    collection_panel = fit_panel
+    if (
+        isinstance(
+            diagnostic_recipe,
+            _GemmaDevelopmentCollectionRecipe,
+        )
+        and diagnostic_recipe.collection_panel_factory is not None
+    ):
+        collection_panel = (
+            diagnostic_recipe.collection_panel_factory(
+                tokenizer=tokenizer,
+                tokenizer_contract=tokenizer_contract,
+                parent_corpus=corpus,
+                parent_fit_panel=fit_panel,
+            )
+        )
+        collection_examples = getattr(
+            collection_panel,
+            "examples",
+            None,
+        )
+        collection_families = getattr(
+            collection_panel,
+            "family_ids",
+            None,
+        )
+        if (
+            not isinstance(collection_examples, tuple)
+            or len(collection_examples) != 16
+            or not isinstance(collection_families, tuple)
+            or len(collection_families) != 8
+            or getattr(collection_panel, "role", None)
+            != "calibration_a_fit"
+            or getattr(collection_panel, "manifest_sha256", None)
+            == fit_panel.manifest_sha256
+        ):
+            raise ValueError(
+                "development collection override must be a distinct "
+                "16-by-8 A-fit panel"
+            )
+        parent_example_ids = {
+            example.example_id for example in fit_panel.examples
+        }
+        collection_example_ids = {
+            example.example_id for example in collection_examples
+        }
+        if (
+            parent_example_ids & collection_example_ids
+            or set(fit_panel.family_ids) & set(collection_families)
+        ):
+            raise ValueError(
+                "development collection override must be prompt- and "
+                "family-disjoint from parent fit"
+            )
 
     device = resolve_torch_device("cpu")
     cache = resolve_gemma3_huggingface_paths(cache_dir)["hub_cache"]
@@ -727,7 +1062,7 @@ def run_gemma_iterative_residual_diagnostic(
             factorized_execution_sha256=factorized_execution_sha256,
             bridge=bridge,
         )
-        lineage = {
+        base_lineage = {
             "parent_artifact_sha256": parent.artifact_sha256,
             "parent_h4_head_sha256": h4_head.artifact_sha256,
             "accepted_x4_head_sha256": x4_head.artifact_sha256,
@@ -740,38 +1075,83 @@ def run_gemma_iterative_residual_diagnostic(
                 "factorial_report"
             ],
         }
-        result = collect_gemma_iterative_residual_campaign_live(
-            panel=fit_panel,
-            adapter=adapter,
-            bridge=bridge,
-            parent_artifact=parent,
-            make_fit_record=(
-                build_gemma_iterative_residual_fit_record
-            ),
-            fit_fold=lambda **kwargs: (
-                fit_gemma_iterative_residual_fold_provider(
-                    **kwargs,
-                    parent_artifact_sha256=parent.artifact_sha256,
+        if any(
+            base_lineage.get(key) != value
+            for key, value in (
+                diagnostic_recipe.expected_parent_lineage.items()
+            )
+        ):
+            raise ValueError(
+                "iterative prerequisite differs from the live parent lineage"
+            )
+        if set(base_lineage) & set(diagnostic_recipe.extra_lineage):
+            raise ValueError(
+                "iterative extra lineage collides with parent lineage"
+            )
+        lineage = {
+            **base_lineage,
+            **dict(diagnostic_recipe.extra_lineage),
+        }
+        if isinstance(
+            diagnostic_recipe,
+            _GemmaDevelopmentCollectionRecipe,
+        ):
+            collection_kwargs: dict[str, object] = {
+                "panel": collection_panel,
+                "adapter": adapter,
+                "bridge": bridge,
+                "parent_artifact": parent,
+                "parent_h4": h4_head,
+                "x4_head": x4_head,
+                "lineage": lineage,
+            }
+            if collection_panel is not fit_panel:
+                collection_kwargs["parent_fit_panel"] = fit_panel
+            report = dict(
+                diagnostic_recipe.collect(
+                    **collection_kwargs,
                 )
-            ),
-            build_report=build_gemma_iterative_residual_report,
-            fit_full=lambda **kwargs: (
-                fit_gemma_iterative_residual_full_provider(
-                    **kwargs,
-                    parent_artifact_sha256=parent.artifact_sha256,
-                )
-            ),
-            lineage=lineage,
-        )
-        report = dict(result.report)
-        validate_gemma_iterative_residual_report(report)
+            )
+        else:
+            result = collect_gemma_iterative_residual_campaign_live(
+                panel=fit_panel,
+                adapter=adapter,
+                bridge=bridge,
+                parent_artifact=parent,
+                make_fit_record=lambda **kwargs: (
+                    diagnostic_recipe.make_fit_record(
+                        parent_h4=h4_head,
+                        **kwargs,
+                    )
+                ),
+                fit_fold=lambda **kwargs: (
+                    diagnostic_recipe.fit_fold(
+                        **kwargs,
+                        parent_artifact_sha256=parent.artifact_sha256,
+                    )
+                ),
+                build_report=diagnostic_recipe.build_report,
+                fit_full=lambda **kwargs: (
+                    diagnostic_recipe.fit_full(
+                        **kwargs,
+                        parent_artifact_sha256=parent.artifact_sha256,
+                    )
+                ),
+                lineage=lineage,
+                recipe=diagnostic_recipe.campaign_recipe,
+            )
+            report = dict(result.report)
+        diagnostic_recipe.validate_report(report)
         if (
             {
                 name: _file_sha256(path)
                 for name, path in immutable_paths.items()
             }
             != immutable_before
-            or _source_code_sha256s() != code_before
+            or _source_code_sha256s(
+                diagnostic_recipe.source_code_files
+            )
+            != code_before
             or adapter.model_fingerprint() != factorized_model_sha256
             or adapter.execution_fingerprint()
             != factorized_execution_sha256
@@ -779,10 +1159,16 @@ def run_gemma_iterative_residual_diagnostic(
             raise RuntimeError(
                 "iterative immutable input, code, or runtime changed"
             )
-        publish_gemma_iterative_residual_campaign_report(
-            destination,
-            report,
-        )
+        if isinstance(
+            diagnostic_recipe,
+            _GemmaDevelopmentCollectionRecipe,
+        ):
+            diagnostic_recipe.publish_report(destination, report)
+        else:
+            publish_gemma_iterative_residual_campaign_report(
+                destination,
+                report,
+            )
         return report
     finally:
         switcher.close()

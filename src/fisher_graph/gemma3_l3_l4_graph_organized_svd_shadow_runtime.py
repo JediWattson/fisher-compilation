@@ -40,6 +40,7 @@ from typing import Literal
 
 import torch
 from torch import Tensor
+from torch.nn import functional as F
 
 from .activations import ActivationIntervention
 from .adapters.base import AdapterRun
@@ -56,9 +57,23 @@ from .graph_organized_svd import (
 
 ShadowArm = Literal["identity", "all_on"]
 OracleSuffixRole = Literal["projection_64", "exact_x4_carrier"]
+CorrectionWriteScope = Literal[
+    "graph_target_affected_mask",
+    "complete_h4_causal_support",
+]
+CompleteH4CorrectionRole = Literal[
+    "projection_oracle",
+    "exact_h4_ceiling",
+]
 
 __all__ = [
+    "AuthenticatedCompleteH4CorrectionArmResult",
+    "AuthenticatedCompleteH4IdentityAuditResult",
+    "AuthenticatedCompleteH4PairResult",
     "AuthenticatedOracleSuffixResult",
+    "CorrectionWriteScope",
+    "CompleteH4CorrectionRole",
+    "COMPLETE_H4_TAIL_INFORMED_PROJECTION_ORDERING",
     "Gemma3L3L4GraphOrganizedSVDShadowAccounting",
     "Gemma3L3L4GraphOrganizedSVDShadowResult",
     "Gemma3L3L4GraphOrganizedSVDShadowRuntime",
@@ -66,9 +81,12 @@ __all__ = [
     "Gemma3L3L4OnePassBridge",
     "Gemma3L3L4OnePassExecution",
     "Gemma3L3L4OnePassPrefix",
+    "Gemma3L3L4TokenNLLVJP",
+    "Gemma3L3L4TokenTeacherKLVJP",
     "OracleSuffixRole",
     "ShadowArm",
     "gemma3_l3_l4_shadow_model_inputs_sha256",
+    "gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256",
     "validate_gemma3_l3_l4_shadow_model_inputs_sha256",
 ]
 
@@ -80,6 +98,12 @@ _Y3_SITE = "layer.3.mlp.operator_output"
 _X4_SITE = "layer.4.mlp.normalized_input"
 _H4_SITE = "layer.4.output"
 _ARMS = frozenset({"identity", "all_on"})
+_CORRECTION_WRITE_SCOPES = frozenset(
+    {
+        "graph_target_affected_mask",
+        "complete_h4_causal_support",
+    }
+)
 
 
 class Gemma3L3L4CorrectionProvider:
@@ -88,12 +112,15 @@ class Gemma3L3L4CorrectionProvider:
     The bridge accepts a head object rather than a free callback plus a
     caller-asserted hash.  This keeps execution provenance attached to the
     object whose tensors are authenticated immediately before and after use.
+    Providers opting into a nondefault write scope must bind that selector in
+    their own authenticated artifact.
     """
 
     __slots__ = ()
 
     site: str
     artifact_sha256: str
+    write_scope: CorrectionWriteScope = "graph_target_affected_mask"
 
     def validate_integrity(self) -> None:
         raise NotImplementedError
@@ -121,6 +148,27 @@ _SHADOW_RESULT_DOMAIN = (
 _ORACLE_SUFFIX_RESULT_DOMAIN = (
     b"fisher-graph:gemma3-l3-l4-svd-oracle-suffix-result:v1\0"
 )
+_COMPLETE_H4_IDENTITY_AUDIT_RESULT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-identity-audit-result:v2\0"
+)
+_COMPLETE_H4_PAIR_RESULT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-pair-result:v2\0"
+)
+_COMPLETE_H4_CORRECTION_ARM_RESULT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-correction-arm-result:v2\0"
+)
+_COMPLETE_H4_NLL_OBJECTIVE_RECEIPT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-nll-objective-receipt:v1\0"
+)
+_COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-projection-basis:v1\0"
+)
+_COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_V2_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-projection-basis:v2\0"
+)
+_COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_V3_DOMAIN = (
+    b"fisher-graph:gemma3-l3-l4-complete-h4-projection-basis:v3\0"
+)
 _MODEL_INPUTS_DOMAIN = (
     b"fisher-graph:gemma3-l3-l4-svd-shadow-model-inputs:v1\0"
 )
@@ -138,6 +186,37 @@ _ADAPTER_EXECUTION_BINDING_SCOPES = frozenset(
 )
 _ORACLE_SUFFIX_ROLES = frozenset(
     {"projection_64", "exact_x4_carrier"}
+)
+_COMPLETE_H4_CORRECTION_ROLES = frozenset(
+    {"projection_oracle", "exact_h4_ceiling"}
+)
+_COMPLETE_H4_PROJECTION_ORDERING = (
+    "descending_fisher_tilted_residual_eigenvalue"
+)
+COMPLETE_H4_TAIL_INFORMED_PROJECTION_ORDERING = (
+    "unweighted_u192_then_tail_residual_svd_span_then_mgs_u320"
+)
+_COMPLETE_H4_PROJECTION_ORDERINGS = frozenset(
+    {
+        _COMPLETE_H4_PROJECTION_ORDERING,
+        "descending_unweighted_residual_eigenvalue",
+        COMPLETE_H4_TAIL_INFORMED_PROJECTION_ORDERING,
+    }
+)
+_COMPLETE_H4_TAIL_INFORMED_PROJECTION_CONSTRUCTION = (
+    "exact_unweighted_u192_prefix_then_full_numerical_svd_row_span_of_"
+    "u192_tail_residual_then_two_pass_modified_gram_schmidt_of_"
+    "remaining_u193_through_u320"
+)
+_COMPLETE_H4_PROJECTION_DEFINITION = (
+    "cpu_float64_residual_matmul_D_transpose_matmul_D_cast_once"
+)
+_COMPLETE_H4_CALLBACK_ORDER = (
+    "partial_exact_x4.y3",
+    "partial_exact_x4.x4",
+    "complete_h4.y3",
+    "complete_h4.x4",
+    "complete_h4.h4",
 )
 
 
@@ -161,6 +240,27 @@ def _require_oracle_suffix_role(value: object) -> OracleSuffixRole:
     if value not in _ORACLE_SUFFIX_ROLES:
         raise ValueError(
             "role must be projection_64 or exact_x4_carrier"
+        )
+    return value  # type: ignore[return-value]
+
+
+def _require_correction_write_scope(
+    value: object,
+) -> CorrectionWriteScope:
+    if not isinstance(value, str) or value not in _CORRECTION_WRITE_SCOPES:
+        raise ValueError(
+            "correction write scope must be graph_target_affected_mask "
+            "or complete_h4_causal_support"
+        )
+    return value  # type: ignore[return-value]
+
+
+def _require_complete_h4_correction_role(
+    value: object,
+) -> CompleteH4CorrectionRole:
+    if value not in _COMPLETE_H4_CORRECTION_ROLES:
+        raise ValueError(
+            "role must be projection_oracle or exact_h4_ceiling"
         )
     return value  # type: ignore[return-value]
 
@@ -309,6 +409,202 @@ def _bitwise_equal(left: Tensor, right: Tensor) -> bool:
         left.contiguous().view(torch.uint8),
         right.contiguous().view(torch.uint8),
     )
+
+
+def _tensor_row_difference_mask(left: Tensor, right: Tensor) -> Tensor:
+    """Return rows with any byte difference, preserving the live device."""
+
+    if (
+        left.shape != right.shape
+        or left.dtype != right.dtype
+        or left.device != right.device
+        or left.ndim != 3
+    ):
+        raise ValueError("row-difference tensors must share [B, S, D]")
+    byte_shape = (*left.shape[:2], -1)
+    left_bytes = (
+        left.detach()
+        .to(device="cpu")
+        .contiguous()
+        .view(torch.uint8)
+        .reshape(byte_shape)
+    )
+    right_bytes = (
+        right.detach()
+        .to(device="cpu")
+        .contiguous()
+        .view(torch.uint8)
+        .reshape(byte_shape)
+    )
+    return (left_bytes != right_bytes).any(dim=-1).to(device=left.device)
+
+
+def _complete_h4_causal_support(
+    logical_positions: Tensor,
+    valid_target_mask: Tensor,
+    source_eligible_mask: Tensor,
+) -> Tensor:
+    """Close every eligible L3 source over later valid H4 target rows.
+
+    The locked development rung has at most 128 tokens under a 512-token
+    layer-4 window.  Its structural H4 support is therefore the full causal
+    closure, deliberately distinct from the graph's finite-lag target mask.
+    """
+
+    if (
+        not isinstance(logical_positions, Tensor)
+        or logical_positions.dtype not in (torch.int32, torch.int64)
+        or not isinstance(valid_target_mask, Tensor)
+        or valid_target_mask.dtype != torch.bool
+        or not isinstance(source_eligible_mask, Tensor)
+        or source_eligible_mask.dtype != torch.bool
+        or logical_positions.shape != valid_target_mask.shape
+        or source_eligible_mask.shape != valid_target_mask.shape
+        or logical_positions.device != valid_target_mask.device
+        or source_eligible_mask.device != valid_target_mask.device
+        or logical_positions.ndim != 2
+    ):
+        raise ValueError("complete-H4 support requires aligned [B, S] tensors")
+    if bool((source_eligible_mask & ~valid_target_mask).any()):
+        raise ValueError("complete-H4 sources must be valid rows")
+    support = torch.zeros_like(valid_target_mask)
+    for batch in range(int(logical_positions.shape[0])):
+        valid_positions = logical_positions[batch][valid_target_mask[batch]]
+        if valid_positions.numel() == 0:
+            raise ValueError("complete-H4 support requires valid rows")
+        if int(valid_positions[-1] - valid_positions[0]) >= 512:
+            raise ValueError(
+                "complete-H4 causal closure exceeds the 512-token window"
+            )
+        source_positions = logical_positions[batch][
+            source_eligible_mask[batch]
+        ]
+        if source_positions.numel() == 0:
+            continue
+        valid_indices = torch.nonzero(
+            valid_target_mask[batch],
+            as_tuple=False,
+        ).flatten()
+        target_positions = logical_positions[batch][valid_indices]
+        support[batch, valid_indices] = (
+            target_positions.unsqueeze(1)
+            >= source_positions.unsqueeze(0)
+        ).any(dim=1)
+    return support
+
+
+def _validated_complete_h4_projection_basis(
+    projection_basis: Tensor,
+    *,
+    projection_rank: int,
+    projection_ordering: str,
+) -> tuple[str, float]:
+    if (
+        type(projection_rank) is not int
+        or projection_rank <= 0
+        or not isinstance(projection_ordering, str)
+        or projection_ordering not in _COMPLETE_H4_PROJECTION_ORDERINGS
+        or not isinstance(projection_basis, Tensor)
+        or projection_basis.dtype != torch.float64
+        or projection_basis.device.type != "cpu"
+        or projection_basis.ndim != 2
+        or projection_basis.shape[0] != projection_rank
+        or projection_rank > projection_basis.shape[1]
+        or projection_basis.numel() == 0
+        or not projection_basis.is_contiguous()
+        or not bool(torch.isfinite(projection_basis).all())
+    ):
+        raise ValueError(
+            "projection basis must be contiguous CPU float64 [rank, width] "
+            "with an authenticated residual-eigenvalue ordering"
+        )
+    gram = projection_basis @ projection_basis.T
+    identity = torch.eye(projection_rank, dtype=torch.float64)
+    orthonormal_error = float((gram - identity).abs().max())
+    if (
+        not math.isfinite(orthonormal_error)
+        or orthonormal_error > 1.0e-10
+    ):
+        raise ValueError("projection basis rows must be orthonormal")
+    return _runtime_tensor_sha256(projection_basis), orthonormal_error
+
+
+def gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+    projection_basis: Tensor,
+    *,
+    projection_rank: int,
+    projection_ordering: str,
+) -> str:
+    """Authenticate the one allowed complete-H4 projection-basis format."""
+
+    basis_sha256, orthonormal_error = (
+        _validated_complete_h4_projection_basis(
+            projection_basis,
+            projection_rank=projection_rank,
+            projection_ordering=projection_ordering,
+        )
+    )
+    payload: dict[str, object] = {
+        "schema": "fisher_graph.gemma3_l3_l4_complete_h4_projection_basis",
+        "format_version": 1,
+        "projection_basis_sha256": basis_sha256,
+        "projection_rank": projection_rank,
+        "projection_width": int(projection_basis.shape[1]),
+        "projection_ordering": projection_ordering,
+        "projection_definition": _COMPLETE_H4_PROJECTION_DEFINITION,
+        "orthonormal_max_abs_error": orthonormal_error,
+    }
+    domain = _COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_DOMAIN
+    if projection_ordering == "descending_unweighted_residual_eigenvalue":
+        payload["format_version"] = 2
+        payload["fit_weighting"] = "unweighted"
+        domain = _COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_V2_DOMAIN
+    elif projection_ordering == COMPLETE_H4_TAIL_INFORMED_PROJECTION_ORDERING:
+        payload["format_version"] = 3
+        payload["fit_weighting"] = "unweighted"
+        payload["basis_construction"] = (
+            _COMPLETE_H4_TAIL_INFORMED_PROJECTION_CONSTRUCTION
+        )
+        domain = _COMPLETE_H4_PROJECTION_BASIS_ARTIFACT_V3_DOMAIN
+    return hashlib.sha256(
+        domain + _canonical_json_bytes(payload)
+    ).hexdigest()
+
+
+def _complete_h4_nll_objective_receipt_sha256(
+    *,
+    supervised_indices_sha256: str,
+    supervised_targets_sha256: str,
+    partial_exact_x4_logits_sha256: str,
+    ignore_index: int,
+    reduction: str,
+    supervised_token_count: int,
+    mean_nll: float,
+) -> str:
+    payload = {
+        "schema": "fisher_graph.gemma3_l3_l4_complete_h4_nll_objective",
+        "format_version": 1,
+        "supervised_indices_sha256": _require_sha256(
+            supervised_indices_sha256,
+            label="supervised indices",
+        ),
+        "supervised_targets_sha256": _require_sha256(
+            supervised_targets_sha256,
+            label="supervised targets",
+        ),
+        "partial_exact_x4_logits_sha256": _require_sha256(
+            partial_exact_x4_logits_sha256,
+            label="partial exact-X4 logits",
+        ),
+        "ignore_index": ignore_index,
+        "reduction": reduction,
+        "supervised_token_count": supervised_token_count,
+        "mean_nll": mean_nll,
+    }
+    return hashlib.sha256(
+        _COMPLETE_H4_NLL_OBJECTIVE_RECEIPT_DOMAIN
+        + _canonical_json_bytes(payload)
+    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -894,6 +1190,1100 @@ class AuthenticatedOracleSuffixResult:
             "runtime_binding_sha256": self.runtime_binding_sha256,
             "execution_grid_sha256": self.execution_grid_sha256,
             "adapter_execution_sha256": self.adapter_execution_sha256,
+            "logits_sha256": self.logits_sha256,
+            "artifact_sha256": self.artifact_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedCompleteH4IdentityAuditResult:
+    """Hash-bound, metrics-only audit of the complete layer-4 carrier."""
+
+    partial_exact_x4_logits: Tensor
+    complete_h4_logits: Tensor
+    incomplete_h4_difference_mask: Tensor
+    native_h4_sha256: str
+    incomplete_carrier_h4_sha256: str
+    injected_h4_sha256: str
+    shadow_result_artifact_sha256: str
+    runtime_binding_sha256: str
+    model_inputs_sha256: str
+    execution_grid_sha256: str
+    adapter_execution_sha256: str
+    target_affected_rows: int
+    incomplete_h4_difference_rows: int
+    incomplete_h4_difference_valid_rows: int
+    incomplete_h4_difference_padding_rows: int
+    incomplete_h4_difference_target_rows: int
+    incomplete_h4_difference_outside_target_rows: int
+    target_affected_h4_difference_observed: bool
+    incomplete_h4_difference_nonvacuous: bool
+    boundary_callback_order: tuple[str, ...]
+    complete_h4_logits_bitwise_authoritative: bool
+    complete_h4_max_abs_logit_error: float
+    incomplete_h4_difference_mask_sha256: str = ""
+    partial_exact_x4_logits_sha256: str = ""
+    complete_h4_logits_sha256: str = ""
+    artifact_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        self._validate_structure()
+        mask_sha256 = _runtime_tensor_sha256(
+            self.incomplete_h4_difference_mask
+        )
+        partial_sha256 = _runtime_tensor_sha256(
+            self.partial_exact_x4_logits
+        )
+        complete_sha256 = _runtime_tensor_sha256(self.complete_h4_logits)
+        if self.incomplete_h4_difference_mask_sha256:
+            if (
+                _require_sha256(
+                    self.incomplete_h4_difference_mask_sha256,
+                    label="incomplete-H4 difference mask",
+                )
+                != mask_sha256
+            ):
+                raise ValueError(
+                    "incomplete-H4 difference mask hash mismatch"
+                )
+        else:
+            object.__setattr__(
+                self,
+                "incomplete_h4_difference_mask_sha256",
+                mask_sha256,
+            )
+        if self.partial_exact_x4_logits_sha256:
+            if (
+                _require_sha256(
+                    self.partial_exact_x4_logits_sha256,
+                    label="partial exact-X4 logits",
+                )
+                != partial_sha256
+            ):
+                raise ValueError("partial exact-X4 logits hash mismatch")
+        else:
+            object.__setattr__(
+                self,
+                "partial_exact_x4_logits_sha256",
+                partial_sha256,
+            )
+        if self.complete_h4_logits_sha256:
+            if (
+                _require_sha256(
+                    self.complete_h4_logits_sha256,
+                    label="complete-H4 logits",
+                )
+                != complete_sha256
+            ):
+                raise ValueError("complete-H4 logits hash mismatch")
+        else:
+            object.__setattr__(
+                self,
+                "complete_h4_logits_sha256",
+                complete_sha256,
+            )
+        computed_artifact = self._computed_artifact_sha256()
+        if self.artifact_sha256:
+            if (
+                _require_sha256(
+                    self.artifact_sha256,
+                    label="complete-H4 identity audit artifact",
+                )
+                != computed_artifact
+            ):
+                raise ValueError(
+                    "complete-H4 identity audit artifact hash mismatch"
+                )
+        else:
+            object.__setattr__(self, "artifact_sha256", computed_artifact)
+
+    def _validate_structure(self) -> None:
+        for value, label in (
+            (self.partial_exact_x4_logits, "partial exact-X4 logits"),
+            (self.complete_h4_logits, "complete-H4 logits"),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or not value.is_floating_point()
+                or value.ndim != 3
+                or value.numel() == 0
+                or not bool(torch.isfinite(value).all())
+            ):
+                raise ValueError(f"{label} must be finite floating [B, S, V]")
+        if (
+            self.partial_exact_x4_logits.shape
+            != self.complete_h4_logits.shape
+            or self.partial_exact_x4_logits.dtype
+            != self.complete_h4_logits.dtype
+            or self.partial_exact_x4_logits.device
+            != self.complete_h4_logits.device
+        ):
+            raise ValueError("partial and complete audit logits must align")
+        if (
+            not isinstance(self.incomplete_h4_difference_mask, Tensor)
+            or self.incomplete_h4_difference_mask.shape
+            != self.partial_exact_x4_logits.shape[:2]
+            or self.incomplete_h4_difference_mask.dtype != torch.bool
+            or self.incomplete_h4_difference_mask.device
+            != self.partial_exact_x4_logits.device
+        ):
+            raise ValueError(
+                "incomplete-H4 difference mask must be boolean [B, S] "
+                "aligned with logits"
+            )
+        for value, label in (
+            (self.native_h4_sha256, "native H4"),
+            (
+                self.incomplete_carrier_h4_sha256,
+                "incomplete-carrier H4",
+            ),
+            (self.injected_h4_sha256, "injected H4"),
+            (
+                self.shadow_result_artifact_sha256,
+                "shadow result artifact",
+            ),
+            (self.runtime_binding_sha256, "runtime binding"),
+            (self.model_inputs_sha256, "model inputs"),
+            (self.execution_grid_sha256, "execution grid"),
+            (self.adapter_execution_sha256, "adapter execution"),
+        ):
+            _require_sha256(value, label=label)
+        if self.native_h4_sha256 != self.injected_h4_sha256:
+            raise ValueError("injected H4 must be the authenticated native H4")
+        if type(self.target_affected_rows) is not int:
+            raise TypeError("target_affected_rows must be an integer")
+        total_rows = int(self.incomplete_h4_difference_mask.numel())
+        if (
+            self.target_affected_rows <= 0
+            or self.target_affected_rows > total_rows
+        ):
+            raise ValueError("complete-H4 audit requires affected rows")
+        count_names = (
+            "incomplete_h4_difference_rows",
+            "incomplete_h4_difference_valid_rows",
+            "incomplete_h4_difference_padding_rows",
+            "incomplete_h4_difference_target_rows",
+            "incomplete_h4_difference_outside_target_rows",
+        )
+        for name in count_names:
+            value = getattr(self, name)
+            if type(value) is not int:
+                raise TypeError(f"{name} must be an integer")
+            if value < 0:
+                raise ValueError(f"{name} must be nonnegative")
+        difference_rows = self.incomplete_h4_difference_rows
+        if (
+            difference_rows
+            != int(self.incomplete_h4_difference_mask.sum())
+            or difference_rows
+            != self.incomplete_h4_difference_valid_rows
+            + self.incomplete_h4_difference_padding_rows
+            or difference_rows
+            != self.incomplete_h4_difference_target_rows
+            + self.incomplete_h4_difference_outside_target_rows
+            or difference_rows <= 0
+            or self.incomplete_h4_difference_target_rows <= 0
+            or self.incomplete_h4_difference_valid_rows > difference_rows
+            or self.incomplete_h4_difference_padding_rows > difference_rows
+            or self.incomplete_h4_difference_target_rows
+            > self.target_affected_rows
+            or self.incomplete_h4_difference_outside_target_rows
+            > total_rows - self.target_affected_rows
+        ):
+            raise ValueError(
+                "incomplete-H4 difference count partition is inconsistent"
+            )
+        if self.boundary_callback_order != _COMPLETE_H4_CALLBACK_ORDER:
+            raise ValueError("complete-H4 boundary callback order differs")
+        for value, label in (
+            (
+                self.target_affected_h4_difference_observed,
+                "target-affected H4 difference",
+            ),
+            (
+                self.incomplete_h4_difference_nonvacuous,
+                "incomplete-H4 difference nonvacuity",
+            ),
+        ):
+            if value is not True:
+                raise ValueError(f"{label} must be proven true")
+        if type(self.complete_h4_logits_bitwise_authoritative) is not bool:
+            raise TypeError(
+                "complete_h4_logits_bitwise_authoritative must be boolean"
+            )
+        error = self.complete_h4_max_abs_logit_error
+        if (
+            isinstance(error, bool)
+            or not isinstance(error, (int, float))
+            or not math.isfinite(float(error))
+            or float(error) < 0.0
+        ):
+            raise ValueError(
+                "complete-H4 max logit error must be finite and nonnegative"
+            )
+        if (
+            self.complete_h4_logits_bitwise_authoritative
+            and float(error) != 0.0
+        ):
+            raise ValueError(
+                "bitwise complete-H4 identity requires zero max logit error"
+            )
+
+    def _computed_artifact_sha256(self) -> str:
+        payload = {
+            "schema": (
+                "fisher_graph.gemma3_l3_l4_authenticated_complete_h4_"
+                "identity_audit_result"
+            ),
+            "format_version": 2,
+            "native_h4_sha256": self.native_h4_sha256,
+            "incomplete_carrier_h4_sha256": (
+                self.incomplete_carrier_h4_sha256
+            ),
+            "injected_h4_sha256": self.injected_h4_sha256,
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "target_affected_rows": self.target_affected_rows,
+            "incomplete_h4_difference_mask_sha256": (
+                self.incomplete_h4_difference_mask_sha256
+            ),
+            "incomplete_h4_difference_rows": (
+                self.incomplete_h4_difference_rows
+            ),
+            "incomplete_h4_difference_valid_rows": (
+                self.incomplete_h4_difference_valid_rows
+            ),
+            "incomplete_h4_difference_padding_rows": (
+                self.incomplete_h4_difference_padding_rows
+            ),
+            "incomplete_h4_difference_target_rows": (
+                self.incomplete_h4_difference_target_rows
+            ),
+            "incomplete_h4_difference_outside_target_rows": (
+                self.incomplete_h4_difference_outside_target_rows
+            ),
+            "target_affected_h4_difference_observed": (
+                self.target_affected_h4_difference_observed
+            ),
+            "incomplete_h4_difference_nonvacuous": (
+                self.incomplete_h4_difference_nonvacuous
+            ),
+            "boundary_callbacks_exactly_once": True,
+            "boundary_callback_order": self.boundary_callback_order,
+            "complete_h4_logits_bitwise_authoritative": (
+                self.complete_h4_logits_bitwise_authoritative
+            ),
+            "complete_h4_max_abs_logit_error": (
+                self.complete_h4_max_abs_logit_error
+            ),
+            "partial_exact_x4_logits_sha256": (
+                self.partial_exact_x4_logits_sha256
+            ),
+            "complete_h4_logits_sha256": self.complete_h4_logits_sha256,
+            "model_forward_count": 3,
+            "metrics_only": True,
+            "serving_authorized": False,
+        }
+        return hashlib.sha256(
+            _COMPLETE_H4_IDENTITY_AUDIT_RESULT_DOMAIN
+            + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self._validate_structure()
+        self.validate_incomplete_h4_difference_mask(
+            self.incomplete_h4_difference_mask
+        )
+        if (
+            _runtime_tensor_sha256(self.partial_exact_x4_logits)
+            != _require_sha256(
+                self.partial_exact_x4_logits_sha256,
+                label="partial exact-X4 logits",
+            )
+        ):
+            raise ValueError("partial exact-X4 logits hash mismatch")
+        if (
+            _runtime_tensor_sha256(self.complete_h4_logits)
+            != _require_sha256(
+                self.complete_h4_logits_sha256,
+                label="complete-H4 logits",
+            )
+        ):
+            raise ValueError("complete-H4 logits hash mismatch")
+        if (
+            self._computed_artifact_sha256()
+            != _require_sha256(
+                self.artifact_sha256,
+                label="complete-H4 identity audit artifact",
+            )
+        ):
+            raise ValueError(
+                "complete-H4 identity audit artifact hash mismatch"
+            )
+
+    def validate_incomplete_h4_difference_mask(self, value: Tensor) -> None:
+        if (
+            not isinstance(value, Tensor)
+            or value.shape != self.incomplete_h4_difference_mask.shape
+            or value.dtype != torch.bool
+            or value.device != self.incomplete_h4_difference_mask.device
+            or _runtime_tensor_sha256(value)
+            != _require_sha256(
+                self.incomplete_h4_difference_mask_sha256,
+                label="incomplete-H4 difference mask",
+            )
+        ):
+            raise ValueError("incomplete-H4 difference mask hash mismatch")
+
+    def metadata(self) -> dict[str, object]:
+        self.validate_integrity()
+        return {
+            "execution_mode": "authenticated_complete_h4_identity_audit",
+            "metrics_only": True,
+            "serving_authorized": False,
+            "model_forward_count": 3,
+            "native_h4_sha256": self.native_h4_sha256,
+            "incomplete_carrier_h4_sha256": (
+                self.incomplete_carrier_h4_sha256
+            ),
+            "injected_h4_sha256": self.injected_h4_sha256,
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "target_affected_rows": self.target_affected_rows,
+            "incomplete_h4_difference_mask_sha256": (
+                self.incomplete_h4_difference_mask_sha256
+            ),
+            "incomplete_h4_difference_rows": (
+                self.incomplete_h4_difference_rows
+            ),
+            "incomplete_h4_difference_valid_rows": (
+                self.incomplete_h4_difference_valid_rows
+            ),
+            "incomplete_h4_difference_padding_rows": (
+                self.incomplete_h4_difference_padding_rows
+            ),
+            "incomplete_h4_difference_target_rows": (
+                self.incomplete_h4_difference_target_rows
+            ),
+            "incomplete_h4_difference_outside_target_rows": (
+                self.incomplete_h4_difference_outside_target_rows
+            ),
+            "target_affected_h4_difference_observed": (
+                self.target_affected_h4_difference_observed
+            ),
+            "incomplete_h4_difference_nonvacuous": (
+                self.incomplete_h4_difference_nonvacuous
+            ),
+            "boundary_callbacks_exactly_once": True,
+            "boundary_callback_order": self.boundary_callback_order,
+            "complete_h4_logits_bitwise_authoritative": (
+                self.complete_h4_logits_bitwise_authoritative
+            ),
+            "complete_h4_max_abs_logit_error": (
+                self.complete_h4_max_abs_logit_error
+            ),
+            "partial_exact_x4_logits_sha256": (
+                self.partial_exact_x4_logits_sha256
+            ),
+            "complete_h4_logits_sha256": self.complete_h4_logits_sha256,
+            "artifact_sha256": self.artifact_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedCompleteH4PairResult:
+    """Transient, hash-bound native/incomplete H4 fit observation."""
+
+    native_h4: Tensor
+    incomplete_h4: Tensor
+    h4_gradient: Tensor
+    partial_exact_x4_logits_sha256: str
+    supervised_indices_sha256: str
+    supervised_targets_sha256: str
+    supervised_token_count: int
+    objective_ignore_index: int
+    objective_reduction: str
+    objective_mean_nll: float
+    objective_receipt_sha256: str
+    source_modes: Tensor
+    logical_positions: Tensor
+    valid_target_mask: Tensor
+    source_eligible_mask: Tensor
+    target_affected_mask: Tensor
+    complete_h4_support_mask: Tensor
+    shadow_result_artifact_sha256: str
+    runtime_binding_sha256: str
+    model_inputs_sha256: str
+    execution_grid_sha256: str
+    adapter_execution_sha256: str
+    boundary_callback_order: tuple[str, ...]
+    native_h4_sha256: str = ""
+    incomplete_h4_sha256: str = ""
+    h4_gradient_sha256: str = ""
+    source_modes_sha256: str = ""
+    logical_positions_sha256: str = ""
+    valid_target_mask_sha256: str = ""
+    source_eligible_mask_sha256: str = ""
+    target_affected_mask_sha256: str = ""
+    complete_h4_support_mask_sha256: str = ""
+    artifact_sha256: str = ""
+
+    _TENSOR_HASH_FIELDS = (
+        ("native_h4", "native_h4_sha256", "native H4"),
+        ("incomplete_h4", "incomplete_h4_sha256", "incomplete H4"),
+        ("h4_gradient", "h4_gradient_sha256", "H4 gradient"),
+        ("source_modes", "source_modes_sha256", "source modes"),
+        (
+            "logical_positions",
+            "logical_positions_sha256",
+            "logical positions",
+        ),
+        (
+            "valid_target_mask",
+            "valid_target_mask_sha256",
+            "valid-target mask",
+        ),
+        (
+            "source_eligible_mask",
+            "source_eligible_mask_sha256",
+            "source-eligible mask",
+        ),
+        (
+            "target_affected_mask",
+            "target_affected_mask_sha256",
+            "target-affected mask",
+        ),
+        (
+            "complete_h4_support_mask",
+            "complete_h4_support_mask_sha256",
+            "complete-H4 support mask",
+        ),
+    )
+
+    def __post_init__(self) -> None:
+        self._validate_structure()
+        for tensor_field, hash_field, label in self._TENSOR_HASH_FIELDS:
+            value = getattr(self, tensor_field)
+            computed = _runtime_tensor_sha256(value)
+            supplied = getattr(self, hash_field)
+            if supplied:
+                if _require_sha256(supplied, label=label) != computed:
+                    raise ValueError(f"{label} hash mismatch")
+            else:
+                object.__setattr__(self, hash_field, computed)
+        computed_artifact = self._computed_artifact_sha256()
+        if self.artifact_sha256:
+            if (
+                _require_sha256(
+                    self.artifact_sha256,
+                    label="complete-H4 pair artifact",
+                )
+                != computed_artifact
+            ):
+                raise ValueError("complete-H4 pair artifact hash mismatch")
+        else:
+            object.__setattr__(self, "artifact_sha256", computed_artifact)
+
+    def _validate_structure(self) -> None:
+        boundary_shape = self.native_h4.shape
+        for value, label in (
+            (self.native_h4, "native H4"),
+            (self.incomplete_h4, "incomplete H4"),
+            (self.h4_gradient, "H4 gradient"),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or not value.is_floating_point()
+                or value.ndim != 3
+                or value.numel() == 0
+                or not bool(torch.isfinite(value).all())
+            ):
+                raise ValueError(f"{label} must be finite floating [B, S, D]")
+        if any(
+            value.shape != boundary_shape
+            or value.dtype != self.native_h4.dtype
+            or value.device != self.native_h4.device
+            for value in (self.incomplete_h4, self.h4_gradient)
+        ):
+            raise ValueError("native, incomplete, and gradient H4 must align")
+        _require_sha256(
+            self.partial_exact_x4_logits_sha256,
+            label="partial exact-X4 logits",
+        )
+        _require_sha256(
+            self.supervised_indices_sha256,
+            label="supervised indices",
+        )
+        _require_sha256(
+            self.supervised_targets_sha256,
+            label="supervised targets",
+        )
+        if (
+            type(self.supervised_token_count) is not int
+            or self.supervised_token_count <= 0
+            or type(self.objective_ignore_index) is not int
+            or self.objective_reduction != "mean"
+            or isinstance(self.objective_mean_nll, bool)
+            or not isinstance(self.objective_mean_nll, (int, float))
+            or not math.isfinite(float(self.objective_mean_nll))
+            or float(self.objective_mean_nll) < 0.0
+        ):
+            raise ValueError("complete-H4 NLL objective metadata differs")
+        expected_receipt = _complete_h4_nll_objective_receipt_sha256(
+            supervised_indices_sha256=self.supervised_indices_sha256,
+            supervised_targets_sha256=self.supervised_targets_sha256,
+            partial_exact_x4_logits_sha256=(
+                self.partial_exact_x4_logits_sha256
+            ),
+            ignore_index=self.objective_ignore_index,
+            reduction=self.objective_reduction,
+            supervised_token_count=self.supervised_token_count,
+            mean_nll=float(self.objective_mean_nll),
+        )
+        if _require_sha256(
+            self.objective_receipt_sha256,
+            label="NLL objective receipt",
+        ) != expected_receipt:
+            raise ValueError("complete-H4 NLL objective receipt mismatch")
+        grid_shape = boundary_shape[:2]
+        if (
+            not isinstance(self.source_modes, Tensor)
+            or not self.source_modes.is_floating_point()
+            or self.source_modes.ndim != 3
+            or self.source_modes.shape[:2] != grid_shape
+            or self.source_modes.shape[-1] <= 0
+            or self.source_modes.device != self.native_h4.device
+            or not bool(torch.isfinite(self.source_modes).all())
+            or not isinstance(self.logical_positions, Tensor)
+            or self.logical_positions.shape != grid_shape
+            or self.logical_positions.dtype not in (torch.int32, torch.int64)
+            or self.logical_positions.device != self.native_h4.device
+        ):
+            raise ValueError("complete-H4 pair modal or position grid differs")
+        for value, label in (
+            (self.valid_target_mask, "valid-target mask"),
+            (self.source_eligible_mask, "source-eligible mask"),
+            (self.target_affected_mask, "target-affected mask"),
+            (self.complete_h4_support_mask, "complete-H4 support mask"),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or value.dtype != torch.bool
+                or value.shape != grid_shape
+                or value.device != self.native_h4.device
+            ):
+                raise ValueError(f"{label} must be aligned boolean [B, S]")
+        expected_support = _complete_h4_causal_support(
+            self.logical_positions,
+            self.valid_target_mask,
+            self.source_eligible_mask,
+        )
+        if not _bitwise_equal(
+            self.complete_h4_support_mask,
+            expected_support,
+        ):
+            raise ValueError("complete-H4 support is not the causal closure")
+        if bool(
+            (self.target_affected_mask & ~self.complete_h4_support_mask).any()
+        ):
+            raise ValueError("graph target mask escapes complete-H4 support")
+        difference = _tensor_row_difference_mask(
+            self.native_h4,
+            self.incomplete_h4,
+        )
+        if bool((difference & ~self.valid_target_mask).any()):
+            raise ValueError("native/incomplete H4 differs on padding rows")
+        if bool(
+            (
+                difference
+                & self.valid_target_mask
+                & ~self.complete_h4_support_mask
+            ).any()
+        ):
+            raise ValueError(
+                "native/incomplete H4 difference escapes causal support"
+            )
+        for value, label in (
+            (
+                self.shadow_result_artifact_sha256,
+                "shadow result artifact",
+            ),
+            (self.runtime_binding_sha256, "runtime binding"),
+            (self.model_inputs_sha256, "model inputs"),
+            (self.execution_grid_sha256, "execution grid"),
+            (self.adapter_execution_sha256, "adapter execution"),
+        ):
+            _require_sha256(value, label=label)
+        if self.boundary_callback_order != (
+            "complete_h4_pair.y3",
+            "complete_h4_pair.x4",
+            "complete_h4_pair.h4",
+        ):
+            raise ValueError("complete-H4 pair callback order differs")
+
+    def _computed_artifact_sha256(self) -> str:
+        payload = {
+            "schema": (
+                "fisher_graph.gemma3_l3_l4_authenticated_complete_h4_pair"
+            ),
+            "format_version": 2,
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "boundary_callback_order": self.boundary_callback_order,
+            "tensor_sha256s": {
+                tensor_field: getattr(self, hash_field)
+                for tensor_field, hash_field, _label in self._TENSOR_HASH_FIELDS
+            },
+            "partial_exact_x4_logits_sha256": (
+                self.partial_exact_x4_logits_sha256
+            ),
+            "supervised_indices_sha256": self.supervised_indices_sha256,
+            "supervised_targets_sha256": self.supervised_targets_sha256,
+            "supervised_token_count": self.supervised_token_count,
+            "objective_ignore_index": self.objective_ignore_index,
+            "objective_reduction": self.objective_reduction,
+            "objective_mean_nll": self.objective_mean_nll,
+            "objective_receipt_sha256": self.objective_receipt_sha256,
+            "model_forward_count": 2,
+            "fit_only": True,
+            "metrics_only": True,
+            "serving_authorized": False,
+        }
+        return hashlib.sha256(
+            _COMPLETE_H4_PAIR_RESULT_DOMAIN + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self._validate_structure()
+        for tensor_field, hash_field, label in self._TENSOR_HASH_FIELDS:
+            if _runtime_tensor_sha256(getattr(self, tensor_field)) != (
+                _require_sha256(getattr(self, hash_field), label=label)
+            ):
+                raise ValueError(f"{label} hash mismatch")
+        if self._computed_artifact_sha256() != _require_sha256(
+            self.artifact_sha256,
+            label="complete-H4 pair artifact",
+        ):
+            raise ValueError("complete-H4 pair artifact hash mismatch")
+
+    @property
+    def incomplete_h4_difference_mask(self) -> Tensor:
+        self.validate_integrity()
+        return _tensor_row_difference_mask(
+            self.native_h4,
+            self.incomplete_h4,
+        )
+
+    def metadata(self) -> dict[str, object]:
+        self.validate_integrity()
+        difference = _tensor_row_difference_mask(
+            self.native_h4,
+            self.incomplete_h4,
+        )
+        support = self.complete_h4_support_mask
+        target = self.target_affected_mask
+        return {
+            "execution_mode": "authenticated_complete_h4_pair",
+            "fit_only": True,
+            "metrics_only": True,
+            "serving_authorized": False,
+            "model_forward_count": 2,
+            "support_rule": "valid_target_at_or_after_any_eligible_source",
+            "complete_h4_support_rows": int(support.sum()),
+            "graph_target_affected_rows": int(target.sum()),
+            "complete_h4_support_outside_graph_rows": int(
+                (support & ~target).sum()
+            ),
+            "incomplete_h4_difference_rows": int(difference.sum()),
+            "incomplete_h4_difference_valid_rows": int(
+                (difference & self.valid_target_mask).sum()
+            ),
+            "incomplete_h4_difference_padding_rows": int(
+                (difference & ~self.valid_target_mask).sum()
+            ),
+            "incomplete_h4_difference_outside_support_rows": int(
+                (difference & ~support).sum()
+            ),
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "boundary_callback_order": self.boundary_callback_order,
+            "native_h4_sha256": self.native_h4_sha256,
+            "incomplete_h4_sha256": self.incomplete_h4_sha256,
+            "h4_gradient_sha256": self.h4_gradient_sha256,
+            "partial_exact_x4_logits_sha256": (
+                self.partial_exact_x4_logits_sha256
+            ),
+            "supervised_indices_sha256": self.supervised_indices_sha256,
+            "supervised_targets_sha256": self.supervised_targets_sha256,
+            "supervised_token_count": self.supervised_token_count,
+            "objective_ignore_index": self.objective_ignore_index,
+            "objective_reduction": self.objective_reduction,
+            "objective_mean_nll": self.objective_mean_nll,
+            "objective_receipt_sha256": self.objective_receipt_sha256,
+            "source_modes_sha256": self.source_modes_sha256,
+            "complete_h4_support_mask_sha256": (
+                self.complete_h4_support_mask_sha256
+            ),
+            "artifact_sha256": self.artifact_sha256,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticatedCompleteH4CorrectionArmResult:
+    """One metrics-only replay with an authenticated H4 correction."""
+
+    role: CompleteH4CorrectionRole
+    logits: Tensor
+    injected_h4_sha256: str
+    native_h4_sha256: str
+    incomplete_h4_sha256: str
+    projected_delta_sha256: str | None
+    projection_basis_sha256: str | None
+    projection_basis_artifact_sha256: str | None
+    projection_fit_basis_artifact_sha256: str | None
+    projection_rank: int | None
+    projection_ordering: str | None
+    projection_definition: str | None
+    projection_basis_orthonormal_max_abs_error: float | None
+    complete_h4_pair_artifact_sha256: str
+    shadow_result_artifact_sha256: str
+    runtime_binding_sha256: str
+    model_inputs_sha256: str
+    execution_grid_sha256: str
+    adapter_execution_sha256: str
+    complete_h4_support_mask_sha256: str
+    boundary_callback_order: tuple[str, ...]
+    logits_bitwise_authoritative: bool
+    max_abs_authoritative_logit_error: float
+    logits_sha256: str = ""
+    artifact_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        self._validate_structure()
+        computed_logits = _runtime_tensor_sha256(self.logits)
+        if self.logits_sha256:
+            if (
+                _require_sha256(
+                    self.logits_sha256,
+                    label="complete-H4 correction logits",
+                )
+                != computed_logits
+            ):
+                raise ValueError("complete-H4 correction logits hash mismatch")
+        else:
+            object.__setattr__(self, "logits_sha256", computed_logits)
+        computed_artifact = self._computed_artifact_sha256()
+        if self.artifact_sha256:
+            if (
+                _require_sha256(
+                    self.artifact_sha256,
+                    label="complete-H4 correction arm artifact",
+                )
+                != computed_artifact
+            ):
+                raise ValueError(
+                    "complete-H4 correction arm artifact hash mismatch"
+                )
+        else:
+            object.__setattr__(self, "artifact_sha256", computed_artifact)
+
+    def _validate_structure(self) -> None:
+        selected_role = _require_complete_h4_correction_role(self.role)
+        if (
+            not isinstance(self.logits, Tensor)
+            or not self.logits.is_floating_point()
+            or self.logits.ndim != 3
+            or self.logits.numel() == 0
+            or not bool(torch.isfinite(self.logits).all())
+        ):
+            raise ValueError(
+                "complete-H4 correction logits must be finite [B, S, V]"
+            )
+        for value, label in (
+            (self.injected_h4_sha256, "injected H4"),
+            (self.native_h4_sha256, "native H4"),
+            (self.incomplete_h4_sha256, "incomplete H4"),
+            (
+                self.complete_h4_pair_artifact_sha256,
+                "complete-H4 pair artifact",
+            ),
+            (
+                self.shadow_result_artifact_sha256,
+                "shadow result artifact",
+            ),
+            (self.runtime_binding_sha256, "runtime binding"),
+            (self.model_inputs_sha256, "model inputs"),
+            (self.execution_grid_sha256, "execution grid"),
+            (self.adapter_execution_sha256, "adapter execution"),
+            (
+                self.complete_h4_support_mask_sha256,
+                "complete-H4 support mask",
+            ),
+        ):
+            _require_sha256(value, label=label)
+        if selected_role == "projection_oracle":
+            if (
+                self.projected_delta_sha256 is None
+                or self.projection_basis_sha256 is None
+                or self.projection_basis_artifact_sha256 is None
+                or self.projection_fit_basis_artifact_sha256 is None
+                or type(self.projection_rank) is not int
+                or self.projection_rank <= 0
+                or self.projection_ordering
+                not in _COMPLETE_H4_PROJECTION_ORDERINGS
+                or self.projection_definition
+                != _COMPLETE_H4_PROJECTION_DEFINITION
+                or isinstance(
+                    self.projection_basis_orthonormal_max_abs_error,
+                    bool,
+                )
+                or not isinstance(
+                    self.projection_basis_orthonormal_max_abs_error,
+                    (int, float),
+                )
+                or not math.isfinite(
+                    float(
+                        self.projection_basis_orthonormal_max_abs_error
+                    )
+                )
+                or float(
+                    self.projection_basis_orthonormal_max_abs_error
+                )
+                > 1.0e-10
+            ):
+                raise ValueError(
+                    "projection oracle requires an authenticated basis"
+                )
+            _require_sha256(
+                self.projected_delta_sha256,
+                label="projected H4 delta",
+            )
+            _require_sha256(
+                self.projection_basis_sha256,
+                label="projection basis",
+            )
+            _require_sha256(
+                self.projection_basis_artifact_sha256,
+                label="projection basis artifact",
+            )
+            _require_sha256(
+                self.projection_fit_basis_artifact_sha256,
+                label="projection fit-basis artifact",
+            )
+        elif any(
+            value is not None
+            for value in (
+                self.projected_delta_sha256,
+                self.projection_basis_sha256,
+                self.projection_basis_artifact_sha256,
+                self.projection_fit_basis_artifact_sha256,
+                self.projection_rank,
+                self.projection_ordering,
+                self.projection_definition,
+                self.projection_basis_orthonormal_max_abs_error,
+            )
+        ):
+            raise ValueError(
+                "exact-H4 ceiling cannot contain projection fields"
+            )
+        if selected_role == "exact_h4_ceiling" and (
+            self.injected_h4_sha256 != self.native_h4_sha256
+            or self.logits_bitwise_authoritative is not True
+            or float(self.max_abs_authoritative_logit_error) != 0.0
+        ):
+            raise ValueError(
+                "exact-H4 ceiling must inject native H4 and reproduce logits"
+            )
+        if self.boundary_callback_order != (
+            "complete_h4_correction.y3",
+            "complete_h4_correction.x4",
+            "complete_h4_correction.h4",
+        ):
+            raise ValueError("complete-H4 correction callback order differs")
+        if type(self.logits_bitwise_authoritative) is not bool:
+            raise TypeError("logits_bitwise_authoritative must be boolean")
+        error = self.max_abs_authoritative_logit_error
+        if (
+            isinstance(error, bool)
+            or not isinstance(error, (int, float))
+            or not math.isfinite(float(error))
+            or float(error) < 0.0
+        ):
+            raise ValueError(
+                "authoritative logit error must be finite and nonnegative"
+            )
+        if self.logits_bitwise_authoritative and float(error) != 0.0:
+            raise ValueError("bitwise authoritative logits require zero error")
+
+    def _computed_artifact_sha256(self) -> str:
+        payload = {
+            "schema": (
+                "fisher_graph.gemma3_l3_l4_authenticated_complete_h4_"
+                "correction_arm"
+            ),
+            "format_version": 2,
+            "role": self.role,
+            "injected_h4_sha256": self.injected_h4_sha256,
+            "native_h4_sha256": self.native_h4_sha256,
+            "incomplete_h4_sha256": self.incomplete_h4_sha256,
+            "projected_delta_sha256": self.projected_delta_sha256,
+            "projection_basis_sha256": self.projection_basis_sha256,
+            "projection_basis_artifact_sha256": (
+                self.projection_basis_artifact_sha256
+            ),
+            "projection_fit_basis_artifact_sha256": (
+                self.projection_fit_basis_artifact_sha256
+            ),
+            "projection_rank": self.projection_rank,
+            "projection_ordering": self.projection_ordering,
+            "projection_definition": self.projection_definition,
+            "projection_basis_orthonormal_max_abs_error": (
+                self.projection_basis_orthonormal_max_abs_error
+            ),
+            "complete_h4_pair_artifact_sha256": (
+                self.complete_h4_pair_artifact_sha256
+            ),
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "complete_h4_support_mask_sha256": (
+                self.complete_h4_support_mask_sha256
+            ),
+            "boundary_callback_order": self.boundary_callback_order,
+            "logits_bitwise_authoritative": (
+                self.logits_bitwise_authoritative
+            ),
+            "max_abs_authoritative_logit_error": (
+                self.max_abs_authoritative_logit_error
+            ),
+            "logits_sha256": self.logits_sha256,
+            "model_forward_count": 1,
+            "metrics_only": True,
+            "serving_authorized": False,
+        }
+        return hashlib.sha256(
+            _COMPLETE_H4_CORRECTION_ARM_RESULT_DOMAIN
+            + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self._validate_structure()
+        if _runtime_tensor_sha256(self.logits) != _require_sha256(
+            self.logits_sha256,
+            label="complete-H4 correction logits",
+        ):
+            raise ValueError("complete-H4 correction logits hash mismatch")
+        if self._computed_artifact_sha256() != _require_sha256(
+            self.artifact_sha256,
+            label="complete-H4 correction arm artifact",
+        ):
+            raise ValueError("complete-H4 correction arm artifact hash mismatch")
+
+    def validate_projected_delta(self, value: Tensor) -> None:
+        if self.role != "projection_oracle":
+            raise ValueError("exact-H4 ceiling has no projected delta")
+        if (
+            not isinstance(value, Tensor)
+            or _runtime_tensor_sha256(value) != self.projected_delta_sha256
+        ):
+            raise ValueError("projected H4 delta hash mismatch")
+
+    def validate_projection_basis(self, value: Tensor) -> None:
+        if self.role != "projection_oracle":
+            raise ValueError("exact-H4 ceiling has no projection basis")
+        assert self.projection_rank is not None
+        assert self.projection_ordering is not None
+        basis_sha256, orthonormal_error = (
+            _validated_complete_h4_projection_basis(
+                value,
+                projection_rank=self.projection_rank,
+                projection_ordering=self.projection_ordering,
+            )
+        )
+        artifact_sha256 = (
+            gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+                value,
+                projection_rank=self.projection_rank,
+                projection_ordering=self.projection_ordering,
+            )
+        )
+        if (
+            basis_sha256 != self.projection_basis_sha256
+            or artifact_sha256 != self.projection_basis_artifact_sha256
+            or orthonormal_error
+            != self.projection_basis_orthonormal_max_abs_error
+        ):
+            raise ValueError("projection basis authentication mismatch")
+
+    def metadata(self) -> dict[str, object]:
+        self.validate_integrity()
+        return {
+            "role": self.role,
+            "execution_mode": "authenticated_complete_h4_correction_arm",
+            "projection_rank": self.projection_rank,
+            "metrics_only": True,
+            "serving_authorized": False,
+            "model_forward_count": 1,
+            "injected_h4_sha256": self.injected_h4_sha256,
+            "native_h4_sha256": self.native_h4_sha256,
+            "incomplete_h4_sha256": self.incomplete_h4_sha256,
+            "projected_delta_sha256": self.projected_delta_sha256,
+            "projection_basis_sha256": self.projection_basis_sha256,
+            "projection_basis_artifact_sha256": (
+                self.projection_basis_artifact_sha256
+            ),
+            "projection_fit_basis_artifact_sha256": (
+                self.projection_fit_basis_artifact_sha256
+            ),
+            "projection_ordering": self.projection_ordering,
+            "projection_definition": self.projection_definition,
+            "projection_basis_orthonormal_max_abs_error": (
+                self.projection_basis_orthonormal_max_abs_error
+            ),
+            "complete_h4_pair_artifact_sha256": (
+                self.complete_h4_pair_artifact_sha256
+            ),
+            "shadow_result_artifact_sha256": (
+                self.shadow_result_artifact_sha256
+            ),
+            "runtime_binding_sha256": self.runtime_binding_sha256,
+            "model_inputs_sha256": self.model_inputs_sha256,
+            "execution_grid_sha256": self.execution_grid_sha256,
+            "adapter_execution_sha256": self.adapter_execution_sha256,
+            "complete_h4_support_mask_sha256": (
+                self.complete_h4_support_mask_sha256
+            ),
+            "boundary_callback_order": self.boundary_callback_order,
+            "logits_bitwise_authoritative": (
+                self.logits_bitwise_authoritative
+            ),
+            "max_abs_authoritative_logit_error": (
+                self.max_abs_authoritative_logit_error
+            ),
             "logits_sha256": self.logits_sha256,
             "artifact_sha256": self.artifact_sha256,
         }
@@ -1811,6 +3201,1126 @@ class Gemma3L3L4GraphOrganizedSVDShadowRuntime:
             self.validate_integrity()
         return result
 
+    def _authenticate_complete_h4_audit_adapter(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+    ) -> None:
+        self._authenticate_adapter(adapter)
+        sites = {site.id: site for site in adapter.activation_sites}
+        if _H4_SITE not in sites or not sites[_H4_SITE].intervenable:
+            raise ValueError(
+                "Gemma adapter complete layer-4 output ABI drifted"
+            )
+
+    @staticmethod
+    def _sequence_matches_shadow_result(
+        run: AdapterRun,
+        three_pass_result: Gemma3L3L4GraphOrganizedSVDShadowResult,
+    ) -> bool:
+        return (
+            run.sequence.phase == "prefill"
+            and run.sequence.cache_state is None
+            and torch.equal(
+                run.sequence.logical_positions,
+                three_pass_result.logical_positions,
+            )
+            and torch.equal(
+                run.sequence.query_valid_mask,
+                three_pass_result.valid_target_mask,
+            )
+        )
+
+    def validate_complete_h4_pair_binding(
+        self,
+        pair: AuthenticatedCompleteH4PairResult,
+        three_pass_result: Gemma3L3L4GraphOrganizedSVDShadowResult,
+    ) -> None:
+        """Fail unless a complete-H4 pair belongs to this exact shadow."""
+
+        self.validate_result_binding(three_pass_result)
+        if not isinstance(pair, AuthenticatedCompleteH4PairResult):
+            raise TypeError("pair must be an authenticated complete-H4 pair")
+        pair.validate_integrity()
+        if (
+            pair.shadow_result_artifact_sha256
+            != three_pass_result.result_artifact_sha256
+            or pair.runtime_binding_sha256 != self._runtime_binding_sha256
+            or pair.model_inputs_sha256
+            != three_pass_result.model_inputs_sha256
+            or pair.execution_grid_sha256
+            != three_pass_result.execution_grid_sha256
+            or pair.adapter_execution_sha256
+            != self._adapter_execution_sha256
+        ):
+            raise ValueError(
+                "complete-H4 pair belongs to a different shadow execution"
+            )
+        pair_device = pair.native_h4.device
+        expected_tensors = (
+            (
+                pair.source_modes,
+                three_pass_result.source_modes.to(pair_device),
+                "source modes",
+            ),
+            (
+                pair.logical_positions,
+                three_pass_result.logical_positions.to(pair_device),
+                "logical positions",
+            ),
+            (
+                pair.valid_target_mask,
+                three_pass_result.valid_target_mask.to(pair_device),
+                "valid-target mask",
+            ),
+            (
+                pair.source_eligible_mask,
+                three_pass_result.source_eligible_mask.to(pair_device),
+                "source-eligible mask",
+            ),
+            (
+                pair.target_affected_mask,
+                three_pass_result.target_affected_mask.to(pair_device),
+                "target-affected mask",
+            ),
+        )
+        for observed, expected, label in expected_tensors:
+            if not _bitwise_equal(observed, expected):
+                raise ValueError(f"complete-H4 pair {label} differs")
+
+    def execute_complete_h4_pair(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        three_pass_result: Gemma3L3L4GraphOrganizedSVDShadowResult,
+        *,
+        supervised_indices: Tensor,
+        supervised_targets: Tensor,
+        ignore_index: int = -100,
+    ) -> AuthenticatedCompleteH4PairResult:
+        """Collect an exact-X4 H4 pair with built-in supervised mean NLL.
+
+        This fit-only method first authenticates native X4, H4, and logits.
+        Its second pass replays clamped Y3 plus authoritative X4 and cuts the
+        autograd graph at incomplete H4 before evaluating canonical mean NLL.
+        """
+
+        if not isinstance(model_inputs, Mapping):
+            raise TypeError("model_inputs must be a mapping")
+        self.validate_result_binding(three_pass_result)
+        validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+            model_inputs,
+            three_pass_result.model_inputs_sha256,
+        )
+        if (
+            three_pass_result.arm != "all_on"
+            or three_pass_result.accounting.model_forward_count != 3
+            or three_pass_result.authoritative_logits is None
+            or three_pass_result.candidate_logits is None
+        ):
+            raise ValueError(
+                "complete-H4 pair requires a completed all-on three-pass "
+                "shadow result"
+            )
+        if type(ignore_index) is not int:
+            raise TypeError("complete-H4 NLL ignore_index must be an integer")
+        if (
+            not isinstance(supervised_indices, Tensor)
+            or supervised_indices.dtype != torch.int64
+            or supervised_indices.device.type != "cpu"
+            or supervised_indices.ndim != 2
+            or supervised_indices.shape[1:] != (2,)
+            or supervised_indices.shape[0] <= 0
+            or not supervised_indices.is_contiguous()
+        ):
+            raise ValueError(
+                "supervised_indices must be nonempty contiguous CPU int64 "
+                "[N, 2]"
+            )
+        token_count = int(supervised_indices.shape[0])
+        if (
+            not isinstance(supervised_targets, Tensor)
+            or supervised_targets.dtype != torch.int64
+            or supervised_targets.device.type != "cpu"
+            or supervised_targets.shape != (token_count,)
+            or not supervised_targets.is_contiguous()
+        ):
+            raise ValueError(
+                "supervised_targets must be contiguous CPU int64 [N]"
+            )
+        batch_size, sequence_length = (
+            three_pass_result.valid_target_mask.shape
+        )
+        batches = supervised_indices[:, 0]
+        positions = supervised_indices[:, 1]
+        if bool(
+            (batches < 0).any()
+            or (batches >= batch_size).any()
+            or (positions < 0).any()
+            or (positions >= sequence_length).any()
+        ):
+            raise ValueError("supervised indices escape the execution grid")
+        canonical_ordinals = batches * sequence_length + positions
+        if token_count > 1 and not bool(
+            torch.all(canonical_ordinals[1:] > canonical_ordinals[:-1])
+        ):
+            raise ValueError(
+                "supervised indices must be unique batch-major sorted"
+            )
+        valid_cpu = three_pass_result.valid_target_mask.detach().to(
+            device="cpu"
+        )
+        if not bool(valid_cpu[batches, positions].all()):
+            raise ValueError("supervised indices include padding rows")
+        vocabulary = int(
+            three_pass_result.authoritative_logits.shape[-1]
+        )
+        if bool(
+            (supervised_targets == ignore_index).any()
+            or (supervised_targets < 0).any()
+            or (supervised_targets >= vocabulary).any()
+        ):
+            raise ValueError(
+                "supervised targets must be non-ignored vocabulary ids"
+            )
+        supervised_indices_sha256 = _runtime_tensor_sha256(
+            supervised_indices
+        )
+        supervised_targets_sha256 = _runtime_tensor_sha256(
+            supervised_targets
+        )
+        indices_snapshot = supervised_indices.detach().clone().contiguous()
+        targets_snapshot = supervised_targets.detach().clone().contiguous()
+        self._authenticate_complete_h4_audit_adapter(adapter)
+        callback_order: list[str] = []
+
+        def record_callback(event: str) -> None:
+            expected = (
+                "complete_h4_pair.y3",
+                "complete_h4_pair.x4",
+                "complete_h4_pair.h4",
+            )
+            index = len(callback_order)
+            if index >= len(expected) or expected[index] != event:
+                raise RuntimeError(
+                    "complete-H4 pair callback repeated or reordered"
+                )
+            callback_order.append(event)
+
+        native_h4: Tensor | None = None
+        incomplete_h4_leaf: Tensor | None = None
+        gradient: Tensor | None = None
+        native_h4_sha256: str | None = None
+        objective_mean_nll: float | None = None
+        objective_receipt_sha256: str | None = None
+        partial_logits_sha256: str | None = None
+        try:
+            native = self._authenticated_forward(
+                adapter,
+                model_inputs,
+                capture_sites=(_X4_SITE, _H4_SITE),
+            )
+            if (
+                not self._sequence_matches_shadow_result(
+                    native,
+                    three_pass_result,
+                )
+                or not _bitwise_equal(
+                    native.activations[_X4_SITE],
+                    three_pass_result.authoritative_x4,
+                )
+                or not _bitwise_equal(
+                    native.logits,
+                    three_pass_result.authoritative_logits,
+                )
+            ):
+                raise RuntimeError(
+                    "native complete-H4 pair replay differs from the "
+                    "authenticated source path"
+                )
+            native_h4 = native.activations[_H4_SITE]
+            if (
+                native_h4.shape
+                != three_pass_result.authoritative_x4.shape
+                or native_h4.dtype
+                != three_pass_result.authoritative_x4.dtype
+                or native_h4.device
+                != three_pass_result.authoritative_x4.device
+                or not bool(torch.isfinite(native_h4).all())
+            ):
+                raise RuntimeError(
+                    "native H4 does not match the authenticated residual ABI"
+                )
+            native_h4_sha256 = _runtime_tensor_sha256(native_h4)
+
+            def at_y3(original: Tensor) -> Tensor:
+                record_callback("complete_h4_pair.y3")
+                if not _bitwise_equal(original, three_pass_result.native_y3):
+                    raise RuntimeError(
+                        "complete-H4 pair reached a non-authenticated native Y3"
+                    )
+                return three_pass_result.clamped_y3
+
+            def at_x4(original: Tensor) -> Tensor:
+                record_callback("complete_h4_pair.x4")
+                if not _bitwise_equal(
+                    original,
+                    three_pass_result.reference_x4,
+                ):
+                    raise RuntimeError(
+                        "complete-H4 pair reached a non-authenticated "
+                        "reference X4"
+                    )
+                return three_pass_result.authoritative_x4
+
+            def at_h4(original: Tensor) -> Tensor:
+                nonlocal incomplete_h4_leaf
+                record_callback("complete_h4_pair.h4")
+                if incomplete_h4_leaf is not None:
+                    raise RuntimeError("complete-H4 pair H4 callback repeated")
+                if (
+                    original.shape != native_h4.shape
+                    or original.dtype != native_h4.dtype
+                    or original.device != native_h4.device
+                    or not bool(torch.isfinite(original).all())
+                ):
+                    raise RuntimeError(
+                        "incomplete H4 does not match the native residual ABI"
+                    )
+                incomplete_h4_leaf = (
+                    original.detach().requires_grad_(True)
+                )
+                return incomplete_h4_leaf
+
+            self.validate_integrity()
+            self._authenticate_adapter(adapter)
+            try:
+                with torch.enable_grad():
+                    partial = adapter.forward(
+                        model_inputs,
+                        capture_sites=(),
+                        interventions={
+                            _Y3_SITE: at_y3,
+                            _X4_SITE: at_x4,
+                            _H4_SITE: at_h4,
+                        },
+                        retain_gradients=False,
+                    )
+                    if incomplete_h4_leaf is None:
+                        raise RuntimeError(
+                            "complete-H4 pair did not reach the H4 boundary"
+                        )
+                    partial_logits_sha256 = _runtime_tensor_sha256(
+                        partial.logits
+                    )
+                    indices_on_logits = indices_snapshot.to(
+                        device=partial.logits.device
+                    )
+                    targets_on_logits = targets_snapshot.to(
+                        device=partial.logits.device
+                    )
+                    supervised_logits = partial.logits[
+                        indices_on_logits[:, 0],
+                        indices_on_logits[:, 1],
+                    ]
+                    if supervised_logits.dtype in (
+                        torch.float16,
+                        torch.bfloat16,
+                    ):
+                        supervised_logits = supervised_logits.float()
+                    loss = F.cross_entropy(
+                        supervised_logits,
+                        targets_on_logits,
+                        ignore_index=ignore_index,
+                        reduction="mean",
+                    )
+                    if (
+                        not isinstance(loss, Tensor)
+                        or loss.ndim != 0
+                        or not loss.is_floating_point()
+                        or not bool(torch.isfinite(loss))
+                    ):
+                        raise ValueError(
+                            "complete-H4 mean NLL must be one finite scalar"
+                        )
+                    objective_mean_nll = float(
+                        loss.detach().to(device="cpu", dtype=torch.float64)
+                    )
+                    objective_receipt_sha256 = (
+                        _complete_h4_nll_objective_receipt_sha256(
+                            supervised_indices_sha256=(
+                                supervised_indices_sha256
+                            ),
+                            supervised_targets_sha256=(
+                                supervised_targets_sha256
+                            ),
+                            partial_exact_x4_logits_sha256=(
+                                partial_logits_sha256
+                            ),
+                            ignore_index=ignore_index,
+                            reduction="mean",
+                            supervised_token_count=token_count,
+                            mean_nll=objective_mean_nll,
+                        )
+                    )
+                    (gradient,) = torch.autograd.grad(
+                        loss,
+                        (incomplete_h4_leaf,),
+                        retain_graph=False,
+                        create_graph=False,
+                    )
+            finally:
+                self._authenticate_adapter(adapter)
+                self.validate_integrity()
+            if not self._sequence_matches_shadow_result(
+                partial,
+                three_pass_result,
+            ):
+                raise RuntimeError(
+                    "partial complete-H4 pair grid differs from its shadow"
+                )
+            if tuple(callback_order) != (
+                "complete_h4_pair.y3",
+                "complete_h4_pair.x4",
+                "complete_h4_pair.h4",
+            ):
+                raise RuntimeError("complete-H4 pair callbacks were skipped")
+            if gradient is None or (
+                gradient.shape != incomplete_h4_leaf.shape
+                or gradient.dtype != incomplete_h4_leaf.dtype
+                or gradient.device != incomplete_h4_leaf.device
+                or not bool(torch.isfinite(gradient).all())
+            ):
+                raise RuntimeError("complete-H4 pair gradient geometry differs")
+            if (
+                partial_logits_sha256 is None
+                or objective_mean_nll is None
+                or objective_receipt_sha256 is None
+            ):
+                raise RuntimeError("complete-H4 NLL objective receipt omitted")
+            if _runtime_tensor_sha256(native_h4) != native_h4_sha256:
+                raise RuntimeError("native H4 drifted during pair collection")
+
+            pair_device = native_h4.device
+            logical_positions = three_pass_result.logical_positions.to(
+                pair_device
+            ).detach().contiguous()
+            valid_target_mask = three_pass_result.valid_target_mask.to(
+                pair_device
+            ).detach().contiguous()
+            source_eligible_mask = three_pass_result.source_eligible_mask.to(
+                pair_device
+            ).detach().contiguous()
+            target_affected_mask = three_pass_result.target_affected_mask.to(
+                pair_device
+            ).detach().contiguous()
+            complete_h4_support_mask = _complete_h4_causal_support(
+                logical_positions,
+                valid_target_mask,
+                source_eligible_mask,
+            )
+            native_snapshot = native_h4.detach().clone().contiguous()
+            incomplete_snapshot = (
+                incomplete_h4_leaf.detach().clone().contiguous()
+            )
+            difference = _tensor_row_difference_mask(
+                native_snapshot,
+                incomplete_snapshot,
+            )
+            if bool((difference & ~valid_target_mask).any()):
+                raise RuntimeError(
+                    "native/incomplete H4 differs on padding rows"
+                )
+            if bool(
+                (
+                    difference
+                    & valid_target_mask
+                    & ~complete_h4_support_mask
+                ).any()
+            ):
+                raise RuntimeError(
+                    "native/incomplete H4 difference escapes causal support"
+                )
+            pair = AuthenticatedCompleteH4PairResult(
+                native_h4=native_snapshot,
+                incomplete_h4=incomplete_snapshot,
+                h4_gradient=gradient.detach().clone().contiguous(),
+                partial_exact_x4_logits_sha256=(
+                    partial_logits_sha256
+                ),
+                supervised_indices_sha256=supervised_indices_sha256,
+                supervised_targets_sha256=supervised_targets_sha256,
+                supervised_token_count=token_count,
+                objective_ignore_index=ignore_index,
+                objective_reduction="mean",
+                objective_mean_nll=objective_mean_nll,
+                objective_receipt_sha256=objective_receipt_sha256,
+                source_modes=(
+                    three_pass_result.source_modes.to(pair_device)
+                    .detach()
+                    .contiguous()
+                ),
+                logical_positions=logical_positions,
+                valid_target_mask=valid_target_mask,
+                source_eligible_mask=source_eligible_mask,
+                target_affected_mask=target_affected_mask,
+                complete_h4_support_mask=complete_h4_support_mask,
+                shadow_result_artifact_sha256=(
+                    three_pass_result.result_artifact_sha256
+                ),
+                runtime_binding_sha256=self._runtime_binding_sha256,
+                model_inputs_sha256=three_pass_result.model_inputs_sha256,
+                execution_grid_sha256=(
+                    three_pass_result.execution_grid_sha256
+                ),
+                adapter_execution_sha256=self._adapter_execution_sha256,
+                boundary_callback_order=tuple(callback_order),
+            )
+            self.validate_complete_h4_pair_binding(
+                pair,
+                three_pass_result,
+            )
+            return pair
+        finally:
+            validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+                model_inputs,
+                three_pass_result.model_inputs_sha256,
+            )
+            if (
+                _runtime_tensor_sha256(supervised_indices)
+                != supervised_indices_sha256
+                or _runtime_tensor_sha256(supervised_targets)
+                != supervised_targets_sha256
+            ):
+                raise RuntimeError(
+                    "complete-H4 NLL supervision drifted during use"
+                )
+            self.validate_result_binding(three_pass_result)
+            self._authenticate_complete_h4_audit_adapter(adapter)
+
+    def execute_complete_h4_correction_arm(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        three_pass_result: Gemma3L3L4GraphOrganizedSVDShadowResult,
+        pair: AuthenticatedCompleteH4PairResult,
+        projected_delta: Tensor | None = None,
+        *,
+        role: CompleteH4CorrectionRole,
+        projection_basis: Tensor | None = None,
+        projection_basis_artifact_sha256: str | None = None,
+        projection_fit_basis_artifact_sha256: str | None = None,
+        projection_rank: int | None = None,
+        projection_ordering: str | None = None,
+    ) -> AuthenticatedCompleteH4CorrectionArmResult:
+        """Run one exact-X4 suffix with a projected or exact H4 correction."""
+
+        selected_role = _require_complete_h4_correction_role(role)
+        if not isinstance(model_inputs, Mapping):
+            raise TypeError("model_inputs must be a mapping")
+        self.validate_complete_h4_pair_binding(pair, three_pass_result)
+        validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+            model_inputs,
+            three_pass_result.model_inputs_sha256,
+        )
+        if (
+            three_pass_result.arm != "all_on"
+            or three_pass_result.accounting.model_forward_count != 3
+            or three_pass_result.authoritative_logits is None
+            or three_pass_result.candidate_logits is None
+        ):
+            raise ValueError(
+                "complete-H4 correction requires a completed all-on "
+                "three-pass shadow result"
+        )
+        delta_snapshot: Tensor | None = None
+        projected_delta_sha256: str | None = None
+        basis_snapshot: Tensor | None = None
+        projection_basis_sha256: str | None = None
+        projection_basis_orthonormal_error: float | None = None
+        if selected_role == "projection_oracle":
+            if (
+                not isinstance(projected_delta, Tensor)
+                or not projected_delta.is_floating_point()
+                or projected_delta.shape != pair.incomplete_h4.shape
+                or projected_delta.dtype != pair.incomplete_h4.dtype
+                or projected_delta.device != pair.incomplete_h4.device
+                or not bool(torch.isfinite(projected_delta).all())
+            ):
+                raise ValueError(
+                    "projected H4 delta must be finite and align with H4"
+                )
+            if (
+                not isinstance(projection_basis, Tensor)
+                or type(projection_rank) is not int
+                or not isinstance(projection_ordering, str)
+                or not isinstance(projection_basis_artifact_sha256, str)
+                or not isinstance(
+                    projection_fit_basis_artifact_sha256,
+                    str,
+                )
+            ):
+                raise ValueError(
+                    "projection oracle requires basis, artifact, rank, and "
+                    "ordering"
+                )
+            projection_basis_sha256, projection_basis_orthonormal_error = (
+                _validated_complete_h4_projection_basis(
+                    projection_basis,
+                    projection_rank=projection_rank,
+                    projection_ordering=projection_ordering,
+                )
+            )
+            if int(projection_basis.shape[1]) != int(
+                pair.incomplete_h4.shape[-1]
+            ):
+                raise ValueError("projection basis width differs from H4")
+            computed_basis_artifact = (
+                gemma3_l3_l4_complete_h4_projection_basis_artifact_sha256(
+                    projection_basis,
+                    projection_rank=projection_rank,
+                    projection_ordering=projection_ordering,
+                )
+            )
+            if (
+                _require_sha256(
+                    projection_basis_artifact_sha256,
+                    label="projection basis artifact",
+                )
+                != computed_basis_artifact
+            ):
+                raise ValueError("projection basis artifact mismatch")
+            _require_sha256(
+                projection_fit_basis_artifact_sha256,
+                label="projection fit-basis artifact",
+            )
+            basis_snapshot = projection_basis.detach().clone().contiguous()
+            support = pair.complete_h4_support_mask
+            expected_delta = torch.zeros_like(pair.incomplete_h4)
+            if bool(support.any()):
+                native_rows = pair.native_h4[support].to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                incomplete_rows = pair.incomplete_h4[support].to(
+                    device="cpu",
+                    dtype=torch.float64,
+                )
+                residual_rows = native_rows - incomplete_rows
+                projected_rows = (
+                    residual_rows @ basis_snapshot.T
+                ) @ basis_snapshot
+                expected_delta[support] = projected_rows.to(
+                    device=pair.incomplete_h4.device,
+                    dtype=pair.incomplete_h4.dtype,
+                )
+            if not _bitwise_equal(projected_delta, expected_delta):
+                raise ValueError(
+                    "submitted H4 delta differs from authenticated projection"
+                )
+            delta_snapshot = projected_delta.detach().clone().contiguous()
+            projected_delta_sha256 = _runtime_tensor_sha256(delta_snapshot)
+        elif any(
+            value is not None
+            for value in (
+                projected_delta,
+                projection_basis,
+                projection_basis_artifact_sha256,
+                projection_fit_basis_artifact_sha256,
+                projection_rank,
+                projection_ordering,
+            )
+        ):
+            raise ValueError(
+                "exact-H4 ceiling does not accept projection fields"
+            )
+
+        self._authenticate_complete_h4_audit_adapter(adapter)
+        callback_order: list[str] = []
+        injected_h4: Tensor | None = None
+
+        def record_callback(event: str) -> None:
+            expected = (
+                "complete_h4_correction.y3",
+                "complete_h4_correction.x4",
+                "complete_h4_correction.h4",
+            )
+            index = len(callback_order)
+            if index >= len(expected) or expected[index] != event:
+                raise RuntimeError(
+                    "complete-H4 correction callback repeated or reordered"
+                )
+            callback_order.append(event)
+
+        def at_y3(original: Tensor) -> Tensor:
+            record_callback("complete_h4_correction.y3")
+            if not _bitwise_equal(original, three_pass_result.native_y3):
+                raise RuntimeError(
+                    "complete-H4 correction reached non-authenticated Y3"
+                )
+            return three_pass_result.clamped_y3
+
+        def at_x4(original: Tensor) -> Tensor:
+            record_callback("complete_h4_correction.x4")
+            if not _bitwise_equal(original, three_pass_result.reference_x4):
+                raise RuntimeError(
+                    "complete-H4 correction reached non-authenticated X4"
+                )
+            return three_pass_result.authoritative_x4
+
+        def at_h4(original: Tensor) -> Tensor:
+            nonlocal injected_h4
+            record_callback("complete_h4_correction.h4")
+            if not _bitwise_equal(original, pair.incomplete_h4):
+                raise RuntimeError(
+                    "complete-H4 correction reached a non-authenticated "
+                    "incomplete carrier"
+                )
+            if selected_role == "exact_h4_ceiling":
+                injected_h4 = pair.native_h4
+            else:
+                if delta_snapshot is None:
+                    raise RuntimeError("projected H4 delta was not retained")
+                injected_h4 = original.clone()
+                support = pair.complete_h4_support_mask
+                if bool(support.any()):
+                    injected_h4[support] += delta_snapshot[support]
+                if not _bitwise_equal(
+                    injected_h4[~support],
+                    original[~support],
+                ):
+                    raise RuntimeError(
+                        "H4 correction modified rows outside complete support"
+                    )
+            return injected_h4
+
+        try:
+            corrected = self._authenticated_forward(
+                adapter,
+                model_inputs,
+                capture_sites=(),
+                interventions={
+                    _Y3_SITE: at_y3,
+                    _X4_SITE: at_x4,
+                    _H4_SITE: at_h4,
+                },
+            )
+            if not self._sequence_matches_shadow_result(
+                corrected,
+                three_pass_result,
+            ):
+                raise RuntimeError(
+                    "complete-H4 correction grid differs from its shadow"
+                )
+            if tuple(callback_order) != (
+                "complete_h4_correction.y3",
+                "complete_h4_correction.x4",
+                "complete_h4_correction.h4",
+            ):
+                raise RuntimeError("complete-H4 correction callbacks skipped")
+            if injected_h4 is None:
+                raise RuntimeError("complete-H4 correction omitted injection")
+            authoritative = three_pass_result.authoritative_logits
+            bitwise = _bitwise_equal(corrected.logits, authoritative)
+            max_abs_error = float(
+                (
+                    corrected.logits.detach().to(dtype=torch.float64)
+                    - authoritative.detach().to(dtype=torch.float64)
+                )
+                .abs()
+                .max()
+            )
+            if selected_role == "exact_h4_ceiling" and (
+                not bitwise or max_abs_error != 0.0
+            ):
+                raise RuntimeError(
+                    "exact-H4 ceiling did not reproduce authoritative logits"
+                )
+            result = AuthenticatedCompleteH4CorrectionArmResult(
+                role=selected_role,
+                logits=corrected.logits.detach().clone().contiguous(),
+                injected_h4_sha256=_runtime_tensor_sha256(injected_h4),
+                native_h4_sha256=pair.native_h4_sha256,
+                incomplete_h4_sha256=pair.incomplete_h4_sha256,
+                projected_delta_sha256=projected_delta_sha256,
+                projection_basis_sha256=projection_basis_sha256,
+                projection_basis_artifact_sha256=(
+                    projection_basis_artifact_sha256
+                ),
+                projection_fit_basis_artifact_sha256=(
+                    projection_fit_basis_artifact_sha256
+                ),
+                projection_rank=projection_rank,
+                projection_ordering=projection_ordering,
+                projection_definition=(
+                    _COMPLETE_H4_PROJECTION_DEFINITION
+                    if selected_role == "projection_oracle"
+                    else None
+                ),
+                projection_basis_orthonormal_max_abs_error=(
+                    projection_basis_orthonormal_error
+                ),
+                complete_h4_pair_artifact_sha256=pair.artifact_sha256,
+                shadow_result_artifact_sha256=(
+                    three_pass_result.result_artifact_sha256
+                ),
+                runtime_binding_sha256=self._runtime_binding_sha256,
+                model_inputs_sha256=three_pass_result.model_inputs_sha256,
+                execution_grid_sha256=(
+                    three_pass_result.execution_grid_sha256
+                ),
+                adapter_execution_sha256=self._adapter_execution_sha256,
+                complete_h4_support_mask_sha256=(
+                    pair.complete_h4_support_mask_sha256
+                ),
+                boundary_callback_order=tuple(callback_order),
+                logits_bitwise_authoritative=bitwise,
+                max_abs_authoritative_logit_error=max_abs_error,
+            )
+            result.validate_integrity()
+            return result
+        finally:
+            if delta_snapshot is not None and (
+                _runtime_tensor_sha256(delta_snapshot)
+                != projected_delta_sha256
+            ):
+                raise RuntimeError("projected H4 delta drifted during use")
+            if basis_snapshot is not None and (
+                _runtime_tensor_sha256(basis_snapshot)
+                != projection_basis_sha256
+            ):
+                raise RuntimeError("projection basis drifted during use")
+            if projection_basis is not None and (
+                _runtime_tensor_sha256(projection_basis)
+                != projection_basis_sha256
+            ):
+                raise RuntimeError("projection basis input drifted during use")
+            if projected_delta is not None and (
+                _runtime_tensor_sha256(projected_delta)
+                != projected_delta_sha256
+            ):
+                raise RuntimeError("projected H4 delta input drifted during use")
+            pair.validate_integrity()
+            validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+                model_inputs,
+                three_pass_result.model_inputs_sha256,
+            )
+            self.validate_result_binding(three_pass_result)
+            self._authenticate_complete_h4_audit_adapter(adapter)
+
+    def execute_complete_h4_identity_audit(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        three_pass_result: Gemma3L3L4GraphOrganizedSVDShadowResult,
+    ) -> AuthenticatedCompleteH4IdentityAuditResult:
+        """Audit exact X4 versus the complete layer-4 output boundary.
+
+        Three independent, authenticated replays measure the native H4,
+        replay the clamped-Y3 carrier with exact native X4, and finally replace
+        that replay's incomplete H4 with the native complete carrier.  All
+        outputs are metrics-only and can never authorize serving.
+        """
+
+        if not isinstance(model_inputs, Mapping):
+            raise TypeError("model_inputs must be a mapping")
+        self.validate_result_binding(three_pass_result)
+        validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+            model_inputs,
+            three_pass_result.model_inputs_sha256,
+        )
+        if (
+            three_pass_result.arm != "all_on"
+            or three_pass_result.accounting.model_forward_count != 3
+            or three_pass_result.authoritative_logits is None
+            or three_pass_result.candidate_logits is None
+        ):
+            raise ValueError(
+                "complete-H4 identity audit requires a completed all-on "
+                "three-pass shadow result"
+            )
+        target_affected = three_pass_result.target_affected_mask
+        target_affected_rows = int(target_affected.sum())
+        if target_affected_rows <= 0:
+            raise ValueError(
+                "complete-H4 identity audit requires affected rows"
+            )
+        self._authenticate_complete_h4_audit_adapter(adapter)
+        callback_order: list[str] = []
+
+        def record_callback(event: str) -> None:
+            next_index = len(callback_order)
+            if (
+                next_index >= len(_COMPLETE_H4_CALLBACK_ORDER)
+                or _COMPLETE_H4_CALLBACK_ORDER[next_index] != event
+            ):
+                raise RuntimeError(
+                    "complete-H4 boundary callback repeated or reordered"
+                )
+            callback_order.append(event)
+
+        def sequence_matches_result(run: AdapterRun) -> bool:
+            return (
+                run.sequence.phase == "prefill"
+                and run.sequence.cache_state is None
+                and torch.equal(
+                    run.sequence.logical_positions,
+                    three_pass_result.logical_positions,
+                )
+                and torch.equal(
+                    run.sequence.query_valid_mask,
+                    three_pass_result.valid_target_mask,
+                )
+            )
+
+        try:
+            native = self._authenticated_forward(
+                adapter,
+                model_inputs,
+                capture_sites=(_X4_SITE, _H4_SITE),
+            )
+            if (
+                not sequence_matches_result(native)
+                or not _bitwise_equal(
+                    native.activations[_X4_SITE],
+                    three_pass_result.authoritative_x4,
+                )
+                or not _bitwise_equal(
+                    native.logits,
+                    three_pass_result.authoritative_logits,
+                )
+            ):
+                raise RuntimeError(
+                    "native H4 audit replay differs from the authenticated "
+                    "source path"
+                )
+            native_h4 = native.activations[_H4_SITE]
+            if (
+                native_h4.shape
+                != three_pass_result.authoritative_x4.shape
+                or native_h4.dtype
+                != three_pass_result.authoritative_x4.dtype
+                or native_h4.device
+                != three_pass_result.authoritative_x4.device
+                or not bool(torch.isfinite(native_h4).all())
+            ):
+                raise RuntimeError(
+                    "native H4 does not match the authenticated residual ABI"
+                )
+            native_h4_sha256 = _runtime_tensor_sha256(native_h4)
+
+            def partial_y3(original: Tensor) -> Tensor:
+                record_callback("partial_exact_x4.y3")
+                if not _bitwise_equal(
+                    original,
+                    three_pass_result.native_y3,
+                ):
+                    raise RuntimeError(
+                        "partial exact-X4 replay reached a non-authenticated "
+                        "native Y3"
+                    )
+                return three_pass_result.clamped_y3
+
+            def partial_x4(original: Tensor) -> Tensor:
+                record_callback("partial_exact_x4.x4")
+                if not _bitwise_equal(
+                    original,
+                    three_pass_result.reference_x4,
+                ):
+                    raise RuntimeError(
+                        "partial exact-X4 replay reached a non-authenticated "
+                        "reference X4"
+                    )
+                return three_pass_result.authoritative_x4
+
+            partial = self._authenticated_forward(
+                adapter,
+                model_inputs,
+                capture_sites=(_H4_SITE,),
+                interventions={
+                    _Y3_SITE: partial_y3,
+                    _X4_SITE: partial_x4,
+                },
+            )
+            if not sequence_matches_result(partial):
+                raise RuntimeError(
+                    "partial exact-X4 replay sequence differs from the "
+                    "authenticated grid"
+                )
+            incomplete_h4 = partial.activations[_H4_SITE]
+            if (
+                incomplete_h4.shape != native_h4.shape
+                or incomplete_h4.dtype != native_h4.dtype
+                or incomplete_h4.device != native_h4.device
+                or not bool(torch.isfinite(incomplete_h4).all())
+            ):
+                raise RuntimeError(
+                    "incomplete H4 does not match the native residual ABI"
+                )
+            incomplete_h4_sha256 = _runtime_tensor_sha256(incomplete_h4)
+            byte_shape = (*native_h4.shape[:2], -1)
+            native_h4_bytes = native_h4.detach().to(
+                device="cpu"
+            ).contiguous().view(torch.uint8).reshape(byte_shape)
+            incomplete_h4_bytes = incomplete_h4.detach().to(
+                device="cpu"
+            ).contiguous().view(torch.uint8).reshape(byte_shape)
+            incomplete_h4_difference_mask = (
+                (native_h4_bytes != incomplete_h4_bytes)
+                .any(dim=-1)
+                .to(device=native_h4.device)
+            )
+            valid_target = three_pass_result.valid_target_mask.to(
+                device=incomplete_h4_difference_mask.device
+            )
+            target_support = target_affected.to(
+                device=incomplete_h4_difference_mask.device
+            )
+            difference_rows = int(incomplete_h4_difference_mask.sum())
+            difference_valid_rows = int(
+                (incomplete_h4_difference_mask & valid_target).sum()
+            )
+            difference_padding_rows = int(
+                (incomplete_h4_difference_mask & ~valid_target).sum()
+            )
+            difference_target_rows = int(
+                (incomplete_h4_difference_mask & target_support).sum()
+            )
+            difference_outside_target_rows = int(
+                (incomplete_h4_difference_mask & ~target_support).sum()
+            )
+            target_difference_observed = difference_target_rows > 0
+            difference_nonvacuous = difference_rows > 0
+            if not target_difference_observed or not difference_nonvacuous:
+                raise RuntimeError(
+                    "partial exact-X4 H4 audit is vacuous on affected rows"
+                )
+
+            def complete_y3(original: Tensor) -> Tensor:
+                record_callback("complete_h4.y3")
+                if not _bitwise_equal(
+                    original,
+                    three_pass_result.native_y3,
+                ):
+                    raise RuntimeError(
+                        "complete-H4 replay reached a non-authenticated "
+                        "native Y3"
+                    )
+                return three_pass_result.clamped_y3
+
+            def complete_x4(original: Tensor) -> Tensor:
+                record_callback("complete_h4.x4")
+                if not _bitwise_equal(
+                    original,
+                    three_pass_result.reference_x4,
+                ):
+                    raise RuntimeError(
+                        "complete-H4 replay reached a non-authenticated "
+                        "reference X4"
+                    )
+                return three_pass_result.authoritative_x4
+
+            def complete_h4(original: Tensor) -> Tensor:
+                record_callback("complete_h4.h4")
+                if not _bitwise_equal(original, incomplete_h4):
+                    raise RuntimeError(
+                        "complete-H4 replay reached a non-authenticated "
+                        "incomplete carrier"
+                    )
+                if _runtime_tensor_sha256(native_h4) != native_h4_sha256:
+                    raise RuntimeError(
+                        "authenticated native H4 drifted before injection"
+                    )
+                return native_h4
+
+            complete = self._authenticated_forward(
+                adapter,
+                model_inputs,
+                capture_sites=(),
+                interventions={
+                    _Y3_SITE: complete_y3,
+                    _X4_SITE: complete_x4,
+                    _H4_SITE: complete_h4,
+                },
+            )
+            if not sequence_matches_result(complete):
+                raise RuntimeError(
+                    "complete-H4 replay sequence differs from the "
+                    "authenticated grid"
+                )
+            observed_callback_order = tuple(callback_order)
+            if observed_callback_order != _COMPLETE_H4_CALLBACK_ORDER:
+                raise RuntimeError(
+                    "complete-H4 boundary callbacks were skipped"
+                )
+            injected_h4_sha256 = _runtime_tensor_sha256(native_h4)
+            if injected_h4_sha256 != native_h4_sha256:
+                raise RuntimeError("injected native H4 drifted during use")
+            complete_bitwise = _bitwise_equal(
+                complete.logits,
+                three_pass_result.authoritative_logits,
+            )
+            complete_max_abs_error = float(
+                (
+                    complete.logits.detach().to(dtype=torch.float64)
+                    - three_pass_result.authoritative_logits.detach().to(
+                        dtype=torch.float64
+                    )
+                )
+                .abs()
+                .max()
+            )
+            result = AuthenticatedCompleteH4IdentityAuditResult(
+                partial_exact_x4_logits=partial.logits,
+                complete_h4_logits=complete.logits,
+                incomplete_h4_difference_mask=(
+                    incomplete_h4_difference_mask
+                ),
+                native_h4_sha256=native_h4_sha256,
+                incomplete_carrier_h4_sha256=incomplete_h4_sha256,
+                injected_h4_sha256=injected_h4_sha256,
+                shadow_result_artifact_sha256=(
+                    three_pass_result.result_artifact_sha256
+                ),
+                runtime_binding_sha256=self._runtime_binding_sha256,
+                model_inputs_sha256=three_pass_result.model_inputs_sha256,
+                execution_grid_sha256=(
+                    three_pass_result.execution_grid_sha256
+                ),
+                adapter_execution_sha256=self._adapter_execution_sha256,
+                target_affected_rows=target_affected_rows,
+                incomplete_h4_difference_rows=difference_rows,
+                incomplete_h4_difference_valid_rows=(
+                    difference_valid_rows
+                ),
+                incomplete_h4_difference_padding_rows=(
+                    difference_padding_rows
+                ),
+                incomplete_h4_difference_target_rows=(
+                    difference_target_rows
+                ),
+                incomplete_h4_difference_outside_target_rows=(
+                    difference_outside_target_rows
+                ),
+                target_affected_h4_difference_observed=(
+                    target_difference_observed
+                ),
+                incomplete_h4_difference_nonvacuous=(
+                    difference_nonvacuous
+                ),
+                boundary_callback_order=observed_callback_order,
+                complete_h4_logits_bitwise_authoritative=complete_bitwise,
+                complete_h4_max_abs_logit_error=complete_max_abs_error,
+            )
+            result.validate_integrity()
+            return result
+        finally:
+            validate_gemma3_l3_l4_shadow_model_inputs_sha256(
+                model_inputs,
+                three_pass_result.model_inputs_sha256,
+            )
+            self.validate_result_binding(three_pass_result)
+            self._authenticate_complete_h4_audit_adapter(adapter)
+
     def execute_oracle_suffix(
         self,
         adapter: Gemma3CausalLMAdapter,
@@ -2210,6 +4720,20 @@ class Gemma3L3L4OnePassPrefix:
         if self._computed_sha256() != self.artifact_sha256:
             raise RuntimeError("one-pass prefix tensor payload drifted")
 
+    def complete_h4_causal_support_mask(self) -> Tensor:
+        """Return the derived full causal H4 write support.
+
+        The support is recomputed from authenticated execution-grid tensors;
+        it is not another caller-controlled or serialized prefix field.
+        """
+
+        self.validate_integrity()
+        return _complete_h4_causal_support(
+            self.logical_positions,
+            self.valid_target_mask,
+            self.source_eligible_mask,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Gemma3L3L4OnePassExecution:
@@ -2306,6 +4830,334 @@ class Gemma3L3L4OnePassExecution:
         self.prefix.validate_integrity()
         if self._computed_sha256() != self.artifact_sha256:
             raise RuntimeError("one-pass execution tensor payload drifted")
+
+
+@dataclass(frozen=True, slots=True)
+class Gemma3L3L4TokenNLLVJP:
+    """Authenticated exact per-token NLL gradients at the H4 boundary."""
+
+    execution: Gemma3L3L4OnePassExecution
+    supervised_indices: Tensor
+    token_losses: Tensor
+    h4_gradients: Tensor
+    targets_sha256: str
+    ignore_index: int
+    vjp_chunk_size: int
+    backward_call_count: int
+    artifact_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.execution, Gemma3L3L4OnePassExecution):
+            raise TypeError("token NLL VJP execution has the wrong type")
+        self.execution.validate_integrity()
+        _require_sha256(self.targets_sha256, label="token NLL VJP targets")
+        if type(self.ignore_index) is not int:
+            raise ValueError("token NLL VJP ignore_index must be an integer")
+        if type(self.vjp_chunk_size) is not int or self.vjp_chunk_size <= 0:
+            raise ValueError(
+                "token NLL VJP chunk size must be a positive integer"
+            )
+        if (
+            not isinstance(self.supervised_indices, Tensor)
+            or self.supervised_indices.ndim != 2
+            or self.supervised_indices.shape[1] != 2
+            or self.supervised_indices.dtype != torch.int64
+            or self.supervised_indices.requires_grad
+            or not self.supervised_indices.is_contiguous()
+        ):
+            raise ValueError(
+                "token NLL VJP indices must be contiguous int64 [N, 2]"
+            )
+        token_count = int(self.supervised_indices.shape[0])
+        if (
+            token_count <= 0
+            or not isinstance(self.token_losses, Tensor)
+            or self.token_losses.shape != (token_count,)
+            or not self.token_losses.is_floating_point()
+            or self.token_losses.requires_grad
+            or not self.token_losses.is_contiguous()
+            or not bool(torch.isfinite(self.token_losses).all())
+            or not isinstance(self.h4_gradients, Tensor)
+            or self.h4_gradients.shape
+            != (token_count, *self.execution.candidate_h4.shape)
+            or not self.h4_gradients.is_floating_point()
+            or self.h4_gradients.requires_grad
+            or not self.h4_gradients.is_contiguous()
+            or not bool(torch.isfinite(self.h4_gradients).all())
+        ):
+            raise ValueError("token NLL VJP tensor geometry is invalid")
+        if (
+            self.token_losses.device != self.execution.logits.device
+            or self.h4_gradients.device
+            != self.execution.candidate_h4.device
+        ):
+            raise ValueError("token NLL VJP tensors use the wrong device")
+        indices = self.supervised_indices.to(
+            device=self.execution.prefix.valid_target_mask.device
+        )
+        batch_count, sequence_length = (
+            self.execution.prefix.valid_target_mask.shape
+        )
+        if (
+            bool((indices[:, 0] < 0).any())
+            or bool((indices[:, 0] >= batch_count).any())
+            or bool((indices[:, 1] < 0).any())
+            or bool((indices[:, 1] >= sequence_length).any())
+            or not bool(
+                self.execution.prefix.valid_target_mask[
+                    indices[:, 0], indices[:, 1]
+                ].all()
+            )
+        ):
+            raise ValueError("token NLL VJP indices escape the valid grid")
+        flattened = indices[:, 0] * sequence_length + indices[:, 1]
+        if token_count > 1 and not bool(
+            (flattened[1:] > flattened[:-1]).all()
+        ):
+            raise ValueError("token NLL VJP indices are not canonical")
+        expected_backward_calls = (
+            token_count + self.vjp_chunk_size - 1
+        ) // self.vjp_chunk_size
+        if (
+            type(self.backward_call_count) is not int
+            or self.backward_call_count != expected_backward_calls
+        ):
+            raise ValueError("token NLL VJP backward count differs")
+        computed = self._computed_sha256()
+        if self.artifact_sha256:
+            if _require_sha256(
+                self.artifact_sha256,
+                label="token NLL VJP artifact",
+            ) != computed:
+                raise ValueError("token NLL VJP artifact hash mismatch")
+        else:
+            object.__setattr__(self, "artifact_sha256", computed)
+
+    @property
+    def token_count(self) -> int:
+        return int(self.token_losses.shape[0])
+
+    @property
+    def model_forward_count(self) -> int:
+        return self.execution.model_forward_count
+
+    def _computed_sha256(self) -> str:
+        payload = {
+            "execution_sha256": self.execution.artifact_sha256,
+            "targets_sha256": self.targets_sha256,
+            "ignore_index": self.ignore_index,
+            "vjp_chunk_size": self.vjp_chunk_size,
+            "backward_call_count": self.backward_call_count,
+            "tensor_sha256s": {
+                name: _runtime_tensor_sha256(value)
+                for name, value in (
+                    ("supervised_indices", self.supervised_indices),
+                    ("token_losses", self.token_losses),
+                    ("h4_gradients", self.h4_gradients),
+                )
+            },
+        }
+        return hashlib.sha256(
+            _ONE_PASS_RESULT_DOMAIN
+            + b"token-nll-vjp\0"
+            + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self.execution.validate_integrity()
+        if self._computed_sha256() != self.artifact_sha256:
+            raise RuntimeError("token NLL VJP tensor payload drifted")
+
+
+@dataclass(frozen=True, slots=True)
+class Gemma3L3L4TokenTeacherKLVJP:
+    """Authenticated exact per-token teacher-KL gradients at H4."""
+
+    execution: Gemma3L3L4OnePassExecution
+    supervised_indices: Tensor
+    token_kl_divergences: Tensor
+    h4_gradients: Tensor
+    teacher_logits_sha256: str
+    teacher_logits_shape: tuple[int, int, int]
+    h4_head_sha256: str | None
+    vjp_chunk_size: int
+    backward_call_count: int
+    artifact_sha256: str = ""
+    objective_dtype: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.execution, Gemma3L3L4OnePassExecution):
+            raise TypeError("token teacher-KL VJP execution has the wrong type")
+        self.execution.validate_integrity()
+        _require_sha256(
+            self.teacher_logits_sha256,
+            label="token teacher-KL VJP teacher logits",
+        )
+        if (
+            not isinstance(self.teacher_logits_shape, tuple)
+            or len(self.teacher_logits_shape) != 3
+            or any(
+                type(width) is not int or width <= 0
+                for width in self.teacher_logits_shape
+            )
+            or self.teacher_logits_shape
+            != tuple(int(width) for width in self.execution.logits.shape)
+        ):
+            raise ValueError(
+                "token teacher-KL VJP teacher grid differs from execution"
+            )
+        if self.h4_head_sha256 is not None:
+            _require_sha256(
+                self.h4_head_sha256,
+                label="token teacher-KL VJP H4 head",
+            )
+        if self.h4_head_sha256 != self.execution.h4_head_sha256:
+            raise ValueError(
+                "token teacher-KL VJP H4 head binding differs"
+            )
+        if type(self.vjp_chunk_size) is not int or self.vjp_chunk_size <= 0:
+            raise ValueError(
+                "token teacher-KL VJP chunk size must be a positive integer"
+            )
+        if self.objective_dtype not in (None, str(torch.float64)):
+            raise ValueError(
+                "token teacher-KL VJP objective dtype must be None or "
+                "torch.float64"
+            )
+        if (
+            not isinstance(self.supervised_indices, Tensor)
+            or self.supervised_indices.ndim != 2
+            or self.supervised_indices.shape[1] != 2
+            or self.supervised_indices.dtype != torch.int64
+            or self.supervised_indices.requires_grad
+            or not self.supervised_indices.is_contiguous()
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices must be contiguous int64 "
+                "[N, 2]"
+            )
+        token_count = int(self.supervised_indices.shape[0])
+        if (
+            token_count <= 0
+            or not isinstance(self.token_kl_divergences, Tensor)
+            or self.token_kl_divergences.shape != (token_count,)
+            or not self.token_kl_divergences.is_floating_point()
+            or self.token_kl_divergences.requires_grad
+            or not self.token_kl_divergences.is_contiguous()
+            or not bool(torch.isfinite(self.token_kl_divergences).all())
+            or not isinstance(self.h4_gradients, Tensor)
+            or self.h4_gradients.shape
+            != (token_count, *self.execution.candidate_h4.shape)
+            or not self.h4_gradients.is_floating_point()
+            or self.h4_gradients.requires_grad
+            or not self.h4_gradients.is_contiguous()
+            or not bool(torch.isfinite(self.h4_gradients).all())
+        ):
+            raise ValueError("token teacher-KL VJP tensor geometry is invalid")
+        if (
+            self.token_kl_divergences.device
+            != self.execution.logits.device
+            or self.h4_gradients.device
+            != self.execution.candidate_h4.device
+        ):
+            raise ValueError("token teacher-KL VJP tensors use the wrong device")
+        if (
+            self.objective_dtype == str(torch.float64)
+            and self.token_kl_divergences.dtype != torch.float64
+        ):
+            raise ValueError(
+                "float64 token teacher-KL VJP objective produced another dtype"
+            )
+        indices = self.supervised_indices.to(
+            device=self.execution.prefix.valid_target_mask.device
+        )
+        batch_count, sequence_length = (
+            self.execution.prefix.valid_target_mask.shape
+        )
+        if (
+            bool((indices[:, 0] < 0).any())
+            or bool((indices[:, 0] >= batch_count).any())
+            or bool((indices[:, 1] < 0).any())
+            or bool((indices[:, 1] >= sequence_length).any())
+            or not bool(
+                self.execution.prefix.valid_target_mask[
+                    indices[:, 0], indices[:, 1]
+                ].all()
+            )
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices escape the valid grid"
+            )
+        flattened = indices[:, 0] * sequence_length + indices[:, 1]
+        if token_count > 1 and not bool(
+            (flattened[1:] > flattened[:-1]).all()
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices are not canonical"
+            )
+        expected_backward_calls = (
+            token_count + self.vjp_chunk_size - 1
+        ) // self.vjp_chunk_size
+        if (
+            type(self.backward_call_count) is not int
+            or self.backward_call_count != expected_backward_calls
+        ):
+            raise ValueError("token teacher-KL VJP backward count differs")
+        computed = self._computed_sha256()
+        if self.artifact_sha256:
+            if _require_sha256(
+                self.artifact_sha256,
+                label="token teacher-KL VJP artifact",
+            ) != computed:
+                raise ValueError(
+                    "token teacher-KL VJP artifact hash mismatch"
+                )
+        else:
+            object.__setattr__(self, "artifact_sha256", computed)
+
+    @property
+    def token_count(self) -> int:
+        return int(self.token_kl_divergences.shape[0])
+
+    @property
+    def model_forward_count(self) -> int:
+        return self.execution.model_forward_count
+
+    def _computed_sha256(self) -> str:
+        payload = {
+            "execution_sha256": self.execution.artifact_sha256,
+            "teacher_logits_sha256": self.teacher_logits_sha256,
+            "teacher_logits_shape": self.teacher_logits_shape,
+            "h4_head_sha256": self.h4_head_sha256,
+            "vjp_chunk_size": self.vjp_chunk_size,
+            "backward_call_count": self.backward_call_count,
+            "tensor_sha256s": {
+                name: _runtime_tensor_sha256(value)
+                for name, value in (
+                    ("supervised_indices", self.supervised_indices),
+                    ("token_kl_divergences", self.token_kl_divergences),
+                    ("h4_gradients", self.h4_gradients),
+                )
+            },
+        }
+        if self.objective_dtype is not None:
+            payload["objective_dtype"] = self.objective_dtype
+        return hashlib.sha256(
+            _ONE_PASS_RESULT_DOMAIN
+            + b"token-teacher-kl-vjp\0"
+            + _canonical_json_bytes(payload)
+        ).hexdigest()
+
+    def validate_integrity(self) -> None:
+        self.execution.validate_integrity()
+        if self.h4_head_sha256 != self.execution.h4_head_sha256:
+            raise RuntimeError(
+                "token teacher-KL VJP H4 head binding drifted"
+            )
+        if self._computed_sha256() != self.artifact_sha256:
+            raise RuntimeError(
+                "token teacher-KL VJP tensor payload drifted"
+            )
 
 
 class Gemma3L3L4OnePassBridge:
@@ -2678,24 +5530,46 @@ class Gemma3L3L4OnePassBridge:
         expected_site: str,
         label: str,
         reference: Tensor,
-    ) -> tuple[Tensor, str | None]:
+    ) -> tuple[Tensor, str | None, Tensor, CorrectionWriteScope]:
         prefix.validate_integrity()
         if provider is None:
-            return torch.zeros_like(reference), None
+            return (
+                torch.zeros_like(reference),
+                None,
+                prefix.target_affected_mask.to(reference.device),
+                "graph_target_affected_mask",
+            )
         if not isinstance(provider, Gemma3L3L4CorrectionProvider):
             raise TypeError(
                 f"{label} must implement the authenticated correction "
                 "provider interface"
             )
         provider.validate_integrity()
-        if provider.site != expected_site:
+        provider_site = provider.site
+        if provider_site != expected_site:
             raise ValueError(f"{label} is bound to the wrong activation site")
+        write_scope = _require_correction_write_scope(provider.write_scope)
+        if write_scope == "complete_h4_causal_support":
+            if expected_site != _H4_SITE:
+                raise ValueError(
+                    "complete-H4 causal correction scope is valid only "
+                    "for the H4 head"
+                )
+            active = prefix.complete_h4_causal_support_mask()
+        else:
+            active = prefix.target_affected_mask
         head_sha256 = provider.artifact_sha256
         _require_sha256(head_sha256, label=f"{label} artifact")
         reference_sha256 = _runtime_tensor_sha256(reference)
         correction = provider.correction(prefix, reference)
         provider.validate_integrity()
         prefix.validate_integrity()
+        if (
+            provider.site != provider_site
+            or provider.artifact_sha256 != head_sha256
+            or provider.write_scope != write_scope
+        ):
+            raise RuntimeError(f"{label} provider identity drifted")
         if _runtime_tensor_sha256(reference) != reference_sha256:
             raise RuntimeError(f"{label} mutated its realized activation")
         if (
@@ -2706,19 +5580,29 @@ class Gemma3L3L4OnePassBridge:
             raise ValueError(
                 f"{label} correction must match the residual stream"
             )
-        active = prefix.target_affected_mask.to(correction.device)
-        if bool(active.any()) and not bool(
-            torch.isfinite(correction[active]).all()
+        correction_active = active.to(correction.device)
+        if bool(correction_active.any()) and not bool(
+            torch.isfinite(correction[correction_active]).all()
         ):
             raise ValueError(f"{label} correction is nonfinite")
-        inactive = ~active
+        inactive = ~correction_active
         if bool(inactive.any()) and not bool(
             (correction[inactive] == 0).all()
         ):
             raise ValueError(f"{label} correction must be zero off support")
+        normalized_correction = correction.to(
+            device=reference.device,
+            dtype=(
+                torch.float64
+                if write_scope == "complete_h4_causal_support"
+                else reference.dtype
+            ),
+        )
         return (
-            correction.to(device=reference.device, dtype=reference.dtype),
+            normalized_correction,
             head_sha256,
+            active.to(reference.device),
+            write_scope,
         )
 
     def _execute(
@@ -2729,11 +5613,20 @@ class Gemma3L3L4OnePassBridge:
         x4_head: Gemma3L3L4CorrectionProvider | None = None,
         h4_head: Gemma3L3L4CorrectionProvider | None = None,
         h4_vjp_objective: Callable[[AdapterRun], Tensor] | None = None,
+        h4_vjp_chunk_size: int | None = None,
     ) -> tuple[Gemma3L3L4OnePassExecution, Tensor | None]:
-        """Execute one bridge pass, optionally retaining only the H4 VJP."""
+        """Execute one bridge pass, optionally retaining H4 VJP rows."""
 
         self.validate_integrity()
         self._authenticate_adapter(adapter)
+        if h4_vjp_chunk_size is not None and (
+            h4_vjp_objective is None
+            or type(h4_vjp_chunk_size) is not int
+            or h4_vjp_chunk_size <= 0
+        ):
+            raise ValueError(
+                "batched H4 VJP requires a positive integer chunk size"
+            )
         model_inputs_sha256 = (
             gemma3_l3_l4_shadow_model_inputs_sha256(model_inputs)
         )
@@ -2791,15 +5684,22 @@ class Gemma3L3L4OnePassBridge:
                     device=original.device,
                     dtype=original.dtype,
                 )
-            correction, x4_head_sha256 = self._head_correction(
+            (
+                correction,
+                x4_head_sha256,
+                write_mask,
+                write_scope,
+            ) = self._head_correction(
                 x4_head,
                 prefix=prefix,
                 expected_site=_X4_SITE,
                 label="X4 head",
                 reference=original,
             )
-            if bool(active.any()):
-                candidate_x4[active] += correction[active]
+            if write_scope != "graph_target_affected_mask":
+                raise RuntimeError("X4 correction escaped graph write scope")
+            if bool(write_mask.any()):
+                candidate_x4[write_mask] += correction[write_mask]
             if h4_vjp_objective is not None:
                 candidate_x4 = candidate_x4.detach()
             return candidate_x4
@@ -2809,16 +5709,35 @@ class Gemma3L3L4OnePassBridge:
             if prefix is None or candidate_x4 is None or candidate_h4 is not None:
                 raise RuntimeError("one-pass H4 intervention order drifted")
             candidate_h4 = original.clone()
-            correction, h4_head_sha256 = self._head_correction(
+            (
+                correction,
+                h4_head_sha256,
+                write_mask,
+                write_scope,
+            ) = self._head_correction(
                 h4_head,
                 prefix=prefix,
                 expected_site=_H4_SITE,
                 label="H4 head",
                 reference=original,
             )
-            active = prefix.target_affected_mask
-            if bool(active.any()):
-                candidate_h4[active] += correction[active]
+            if bool(write_mask.any()):
+                if write_scope == "complete_h4_causal_support":
+                    # Preserve the exact residual identity: independently
+                    # rounding the delta before addition can select another
+                    # live-dtype value at a midpoint.
+                    realized_h4 = original[write_mask].to(
+                        device=correction.device,
+                        dtype=torch.float64,
+                    )
+                    candidate_h4[write_mask] = (
+                        realized_h4 + correction[write_mask]
+                    ).to(
+                        device=original.device,
+                        dtype=original.dtype,
+                    )
+                else:
+                    candidate_h4[write_mask] += correction[write_mask]
             if h4_vjp_objective is not None:
                 candidate_h4 = (
                     candidate_h4.detach().requires_grad_(True)
@@ -2849,21 +5768,82 @@ class Gemma3L3L4OnePassBridge:
                             "H4 VJP pass did not reach the H4 boundary"
                         )
                     loss = h4_vjp_objective(run)
-                    if (
-                        not isinstance(loss, Tensor)
-                        or loss.ndim != 0
-                        or not loss.is_floating_point()
-                        or not bool(torch.isfinite(loss))
-                    ):
-                        raise ValueError(
-                            "H4 VJP objective must return one finite scalar"
+                    if h4_vjp_chunk_size is None:
+                        if (
+                            not isinstance(loss, Tensor)
+                            or loss.ndim != 0
+                            or not loss.is_floating_point()
+                            or not bool(torch.isfinite(loss))
+                        ):
+                            raise ValueError(
+                                "H4 VJP objective must return one finite "
+                                "scalar"
+                            )
+                        (h4_gradient,) = torch.autograd.grad(
+                            loss,
+                            (candidate_h4,),
+                            retain_graph=False,
+                            create_graph=False,
                         )
-                    (h4_gradient,) = torch.autograd.grad(
-                        loss,
-                        (candidate_h4,),
-                        retain_graph=False,
-                        create_graph=False,
-                    )
+                    else:
+                        if (
+                            not isinstance(loss, Tensor)
+                            or loss.ndim != 1
+                            or loss.numel() <= 0
+                            or not loss.is_floating_point()
+                            or not bool(torch.isfinite(loss).all())
+                        ):
+                            raise ValueError(
+                                "batched H4 VJP objective must return a "
+                                "nonempty finite vector"
+                            )
+                        token_count = int(loss.shape[0])
+                        chunks: list[Tensor] = []
+                        for start in range(
+                            0, token_count, h4_vjp_chunk_size
+                        ):
+                            stop = min(
+                                start + h4_vjp_chunk_size,
+                                token_count,
+                            )
+                            chunk_count = stop - start
+                            cotangents = torch.zeros(
+                                (chunk_count, token_count),
+                                device=loss.device,
+                                dtype=loss.dtype,
+                            )
+                            chunk_rows = torch.arange(
+                                chunk_count,
+                                device=loss.device,
+                            )
+                            loss_rows = torch.arange(
+                                start,
+                                stop,
+                                device=loss.device,
+                            )
+                            cotangents[chunk_rows, loss_rows] = 1
+                            (chunk,) = torch.autograd.grad(
+                                loss,
+                                (candidate_h4,),
+                                grad_outputs=cotangents,
+                                retain_graph=stop < token_count,
+                                create_graph=False,
+                                is_grads_batched=True,
+                            )
+                            if (
+                                chunk.shape
+                                != (
+                                    chunk_count,
+                                    *candidate_h4.shape,
+                                )
+                                or not chunk.is_floating_point()
+                                or not bool(torch.isfinite(chunk).all())
+                            ):
+                                raise RuntimeError(
+                                    "batched H4 VJP chunk geometry differs"
+                                )
+                            chunks.append(chunk.detach().contiguous())
+                        h4_gradient = torch.cat(chunks, dim=0).contiguous()
         finally:
             self.validate_integrity()
             self._authenticate_adapter(adapter)
@@ -2976,3 +5956,328 @@ class Gemma3L3L4OnePassBridge:
         if gradient is None:
             raise RuntimeError("H4 VJP execution omitted its gradient")
         return execution, gradient
+
+    def execute_h4_token_nll_vjps(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        *,
+        targets: Tensor,
+        ignore_index: int = -100,
+        vjp_chunk_size: int = 8,
+        x4_head: Gemma3L3L4CorrectionProvider | None = None,
+        h4_head: Gemma3L3L4CorrectionProvider | None = None,
+    ) -> Gemma3L3L4TokenNLLVJP:
+        """Return exact per-supervised-token NLL gradients from one forward.
+
+        The retained autograd graph is traversed in bounded batched-VJP
+        chunks.  Token rows use canonical batch-major, position-major order.
+        """
+
+        if not isinstance(targets, Tensor) or targets.ndim != 2:
+            raise ValueError("token NLL VJP targets must have shape [B, S]")
+        input_ids = model_inputs.get("input_ids")
+        if (
+            not isinstance(input_ids, Tensor)
+            or targets.shape != input_ids.shape
+            or targets.dtype != torch.int64
+        ):
+            raise ValueError(
+                "token NLL VJP targets must be int64 on the input grid"
+            )
+        if type(ignore_index) is not int:
+            raise ValueError("token NLL VJP ignore_index must be an integer")
+        if type(vjp_chunk_size) is not int or vjp_chunk_size <= 0:
+            raise ValueError(
+                "token NLL VJP chunk size must be a positive integer"
+            )
+        target_snapshot = targets.detach().clone().contiguous()
+        targets_sha256 = _runtime_tensor_sha256(target_snapshot)
+        captured_indices: Tensor | None = None
+        captured_losses: Tensor | None = None
+
+        def token_objective(run: AdapterRun) -> Tensor:
+            nonlocal captured_indices, captured_losses
+            if (
+                run.logits.ndim != 3
+                or run.logits.shape[:2] != target_snapshot.shape
+            ):
+                raise ValueError("token NLL VJP logits grid differs")
+            selected_targets = target_snapshot.to(run.logits.device)
+            valid = run.sequence.query_valid_mask.to(run.logits.device)
+            supervised = selected_targets != ignore_index
+            if (
+                valid.shape != supervised.shape
+                or bool((supervised & ~valid).any())
+                or not bool(supervised.any())
+            ):
+                raise ValueError(
+                    "token NLL VJP targets escape the valid execution grid"
+                )
+            vocabulary = int(run.logits.shape[-1])
+            supervised_targets = selected_targets[supervised]
+            if bool(
+                (
+                    (supervised_targets < 0)
+                    | (supervised_targets >= vocabulary)
+                ).any()
+            ):
+                raise ValueError(
+                    "token NLL VJP target escapes the vocabulary"
+                )
+            logits = run.logits[supervised]
+            if logits.dtype in (torch.float16, torch.bfloat16):
+                logits = logits.float()
+            losses = F.cross_entropy(
+                logits,
+                supervised_targets,
+                reduction="none",
+            )
+            captured_indices = torch.nonzero(
+                supervised,
+                as_tuple=False,
+            ).detach().to(dtype=torch.int64).contiguous()
+            captured_losses = losses.detach().contiguous()
+            return losses
+
+        execution, gradients = self._execute(
+            adapter,
+            model_inputs,
+            x4_head=x4_head,
+            h4_head=h4_head,
+            h4_vjp_objective=token_objective,
+            h4_vjp_chunk_size=vjp_chunk_size,
+        )
+        if (
+            gradients is None
+            or captured_indices is None
+            or captured_losses is None
+        ):
+            raise RuntimeError("token NLL VJP execution omitted its outputs")
+        result = Gemma3L3L4TokenNLLVJP(
+            execution=execution,
+            supervised_indices=captured_indices,
+            token_losses=captured_losses,
+            h4_gradients=gradients,
+            targets_sha256=targets_sha256,
+            ignore_index=ignore_index,
+            vjp_chunk_size=vjp_chunk_size,
+            backward_call_count=(
+                int(captured_losses.shape[0]) + vjp_chunk_size - 1
+            )
+            // vjp_chunk_size,
+        )
+        result.validate_integrity()
+        return result
+
+    def execute_h4_token_teacher_kl_vjps(
+        self,
+        adapter: Gemma3CausalLMAdapter,
+        model_inputs: Mapping[str, Tensor],
+        *,
+        teacher_logits: Tensor,
+        supervised_indices: Tensor,
+        vjp_chunk_size: int = 8,
+        h4_head: Gemma3L3L4CorrectionProvider | None = None,
+        objective_dtype: torch.dtype | None = None,
+    ) -> Gemma3L3L4TokenTeacherKLVJP:
+        """Return exact per-token ``KL(teacher || candidate)`` H4 VJPs.
+
+        Teacher logits are copied into a detached authenticated snapshot and
+        are never retained in the result.  Supervised rows must be supplied
+        in canonical batch-major, position-major order.  One candidate
+        forward is reused across bounded batched-VJP backward chunks.  Passing
+        ``objective_dtype=torch.float64`` casts both selected logit rows before
+        every teacher-KL operation; ``None`` preserves the legacy computation.
+        """
+
+        input_ids = model_inputs.get("input_ids")
+        if not isinstance(input_ids, Tensor) or input_ids.ndim != 2:
+            raise ValueError(
+                "token teacher-KL VJP model inputs need an [B, S] input grid"
+            )
+        if (
+            not isinstance(teacher_logits, Tensor)
+            or teacher_logits.ndim != 3
+            or teacher_logits.shape[-1] <= 0
+        ):
+            raise ValueError(
+                "token teacher-KL VJP teacher logits must have shape "
+                "[B, S, V]"
+            )
+        if not teacher_logits.is_floating_point():
+            raise ValueError(
+                "token teacher-KL VJP teacher logits must be floating-point"
+            )
+        if (
+            teacher_logits.layout != torch.strided
+            or teacher_logits.device.type == "meta"
+        ):
+            raise ValueError(
+                "token teacher-KL VJP teacher logits must be materialized"
+            )
+        if teacher_logits.shape[:2] != input_ids.shape:
+            raise ValueError(
+                "token teacher-KL VJP teacher logits differ from the model "
+                "input grid"
+            )
+        if not bool(torch.isfinite(teacher_logits).all()):
+            raise ValueError(
+                "token teacher-KL VJP teacher logits must be finite"
+            )
+        if (
+            not isinstance(supervised_indices, Tensor)
+            or supervised_indices.ndim != 2
+            or supervised_indices.shape[1] != 2
+            or supervised_indices.dtype != torch.int64
+            or supervised_indices.requires_grad
+            or supervised_indices.shape[0] <= 0
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices must be nonempty int64 [N, 2]"
+            )
+        if type(vjp_chunk_size) is not int or vjp_chunk_size <= 0:
+            raise ValueError(
+                "token teacher-KL VJP chunk size must be a positive integer"
+            )
+        if objective_dtype not in (None, torch.float64):
+            raise ValueError(
+                "token teacher-KL VJP objective dtype must be None or "
+                "torch.float64"
+            )
+        objective_dtype_name = (
+            None if objective_dtype is None else str(objective_dtype)
+        )
+        teacher_snapshot = teacher_logits.detach().clone().contiguous()
+        indices_snapshot = (
+            supervised_indices.detach().clone().contiguous()
+        )
+        teacher_logits_sha256 = _runtime_tensor_sha256(teacher_snapshot)
+        batch_count, sequence_length = input_ids.shape
+        indices_on_input = indices_snapshot.to(input_ids.device)
+        if (
+            bool((indices_on_input[:, 0] < 0).any())
+            or bool((indices_on_input[:, 0] >= batch_count).any())
+            or bool((indices_on_input[:, 1] < 0).any())
+            or bool((indices_on_input[:, 1] >= sequence_length).any())
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices escape the model input grid"
+            )
+        flattened = (
+            indices_on_input[:, 0] * sequence_length
+            + indices_on_input[:, 1]
+        )
+        if indices_snapshot.shape[0] > 1 and not bool(
+            (flattened[1:] > flattened[:-1]).all()
+        ):
+            raise ValueError(
+                "token teacher-KL VJP indices are not canonical"
+            )
+        captured_indices: Tensor | None = None
+        captured_divergences: Tensor | None = None
+
+        def token_objective(run: AdapterRun) -> Tensor:
+            nonlocal captured_indices, captured_divergences
+            if (
+                run.logits.ndim != 3
+                or tuple(run.logits.shape)
+                != tuple(teacher_snapshot.shape)
+            ):
+                raise ValueError(
+                    "token teacher-KL VJP teacher and candidate grids differ"
+                )
+            selected_indices = indices_snapshot.to(run.logits.device)
+            valid = run.sequence.query_valid_mask.to(run.logits.device)
+            if (
+                valid.shape != run.logits.shape[:2]
+                or not bool(
+                    valid[
+                        selected_indices[:, 0],
+                        selected_indices[:, 1],
+                    ].all()
+                )
+            ):
+                raise ValueError(
+                    "token teacher-KL VJP indices escape the valid "
+                    "execution grid"
+                )
+            candidate = run.logits[
+                selected_indices[:, 0], selected_indices[:, 1]
+            ]
+            if objective_dtype is None:
+                if candidate.dtype in (torch.float16, torch.bfloat16):
+                    candidate = candidate.float()
+                teacher = teacher_snapshot.to(
+                    device=run.logits.device,
+                    dtype=candidate.dtype,
+                )[
+                    selected_indices[:, 0], selected_indices[:, 1]
+                ]
+            else:
+                candidate = candidate.to(dtype=torch.float64)
+                teacher = teacher_snapshot.to(device=run.logits.device)[
+                    selected_indices[:, 0], selected_indices[:, 1]
+                ].to(dtype=torch.float64)
+            teacher_log_probabilities = F.log_softmax(teacher, dim=-1)
+            candidate_log_probabilities = F.log_softmax(candidate, dim=-1)
+            divergences = (
+                teacher_log_probabilities.exp()
+                * (
+                    teacher_log_probabilities
+                    - candidate_log_probabilities
+                )
+            ).sum(dim=-1)
+            if not bool(torch.isfinite(divergences).all()):
+                raise ValueError(
+                    "token teacher-KL VJP divergence is nonfinite"
+                )
+            captured_indices = selected_indices.detach().to(
+                dtype=torch.int64
+            ).contiguous()
+            captured_divergences = divergences.detach().contiguous()
+            return divergences
+
+        execution, gradients = self._execute(
+            adapter,
+            model_inputs,
+            h4_head=h4_head,
+            h4_vjp_objective=token_objective,
+            h4_vjp_chunk_size=vjp_chunk_size,
+        )
+        if (
+            gradients is None
+            or captured_indices is None
+            or captured_divergences is None
+        ):
+            raise RuntimeError(
+                "token teacher-KL VJP execution omitted its outputs"
+            )
+        if (
+            _runtime_tensor_sha256(teacher_snapshot)
+            != teacher_logits_sha256
+        ):
+            raise RuntimeError(
+                "token teacher-KL VJP teacher snapshot drifted"
+            )
+        result = Gemma3L3L4TokenTeacherKLVJP(
+            execution=execution,
+            supervised_indices=captured_indices,
+            token_kl_divergences=captured_divergences,
+            h4_gradients=gradients,
+            teacher_logits_sha256=teacher_logits_sha256,
+            teacher_logits_shape=tuple(
+                int(width) for width in teacher_snapshot.shape
+            ),
+            h4_head_sha256=execution.h4_head_sha256,
+            vjp_chunk_size=vjp_chunk_size,
+            backward_call_count=(
+                int(captured_divergences.shape[0])
+                + vjp_chunk_size
+                - 1
+            )
+            // vjp_chunk_size,
+            objective_dtype=objective_dtype_name,
+        )
+        result.validate_integrity()
+        return result

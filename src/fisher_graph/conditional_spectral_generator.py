@@ -47,6 +47,17 @@ InputTransform = Literal[
     "standardized_square",
     "standardized_diagonal_square",
 ]
+SourceBasisKind = Literal[
+    "signed_phase_graph_low_frequency",
+    "phase_blind_magnitude_graph_low_frequency",
+    "fixed_orthonormal_control",
+    "fit_only_graph_wavelet_gomp",
+    "fit_only_graph_wavelet_local_supermodes",
+    "fit_only_graph_wavelet_response_only_supermodes",
+    "fit_only_graph_wavelet_permuted_topology_supermode_control",
+    "fit_only_graph_wavelet_local_block_svd",
+    "fit_only_graph_wavelet_cluster_spectral",
+]
 
 __all__ = [
     "ConditionalSpectralExecutionAccounting",
@@ -55,6 +66,7 @@ __all__ = [
     "ConditionalSpectralGeneratorPlan",
     "InputTransform",
     "PreparedConditionalSpectralGenerator",
+    "SourceBasisKind",
     "evaluate_conditional_spectral_generator",
     "fit_conditional_spectral_generator",
     "fit_conditional_spectral_generator_with_source_basis",
@@ -104,12 +116,37 @@ _GRAPH_WAVELET_RANK_SEMANTICS = (
     "fit_only_graph_wavelet_gomp_localized_orthonormal_source_"
     "subspace"
 )
+_GRAPH_WAVELET_SUPERMODE_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_endpoint_disjoint_local_supermode_"
+    "orthonormal_source_subspace"
+)
+_GRAPH_WAVELET_RESPONSE_ONLY_SUPERMODE_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_endpoint_disjoint_response_only_supermode_"
+    "orthonormal_source_subspace"
+)
+_GRAPH_WAVELET_PERMUTED_TOPOLOGY_SUPERMODE_CONTROL_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_endpoint_disjoint_permuted_topology_"
+    "supermode_control_orthonormal_source_subspace"
+)
+_GRAPH_WAVELET_LOCAL_BLOCK_SVD_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_topology_partitioned_block_svd_"
+    "orthonormal_source_subspace"
+)
+_GRAPH_WAVELET_CLUSTER_SPECTRAL_RANK_SEMANTICS = (
+    "fit_only_graph_wavelet_topology_partitioned_local_graph_spectral_"
+    "orthonormal_source_subspace"
+)
 _GRAPH_RANK_SEMANTICS = frozenset(
     {
         _SIGNED_GRAPH_RANK_SEMANTICS,
         _MAGNITUDE_GRAPH_RANK_SEMANTICS,
         _CONTROL_BASIS_RANK_SEMANTICS,
         _GRAPH_WAVELET_RANK_SEMANTICS,
+        _GRAPH_WAVELET_SUPERMODE_RANK_SEMANTICS,
+        _GRAPH_WAVELET_RESPONSE_ONLY_SUPERMODE_RANK_SEMANTICS,
+        _GRAPH_WAVELET_PERMUTED_TOPOLOGY_SUPERMODE_CONTROL_RANK_SEMANTICS,
+        _GRAPH_WAVELET_LOCAL_BLOCK_SVD_RANK_SEMANTICS,
+        _GRAPH_WAVELET_CLUSTER_SPECTRAL_RANK_SEMANTICS,
     }
 )
 _RUNTIME_DTYPES = frozenset(
@@ -2037,12 +2074,7 @@ def fit_conditional_spectral_generator_with_source_basis(
     source_basis: Tensor,
     target_rank: int,
     *,
-    source_basis_kind: Literal[
-        "signed_phase_graph_low_frequency",
-        "phase_blind_magnitude_graph_low_frequency",
-        "fixed_orthonormal_control",
-        "fit_only_graph_wavelet_gomp",
-    ],
+    source_basis_kind: SourceBasisKind,
     source_basis_fit_weighted_kernels_sha256: str,
     response_binding_sha256: str,
     input_transform: InputTransform = "standardized_linear",
@@ -2076,6 +2108,26 @@ def fit_conditional_spectral_generator_with_source_basis(
         rank_semantics = _CONTROL_BASIS_RANK_SEMANTICS
     elif source_basis_kind == "fit_only_graph_wavelet_gomp":
         rank_semantics = _GRAPH_WAVELET_RANK_SEMANTICS
+    elif source_basis_kind == "fit_only_graph_wavelet_local_supermodes":
+        rank_semantics = _GRAPH_WAVELET_SUPERMODE_RANK_SEMANTICS
+    elif (
+        source_basis_kind
+        == "fit_only_graph_wavelet_response_only_supermodes"
+    ):
+        rank_semantics = (
+            _GRAPH_WAVELET_RESPONSE_ONLY_SUPERMODE_RANK_SEMANTICS
+        )
+    elif (
+        source_basis_kind
+        == "fit_only_graph_wavelet_permuted_topology_supermode_control"
+    ):
+        rank_semantics = (
+            _GRAPH_WAVELET_PERMUTED_TOPOLOGY_SUPERMODE_CONTROL_RANK_SEMANTICS
+        )
+    elif source_basis_kind == "fit_only_graph_wavelet_local_block_svd":
+        rank_semantics = _GRAPH_WAVELET_LOCAL_BLOCK_SVD_RANK_SEMANTICS
+    elif source_basis_kind == "fit_only_graph_wavelet_cluster_spectral":
+        rank_semantics = _GRAPH_WAVELET_CLUSTER_SPECTRAL_RANK_SEMANTICS
     else:
         raise ValueError("source_basis_kind is invalid")
     kernels = _canonical_float_tensor(

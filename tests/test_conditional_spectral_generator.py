@@ -10,6 +10,7 @@ from fisher_graph.conditional_spectral_generator import (
     ConditionalSpectralGeneratorPlan,
     evaluate_conditional_spectral_generator,
     fit_conditional_spectral_generator,
+    fit_conditional_spectral_generator_with_source_basis,
 )
 
 
@@ -384,6 +385,68 @@ def test_strict_roundtrip_unknown_field_and_tensor_tampering() -> None:
         live.core_at_origin(3)
     with pytest.raises(ValueError, match="artifact hash mismatch"):
         live.state_dict()
+
+
+def test_graph_wavelet_derived_abi_kinds_have_honest_bound_semantics() -> None:
+    responses, scales, origins = _synthetic_responses()
+    reference = _fit()
+    cases = {
+        "fit_only_graph_wavelet_local_supermodes": (
+            "fit_only_graph_wavelet_endpoint_disjoint_local_supermode_"
+            "orthonormal_source_subspace"
+        ),
+        "fit_only_graph_wavelet_response_only_supermodes": (
+            "fit_only_graph_wavelet_endpoint_disjoint_response_only_"
+            "supermode_orthonormal_source_subspace"
+        ),
+        "fit_only_graph_wavelet_permuted_topology_supermode_control": (
+            "fit_only_graph_wavelet_endpoint_disjoint_permuted_topology_"
+            "supermode_control_orthonormal_source_subspace"
+        ),
+        "fit_only_graph_wavelet_local_block_svd": (
+            "fit_only_graph_wavelet_topology_partitioned_block_svd_"
+            "orthonormal_source_subspace"
+        ),
+        "fit_only_graph_wavelet_cluster_spectral": (
+            "fit_only_graph_wavelet_topology_partitioned_local_graph_"
+            "spectral_orthonormal_source_subspace"
+        ),
+    }
+    plans = {}
+    for source_basis_kind, expected_rank_semantics in cases.items():
+        plan = fit_conditional_spectral_generator_with_source_basis(
+            responses,
+            scales,
+            origins,
+            (1, 5),
+            reference.source_basis,
+            3,
+            source_basis_kind=source_basis_kind,  # type: ignore[arg-type]
+            source_basis_fit_weighted_kernels_sha256=(
+                reference.fit_weighted_kernels_sha256
+            ),
+            response_binding_sha256=_BINDING,
+        )
+        assert plan.rank_semantics == expected_rank_semantics
+        restored = ConditionalSpectralGeneratorPlan.from_state_dict(
+            plan.state_dict()
+        )
+        assert restored.rank_semantics == expected_rank_semantics
+        assert restored.artifact_sha256 == plan.artifact_sha256
+        plans[source_basis_kind] = plan
+
+    assert len({plan.artifact_sha256 for plan in plans.values()}) == len(cases)
+
+    tampered = copy.deepcopy(
+        plans[
+            "fit_only_graph_wavelet_response_only_supermodes"
+        ].state_dict()
+    )
+    tampered["rank_semantics"] = cases[
+        "fit_only_graph_wavelet_local_supermodes"
+    ]
+    with pytest.raises(ValueError, match="artifact hash mismatch"):
+        ConditionalSpectralGeneratorPlan.from_state_dict(tampered)
 
 
 def test_rank_energy_and_storage_accounting_are_exact() -> None:

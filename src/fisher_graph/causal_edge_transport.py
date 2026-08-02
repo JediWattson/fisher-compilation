@@ -34,6 +34,7 @@ __all__ = [
     "collect_causal_edge_jvp_batch",
     "evaluate_pooled_causal_edge_jvp",
     "fit_pooled_causal_edge_jvp",
+    "gauss_legendre_unit_interval",
     "integrate_path_jvp",
 ]
 
@@ -1590,9 +1591,18 @@ def evaluate_pooled_causal_edge_jvp(
     )
 
 
-def _gauss_legendre_unit_interval(
+def gauss_legendre_unit_interval(
     order: int,
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Return the exact checked Gauss--Legendre rule on ``[0, 1]``.
+
+    The constants are intentionally literal rather than generated at runtime.
+    Besides avoiding a NumPy dependency, this makes path-evidence receipts
+    stable across platforms.  Orders one through four retain the historical
+    transport behavior; the private spelling below remains as a compatibility
+    shim for research code that imported it before it became public.
+    """
+
     order = _require_positive_int(order, label="quadrature_order")
     rules = {
         1: ((0.5,), (1.0,)),
@@ -1634,6 +1644,14 @@ def _gauss_legendre_unit_interval(
         return rules[order]
     except KeyError as error:
         raise ValueError("quadrature_order must be between 1 and 4") from error
+
+
+def _gauss_legendre_unit_interval(
+    order: int,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Compatibility wrapper for the former private quadrature helper."""
+
+    return gauss_legendre_unit_interval(order)
 
 
 def integrate_path_jvp(
