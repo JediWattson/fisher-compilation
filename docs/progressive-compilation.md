@@ -3890,3 +3890,93 @@ authorizes only V20b: choose path and scale through inner family splits, freeze
 the choice, and score the untouched outer family once. Fresh-guard,
 Calibration-B, serving, compression, speed, and end-to-end parameter/FLOP
 claims remain closed.
+
+### V20b true nested finite Fisher microstep validation
+
+V20b executed the authorized `8 x 7` nested design without exposing an outer
+family to its selector. Each unordered pair of excluded families shared one
+fresh six-family checkpoint-zero/first-Adam endpoint fit, giving 28 physical
+fits for 56 directed inner roles. Every directed role scored the complete
+three-path by seven-alpha positive grid. For each outer family, one policy was
+then selected by the family-equal macro objective across its seven inner
+families, and the exact signed negative of that policy was scored in all seven
+roles.
+
+All eight selectors chose the same macro-optimal policy: joint direction and
+pedal at `alpha = 1.0`. The complete result is:
+
+| outer family excluded from selection | baseline macro | selected positive | negative mirror | improvement | positive wins | mirror wins | worst family improvement |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| alpine-fir-ring-density | `1.228563` | `1.226332` | `1.233287` | `0.1816%` | `5/7` | `5/7` | `-0.3065%` |
+| cave-pearl-layering | `1.253128` | `1.249331` | `1.260490` | `0.3030%` | `4/7` | `4/7` | `-0.9962%` |
+| kiln-brick-thermal-face | `1.167452` | `1.164547` | `1.172765` | `0.2488%` | `4/7` | `4/7` | `-0.7980%` |
+| obsidian-hydration-rim | `1.074490` | `1.072787` | `1.078250` | `0.1585%` | `5/7` | `5/7` | `-0.5011%` |
+| reed-boat-fiber-strain | `1.214340` | `1.213248` | `1.217492` | `0.0899%` | `3/7` | `5/7` | `-0.4850%` |
+| shell-midden-stratigraphy | `1.130485` | `1.124438` | `1.138943` | `0.5349%` | `5/7` | `5/7` | `-0.3526%` |
+| sundial-gnomon-survey | `1.169309` | `1.164320` | `1.179116` | `0.4267%` | `4/7` | `5/7` | `-0.6158%` |
+| varve-lamination | `1.359045` | `1.355068` | `1.364899` | `0.2926%` | `4/7` | `4/7` | `-0.4198%` |
+
+This is a signed signal, but it is neither material nor family-consistent.
+The positive macro improved in `8/8` selectors and beat its negative mirror
+in `8/8`; mean positive improvement was `0.2795%`, the negative mirror was
+`0.5068%` worse than baseline on average, and mean signed separation was
+`0.7863%`. Finite, pointwise-trust, rank, execution-change, and the `2%`
+worst-family bound passed everywhere. But no selector reached the frozen `1%`
+materiality gate, positive wins totaled only `34/56`, mirror wins totaled only
+`37/56`, and no selector reached either required `6/7` count.
+
+The failure is not an artifact of selecting macro gain ahead of family wins.
+No candidate in the complete 21-arm positive grid satisfied both `1%`
+materiality and `6/7` wins. Pedal-only `alpha = 1.0` was the consistency
+frontier, winning `49/56` roles with worst regression only `0.0970%`, but its
+mean role improvement was just `0.0574%`. Joint `alpha = 1.0` supplied more
+gain and less consistency. Family aggregation is also structured rather than
+random-looking: alpine-fir and obsidian improve in `6/7` incoming roles,
+whereas varve improves in only `1/7` and cave-pearl in `3/7`.
+
+The preregistered selection gate therefore failed before outer scoring. The
+authenticated lock records `outer_schedule_authorized = false`, contains zero
+outer refits, and issued zero outer capabilities. No outer score, held-family
+fidelity result, candidate, or provider exists. The exact completed work is:
+
+- `2,944` full-model forwards;
+- `352` full-suffix backward traversals;
+- `336` local-head autograd contractions;
+- `688` total gradient calls;
+- 28 physical shared fits, saving 28 reciprocal duplicate fits;
+- `1,176` positive candidate scores, 56 baselines, and 56 signed mirrors; and
+- `2,912` authenticated teacher accesses, each bound to H4 and full-vocabulary
+  logits hashes.
+
+The phase receipt reconstructs those accesses as `336` pair-training,
+`2,464` inner-positive, and `112` inner-mirror accesses, with zero outer-refit
+and outer-score accesses. Resume and reconstruction overhead are exactly zero.
+All 39 V20b artifacts are regular, single-link, owner-only `0600`,
+scalar/hash-only files. The authoritative report is:
+
+```text
+.local-runs/google--gemma-3-270m/modal-generator-l3-l4-complete-h4-finite-microstep-nested-validation-r16-k256-a-fit16-dev-v20b.json
+```
+
+Its logical report hash is
+`bb45e535074608c5feb877fbceb3342809d872f41ff1776851be656de1b0403b`;
+its file hash is
+`42060cc4f4dffbb11ea1203518138a27b46bcd4f483623d4d7874da083a97214`.
+The fail-closed selection-lock logical/file hashes are
+`3b2e6c51337cb3ccdc6dd5c35c038ab83da8c8946dc711777b7333987b740cb5`
+and
+`49de97cd56ba5024f53b32525e3d7ad45d3e1315365f422b4aa5b4dac731d8e7`.
+The classification is `nested_inner_selection_failed`.
+
+The result does not justify lowering the gates or reading the sealed outer
+rows. All 24 path-by-outer curves reached their best observed value at the
+largest tested alpha, so the smallest next diagnostic is a separately
+preregistered wider positive-and-matched-negative ladder under the same
+nested capability barriers. It should retain both the higher-gain joint path
+and the more-consistent pedal-only path. If scale raises the pedal path above
+materiality while preserving family wins, amplitude was the missing piece. If
+joint gain rises while consistency deteriorates, the next model must use a
+prompt-blind activation/generator-conditioned trust gate rather than family
+labels. If neither closes the gate, this local microstep line should stop.
+Fresh-guard, Calibration-B, serving, compression, speed, and end-to-end
+parameter/FLOP claims remain closed.

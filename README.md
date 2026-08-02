@@ -33,13 +33,15 @@ not a production compression library.
 
 ## Current finding
 
-V14–V19 now separate five questions at the source-free complete-H4 boundary:
+V14–V20b now separate six questions at the source-free complete-H4 boundary:
 whether the linear carrier benefits from more rank, whether a bounded
 two-coordinate conditional map is genuinely two-dimensional, whether
 Fisher-derived coordinates outperform an exactly parameter-matched
 activation-PCA control, and whether a pointwise-bounded per-token confidence
 pedal can rescue that map, and whether jointly fitting its direction and pedal
-against the exact finite downstream objective repairs the analytic fit. All
+against the exact finite downstream objective repairs the analytic fit, and
+whether a finite Fisher microstep selected without one outer family transfers
+consistently across the seven inner families. All
 arms use the same opened
 16-prompt/eight-family panel, outer leave-one-family-out fitting, real Gemma
 suffix, and 262,144-way language-model head. Native H4 and reverse-VJP
@@ -164,6 +166,24 @@ scoring an untouched outer family once. Held fidelity, a fresh guard,
 Calibration B, provider materialization, serving, compression, speed, and
 end-to-end parameter/FLOP claims remain closed.
 
+V20b completed that true `8 x 7` nested screen and failed before outer-family
+scoring. All eight inner selectors chose the macro-optimal joint update at
+`alpha = 1.0`. The positive macro improved in all eight selectors and every
+exact negative mirror worsened, so the Fisher direction is signed correctly.
+The gain was only `0.0899–0.5349%` (`0.2795%` mean), however, and the selected
+positive won only `3–5/7` inner families; mirror wins were only `4–5/7`.
+No selector cleared the frozen `1%`, `6/7`, and `6/7` gates. Pedal-only at
+`alpha = 1.0` was more consistent (`49/56` role wins) but averaged just
+`0.0574%` improvement. No candidate in the complete `3 x 7` grid passed the
+positive gate.
+
+The V20b classification is `nested_inner_selection_failed`. The authenticated
+selection lock therefore contains no outer refit, no outer capability was
+created, and there is no held-family, fresh-guard, serving, compression,
+speed, parameter, or FLOP claim. The result isolates a small but
+family-inconsistent finite signal rather than a numerical, trust, rank, or
+execution failure.
+
 V15 used exactly 80 full-model forwards, 16 VJP traversals, eight fold fits,
 and 16 off-support checks. V16 used 112 forwards, 16 VJP traversals, 24 fold
 fits, 16 held-family coordinate replays, and 48 off-support checks. V18 used
@@ -176,10 +196,15 @@ candidate executions, and nine matched negative executions. All integrity,
 leakage, V18 replay, and
 source-free runtime checks passed. None selected or serialized a provider;
 the fresh guard and Calibration B remain closed.
+V20b stopped at its inner gate after 2,944 full-model forwards, 352
+full-suffix backward traversals, 336 local-head contractions, 688 gradient
+calls, 1,176 positive candidate scores, 56 baselines, and 56 signed mirrors.
+Its 28 shared pair fits saved 28 duplicate reciprocal fits and authenticated
+exactly 2,912 teacher accesses; outer refit and outer score counts are zero.
 These are full-vocabulary/full-suffix shadows
 from one H4 boundary, not layer deletion, whole-model compilation,
 compression, speed, or serving evidence. See the
-[V14–V20a record](docs/progressive-compilation.md#v14-autonomous-complete-h4-full-suffix-screen)
+[V14–V20b record](docs/progressive-compilation.md#v14-autonomous-complete-h4-full-suffix-screen)
 for hashes, controls, and claim boundaries.
 
 ### Earlier iterative-generator finding
@@ -1290,6 +1315,7 @@ This work is described in
 | Gemma bounded Fisher-pedal conditional residual V18 | Every matched child uses `377,608` scalars / `541,187` logical matrix MACs per token, only four scalars and three MACs above V16. The screen used 144 forwards, 16 VJPs, 40 outer fits, 32 held diagnostics, and 80 causal checks | Parent/unit-or-constant/Fisher-conditional/PCA-conditional ordinary ΔNLL is `1.16923 / 1.25292 / 1.24127 / 1.19812`. Fisher conditional varies on all fit and held folds and improves its constant in `8/8` families, but the macro gain is only `0.943%`; it remains `6.10%` worse than the parent and loses to PCA on absolute ΔNLL | The rowwise `0.25` amplitude certificate works without global suppression, but analytic pedal targets mostly exceed one and the learned pedal stays near full-on. Classification is `fisher_pedal_pointwise_trust_insufficient`; no provider, serving, compression, or speed claim. V17 is retained only as an invalid floating-aggregation receipt; V18 is authoritative |
 | Gemma finite teacher-KL joint direction/pedal V19 | Every matched child remains `377,608` scalars / `541,187` provider matrix MACs per token. The exact screen used 1,280 forwards, 912 suffix backwards, 896 local contractions, 40 conceptual outer fits, and 96 causal checks | All 16 Fisher/PCA fits selected checkpoint 0. Fisher's mean exact-KL curve was `.00244384 → .00781108 → .00344203 → .00451110 → .00376498`; its selected half-strength initializer improves V18 start macro absolute ΔNLL by `3.306%` but remains `2.596%` worse than the parent and identical to the intercept. PCA checkpoint 0 is `0.573%` better than parent on macro absolute ΔNLL but `0.533%` worse on KL | `finite_joint_pedal_outer_fidelity_insufficient`: finite rollback worked, but no update descended, no direction/beta change was selected, and every pedal stayed exactly `0.5`. No full refit, sidecar, serving, compression, or speed claim. A nested finite microstep ladder is the next justified optimizer diagnostic |
 | Gemma finite Fisher microstep V20a | Fit-only preflight: 2,622 full-model forwards, 128 full-suffix backwards, 112 local-head contractions, 168 positive candidates, and nine signed mirrors. Candidate and provider sidecar remain null | All `8/8` capability-excluded folds passed and selected `alpha = 0.1`; direction-only won `5/8`, joint won `3/8`, and pedal-only won `0/8`. Family-equal fit KL improved `0.00244384 → 0.00234591` (`4.0071%`), with every fold improving `3.2031–4.4064%` and every negative mirror worsening | `finite_microstep_preflight_passed_for_nested_validation`: V19's direction is useful but its full update overshot. This authorizes nested family-disjoint V20b only; no held-fidelity, fresh-guard, Calibration-B, serving, compression, speed, parameter, or FLOP claim |
+| Gemma nested finite Fisher microstep V20b | Fail-closed nested screen: 2,944 full-model forwards, 352 suffix backwards, 336 local contractions, 28 shared six-family fits, 1,176 positive candidate scores, 56 baselines, and 56 signed mirrors. No outer refit or score ran | All eight macro selectors chose joint `alpha = 1.0`; positive macro improvement was `0.0899–0.5349%` (`0.2795%` mean), positive wins were `3–5/7`, and mirror wins were `4–5/7`. Positives beat negative mirrors in macro on `8/8`, but no one of the 21 candidates cleared both `1%` materiality and `6/7` family wins | `nested_inner_selection_failed`: the finite direction is signed-correct but too small and family-inconsistent. The lock froze no outer provider and issued no outer capability; no held-fidelity, fresh-guard, serving, compression, speed, parameter, or FLOP claim |
 | Gemma fit-only signed-GFA rate curve | Rank 45 stores `283,456` coefficients versus `393,216` dense fit knots (`27.91%` fewer); cached-core linear MACs are `20.67%` lower, but the current uncached interpolation path performs `2.20×` the dense kernel-application multiplies | Frozen-origin selection error `0.1900`, worst cosine `0.9810`; the same-budget SVD error is `0.0506` and every signed-GFA cutoff loses to SVD | The signed graph beats magnitude, native-prefix, permuted, and eight random controls, but does not pass the controlled compression gate; organization/fidelity evidence only |
 | Gemma graph-organized global SVD | Rank-45 deployment-form edge state is `279,744` versus `393,216` dense coefficients (`28.86%` fewer); all-on cached-core MACs are `72.51%` of dense, and 95%-bound routing lowers this to `70.61%` | On nonzero C2 selection directions, all-on measured-response error is `0.03179`; signed 95%-bound routing is `0.03206` at mean active rank `43.78` | Executable hybrid and conditional rate curve; opened synthetic development data, router cost excluded, no NLL, latency, whole-block, or whole-model claim |
 | Gemma graph-organized one-shot shadow | No deployment saving claimed; the candidate runtime needs three source-model passes and the full qualification observation needs two additional oracle passes | On one Calibration-A development prompt, all-on modal error is `4.8208` with cosine `0.5404` and `ΔNLL/token +3.0853`; the true rank-64 projection oracle still has `0.9741` full-width error, and exact X4 injection still has `ΔNLL/token +2.0121` | Strong fail-closed shadow harness; current edge rejected for target-subspace capacity and residual-carrier incompleteness, with deployment and routing unauthorized |
@@ -1482,6 +1508,8 @@ fisher-graph-gemma-l3-l4-complete-h4-autonomous-k640-v15-a-dev
 fisher-graph-gemma-l3-l4-complete-h4-fisher-square-v16-a-dev
 fisher-graph-gemma-l3-l4-complete-h4-fisher-pedal-v18-a-dev
 fisher-graph-gemma-l3-l4-complete-h4-finite-joint-pedal-v19-a-dev
+fisher-graph-gemma-l3-l4-complete-h4-finite-microstep-v20a-preflight
+fisher-graph-gemma-l3-l4-complete-h4-finite-microstep-v20b-nested
 
 fisher-graph-gemma-l3-l4-graph-organized-svd-dev
 
