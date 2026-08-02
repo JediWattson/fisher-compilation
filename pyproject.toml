@@ -102,6 +102,7 @@ fisher-graph-gemma-l3-l4-complete-h4-fisher-square-v16-a-dev = "fisher_graph.gem
 fisher-graph-gemma-l3-l4-complete-h4-fisher-pedal-v18-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_fisher_pedal_development:main"
 fisher-graph-gemma-l3-l4-complete-h4-finite-joint-pedal-v19-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_finite_joint_pedal_development:main"
 fisher-graph-gemma-l3-l4-complete-h4-finite-microstep-v20a-preflight = "fisher_graph.gemma3_l3_l4_complete_h4_finite_microstep_preflight:main"
+fisher-graph-gemma-l3-l4-complete-h4-finite-microstep-v20b-nested = "fisher_graph.gemma3_l3_l4_complete_h4_finite_microstep_nested_validation:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-signed-joint-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_teacher_kl_signed_joint_diagnostic:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-path-gl4-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_path_teacher_kl_signed_joint_diagnostic:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-path-gl4-gain-interpolation-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_path_teacher_kl_gain_interpolation_diagnostic:main"
