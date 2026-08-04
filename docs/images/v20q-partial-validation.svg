@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+<title id="title">V20q partial nested token-VJP validation</title>
+<desc id="desc">3 of 8 outer folds are complete. 1 selected a continuous inner-better fit, 1 changed exact output, and 1 strictly improved outer KL.</desc>
+<!-- Generated from artifacts/research/v20q_partial_validation_v1.json sha256=f9698c5d01bc0c7e30c3a6a7e2a85edc6f41d3128e02579653c760698873a684 -->
+<style>
+.bg{fill:#f8fafc}.panel{fill:#fff;stroke:#dbe3ec;stroke-width:1.5}.title{font:700 28px ui-sans-serif,system-ui,sans-serif;fill:#0f172a}.subtitle{font:400 15px ui-sans-serif,system-ui,sans-serif;fill:#475569}.section{font:700 17px ui-sans-serif,system-ui,sans-serif;fill:#0f172a}.label{font:600 14px ui-sans-serif,system-ui,sans-serif;fill:#1e293b}.small{font:400 12px ui-sans-serif,system-ui,sans-serif;fill:#64748b}.value{font:600 13px ui-monospace,SFMono-Regular,monospace;fill:#1e293b}.axis{stroke:#94a3b8;stroke-width:1}.grid{stroke:#e2e8f0;stroke-width:1}.inner{fill:#60a5fa}.outer{fill:#22c55e}.tie{fill:#94a3b8}.future{fill:#fef3c7;stroke:#f59e0b;stroke-width:1}.miss{fill:#e2e8f0}.hit{fill:#22c55e}.footer{font:500 14px ui-sans-serif,system-ui,sans-serif;fill:#334155}.warning{font:600 14px ui-sans-serif,system-ui,sans-serif;fill:#9a3412}.source{font:400 10px ui-monospace,SFMono-Regular,monospace;fill:#64748b}
+</style>
+<rect class="bg" width="1200" height="760"/>
+<text class="title" x="48" y="54">V20q token-VJP validation: partial 3/8</text>
+<text class="subtitle" x="48" y="82">Compiler-only refit into the unchanged V20p runtime · exact full-vocabulary teacher KL</text>
+<text class="subtitle" x="1152" y="54" text-anchor="end">as of 2026-08-04</text>
+<rect class="panel" x="32" y="108" width="670" height="400" rx="14"/>
+<text class="section" x="56" y="142">Candidate − incumbent KL by completed outer fold</text>
+<text class="small" x="56" y="166">µKL (×10⁻⁶); negative is better</text>
+<rect class="inner" x="405" y="153" width="14" height="8" rx="2"/>
+<text class="small" x="425" y="161">inner OOF</text>
+<rect class="outer" x="500" y="153" width="14" height="8" rx="2"/>
+<text class="small" x="520" y="161">outer held</text>
+<line class="grid" x1="300.0" y1="184" x2="300.0" y2="455"/>
+<text class="small" x="300.0" y="478" text-anchor="middle">-10</text>
+<line class="grid" x1="377.5" y1="184" x2="377.5" y2="455"/>
+<text class="small" x="377.5" y="478" text-anchor="middle">-5</text>
+<line class="grid" x1="455.0" y1="184" x2="455.0" y2="455"/>
+<text class="small" x="455.0" y="478" text-anchor="middle">0</text>
+<line class="grid" x1="532.5" y1="184" x2="532.5" y2="455"/>
+<text class="small" x="532.5" y="478" text-anchor="middle">5</text>
+<line class="grid" x1="610.0" y1="184" x2="610.0" y2="455"/>
+<text class="small" x="610.0" y="478" text-anchor="middle">10</text>
+<line class="axis" x1="455.0" y1="180" x2="455.0" y2="458"/>
+<text class="label" x="56" y="219.0">Alpine</text>
+<text class="small" x="118" y="219.0">rollback</text>
+<circle class="tie" cx="455.0" cy="208.0" r="4"/>
+<circle class="tie" cx="455.0" cy="223.0" r="4"/>
+<text class="value" x="688" y="213.0" text-anchor="end">0.000</text>
+<text class="value" x="688" y="228.0" text-anchor="end">0.000</text>
+<text class="label" x="56" y="309.0">Cave</text>
+<text class="small" x="118" y="309.0">c2 fit · 7/7</text>
+<rect class="inner" x="329.0" y="293.0" width="126.0" height="10" rx="3"/>
+<rect class="outer" x="321.5" y="308.0" width="133.5" height="10" rx="3"/>
+<text class="value" x="688" y="303.0" text-anchor="end">−8.129</text>
+<text class="value" x="688" y="318.0" text-anchor="end">−8.611</text>
+<text class="label" x="56" y="399.0">Kiln</text>
+<text class="small" x="118" y="399.0">rollback</text>
+<circle class="tie" cx="455.0" cy="388.0" r="4"/>
+<circle class="tie" cx="455.0" cy="403.0" r="4"/>
+<text class="value" x="688" y="393.0" text-anchor="end">0.000</text>
+<text class="value" x="688" y="408.0" text-anchor="end">0.000</text>
+<rect class="panel" x="722" y="108" width="446" height="400" rx="14"/>
+<text class="section" x="746" y="142">Gate ledger after 3/8 folds</text>
+<text class="small" x="746" y="166">Each square is one outer family; yellow folds are unrun</text>
+<text class="label" x="746" y="206.0">Continuous + inner-better</text>
+<rect class="miss" x="746.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="762.0" y="241.0" text-anchor="middle">1</text>
+<rect class="hit" x="789.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="805.0" y="241.0" text-anchor="middle">2</text>
+<rect class="miss" x="832.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="848.0" y="241.0" text-anchor="middle">3</text>
+<rect class="future" x="875.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="891.0" y="241.0" text-anchor="middle">4</text>
+<rect class="future" x="918.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="934.0" y="241.0" text-anchor="middle">5</text>
+<rect class="future" x="961.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="977.0" y="241.0" text-anchor="middle">6</text>
+<rect class="future" x="1004.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="1020.0" y="241.0" text-anchor="middle">7</text>
+<rect class="future" x="1047.0" y="224.0" width="32" height="24" rx="4"/>
+<text class="small" x="1063.0" y="241.0" text-anchor="middle">8</text>
+<text class="value" x="746" y="272.0">1/6 observed · 5/5 remaining required</text>
+<text class="label" x="746" y="296.0">Exact output difference</text>
+<rect class="miss" x="746.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="762.0" y="331.0" text-anchor="middle">1</text>
+<rect class="hit" x="789.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="805.0" y="331.0" text-anchor="middle">2</text>
+<rect class="miss" x="832.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="848.0" y="331.0" text-anchor="middle">3</text>
+<rect class="future" x="875.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="891.0" y="331.0" text-anchor="middle">4</text>
+<rect class="future" x="918.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="934.0" y="331.0" text-anchor="middle">5</text>
+<rect class="future" x="961.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="977.0" y="331.0" text-anchor="middle">6</text>
+<rect class="future" x="1004.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="1020.0" y="331.0" text-anchor="middle">7</text>
+<rect class="future" x="1047.0" y="314.0" width="32" height="24" rx="4"/>
+<text class="small" x="1063.0" y="331.0" text-anchor="middle">8</text>
+<text class="value" x="746" y="362.0">1/6 observed · 5/5 remaining required</text>
+<text class="label" x="746" y="386.0">Strict outer KL win</text>
+<rect class="miss" x="746.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="762.0" y="421.0" text-anchor="middle">1</text>
+<rect class="hit" x="789.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="805.0" y="421.0" text-anchor="middle">2</text>
+<rect class="miss" x="832.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="848.0" y="421.0" text-anchor="middle">3</text>
+<rect class="future" x="875.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="891.0" y="421.0" text-anchor="middle">4</text>
+<rect class="future" x="918.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="934.0" y="421.0" text-anchor="middle">5</text>
+<rect class="future" x="961.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="977.0" y="421.0" text-anchor="middle">6</text>
+<rect class="future" x="1004.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="1020.0" y="421.0" text-anchor="middle">7</text>
+<rect class="future" x="1047.0" y="404.0" width="32" height="24" rx="4"/>
+<text class="small" x="1063.0" y="421.0" text-anchor="middle">8</text>
+<text class="value" x="746" y="452.0">1/5 observed · 4/5 remaining required</text>
+<line class="grid" x1="48" y1="540" x2="1152" y2="540"/>
+<text class="section" x="48" y="578">What the completed folds establish</text>
+<text class="footer" x="48" y="610">Cave: c2 field (b=1, a=−0.2965), 7/7 inner wins, outer delta −8.611 µKL.</text>
+<text class="footer" x="48" y="638">Exact V20p rollbacks: 2 (Alpine, Kiln).</text>
+<text class="footer" x="48" y="666">Cumulative outer delta: −8.611 µKL. Serving delta vs V20p: 0 parameters and 0 MACs/token.</text>
+<text class="warning" x="48" y="702">Incomplete: 5 folds remain; need 5 continuous inner-better, 5 output-distinct, and 4 strict outer wins.</text>
+<text class="source" x="48" y="735">source: artifacts/research/v20q_partial_validation_v1.json · sha256 f9698c5d01bc0c7e30c3a6a7e2a85edc6f41d3128e02579653c760698873a684</text>
+</svg>

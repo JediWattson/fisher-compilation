@@ -117,6 +117,7 @@ fisher-graph-gemma-l3-l4-complete-h4-soft-polarity-v20m-simplex-response-nested 
 fisher-graph-gemma-l3-l4-complete-h4-soft-polarity-v20n-simplex-shrinkage-nested = "fisher_graph.gemma3_l3_l4_complete_h4_soft_polarity_simplex_shrinkage_nested_development:main"
 fisher-graph-gemma-l3-l4-complete-h4-soft-polarity-v20o-signed-continuum-nested = "fisher_graph.gemma3_l3_l4_complete_h4_soft_polarity_signed_continuum_nested_development:main"
 fisher-graph-gemma-l3-l4-complete-h4-soft-polarity-v20p-local-signed-field-nested = "fisher_graph.gemma3_l3_l4_complete_h4_soft_polarity_local_signed_field_nested_development:main"
+fisher-graph-gemma-l3-l4-complete-h4-soft-polarity-v20q-token-vjp-nested = "fisher_graph.gemma3_l3_l4_complete_h4_soft_polarity_token_vjp_nested_development:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-signed-joint-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_teacher_kl_signed_joint_diagnostic:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-path-gl4-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_path_teacher_kl_signed_joint_diagnostic:main"
 fisher-graph-gemma-l3-l4-complete-h4-tail-teacher-kl-path-gl4-gain-interpolation-a-dev = "fisher_graph.gemma3_l3_l4_complete_h4_tail_path_teacher_kl_gain_interpolation_diagnostic:main"
@@ -158,6 +159,7 @@ fisher-graph-gemma-l3-l4-generator-innovation-dev = "fisher_graph.gemma3_l3_l4_i
 fisher-graph-gemma-l3-l4-generator-innovation-v2 = "fisher_graph.gemma3_l3_l4_iterative_generator_innovation_v2_diagnostic:main"
 fisher-graph-plot-optimizations = "fisher_graph.optimization_figure:main"
 fisher-graph-plot-research = "fisher_graph.research_figures:main"
+fisher-graph-plot-v20q-progress = "fisher_graph.v20q_progress_figure:main"
 fisher-graph-verify = "fisher_graph.verify:main"
 
 [tool.setuptools.packages.find]
