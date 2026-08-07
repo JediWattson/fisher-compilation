@@ -202,6 +202,124 @@ def test_canonical_svd_materializes_only_the_requested_rank_prefix() -> None:
     )
 
 
+def test_rank_deficient_svd_completion_recovers_from_nonfinite_qr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    width = 96
+    requested = 32
+    supported = 11
+    generator = torch.Generator().manual_seed(20260806)
+    raw = torch.randn(
+        width,
+        supported,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    supported_basis, _ = torch.linalg.qr(raw, mode="reduced")
+    # The remaining thin-SVD vectors are deliberately arbitrary.  They belong
+    # to the numerical null space and must not influence its deterministic
+    # coordinate-ordered completion.
+    null_basis = torch.randn(
+        width,
+        requested - supported,
+        generator=generator,
+        dtype=torch.float64,
+    )
+    basis = torch.cat((supported_basis, null_basis), dim=1)
+    singular_values = torch.cat(
+        (
+            torch.linspace(9.0, 1.0, supported, dtype=torch.float64),
+            torch.zeros(requested - supported, dtype=torch.float64),
+        )
+    )
+
+    original_qr = torch.linalg.qr
+
+    def nonfinite_qr(
+        value: torch.Tensor,
+        *,
+        mode: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        result, upper = original_qr(value, mode=mode)
+        return torch.full_like(result, float("nan")), upper
+
+    monkeypatch.setattr(computational_modes.torch.linalg, "qr", nonfinite_qr)
+    first = computational_modes._canonicalize_svd_basis(
+        basis,
+        singular_values,
+        matrix_shape=(240, width),
+        requested_count=requested,
+    )
+    second = computational_modes._canonicalize_svd_basis(
+        basis,
+        singular_values,
+        matrix_shape=(240, width),
+        requested_count=requested,
+    )
+
+    assert bool(torch.isfinite(first).all())
+    torch.testing.assert_close(first, second, rtol=0, atol=0)
+    torch.testing.assert_close(
+        first.T @ first,
+        torch.eye(requested, dtype=torch.float64),
+        rtol=1e-10,
+        atol=1e-11,
+    )
+    torch.testing.assert_close(
+        first[:, :supported] @ first[:, :supported].T,
+        supported_basis @ supported_basis.T,
+        rtol=1e-10,
+        atol=1e-11,
+    )
+
+
+def test_nonfinite_platform_svd_uses_finite_covariance_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference = _curve()
+    original_svd = torch.linalg.svd
+
+    def nonfinite_svd(
+        value: torch.Tensor,
+        *,
+        full_matrices: bool,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        left, singular_values, right = original_svd(
+            value,
+            full_matrices=full_matrices,
+        )
+        return (
+            left,
+            singular_values,
+            torch.full_like(right, float("nan")),
+        )
+
+    monkeypatch.setattr(computational_modes.torch.linalg, "svd", nonfinite_svd)
+    first = _curve()
+    second = _curve()
+
+    assert bool(
+        torch.isfinite(
+            first.point_for_rank(3).basis.encoder_basis
+        ).all()
+    )
+    torch.testing.assert_close(
+        first.point_for_rank(3).basis.encoder_basis,
+        second.point_for_rank(3).basis.encoder_basis,
+        rtol=0,
+        atol=0,
+    )
+    torch.testing.assert_close(
+        first.point_for_rank(2).basis.encoder_basis
+        @ first.point_for_rank(2).basis.encoder_basis.T,
+        reference.point_for_rank(2).basis.encoder_basis
+        @ reference.point_for_rank(2).basis.encoder_basis.T,
+        rtol=1e-9,
+        atol=1e-10,
+    )
+    assert first.point_for_rank(2).fit_reconstruction.weighted_nrmse < 1e-9
+
+
 def test_fit_distortion_and_tail_energy_are_monotonic() -> None:
     curve = _curve()
 

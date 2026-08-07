@@ -1,0 +1,131 @@
+{
+  "as_of": "2026-08-06",
+  "candidate": {
+    "candidate_refit_or_search_during_task_evaluation": false,
+    "chosen_signed_gain": 0.5,
+    "compiler_pipeline_sha256": "36c33b40eef3a32c3c39900c4d3ab2a79ef5a329641c895c5d1ea0b2d60f6efb",
+    "dynamic_graph_sha256": "11bb160721528c2a7ea326add60be5277729cda7ac3bf949d8f08adfce2bcbbf",
+    "interaction_promotion_sha256": "172e8dd5ef167f6d8df09f4f5d869ef43010b9c480094de37ebb1370927d17f8",
+    "scientific_payload_sha256": "0897a54a5a52e544db67f05164313980e02ccb4e54fa5b4b00a49064b0478fd7"
+  },
+  "declared_label_results": {
+    "all_predeclared_retention_gates_passed": true,
+    "candidate_accuracy": 0.9333333333333333,
+    "candidate_accuracy_retained_fraction": 1.0,
+    "candidate_correct": 56,
+    "candidate_only_correct": 1,
+    "candidate_prediction_agreement_with_native": 0.95,
+    "candidate_prediction_disagreement_count": 3,
+    "descriptive_item_level_wilson_lower": 0.9421675323719249,
+    "edgeless_accuracy": 0.9333333333333333,
+    "edgeless_correct": 56,
+    "native_accuracy": 0.9333333333333333,
+    "native_and_candidate_both_correct": 55,
+    "native_correct": 56,
+    "native_only_correct": 1,
+    "native_win_preservation": 0.9821428571428571
+  },
+  "format_version": 2,
+  "integrity": {
+    "assessment_file_sha256": "4f06b8687fb437b0be914681e32c9b8afba0c12732cf7ddb302f5de684c258e3",
+    "contains_activations_gradients_or_weights": false,
+    "contains_prompt_or_choice_text": false,
+    "contains_token_ids_or_logits": false,
+    "downstream_claim_sha256": "a991cd824bf8fa7297dcb674ab159ddaf72352759201ff349a0de4cbc7e7d823",
+    "evaluation_stream_sha256": "e971cd35859fbe72895cd3e11e6f209b2ecb5891662b4aabb391bd35444408cc",
+    "evaluator_file_sha256": "b13a184a1a2d21024304917a0280ff5cd9aeae575dbffa66780b588a0f07312a",
+    "exact_evaluator_source_available_in_checkout": true,
+    "guard_assessment_file_sha256": "36971b1da3108dfb16fce5f4596f68fc6c80240d230332725a7e016398c0a4a7",
+    "prediction_stream_sha256s": {
+      "candidate": "a62640c470b4b2d2c47d2777335331d6af75df34aeccdb380f588e2feb7df8f0",
+      "edgeless": "1c92f0bbe8b3d0f5177fb29433373634ca18653a1a3c3ce8f716fb2c448a086d",
+      "native": "2a24285b650bbac34f22e5aa9bb227f9081f31dde1b1889f8a018d79e5f1e7ec"
+    },
+    "qualification_stream_sha256": "003d2b419cba15f2c92a262ec7ceaa7c2f95b0232b98890cdaa84b8c8b4c9f43",
+    "shared_evaluator_file_sha256": "5465a29f9ca3cdfa6f967a4accd158c9a83abce11fa0a61f0690dc514d699ec3",
+    "source_model_unchanged": true,
+    "source_safe": true
+  },
+  "interpretation": "The frozen half-strength layer-17 graph passed every declared retention gate and matched native 56-of-60 declared-label accuracy while slightly improving restricted-choice NLL over native and edgeless. An audit found multiple-valid-answer templates, including the family containing the sole loss and repair, so this supports a viable lossy-compression pilot but not external downstream qualification.",
+  "label_validity_audit": {
+    "ambiguous_selected_family_ids": [
+      "animal_movement",
+      "object_material",
+      "country_continent"
+    ],
+    "label_audit_passed": false,
+    "paired_loss_and_repair_family_ids": [
+      "object_material"
+    ],
+    "population_confidence_claim_from_wilson_bound": false,
+    "sole_observed_loss_repair_pair_depends_on_ambiguous_family": true,
+    "wilson_scope": "descriptive_item_level_screen_only_rows_are_templated_and_family_clustered"
+  },
+  "model": {
+    "adapter_model_fingerprint": "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9",
+    "model_id": "google/gemma-3-270m",
+    "revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1"
+  },
+  "next_rung": "external_standardized_task_subset_then_standalone_same_topology_layer_10_candidate_with_fresh_guard_families",
+  "protocol": {
+    "bank_file_sha256": "0c3e2eecbe14c969044b23c3e30a85cced2cc1f20274320c11d741ebedfd3199",
+    "bank_id": "gemma3-native-qualified-forced-choice-v2",
+    "candidate_development_prompt_overlap_count": 0,
+    "candidate_executed_during_family_qualification": false,
+    "choice_count": 4,
+    "choice_scoring": "restricted_single_next_token_log_softmax",
+    "eligible_family_count": 7,
+    "evaluation_example_count": 60,
+    "evaluation_examples_per_selected_family": 10,
+    "minimum_native_correct_per_family": 3,
+    "qualification_examples_per_family": 5,
+    "qualification_family_count": 8,
+    "selected_family_count": 6,
+    "selected_family_ids": [
+      "lexical_synonym",
+      "noun_plural",
+      "animal_movement",
+      "object_material",
+      "country_continent",
+      "country_language"
+    ]
+  },
+  "resource_accounting": {
+    "candidate_whole_model_parameters": 267789763,
+    "compiled_dense_matrix_macs_per_token": 130400.0,
+    "compiled_executed_matrix_macs_per_token": 126816.0,
+    "compiled_graph_parameters": 133187,
+    "executed_matrix_mac_savings_fraction": 0.7128260869565217,
+    "latency_or_kernel_speed_claim": false,
+    "native_replaced_slice_matrix_macs_per_token": 441600.0,
+    "native_replaced_slice_parameters": 441600,
+    "net_replaced_slice_parameter_savings": 308413,
+    "replaced_slice_parameter_savings_fraction": 0.6983990036231884,
+    "source_whole_model_parameters": 268098176,
+    "whole_model_parameter_savings_fraction": 0.0011503733617344715
+  },
+  "restricted_choice_likelihood": {
+    "candidate_choice_perplexity_multiplier_vs_native": 0.9920476802872096,
+    "candidate_minus_edgeless_nll": -0.0006439531663424702,
+    "candidate_minus_native_nll": -0.007984108046685257,
+    "candidate_nll": 0.2836696455666707,
+    "conditional_edge_changes_accuracy_vs_edgeless": false,
+    "conditional_edge_improves_edgeless_choice_nll": true,
+    "edgeless_correct_candidate_wrong_count": 0,
+    "edgeless_nll": 0.28431359873301315,
+    "edgeless_wrong_candidate_correct_count": 0,
+    "native_nll": 0.29165375361335594
+  },
+  "schema": "fisher_graph.state_conditioned_downstream_retention_summary",
+  "scientific_boundary": {
+    "audit_replay_after_evaluator_hardening": true,
+    "externally_standardized_benchmark": false,
+    "fresh_validation": false,
+    "post_candidate_frozen_diagnostic": true,
+    "prior_candidate_diagnostic_informed_panel_redesign": true,
+    "test_data_used": false,
+    "whole_model_compression_proven": false
+  },
+  "status": "declared_label_retention_pilot_pass_with_label_ambiguity",
+  "summary_payload_sha256": "370443bf8fbeba89ef305e8c1343e02a312605b05d5e3ea8921e70f770eeb595"
+}

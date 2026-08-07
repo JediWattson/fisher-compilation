@@ -34,6 +34,12 @@ from .modal_generator_graph import (
 from .modal_generator_lowering import ModalGeneratorLowering
 from .modal_generators import ModalGeneratorPlan
 from .modal_interaction_fitting import ModalInteractionSelection
+from .modal_interaction_promotion import (
+    ModalInteractionAuthorization,
+    ModalInteractionGraphPromotion,
+    authenticate_modal_interaction_authorization,
+    modal_interaction_authorization_from_state_dict,
+)
 from .parameter_cluster_fragments import (
     ParameterClusterLayerFragment,
     ParameterClusterLayerFragmentPlan,
@@ -50,6 +56,7 @@ __all__ = [
     "AuthenticatedArtifactReference",
     "ModalCompilerNodeArtifact",
     "ModalCompilerPipeline",
+    "ModalRefitFisherAuthority",
     "ModalSourceReplacementAccounting",
     "build_modal_compiler_pipeline",
     "build_modal_source_replacement_accounting",
@@ -63,12 +70,18 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}$")
 _REFERENCE_KIND = "fisher_graph.authenticated_artifact_reference"
 _NODE_KIND = "fisher_graph.modal_compiler_node_artifact"
 _SOURCE_ACCOUNTING_KIND = "fisher_graph.modal_source_replacement_accounting"
+_REFIT_FISHER_AUTHORITY_KIND = (
+    "fisher_graph.modal_refit_fisher_authority"
+)
 _PIPELINE_KIND = "fisher_graph.modal_compiler_pipeline"
 
 _REFERENCE_DOMAIN = b"fisher_graph.modal_compiler.reference.v1\0"
 _NODE_DOMAIN = b"fisher_graph.modal_compiler.node.v1\0"
 _SOURCE_ACCOUNTING_DOMAIN = (
     b"fisher_graph.modal_compiler.source_accounting.v1\0"
+)
+_REFIT_FISHER_AUTHORITY_DOMAIN = (
+    b"fisher_graph.modal_compiler.refit_fisher_authority.v1\0"
 )
 _PIPELINE_DOMAIN = b"fisher_graph.modal_compiler.pipeline.v1\0"
 
@@ -399,6 +412,285 @@ class AuthenticatedArtifactReference:
             "artifact_sha256",
         }
         _strict_fields(state, fields, label="authenticated artifact reference")
+        return cls(**state)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
+class ModalRefitFisherAuthority:
+    """Explicit authority for modal refits using a new Fisher fit split.
+
+    The grouped Fisher retained by :class:`ModalCompilerPipeline` remains the
+    authenticated topology-discovery Fisher.  This compact authority does not
+    replace or relabel it.  Instead it binds a distinct modal fit split and
+    normalization policy back to that exact topology lineage and to the
+    development-role decision that authorized the refit.
+
+    The authority covers refit data and frozen discovery lineage, so it may be
+    reused for executable graph subsets derived from that lineage.  Exact
+    nodes, weights, and interactions are independently committed by the
+    :class:`ModalCompilerPipeline`; experiment-specific candidates may impose
+    a still narrower topology contract on top (the layer-17 all-family rung,
+    for example, freezes its four selected nodes separately).
+
+    When this object is absent, the pipeline keeps the legacy invariant that
+    every modal node's fit split must exactly equal the grouped Fisher's
+    calibration split.
+    """
+
+    fit_split_sha256: str
+    eval_split_sha256: str
+    eval_role: str
+    fisher_normalization: str
+    source_model_sha256: str
+    parameter_catalog_sha256: str
+    topology_grouped_fisher_sha256: str
+    topology_fisher_calibration_split_sha256: str
+    topology_fisher_cluster_plan_sha256: str
+    topology_fragment_plan_sha256: str
+    authorizing_report_sha256: str
+    refit_protocol_sha256: str
+    fit_authority_sha256: str
+    fit_receipt_sha256: str
+    fit_corpus_artifact_sha256: str
+    fit_manifest_sha256: str
+    fit_materialization_sha256: str
+    fit_example_count: int
+    fit_family_count: int
+    equal_family_weighting: bool = True
+    eval_subset_within_fit: bool = False
+    eval_used_for_selection: bool = False
+    fit_opened: bool = True
+    selection_opened: bool = False
+    guard_opened: bool = False
+    calibration_b_opened: bool = False
+    validation_opened: bool = False
+    test_opened: bool = False
+    heldout_confirmation: bool = False
+    contains_prompt_text: bool = False
+    contains_prompt_identities: bool = False
+    contains_semantic_family_identifiers: bool = False
+    contains_token_ids: bool = False
+    contains_fisher_rows: bool = False
+    artifact_sha256: str = ""
+    artifact_kind: str = _REFIT_FISHER_AUTHORITY_KIND
+    format_version: int = _FORMAT_VERSION
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("fit split", self.fit_split_sha256),
+            ("evaluation split", self.eval_split_sha256),
+            ("source model", self.source_model_sha256),
+            ("parameter catalog", self.parameter_catalog_sha256),
+            ("topology grouped Fisher", self.topology_grouped_fisher_sha256),
+            (
+                "topology Fisher calibration split",
+                self.topology_fisher_calibration_split_sha256,
+            ),
+            (
+                "topology Fisher cluster plan",
+                self.topology_fisher_cluster_plan_sha256,
+            ),
+            ("topology fragment plan", self.topology_fragment_plan_sha256),
+            ("authorizing report", self.authorizing_report_sha256),
+            ("refit protocol", self.refit_protocol_sha256),
+            ("fit authority", self.fit_authority_sha256),
+            ("fit receipt", self.fit_receipt_sha256),
+            ("fit corpus artifact", self.fit_corpus_artifact_sha256),
+            ("fit manifest", self.fit_manifest_sha256),
+            ("fit materialization", self.fit_materialization_sha256),
+        ):
+            _require_sha256(value, label=label)
+        _require_name(
+            self.fisher_normalization,
+            label="fisher_normalization",
+        )
+        _require_name(self.eval_role, label="eval_role")
+        eval_role_tokens = tuple(
+            token
+            for token in re.split(r"[^a-z0-9]+", self.eval_role.lower())
+            if token
+        )
+        if (
+            set(eval_role_tokens)
+            & {"guard", "validation", "test", "heldout"}
+            or any(
+                left == "calibration" and right == "b"
+                for left, right in zip(
+                    eval_role_tokens,
+                    eval_role_tokens[1:],
+                )
+            )
+        ):
+            raise ValueError("eval_role may not name a protected role")
+        _require_int(
+            self.fit_example_count,
+            label="fit_example_count",
+            minimum=1,
+        )
+        _require_int(
+            self.fit_family_count,
+            label="fit_family_count",
+            minimum=1,
+        )
+        if self.fit_family_count > self.fit_example_count:
+            raise ValueError("fit families cannot exceed fit examples")
+        if (
+            self.fit_split_sha256 == self.eval_split_sha256
+            or self.fit_split_sha256
+            == self.topology_fisher_calibration_split_sha256
+            or self.eval_split_sha256
+            == self.topology_fisher_calibration_split_sha256
+        ):
+            raise ValueError(
+                "modal refit, diagnostic, and topology-Fisher splits must "
+                "remain distinct"
+            )
+        expected_flags = {
+            "fit_opened": True,
+            "selection_opened": False,
+            "guard_opened": False,
+            "calibration_b_opened": False,
+            "validation_opened": False,
+            "test_opened": False,
+            "heldout_confirmation": False,
+            "contains_prompt_text": False,
+            "contains_prompt_identities": False,
+            "contains_semantic_family_identifiers": False,
+            "contains_token_ids": False,
+            "contains_fisher_rows": False,
+        }
+        for field, expected in expected_flags.items():
+            if getattr(self, field) is not expected:
+                raise ValueError(
+                    "modal-refit Fisher authority safety/role flags drifted"
+                )
+        for field in (
+            "equal_family_weighting",
+            "eval_subset_within_fit",
+            "eval_used_for_selection",
+        ):
+            if type(getattr(self, field)) is not bool:
+                raise ValueError(
+                    "modal-refit Fisher authority policy flags must be bool"
+                )
+        if (
+            self.artifact_kind != _REFIT_FISHER_AUTHORITY_KIND
+            or self.format_version != _FORMAT_VERSION
+        ):
+            raise ValueError("modal-refit Fisher authority header is invalid")
+        computed = _json_sha256(
+            self._payload(),
+            domain=_REFIT_FISHER_AUTHORITY_DOMAIN,
+        )
+        if self.artifact_sha256 == "":
+            object.__setattr__(self, "artifact_sha256", computed)
+        elif (
+            _require_sha256(self.artifact_sha256, label="artifact_sha256")
+            != computed
+        ):
+            raise ValueError("modal-refit Fisher authority hash mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifact_kind": self.artifact_kind,
+            "format_version": self.format_version,
+            "fit_split_sha256": self.fit_split_sha256,
+            "eval_split_sha256": self.eval_split_sha256,
+            "eval_role": self.eval_role,
+            "fisher_normalization": self.fisher_normalization,
+            "source_model_sha256": self.source_model_sha256,
+            "parameter_catalog_sha256": self.parameter_catalog_sha256,
+            "topology_grouped_fisher_sha256": (
+                self.topology_grouped_fisher_sha256
+            ),
+            "topology_fisher_calibration_split_sha256": (
+                self.topology_fisher_calibration_split_sha256
+            ),
+            "topology_fisher_cluster_plan_sha256": (
+                self.topology_fisher_cluster_plan_sha256
+            ),
+            "topology_fragment_plan_sha256": (
+                self.topology_fragment_plan_sha256
+            ),
+            "authorizing_report_sha256": self.authorizing_report_sha256,
+            "refit_protocol_sha256": self.refit_protocol_sha256,
+            "fit_authority_sha256": self.fit_authority_sha256,
+            "fit_receipt_sha256": self.fit_receipt_sha256,
+            "fit_corpus_artifact_sha256": (
+                self.fit_corpus_artifact_sha256
+            ),
+            "fit_manifest_sha256": self.fit_manifest_sha256,
+            "fit_materialization_sha256": (
+                self.fit_materialization_sha256
+            ),
+            "fit_example_count": self.fit_example_count,
+            "fit_family_count": self.fit_family_count,
+            "equal_family_weighting": self.equal_family_weighting,
+            "eval_subset_within_fit": self.eval_subset_within_fit,
+            "eval_used_for_selection": self.eval_used_for_selection,
+            "fit_opened": self.fit_opened,
+            "selection_opened": self.selection_opened,
+            "guard_opened": self.guard_opened,
+            "calibration_b_opened": self.calibration_b_opened,
+            "validation_opened": self.validation_opened,
+            "test_opened": self.test_opened,
+            "heldout_confirmation": self.heldout_confirmation,
+            "contains_prompt_text": self.contains_prompt_text,
+            "contains_prompt_identities": self.contains_prompt_identities,
+            "contains_semantic_family_identifiers": (
+                self.contains_semantic_family_identifiers
+            ),
+            "contains_token_ids": self.contains_token_ids,
+            "contains_fisher_rows": self.contains_fisher_rows,
+        }
+
+    def validate_against(
+        self,
+        *,
+        catalog: NaturalMLPParameterGroupCatalog,
+        grouped_fisher: AuthenticatedArtifactReference,
+        fisher_clusters: AuthenticatedArtifactReference,
+        fragments: ParameterClusterLayerFragmentPlan,
+        fit_split_sha256: str,
+        eval_split_sha256: str,
+    ) -> None:
+        """Cross-bind the refit declaration to the exact live topology."""
+
+        topology_split = grouped_fisher.metadata.get(
+            "calibration_split_sha256"
+        )
+        if (
+            self.fit_split_sha256 != fit_split_sha256
+            or self.eval_split_sha256 != eval_split_sha256
+            or self.source_model_sha256 != catalog.model_fingerprint
+            or self.parameter_catalog_sha256 != catalog.artifact_sha256
+            or self.topology_grouped_fisher_sha256
+            != grouped_fisher.referenced_artifact_sha256
+            or self.topology_fisher_calibration_split_sha256
+            != topology_split
+            or self.topology_fisher_cluster_plan_sha256
+            != fisher_clusters.referenced_artifact_sha256
+            or self.topology_fragment_plan_sha256
+            != fragments.artifact_sha256
+        ):
+            raise ValueError(
+                "modal-refit Fisher authority differs from pipeline topology"
+            )
+
+    def state_dict(self) -> dict[str, object]:
+        return {**self._payload(), "artifact_sha256": self.artifact_sha256}
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        state: Mapping[str, object],
+    ) -> ModalRefitFisherAuthority:
+        fields = set(cls.__dataclass_fields__)  # type: ignore[attr-defined]
+        _strict_fields(
+            state,
+            fields,
+            label="modal-refit Fisher authority",
+        )
         return cls(**state)  # type: ignore[arg-type]
 
 
@@ -1103,7 +1395,8 @@ class ModalCompilerPipeline:
     parameter_cluster_fragments: ParameterClusterLayerFragmentPlan
     nodes: tuple[ModalCompilerNodeArtifact, ...]
     graph_plan: ModalGeneratorGraphPlan
-    interaction_selection: ModalInteractionSelection | None = None
+    modal_refit_fisher_authority: ModalRefitFisherAuthority | None = None
+    interaction_selection: ModalInteractionAuthorization | None = None
     source_replacement_accounting: (
         ModalSourceReplacementAccounting | None
     ) = None
@@ -1161,6 +1454,17 @@ class ModalCompilerPipeline:
             )
         ):
             raise ValueError("nodes must be a nonempty compiler-node tuple")
+        refit_authority = self.modal_refit_fisher_authority
+        if refit_authority is not None:
+            refit_authority = _authenticate_copy(
+                refit_authority,
+                ModalRefitFisherAuthority,
+            )
+            object.__setattr__(
+                self,
+                "modal_refit_fisher_authority",
+                refit_authority,
+            )
         graph_by_name = {value.name: value for value in graph.nodes}
         expected_nodes = tuple(
             sorted(
@@ -1248,8 +1552,20 @@ class ModalCompilerPipeline:
         fisher_fit_split = self.grouped_fisher.metadata.get(
             "calibration_split_sha256"
         )
-        if fit_split != fisher_fit_split:
-            raise ValueError("modal fit split does not match grouped Fisher")
+        if refit_authority is None:
+            if fit_split != fisher_fit_split:
+                raise ValueError(
+                    "modal fit split does not match grouped Fisher"
+                )
+        else:
+            refit_authority.validate_against(
+                catalog=catalog,
+                grouped_fisher=self.grouped_fisher,
+                fisher_clusters=self.fisher_clusters,
+                fragments=fragments,
+                fit_split_sha256=fit_split,
+                eval_split_sha256=eval_split,
+            )
         if fit_split == eval_split:
             raise ValueError("modal fit and evaluation splits must differ")
         if (
@@ -1265,15 +1581,13 @@ class ModalCompilerPipeline:
                 raise ValueError(
                     "graph interactions require authenticated selection"
                 )
-        else:
-            if not isinstance(selection, ModalInteractionSelection):
-                raise TypeError(
-                    "interaction_selection must be ModalInteractionSelection"
-                )
+        elif isinstance(selection, ModalInteractionSelection):
             selection.validate_integrity()
-            restored_selection = ModalInteractionSelection.from_state_dict(
-                selection.state_dict()
+            restored_selection = authenticate_modal_interaction_authorization(
+                selection
             )
+            if not isinstance(restored_selection, ModalInteractionSelection):
+                raise TypeError("legacy interaction selection type drifted")
             object.__setattr__(
                 self,
                 "interaction_selection",
@@ -1323,6 +1637,37 @@ class ModalCompilerPipeline:
                     raise ValueError(
                         "interaction node catalog differs from modal nodes"
                     )
+        elif isinstance(selection, ModalInteractionGraphPromotion):
+            restored_promotion = authenticate_modal_interaction_authorization(
+                selection
+            )
+            if not isinstance(
+                restored_promotion,
+                ModalInteractionGraphPromotion,
+            ):
+                raise TypeError("interaction graph promotion type drifted")
+            object.__setattr__(
+                self,
+                "interaction_selection",
+                restored_promotion,
+            )
+            selection = restored_promotion
+            if (
+                selection.source_model_sha256 != catalog.model_fingerprint
+                or selection.parameter_cluster_plan_sha256
+                != fragments.artifact_sha256
+                or selection.fit_split_sha256 != fit_split
+                or selection.eval_split_sha256 != eval_split
+            ):
+                raise ValueError(
+                    "interaction-promotion provenance differs from graph"
+                )
+            selection.validate_against_graph(graph)
+        else:
+            raise TypeError(
+                "interaction_selection must be ModalInteractionSelection or "
+                "ModalInteractionGraphPromotion"
+            )
 
         accounting = self.source_replacement_accounting
         if accounting is not None:
@@ -1419,7 +1764,7 @@ class ModalCompilerPipeline:
         return source - self.graph_macs_per_token
 
     def _payload(self) -> dict[str, object]:
-        return {
+        payload = {
             "artifact_kind": self.artifact_kind,
             "format_version": self.format_version,
             **_SAFETY_METADATA,
@@ -1475,12 +1820,20 @@ class ModalCompilerPipeline:
             "net_parameter_savings": self.net_parameter_savings,
             "net_macs_saved_per_token": self.net_macs_saved_per_token,
         }
+        # Conditional omission is deliberate.  Legacy v1 pipeline payloads
+        # did not contain a modal-refit authority field; omitting it when None
+        # preserves their exact artifact hashes and strict serialized shape.
+        if self.modal_refit_fisher_authority is not None:
+            payload["modal_refit_fisher_authority_sha256"] = (
+                self.modal_refit_fisher_authority.artifact_sha256
+            )
+        return payload
 
     def metadata(self) -> dict[str, object]:
         return {**self._payload(), "artifact_sha256": self.artifact_sha256}
 
     def state_dict(self) -> dict[str, object]:
-        return {
+        state = {
             **self._payload(),
             "parameter_catalog": self.parameter_catalog.state_dict(),
             "grouped_fisher": self.grouped_fisher.state_dict(),
@@ -1502,13 +1855,18 @@ class ModalCompilerPipeline:
             ),
             "artifact_sha256": self.artifact_sha256,
         }
+        if self.modal_refit_fisher_authority is not None:
+            state["modal_refit_fisher_authority"] = (
+                self.modal_refit_fisher_authority.state_dict()
+            )
+        return state
 
     @classmethod
     def from_state_dict(
         cls,
         state: Mapping[str, object],
     ) -> ModalCompilerPipeline:
-        fields = {
+        legacy_fields = {
             "artifact_kind",
             "format_version",
             *_SAFETY_METADATA,
@@ -1545,7 +1903,30 @@ class ModalCompilerPipeline:
             "source_replacement_accounting",
             "artifact_sha256",
         }
-        _strict_fields(state, fields, label="modal compiler pipeline")
+        extended_fields = legacy_fields | {
+            "modal_refit_fisher_authority_sha256",
+            "modal_refit_fisher_authority",
+        }
+        if set(state) == legacy_fields:
+            refit_authority = None
+        elif set(state) == extended_fields:
+            refit_state = state["modal_refit_fisher_authority"]
+            if not isinstance(refit_state, Mapping):
+                raise TypeError(
+                    "serialized modal-refit Fisher authority must be a mapping"
+                )
+            refit_authority = ModalRefitFisherAuthority.from_state_dict(
+                refit_state
+            )
+            if (
+                state["modal_refit_fisher_authority_sha256"]
+                != refit_authority.artifact_sha256
+            ):
+                raise ValueError(
+                    "serialized modal-refit Fisher authority hash differs"
+                )
+        else:
+            raise ValueError("modal compiler pipeline fields are invalid")
         for field, expected in _SAFETY_METADATA.items():
             if state[field] is not expected:
                 raise ValueError("modal compiler safety metadata is invalid")
@@ -1560,7 +1941,7 @@ class ModalCompilerPipeline:
         interaction = (
             None
             if interaction_state is None
-            else ModalInteractionSelection.from_state_dict(
+            else modal_interaction_authorization_from_state_dict(
                 interaction_state  # type: ignore[arg-type]
             )
         )
@@ -1593,6 +1974,7 @@ class ModalCompilerPipeline:
             graph_plan=ModalGeneratorGraphPlan.from_state_dict(
                 state["graph_plan"]  # type: ignore[arg-type]
             ),
+            modal_refit_fisher_authority=refit_authority,
             interaction_selection=interaction,
             source_replacement_accounting=accounting,
             artifact_sha256=state["artifact_sha256"],  # type: ignore[arg-type]
@@ -1630,6 +2012,13 @@ class ModalCompilerPipeline:
         ):
             if state[field] != expected[field]:
                 raise ValueError(f"serialized {field} is inconsistent")
+        if refit_authority is not None and (
+            state["modal_refit_fisher_authority_sha256"]
+            != expected["modal_refit_fisher_authority_sha256"]
+        ):
+            raise ValueError(
+                "serialized modal-refit Fisher authority is inconsistent"
+            )
         return result
 
 
@@ -1642,7 +2031,8 @@ def build_modal_compiler_pipeline(
     parameter_cluster_fragments: ParameterClusterLayerFragmentPlan,
     lowerings_by_node: Mapping[str, ModalGeneratorLowering],
     graph_plan: ModalGeneratorGraphPlan,
-    interaction_selection: ModalInteractionSelection | None = None,
+    modal_refit_fisher_authority: ModalRefitFisherAuthority | None = None,
+    interaction_selection: ModalInteractionAuthorization | None = None,
     source_replacement_accounting: (
         ModalSourceReplacementAccounting | None
     ) = None,
@@ -1710,6 +2100,7 @@ def build_modal_compiler_pipeline(
         parameter_cluster_fragments=fragments,
         nodes=nodes,
         graph_plan=graph,
+        modal_refit_fisher_authority=modal_refit_fisher_authority,
         interaction_selection=interaction_selection,
         source_replacement_accounting=source_replacement_accounting,
     )

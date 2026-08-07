@@ -17,10 +17,15 @@ from fisher_graph.fisher_prompt_clustering import (
 )
 from fisher_graph.modal_compiler_pipeline import (
     ModalCompilerPipeline,
+    ModalRefitFisherAuthority,
     build_modal_compiler_pipeline,
     build_modal_source_replacement_accounting,
 )
-from fisher_graph.modal_generator_graph import ModalGeneratorGraphPlan
+from fisher_graph.modal_generator_graph import (
+    ModalGeneratorGraphPlan,
+    ModalGeneratorInteraction,
+    StateConditionedModalGeneratorInteraction,
+)
 from fisher_graph.modal_generator_lowering import (
     lower_coordinate_modal_generator,
 )
@@ -30,6 +35,10 @@ from fisher_graph.modal_generators import (
 )
 from fisher_graph.modal_interaction_fitting import (
     select_modal_interactions_greedily,
+)
+from fisher_graph.modal_interaction_promotion import (
+    ModalInteractionGraphPromotion,
+    build_modal_interaction_graph_promotion,
 )
 from fisher_graph.parameter_cluster_fragments import (
     build_parameter_cluster_layer_fragments,
@@ -51,13 +60,17 @@ MODEL_HASH = "a" * 64
 FIT_HASH = "b" * 64
 EVAL_HASH = "c" * 64
 OBJECTIVE_HASH = "d" * 64
+REFIT_HASH = "e" * 64
+DIAGNOSTIC_HASH = "f" * 64
 
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _analysis_chain():
+def _analysis_chain(*, layer_count: int = 2):
+    if layer_count not in (2, 3):
+        raise ValueError("test analysis chain supports two or three layers")
     specs = tuple(
         NaturalMLPLayerParameterSpec(
             layer_id=f"model.layers.{index}",
@@ -72,23 +85,40 @@ def _analysis_chain():
             up_proj_path=f"model.layers.{index}.mlp.up.weight",
             down_proj_path=f"model.layers.{index}.mlp.down.weight",
         )
-        for index in range(2)
+        for index in range(layer_count)
     )
     catalog = build_natural_mlp_parameter_group_catalog(
         model_fingerprint=MODEL_HASH,
         layer_specs=specs,
     )
     # Orthogonal prompt-effect profiles produce two unambiguous clusters.
-    effects = torch.tensor(
-        [
-            [3.0, 0.0],
-            [2.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [0.0, 2.0],
-            [0.0, 3.0],
-        ],
-        dtype=DTYPE,
+    effects = (
+        torch.tensor(
+            [
+                [3.0, 0.0],
+                [2.0, 0.0],
+                [1.0, 0.0],
+                [0.0, 1.0],
+                [0.0, 2.0],
+                [0.0, 3.0],
+            ],
+            dtype=DTYPE,
+        )
+        if layer_count == 2
+        else torch.tensor(
+            [
+                [3.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 3.0, 0.0],
+                [0.0, 2.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 3.0],
+                [0.0, 0.0, 2.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=DTYPE,
+        )
     )
     trace_rows = tuple(
         ActivationScoreGradientRows(
@@ -130,16 +160,23 @@ def _analysis_chain():
             value.cross_block_layer_spec for value in specs
         ),
         mode_catalog=fisher.fisher_ranked_mode_catalog(),
-        cluster_count=2,
+        cluster_count=layer_count,
         max_iterations=20,
     )
     clusters = build_fisher_prompt_clusters(effects, cluster_config)
     fragments = build_parameter_cluster_layer_fragments(clusters, fisher)
-    assert len(fragments.fragments) == 2
+    assert len(fragments.fragments) == layer_count
     return trace, catalog, fisher, clusters, fragments
 
 
-def _basis(fragment, fisher_sha: str, *, axis: int):
+def _basis(
+    fragment,
+    fisher_sha: str,
+    *,
+    axis: int,
+    fit_split_sha256: str = FIT_HASH,
+    eval_split_sha256: str = EVAL_HASH,
+):
     fit_modes = torch.tensor(
         [[-3.0], [-2.0], [-1.0], [1.0], [2.0], [3.0]],
         dtype=DTYPE,
@@ -162,8 +199,8 @@ def _basis(fragment, fisher_sha: str, *, axis: int):
         parameter_catalog_sha256=fragment.parameter_catalog_sha256,
         fisher_coupling_sha256=fisher_sha,
         parameter_cluster_sha256=fragment.artifact_sha256,
-        fit_split_sha256=FIT_HASH,
-        eval_split_sha256=EVAL_HASH,
+        fit_split_sha256=fit_split_sha256,
+        eval_split_sha256=eval_split_sha256,
     )
     curve = fit_computational_mode_rate_curve(
         fit,
@@ -178,7 +215,15 @@ def _basis(fragment, fisher_sha: str, *, axis: int):
     return curve.selected_basis
 
 
-def _generator(basis, fragment, fragment_plan, *, index: int):
+def _generator(
+    basis,
+    fragment,
+    fragment_plan,
+    *,
+    index: int,
+    fit_split_sha256: str = FIT_HASH,
+    eval_split_sha256: str = EVAL_HASH,
+):
     X_fit_seed = torch.tensor(
         [
             [-2.0, 0.0, 1.0],
@@ -226,8 +271,8 @@ def _generator(basis, fragment, fragment_plan, *, index: int):
         input_catalog_sha256=fragment.input_catalog_sha256,
         output_catalog_sha256=basis.artifact_sha256,
         cluster_plan_sha256=fragment_plan.artifact_sha256,
-        fit_split_sha256=FIT_HASH,
-        eval_split_sha256=EVAL_HASH,
+        fit_split_sha256=fit_split_sha256,
+        eval_split_sha256=eval_split_sha256,
         target_kind="computational_mode_coordinates",
         fisher_coupling_sha256=basis.binding.fisher_coupling_sha256,
         computational_mode_basis_sha256=basis.artifact_sha256,
@@ -249,16 +294,31 @@ def _generator(basis, fragment, fragment_plan, *, index: int):
     return curve.selected_plan
 
 
-def _lowerings():
-    trace, catalog, fisher, clusters, fragments = _analysis_chain()
+def _lowerings(
+    *,
+    layer_count: int = 2,
+    fit_split_sha256: str = FIT_HASH,
+    eval_split_sha256: str = EVAL_HASH,
+):
+    trace, catalog, fisher, clusters, fragments = _analysis_chain(
+        layer_count=layer_count
+    )
     values = {}
     for index, fragment in enumerate(fragments.fragments):
-        basis = _basis(fragment, fisher.artifact_sha256, axis=index)
+        basis = _basis(
+            fragment,
+            fisher.artifact_sha256,
+            axis=index,
+            fit_split_sha256=fit_split_sha256,
+            eval_split_sha256=eval_split_sha256,
+        )
         generator = _generator(
             basis,
             fragment,
             fragments,
             index=fragment.layer_ordinal,
+            fit_split_sha256=fit_split_sha256,
+            eval_split_sha256=eval_split_sha256,
         )
         values[f"node.{fragment.layer_ordinal}"] = (
             lower_coordinate_modal_generator(
@@ -359,6 +419,164 @@ def _compiled(
     )
 
 
+def _refit_compiled():
+    trace, catalog, fisher, clusters, fragments, lowerings = _lowerings(
+        fit_split_sha256=REFIT_HASH,
+        eval_split_sha256=DIAGNOSTIC_HASH,
+    )
+    graph = ModalGeneratorGraphPlan(
+        model_fingerprint=MODEL_HASH,
+        parameter_cluster_plan_sha256=fragments.artifact_sha256,
+        nodes=tuple(
+            lowering.to_graph_node(
+                name=name,
+                causal_order=next(
+                    fragment.layer_ordinal
+                    for fragment in fragments.fragments
+                    if fragment.artifact_sha256
+                    == lowering.selected_fragment_sha256
+                ),
+            )
+            for name, lowering in sorted(lowerings.items())
+        ),
+        interactions=(),
+    )
+    authority = ModalRefitFisherAuthority(
+        fit_split_sha256=REFIT_HASH,
+        eval_split_sha256=DIAGNOSTIC_HASH,
+        eval_role="balanced_within_fit_fixed_rank_diagnostic",
+        fisher_normalization="equal_family_total_mass_per_fragment",
+        source_model_sha256=MODEL_HASH,
+        parameter_catalog_sha256=catalog.artifact_sha256,
+        topology_grouped_fisher_sha256=fisher.artifact_sha256,
+        topology_fisher_calibration_split_sha256=FIT_HASH,
+        topology_fisher_cluster_plan_sha256=clusters.artifact_sha256,
+        topology_fragment_plan_sha256=fragments.artifact_sha256,
+        authorizing_report_sha256="1" * 64,
+        refit_protocol_sha256="2" * 64,
+        fit_authority_sha256="3" * 64,
+        fit_receipt_sha256="4" * 64,
+        fit_corpus_artifact_sha256="5" * 64,
+        fit_manifest_sha256="6" * 64,
+        fit_materialization_sha256="7" * 64,
+        fit_example_count=256,
+        fit_family_count=8,
+        equal_family_weighting=True,
+        eval_subset_within_fit=True,
+        eval_used_for_selection=False,
+    )
+    accounting = build_modal_source_replacement_accounting(
+        catalog,
+        fragments,
+        tuple(value.fragment_id for value in fragments.fragments),
+    )
+    pipeline = build_modal_compiler_pipeline(
+        source_prompt_trace=trace,
+        parameter_catalog=catalog,
+        grouped_fisher=fisher,
+        fisher_clusters=clusters,
+        parameter_cluster_fragments=fragments,
+        lowerings_by_node=lowerings,
+        graph_plan=graph,
+        modal_refit_fisher_authority=authority,
+        source_replacement_accounting=accounting,
+    )
+    return pipeline, authority, (
+        trace,
+        catalog,
+        fisher,
+        clusters,
+        fragments,
+        lowerings,
+        graph,
+    )
+
+
+def _conditional_compiled(*, mixed: bool = False):
+    trace, catalog, fisher, clusters, fragments, lowerings = _lowerings(
+        layer_count=3
+    )
+    graph_nodes = tuple(
+        lowering.to_graph_node(
+            name=name,
+            causal_order=next(
+                fragment.layer_ordinal
+                for fragment in fragments.fragments
+                if fragment.artifact_sha256
+                == lowering.selected_fragment_sha256
+            ),
+        )
+        for name, lowering in sorted(lowerings.items())
+    )
+    conditional = tuple(
+        StateConditionedModalGeneratorInteraction(
+            source_node="node.0",
+            target_node=target,
+            routing_group="next_mode",
+            message_matrix=torch.tensor([[scale]], dtype=DTYPE),
+            message_bias=torch.tensor([0.0], dtype=DTYPE),
+            gate_weight=torch.tensor([[1.0, -1.0][index]], dtype=DTYPE),
+            gate_bias=torch.tensor([0.0], dtype=DTYPE),
+            temperature=0.75,
+            top_k=1,
+        )
+        for index, (target, scale) in enumerate(
+            (("node.1", 0.5), ("node.2", -0.25))
+        )
+    )
+    static = (
+        (
+            ModalGeneratorInteraction(
+                source_node="node.1",
+                target_node="node.2",
+                message_matrix=torch.tensor([[0.125]], dtype=DTYPE),
+                message_bias=torch.tensor([0.0], dtype=DTYPE),
+            ),
+        )
+        if mixed
+        else ()
+    )
+    interactions = tuple(
+        sorted(
+            (*conditional, *static),
+            key=lambda edge: (edge.source_node, edge.target_node),
+        )
+    )
+    graph = ModalGeneratorGraphPlan(
+        model_fingerprint=MODEL_HASH,
+        parameter_cluster_plan_sha256=fragments.artifact_sha256,
+        nodes=graph_nodes,
+        interactions=interactions,
+    )
+    promotion = build_modal_interaction_graph_promotion(
+        graph,
+        fit_split_sha256=FIT_HASH,
+        eval_split_sha256=EVAL_HASH,
+        selection_metric="weighted_nrmse",
+        baseline_metric_value=1.0,
+        candidate_metric_value=0.5,
+        minimum_heldout_improvement=0.1,
+        heldout_observations=8,
+    )
+    accounting = build_modal_source_replacement_accounting(
+        catalog,
+        fragments,
+        tuple(value.fragment_id for value in fragments.fragments),
+    )
+    pipeline = build_modal_compiler_pipeline(
+        source_prompt_trace=trace,
+        parameter_catalog=catalog,
+        grouped_fisher=fisher,
+        fisher_clusters=clusters,
+        parameter_cluster_fragments=fragments,
+        lowerings_by_node=lowerings,
+        graph_plan=graph,
+        interaction_selection=promotion,
+        source_replacement_accounting=accounting,
+    )
+    return pipeline, promotion
+
+
 def test_full_chain_is_machine_checkable_and_executable() -> None:
     pipeline, sources = _compiled()
     trace, catalog, fisher, clusters, fragments, lowerings, graph = sources
@@ -389,6 +607,187 @@ def test_full_chain_is_machine_checkable_and_executable() -> None:
         == "computational_mode_coordinates"
         for value in pipeline.nodes
     )
+
+
+def test_legacy_selection_graph_and_pipeline_hashes_are_frozen() -> None:
+    pipeline, _ = _compiled()
+
+    assert pipeline.interaction_selection is not None
+    assert pipeline.interaction_selection.artifact_sha256 == (
+        "90ded7e6a9c159ab261df5b3a1bec210796419ff93fc47c3df74060af8e3172a"
+    )
+    assert pipeline.graph_plan.artifact_sha256 == (
+        "ccee5d2f6aba2d5f8c9029878060d85ff94c16e033b94d448dd0f01ddf35a8ae"
+    )
+    assert pipeline.artifact_sha256 == (
+        "9bf8e5449725fe98f17abe955d527122d306af01ccc4df309ae4063307132b12"
+    )
+    assert pipeline.modal_refit_fisher_authority is None
+    assert "modal_refit_fisher_authority" not in pipeline.state_dict()
+    assert "modal_refit_fisher_authority_sha256" not in pipeline.state_dict()
+
+
+def test_refit_fisher_authority_is_explicit_cross_bound_and_roundtrips() -> None:
+    pipeline, authority, sources = _refit_compiled()
+    restored = ModalCompilerPipeline.from_state_dict(pipeline.state_dict())
+
+    assert restored.modal_refit_fisher_authority is not None
+    assert restored.modal_refit_fisher_authority.artifact_sha256 == (
+        authority.artifact_sha256
+    )
+    assert restored.fit_split_sha256 == REFIT_HASH
+    assert restored.eval_split_sha256 == DIAGNOSTIC_HASH
+    assert restored.grouped_fisher.metadata["calibration_split_sha256"] == (
+        FIT_HASH
+    )
+    assert restored.artifact_sha256 == pipeline.artifact_sha256
+    assert restored.metadata()["modal_refit_fisher_authority_sha256"] == (
+        authority.artifact_sha256
+    )
+
+    trace, catalog, fisher, clusters, fragments, lowerings, graph = sources
+    with pytest.raises(ValueError, match="modal fit split"):
+        build_modal_compiler_pipeline(
+            source_prompt_trace=trace,
+            parameter_catalog=catalog,
+            grouped_fisher=fisher,
+            fisher_clusters=clusters,
+            parameter_cluster_fragments=fragments,
+            lowerings_by_node=lowerings,
+            graph_plan=graph,
+        )
+
+
+def test_refit_fisher_authority_tampering_and_split_aliases_fail_closed() -> None:
+    pipeline, authority, sources = _refit_compiled()
+
+    poisoned = copy.deepcopy(pipeline.state_dict())
+    poisoned["modal_refit_fisher_authority"][
+        "fit_materialization_sha256"
+    ] = "0" * 64
+    with pytest.raises(ValueError, match="authority hash mismatch"):
+        ModalCompilerPipeline.from_state_dict(poisoned)
+
+    partial = copy.deepcopy(pipeline.state_dict())
+    partial.pop("modal_refit_fisher_authority")
+    with pytest.raises(ValueError, match="pipeline fields"):
+        ModalCompilerPipeline.from_state_dict(partial)
+
+    trace, catalog, fisher, clusters, fragments, lowerings, graph = sources
+    wrong_topology = replace(
+        authority,
+        topology_fragment_plan_sha256="0" * 64,
+        artifact_sha256="",
+    )
+    with pytest.raises(ValueError, match="differs from pipeline topology"):
+        build_modal_compiler_pipeline(
+            source_prompt_trace=trace,
+            parameter_catalog=catalog,
+            grouped_fisher=fisher,
+            fisher_clusters=clusters,
+            parameter_cluster_fragments=fragments,
+            lowerings_by_node=lowerings,
+            graph_plan=graph,
+            modal_refit_fisher_authority=wrong_topology,
+        )
+
+    with pytest.raises(ValueError, match="splits must remain distinct"):
+        replace(
+            authority,
+            eval_split_sha256=FIT_HASH,
+            artifact_sha256="",
+        )
+    with pytest.raises(ValueError, match="safety/role flags"):
+        replace(authority, guard_opened=True, artifact_sha256="")
+    with pytest.raises(ValueError, match="protected role"):
+        replace(
+            authority,
+            eval_role="sealed_validation_diagnostic",
+            artifact_sha256="",
+        )
+
+
+@pytest.mark.parametrize("mixed", (False, True))
+def test_conditional_graph_promotion_roundtrips_through_pipeline(
+    mixed: bool,
+) -> None:
+    pipeline, promotion = _conditional_compiled(mixed=mixed)
+    restored = ModalCompilerPipeline.from_state_dict(pipeline.state_dict())
+
+    assert isinstance(
+        restored.interaction_selection,
+        ModalInteractionGraphPromotion,
+    )
+    assert restored.interaction_selection.artifact_sha256 == (
+        promotion.artifact_sha256
+    )
+    assert restored.interaction_selection.graph_plan_sha256 == (
+        restored.graph_plan.artifact_sha256
+    )
+    assert restored.interaction_selection.conditional_interaction_count == 2
+    assert restored.interaction_selection.interaction_count == (3 if mixed else 2)
+    assert restored.artifact_sha256 == pipeline.artifact_sha256
+
+
+def test_conditional_promotion_fails_closed_on_binding_count_and_kind() -> None:
+    pipeline, promotion = _conditional_compiled()
+
+    wrong_graph = replace(
+        promotion,
+        graph_plan_sha256="0" * 64,
+        artifact_sha256="",
+    )
+    with pytest.raises(ValueError, match="authorize the exact graph"):
+        replace(
+            pipeline,
+            interaction_selection=wrong_graph,
+            artifact_sha256="",
+        )
+
+    wrong_count = replace(
+        promotion,
+        conditional_interaction_count=1,
+        artifact_sha256="",
+    )
+    with pytest.raises(ValueError, match="authorize the exact graph"):
+        replace(
+            pipeline,
+            interaction_selection=wrong_count,
+            artifact_sha256="",
+        )
+
+    poisoned_metric = copy.deepcopy(pipeline.state_dict())
+    poisoned_metric["interaction_selection"]["candidate_metric_value"] = 0.25
+    with pytest.raises(ValueError, match="promotion hash mismatch"):
+        ModalCompilerPipeline.from_state_dict(poisoned_metric)
+
+    unknown_kind = copy.deepcopy(pipeline.state_dict())
+    unknown_kind["interaction_selection"]["artifact_kind"] = (
+        "fisher_graph.unrecognized_interaction_authorization"
+    )
+    with pytest.raises(
+        ValueError,
+        match="unsupported interaction authorization kind",
+    ):
+        ModalCompilerPipeline.from_state_dict(unknown_kind)
+
+
+def test_static_only_graph_cannot_bypass_legacy_selection() -> None:
+    pipeline, _ = _compiled()
+
+    with pytest.raises(
+        ValueError,
+        match="at least one state-conditioned interaction",
+    ):
+        build_modal_interaction_graph_promotion(
+            pipeline.graph_plan,
+            fit_split_sha256=FIT_HASH,
+            eval_split_sha256=EVAL_HASH,
+            selection_metric="weighted_nrmse",
+            baseline_metric_value=1.0,
+            candidate_metric_value=0.5,
+            heldout_observations=4,
+        )
 
 
 def test_exact_source_group_and_net_savings_accounting() -> None:

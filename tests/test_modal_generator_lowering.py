@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 import torch
 
+import fisher_graph.gemma3_l10_l17_a5c_broader_selected_generator as a5c_runner
 from fisher_graph.computational_modes import (
     ComputationalModeBinding,
     fit_computational_mode_rate_curve,
@@ -173,6 +174,50 @@ def _lowering(*, fit_intercept: bool = True):
         lower_coordinate_modal_generator(plan, basis, fragments),
         inputs,
     )
+
+
+def test_a5c_descriptor_reauthenticates_real_lowerings_and_graph_pairing() -> None:
+    fitted = tuple(
+        _lowering(fit_intercept=index % 2 == 0)[0] for index in range(4)
+    )
+    names = tuple(f"fragment.4.{index}" for index in range(4))
+    nodes = tuple(
+        lowering.to_graph_node(name=name, causal_order=index)
+        for index, (name, lowering) in enumerate(zip(names, fitted, strict=True))
+    )
+    graph = ModalGeneratorGraphPlan(
+        model_fingerprint=(
+            fitted[0].coordinate_generator_plan.binding.source_model_sha256
+        ),
+        parameter_cluster_plan_sha256=(
+            fitted[0].coordinate_generator_plan.binding.cluster_plan_sha256
+        ),
+        nodes=nodes,
+        interactions=(),
+    )
+    by_name = dict(zip(names, fitted, strict=True))
+
+    descriptor = a5c_runner._graph_descriptor(
+        layer17_graph=graph,
+        layer17_lowerings_by_node=by_name,
+        composition_graph=graph,
+        layer17_post_feedforward_delta_layer_ordinals=(),
+        composition_post_feedforward_delta_layer_ordinals=(),
+    )
+
+    assert descriptor["layer17_lowering_sha256_by_node"] == {
+        name: lowering.artifact_sha256 for name, lowering in by_name.items()
+    }
+    mismatched = dict(by_name)
+    mismatched[names[0]] = fitted[1]
+    with pytest.raises(ValueError, match="node and lowering weights are unpaired"):
+        a5c_runner._graph_descriptor(
+            layer17_graph=graph,
+            layer17_lowerings_by_node=mismatched,
+            composition_graph=graph,
+            layer17_post_feedforward_delta_layer_ordinals=(),
+            composition_post_feedforward_delta_layer_ordinals=(),
+        )
 
 
 def test_graph_state_is_exact_generated_coordinates_and_decoder_is_basis() -> None:

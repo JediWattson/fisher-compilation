@@ -50,6 +50,12 @@ _PARTITION_ROLES = frozenset(
     {"interaction_selection", "open_development_assessment"}
 )
 _DEFAULT_PARTITION_SALT = "four-node-fanin-rung-v1"
+_ASSESSMENT_ROLES = frozenset(
+    {
+        "open_development_assessment",
+        "claimed_closed_guard_assessment",
+    }
+)
 
 
 class _DevelopmentExportLike(Protocol):
@@ -828,9 +834,10 @@ def evaluate_modal_graph_rung_conditions(
         _finite_nonnegative(value, label=label)
     if type(vocabulary_chunk_size) is not int or vocabulary_chunk_size <= 0:
         raise ValueError("vocabulary_chunk_size must be positive")
-    if assessment_role != "open_development_assessment":
+    if assessment_role not in _ASSESSMENT_ROLES:
         raise ValueError(
-            "this evaluator is development-only and cannot label a closed split"
+            "assessment_role must identify open development or one "
+            "claim-first closed guard"
         )
     native_model = getattr(adapter, "module", None)
     if not callable(native_model):
@@ -1211,7 +1218,9 @@ def evaluate_modal_graph_rung_conditions(
     return {
         "execution_path": "unified_modal_generator_graph_rung",
         "assessment_role": assessment_role,
-        "heldout_confirmation": False,
+        "heldout_confirmation": (
+            assessment_role == "claimed_closed_guard_assessment"
+        ),
         "supervised_tokens": supervised_tokens,
         "logical_valid_tokens": logical_valid_tokens,
         "native": {"nll_per_token": native_nll},

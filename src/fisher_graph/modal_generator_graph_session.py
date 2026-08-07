@@ -22,6 +22,9 @@ from .modal_generator_graph import (
     ModalGeneratorGraphPlan,
     ModalGeneratorInteraction,
     ModalGeneratorNode,
+    StateConditionedModalGeneratorInteraction,
+    _conditional_outgoing_groups,
+    _routed_conditional_messages,
 )
 
 
@@ -51,14 +54,17 @@ class ModalGeneratorGraphSession:
         *,
         capture_modal_states: bool = False,
         capture_edge_messages: bool = False,
+        capture_routing: bool = False,
     ) -> None:
         if not isinstance(plan, ModalGeneratorGraphPlan):
             raise TypeError("plan must be a ModalGeneratorGraphPlan")
         plan.validate_integrity()
         self.plan = ModalGeneratorGraphPlan.from_state_dict(plan.state_dict())
-        if type(capture_modal_states) is not bool or type(
-            capture_edge_messages
-        ) is not bool:
+        if (
+            type(capture_modal_states) is not bool
+            or type(capture_edge_messages) is not bool
+            or type(capture_routing) is not bool
+        ):
             raise TypeError("capture flags must be bool")
 
         nodes_by_boundary: defaultdict[str, list[ModalGeneratorNode]] = (
@@ -69,12 +75,23 @@ class ModalGeneratorGraphSession:
         )
         outgoing_counts: defaultdict[str, int] = defaultdict(int)
         output_producers: defaultdict[str, set[str]] = defaultdict(set)
+        conditional_incoming_sources: defaultdict[str, set[str]] = (
+            defaultdict(set)
+        )
         for node in self.plan.nodes:
             nodes_by_boundary[node.input_boundary].append(node)
             output_producers[node.output_boundary].add(node.name)
         for edge in self.plan.interactions:
-            incoming[edge.target_node].append(edge)
-            outgoing_counts[edge.source_node] += 1
+            if isinstance(edge, ModalGeneratorInteraction):
+                incoming[edge.target_node].append(edge)
+                outgoing_counts[edge.source_node] += 1
+            elif isinstance(
+                edge,
+                StateConditionedModalGeneratorInteraction,
+            ):
+                conditional_incoming_sources[edge.target_node].add(
+                    edge.source_node
+                )
 
         self._nodes_by_boundary = {
             boundary: tuple(nodes)
@@ -82,6 +99,13 @@ class ModalGeneratorGraphSession:
         }
         self._incoming = {
             name: tuple(edges) for name, edges in incoming.items()
+        }
+        self._conditional_outgoing = _conditional_outgoing_groups(
+            self.plan.interactions
+        )
+        self._conditional_incoming_sources = {
+            name: frozenset(sources)
+            for name, sources in conditional_incoming_sources.items()
         }
         self._remaining_consumers = {
             node.name: outgoing_counts[node.name] for node in self.plan.nodes
@@ -92,13 +116,24 @@ class ModalGeneratorGraphSession:
         }
         self._capture_modal_states = capture_modal_states
         self._capture_edge_messages = capture_edge_messages
+        self._capture_routing = capture_routing
         self._captured_states: dict[str, Tensor] | None = (
             {} if capture_modal_states else None
         )
         self._captured_messages: dict[str, Tensor] | None = (
             {} if capture_edge_messages else None
         )
+        self._captured_routing: dict[str, Tensor] | None = (
+            {} if capture_routing else None
+        )
+        self._captured_evaluated_rows: dict[str, int] | None = (
+            {} if capture_routing else None
+        )
         self._states: dict[str, Tensor] = {}
+        self._conditional_messages: defaultdict[
+            str,
+            list[tuple[str, Tensor]],
+        ] = defaultdict(list)
         self._pending_outputs: dict[str, Tensor] = {}
         self._executed_nodes: set[str] = set()
         self._fed_boundaries: set[str] = set()
@@ -189,6 +224,7 @@ class ModalGeneratorGraphSession:
 
     def _validate_boundary_causal_readiness(self, boundary: str) -> None:
         available = set(self._states)
+        executed = set(self._executed_nodes)
         for node in self._nodes_by_boundary[boundary]:
             for edge in self._incoming.get(node.name, ()):
                 if edge.source_node not in available:
@@ -196,7 +232,16 @@ class ModalGeneratorGraphSession:
                         "input boundary was fed before a causal source node "
                         "executed"
                     )
+            if not self._conditional_incoming_sources.get(
+                node.name,
+                frozenset(),
+            ).issubset(executed):
+                raise RuntimeError(
+                    "input boundary was fed before a conditional causal "
+                    "source node executed"
+                )
             available.add(node.name)
+            executed.add(node.name)
 
     def _edge_message(
         self,
@@ -289,6 +334,20 @@ class ModalGeneratorGraphSession:
             edges = self._incoming.get(node.name, ())
             for edge in edges:
                 latent = latent + self._edge_message(edge, latent)
+            for edge_key, message in self._conditional_messages.pop(
+                node.name,
+                (),
+            ):
+                if (
+                    message.shape != latent.shape
+                    or message.device != latent.device
+                    or message.dtype != latent.dtype
+                ):
+                    raise ValueError(
+                        f"interaction {edge_key!r} runtime batch, device, "
+                        "dtype, or target width drifted"
+                    )
+                latent = latent + message
             if not bool(torch.isfinite(latent).all()):
                 raise ValueError(
                     f"modal state for node {node.name!r} became non-finite"
@@ -300,6 +359,27 @@ class ModalGeneratorGraphSession:
             )
             if self._captured_states is not None:
                 self._captured_states[node.name] = latent.detach().clone()
+            for group in self._conditional_outgoing.get(node.name, ()):
+                messages, route_weights, evaluated_rows = (
+                    _routed_conditional_messages(latent, group)
+                )
+                for edge in group:
+                    message = messages[edge.key]
+                    self._conditional_messages[edge.target_node].append(
+                        (edge.key, message)
+                    )
+                    if self._captured_messages is not None:
+                        self._captured_messages[edge.key] = (
+                            message.detach().clone()
+                        )
+                    if self._captured_routing is not None:
+                        self._captured_routing[edge.key] = route_weights[
+                            edge.key
+                        ].detach().clone()
+                    if self._captured_evaluated_rows is not None:
+                        self._captured_evaluated_rows[edge.key] = (
+                            evaluated_rows[edge.key]
+                        )
 
             contribution = latent @ self._runtime_weight(
                 weights.output_factor,
@@ -372,6 +452,10 @@ class ModalGeneratorGraphSession:
             )
         if self._states:
             raise RuntimeError("modal graph session leaked live modal states")
+        if self._conditional_messages:
+            raise RuntimeError(
+                "modal graph session leaked conditional edge messages"
+            )
         self._finished = True
         return ModalGeneratorGraphExecution(
             outputs=dict(self._pending_outputs),
@@ -385,5 +469,15 @@ class ModalGeneratorGraphSession:
                 None
                 if self._captured_messages is None
                 else dict(self._captured_messages)
+            ),
+            routing_weights=(
+                None
+                if self._captured_routing is None
+                else dict(self._captured_routing)
+            ),
+            evaluated_edge_rows=(
+                None
+                if self._captured_evaluated_rows is None
+                else dict(self._captured_evaluated_rows)
             ),
         )

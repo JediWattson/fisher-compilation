@@ -158,9 +158,24 @@ def validate_coordinate_generator_compatibility(
     basis_binding = basis.binding
     fragment = _bound_fragment(basis, fragments)
 
-    if binding.target_kind != "computational_mode_coordinates":
+    coordinate_target_kinds = {
+        "computational_mode_coordinates",
+        "relocated_computational_mode_coordinates",
+    }
+    if binding.target_kind not in coordinate_target_kinds:
         raise ValueError(
-            "generator plan must target computational_mode_coordinates"
+            "generator plan must target computational-mode coordinates"
+        )
+    relocated = (
+        binding.target_kind == "relocated_computational_mode_coordinates"
+    )
+    if relocated != (basis_binding.source_kind == "relocated_layer_fragment"):
+        raise ValueError(
+            "relocated generator and computational-mode bindings disagree"
+        )
+    if relocated and binding.source_generator_plan_sha256 is None:
+        raise ValueError(
+            "relocated coordinate generators must bind their source plan"
         )
     if basis_binding.mode_set_id != fragment.fragment_id:
         raise ValueError(
@@ -243,11 +258,6 @@ def validate_coordinate_generator_compatibility(
             "generator and fragment input catalog",
         ),
             (
-                binding.output_site,
-                fragment.output_site,
-                "generator and fragment output site",
-            ),
-            (
                 plan.input_width,
                 fragment.input_width,
                 "generator and fragment input width",
@@ -261,6 +271,14 @@ def validate_coordinate_generator_compatibility(
     for first, second, label in checks:
         if first != second:
             raise ValueError(f"{label} mismatch")
+    if relocated:
+        if binding.output_site == fragment.output_site:
+            raise ValueError(
+                "relocated generator output site must differ from its source "
+                "fragment"
+            )
+    elif binding.output_site != fragment.output_site:
+        raise ValueError("generator and fragment output site mismatch")
     if plan.output_width != basis.rank:
         raise ValueError(
             "coordinate generator output width must equal mode-basis rank"

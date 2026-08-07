@@ -75,7 +75,13 @@ _SOURCE_TENSOR_DOMAIN = (
 )
 _SITE_DOMAIN = b"fisher_graph.computational_modes.output_site.v1\0"
 
-_SOURCE_KINDS = frozenset({"parameter_cluster", "layer_fragment"})
+_SOURCE_KINDS = frozenset(
+    {
+        "parameter_cluster",
+        "layer_fragment",
+        "relocated_layer_fragment",
+    }
+)
 _SELECTION_RULES = frozenset({"return_all", "fixed_rank"})
 _FIT_DEFINITION = "fisher_row_weighted_centered_svd_on_fit_contributions"
 _COORDINATE_DEFINITION = "center_then_project_onto_orthonormal_residual_basis"
@@ -275,8 +281,8 @@ class ComputationalModeBinding:
         _require_identifier(self.mode_set_id, label="mode_set_id")
         if self.source_kind not in _SOURCE_KINDS:
             raise ValueError(
-                "source_kind must be 'parameter_cluster' or "
-                "'layer_fragment'"
+                "source_kind must identify a parameter cluster, layer "
+                "fragment, or explicitly relocated layer fragment"
             )
         site = _require_identifier(self.output_site, label="output_site")
         if (
@@ -1444,6 +1450,61 @@ def _canonicalize_basis_signs(basis: Tensor) -> Tensor:
     return result.contiguous()
 
 
+def _canonicalize_ordered_basis(
+    basis: Tensor,
+    *,
+    label: str,
+) -> Tensor:
+    """Orthonormalize an ordered basis without a rank-deficient QR call.
+
+    Every output prefix spans the corresponding input prefix.  Two-pass
+    modified Gram-Schmidt is intentional here: the matrices are narrow mode
+    bases, and the fixed column order is part of the serialized ladder's
+    meaning.  In particular, this avoids delegating a numerically null
+    completion to a platform LAPACK QR implementation.
+    """
+
+    if (
+        basis.ndim != 2
+        or basis.dtype != torch.float64
+        or basis.device.type != "cpu"
+        or basis.shape[1] <= 0
+        or basis.shape[1] > basis.shape[0]
+    ):
+        raise ValueError(f"{label} inputs are invalid")
+    if not bool(torch.isfinite(basis).all()):
+        raise RuntimeError(f"{label} contains non-finite values")
+
+    width = basis.shape[0]
+    tolerance = (
+        64.0
+        * torch.finfo(torch.float64).eps
+        * max(width, 1)
+    )
+    vectors: list[Tensor] = []
+    for column in range(basis.shape[1]):
+        candidate = basis[:, column].clone()
+        for _ in range(2):
+            for prior in vectors:
+                candidate -= prior * torch.dot(prior, candidate)
+        norm = float(torch.linalg.vector_norm(candidate).item())
+        if not math.isfinite(norm):
+            raise RuntimeError(
+                f"{label} produced a non-finite column norm"
+            )
+        if norm <= tolerance:
+            raise RuntimeError(
+                f"{label} is numerically rank deficient at column {column}"
+            )
+        vector = candidate / norm
+        if not bool(torch.isfinite(vector).all()):
+            raise RuntimeError(f"{label} produced a non-finite column")
+        vectors.append(vector)
+    return _canonicalize_basis_signs(
+        torch.stack(vectors, dim=1).contiguous()
+    )
+
+
 def _canonical_basis_from_projector(
     projector: Tensor,
     *,
@@ -1475,9 +1536,18 @@ def _canonical_basis_from_projector(
             for prior in vectors:
                 candidate -= prior * torch.dot(prior, candidate)
         norm = float(torch.linalg.vector_norm(candidate).item())
+        if not math.isfinite(norm):
+            raise RuntimeError(
+                "deterministic projector basis produced a non-finite norm"
+            )
         if norm <= tolerance:
             continue
-        vectors.append(candidate / norm)
+        vector = candidate / norm
+        if not bool(torch.isfinite(vector).all()):
+            raise RuntimeError(
+                "deterministic projector basis produced non-finite values"
+            )
+        vectors.append(vector)
         if len(vectors) == dimension:
             break
     if len(vectors) != dimension:
@@ -1506,6 +1576,26 @@ def _canonical_orthogonal_complement_basis(
     ):
         raise ValueError("canonical complement basis inputs are invalid")
     width = supported_basis.shape[0]
+
+    def stable_fallback() -> Tensor:
+        if supported_basis.shape[1]:
+            orthonormal_supported = _canonicalize_ordered_basis(
+                supported_basis,
+                label="supported SVD basis",
+            )
+            projector = torch.eye(width, dtype=torch.float64) - (
+                orthonormal_supported @ orthonormal_supported.T
+            )
+            # Remove multiplication-order asymmetry before coordinate-ordered
+            # projector extraction.
+            projector = ((projector + projector.T) * 0.5).contiguous()
+        else:
+            projector = torch.eye(width, dtype=torch.float64)
+        return _canonical_basis_from_projector(
+            projector,
+            dimension=dimension,
+        )
+
     tolerance = (
         64.0
         * torch.finfo(torch.float64).eps
@@ -1523,15 +1613,18 @@ def _canonical_orthogonal_complement_basis(
             for prior in vectors:
                 candidate -= prior * torch.dot(prior, candidate)
         norm = float(torch.linalg.vector_norm(candidate).item())
+        if not math.isfinite(norm):
+            return stable_fallback()
         if norm <= tolerance:
             continue
-        vectors.append(candidate / norm)
+        vector = candidate / norm
+        if not bool(torch.isfinite(vector).all()):
+            return stable_fallback()
+        vectors.append(vector)
         if len(vectors) == dimension:
             break
     if len(vectors) != dimension:
-        raise RuntimeError(
-            "could not derive the requested deterministic complement basis"
-        )
+        return stable_fallback()
     return _canonicalize_basis_signs(
         torch.stack(vectors, dim=1).contiguous()
     )
@@ -1617,16 +1710,31 @@ def _canonicalize_svd_basis(
     # canonical, but concatenating many numerically estimated subspaces can
     # accumulate a small cross-block Gram error.  Ordered reduced QR preserves
     # the span of every column prefix (and therefore every declared ladder
-    # point); sign canonicalization then removes QR's diagonal-sign freedom.
-    result, _ = torch.linalg.qr(result, mode="reduced")
-    result = _canonicalize_basis_signs(result)
+    # point).  Some CPU LAPACK backends can return a non-finite Q for a
+    # numerically rank-deficient completion; use deterministic two-pass MGS in
+    # that exceptional case while preserving the established QR serialization
+    # for healthy inputs.
+    qr_result, _ = torch.linalg.qr(result, mode="reduced")
+    if bool(torch.isfinite(qr_result).all()):
+        result = _canonicalize_basis_signs(qr_result)
+    else:
+        result = _canonicalize_ordered_basis(
+            result,
+            label="canonical SVD basis",
+        )
+    gram = result.T @ result
+    identity = torch.eye(retained, dtype=torch.float64)
     if not torch.allclose(
-        result.T @ result,
-        torch.eye(retained, dtype=torch.float64),
+        gram,
+        identity,
         rtol=1e-10,
         atol=1e-11,
     ):
-        raise RuntimeError("canonical SVD basis lost orthonormality")
+        maximum_error = float((gram - identity).abs().max().item())
+        raise RuntimeError(
+            "canonical SVD basis lost orthonormality; "
+            f"maximum Gram error={maximum_error:.6g}"
+        )
     return result
 
 
@@ -1735,6 +1843,98 @@ def _spectrum(
     )
 
 
+def _covariance_thin_svd_fallback(
+    value: Tensor,
+) -> tuple[Tensor, Tensor]:
+    """Recover finite thin-SVD values/right vectors from a finite matrix.
+
+    This exceptional path is used only when the platform SVD fails or returns
+    non-finite output.  Scaling before forming the covariance matrix avoids an
+    otherwise unnecessary overflow, and canonicalization downstream removes
+    arbitrary rotations within tied and numerical-null eigenspaces.
+    """
+
+    if (
+        value.ndim != 2
+        or value.dtype != torch.float64
+        or value.device.type != "cpu"
+        or not bool(torch.isfinite(value).all())
+    ):
+        raise ValueError("covariance SVD fallback input must be finite CPU float64")
+    count = min(value.shape)
+    scale = float(value.abs().max().item())
+    if not math.isfinite(scale):
+        raise RuntimeError("covariance SVD fallback scale is non-finite")
+    if scale == 0.0:
+        return (
+            torch.zeros(count, dtype=torch.float64),
+            torch.eye(value.shape[1], dtype=torch.float64)[:count],
+        )
+
+    scaled = (value / scale).contiguous()
+    covariance = (scaled.T @ scaled).contiguous()
+    if not bool(torch.isfinite(covariance).all()):
+        raise RuntimeError("scaled covariance matrix is non-finite")
+    eigenvalues, eigenvectors = torch.linalg.eigh(covariance)
+    if not (
+        bool(torch.isfinite(eigenvalues).all())
+        and bool(torch.isfinite(eigenvectors).all())
+    ):
+        raise RuntimeError("covariance eigendecomposition is non-finite")
+
+    # eigh is ascending.  Its smallest values can be positive roundoff from a
+    # mathematically null subspace; zero those at the covariance problem's
+    # numerical resolution so they receive deterministic null completion.
+    order = torch.arange(
+        eigenvalues.numel() - 1,
+        -1,
+        -1,
+        dtype=torch.long,
+    )
+    eigenvalues = eigenvalues.index_select(0, order)[:count].clamp_min(0.0)
+    eigenvectors = eigenvectors.index_select(1, order)[:, :count]
+    largest_eigenvalue = float(eigenvalues[0].item()) if count else 0.0
+    covariance_tolerance = (
+        64.0
+        * torch.finfo(torch.float64).eps
+        * max(*value.shape, 1)
+        * largest_eigenvalue
+    )
+    eigenvalues = torch.where(
+        eigenvalues > covariance_tolerance,
+        eigenvalues,
+        torch.zeros_like(eigenvalues),
+    )
+    singular_values = torch.sqrt(eigenvalues) * scale
+    right = eigenvectors.T.contiguous()
+    if not (
+        bool(torch.isfinite(singular_values).all())
+        and bool(torch.isfinite(right).all())
+    ):
+        raise RuntimeError("covariance SVD fallback output is non-finite")
+    return singular_values.contiguous(), right
+
+
+def _finite_thin_svd_right_basis(
+    value: Tensor,
+) -> tuple[Tensor, Tensor]:
+    """Return thin singular values and right vectors with a finite fallback."""
+
+    try:
+        _, singular_values, right = torch.linalg.svd(
+            value,
+            full_matrices=False,
+        )
+    except RuntimeError:
+        return _covariance_thin_svd_fallback(value)
+    if (
+        bool(torch.isfinite(singular_values).all())
+        and bool(torch.isfinite(right).all())
+    ):
+        return singular_values, right
+    return _covariance_thin_svd_fallback(value)
+
+
 def fit_computational_mode_rate_curve(
     fit_contributions: Tensor,
     fit_fisher_weights: Tensor,
@@ -1829,10 +2029,11 @@ def fit_computational_mode_rate_curve(
     # The SVD is performed exactly once.  Every ladder point receives a
     # prefix, which guarantees nested mode spaces.  Evaluation is intentionally
     # absent from this computation.
-    _, singular_values, vh = torch.linalg.svd(
-        weighted_centered,
-        full_matrices=False,
-    )
+    if not bool(torch.isfinite(weighted_centered).all()):
+        raise RuntimeError(
+            "Fisher-weighted centered contributions are non-finite"
+        )
+    singular_values, vh = _finite_thin_svd_right_basis(weighted_centered)
     full_basis = _canonicalize_svd_basis(
         vh.T.contiguous(),
         singular_values,

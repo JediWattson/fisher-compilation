@@ -70,6 +70,13 @@ _TARGET_KINDS = frozenset(
     {
         "cluster_residual_contribution",
         "computational_mode_coordinates",
+        "relocated_computational_mode_coordinates",
+    }
+)
+_COORDINATE_TARGET_KINDS = frozenset(
+    {
+        "computational_mode_coordinates",
+        "relocated_computational_mode_coordinates",
     }
 )
 _BIAS_MAC_POLICIES = frozenset(
@@ -315,7 +322,7 @@ class ModalGeneratorBinding:
             value = getattr(self, name)
             if value is not None:
                 _require_sha256(value, label=name)
-        if self.target_kind == "computational_mode_coordinates":
+        if self.target_kind in _COORDINATE_TARGET_KINDS:
             if self.fisher_coupling_sha256 is None:
                 raise ValueError(
                     "coordinate-target generators must bind the Fisher "

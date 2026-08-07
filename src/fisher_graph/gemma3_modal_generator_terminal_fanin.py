@@ -95,7 +95,11 @@ def _row_key_sha256(row_keys: tuple[tuple[str, int], ...]) -> str:
 
 def _canonical_fragments(
     fragments: Sequence[ParameterClusterLayerFragment],
+    *,
+    require_distinct_layers: bool = True,
 ) -> tuple[ParameterClusterLayerFragment, ...]:
+    if type(require_distinct_layers) is not bool:
+        raise TypeError("require_distinct_layers must be a bool")
     if isinstance(fragments, (str, bytes)) or not isinstance(
         fragments,
         Sequence,
@@ -111,7 +115,9 @@ def _canonical_fragments(
         value.validate_integrity()
     if len({value.artifact_sha256 for value in values}) != len(values):
         raise ValueError("selected fragments must be unique")
-    if len({value.layer_ordinal for value in values}) != len(values):
+    if require_distinct_layers and (
+        len({value.layer_ordinal for value in values}) != len(values)
+    ):
         raise ValueError("terminal fan-in fragments must occupy distinct layers")
     causal = tuple(
         sorted(values, key=lambda value: (value.layer_ordinal, value.cluster_id))
@@ -269,10 +275,19 @@ def collect_aligned_fragment_rows(
     *,
     fragments: Sequence[ParameterClusterLayerFragment],
     down_projection_weights: Mapping[str, Tensor],
+    require_distinct_layers: bool = True,
 ) -> AlignedFragmentRows:
-    """Collect several fragment targets from one shared gradient-row replay."""
+    """Collect several fragment targets from one shared gradient-row replay.
 
-    selected = _canonical_fragments(fragments)
+    The historical terminal-fan-in contract requires one fragment per layer.
+    Same-layer experiments may explicitly relax only that restriction; all
+    fragment identity, row-alignment, and tensor-shape checks remain active.
+    """
+
+    selected = _canonical_fragments(
+        fragments,
+        require_distinct_layers=require_distinct_layers,
+    )
     if not isinstance(down_projection_weights, Mapping) or set(
         down_projection_weights
     ) != {fragment.fragment_id for fragment in selected}:
@@ -382,9 +397,21 @@ def collect_aligned_fragment_rows(
             close()
     if sequences <= 0:
         raise ValueError("aligned fragment row stream cannot be empty")
-    result = {
-        fragment.fragment_id: LayerFragmentRows(
-            inputs=torch.cat(inputs[fragment.fragment_id], dim=0),
+    # Same-layer fragments observe the exact same normalized-input site.  Keep
+    # one materialized row matrix per site and let every matching fragment
+    # share its storage.  This matters for full-corpus trajectory captures:
+    # four Layer17 fragments otherwise duplicate a large float64 [rows, d]
+    # matrix even though the collector obtained every copy from the same
+    # activation tensor.
+    input_matrix_by_site: dict[str, Tensor] = {}
+    result: dict[str, LayerFragmentRows] = {}
+    for fragment in selected:
+        shared_inputs = input_matrix_by_site.get(fragment.input_site)
+        if shared_inputs is None:
+            shared_inputs = torch.cat(inputs[fragment.fragment_id], dim=0)
+            input_matrix_by_site[fragment.input_site] = shared_inputs
+        result[fragment.fragment_id] = LayerFragmentRows(
+            inputs=shared_inputs,
             contributions=torch.cat(
                 contributions[fragment.fragment_id],
                 dim=0,
@@ -395,8 +422,6 @@ def collect_aligned_fragment_rows(
             ),
             sequences=sequences,
         )
-        for fragment in selected
-    }
     return AlignedFragmentRows(
         rows_by_fragment=result,
         row_keys=tuple(row_keys),

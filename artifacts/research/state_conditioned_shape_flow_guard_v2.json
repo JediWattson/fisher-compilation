@@ -1,0 +1,93 @@
+{
+  "schema": "fisher_graph.state_conditioned_shape_flow_guard_summary",
+  "format_version": 1,
+  "as_of": "2026-08-06",
+  "status": "primary_nll_transfer_passed_mixed_secondary_fidelity",
+  "model": {
+    "model_id": "google/gemma-3-270m",
+    "revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "adapter_model_fingerprint": "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9"
+  },
+  "scope": {
+    "layer_ordinal": 17,
+    "fragment_count": 4,
+    "removed_mode_count": 230,
+    "graph_node_count": 4,
+    "state_conditioned_edge_count": 3,
+    "top_k": 1,
+    "quadratic_rank": 8,
+    "chosen_signed_gain": 0.5,
+    "routes_refitted_during_gain_selection": false,
+    "messages_refitted_during_gain_selection": false
+  },
+  "candidate": {
+    "scientific_payload_sha256": "0897a54a5a52e544db67f05164313980e02ccb4e54fa5b4b00a49064b0478fd7",
+    "dynamic_graph_sha256": "11bb160721528c2a7ea326add60be5277729cda7ac3bf949d8f08adfce2bcbbf",
+    "compiler_pipeline_sha256": "36c33b40eef3a32c3c39900c4d3ab2a79ef5a329641c895c5d1ea0b2d60f6efb",
+    "interaction_promotion_sha256": "172e8dd5ef167f6d8df09f4f5d869ef43010b9c480094de37ebb1370927d17f8"
+  },
+  "open_selection": {
+    "supervised_tokens": 265,
+    "native_nll_per_token": 4.894648483564269,
+    "edgeless_nll_per_token": 4.959437226349452,
+    "candidate_nll_per_token": 4.956374155800297,
+    "candidate_minus_edgeless_nll_per_token": -0.0030630705491550003,
+    "edgeless_native_to_candidate_kl_per_token": 0.11609292020989373,
+    "candidate_native_to_candidate_kl_per_token": 0.11222052302480323,
+    "edgeless_top1_agreement_to_native": 0.7962264150943397,
+    "candidate_top1_agreement_to_native": 0.8,
+    "strict_primary_metric_promotion_passed": true
+  },
+  "family_disjoint_calibration_a_guard": {
+    "example_count": 4,
+    "supervised_tokens": 278,
+    "logical_valid_tokens": 282,
+    "native_nll_per_token": 5.270798168594031,
+    "edgeless_nll_per_token": 5.365105260190346,
+    "candidate_nll_per_token": 5.3589063960013625,
+    "candidate_minus_edgeless_nll_per_token": -0.006198864188983855,
+    "edgeless_gap_recovered_fraction": 0.06573062623453934,
+    "edgeless_native_to_candidate_kl_per_token": 0.11881753423300871,
+    "candidate_native_to_candidate_kl_per_token": 0.11985550113694024,
+    "edgeless_top1_agreement_to_native": 0.7877697841726619,
+    "candidate_top1_agreement_to_native": 0.7733812949640287,
+    "ordinary_flow_nrmse": 1.0364294954917799,
+    "ordinary_flow_aggregate_cosine": -0.0018350619341915497,
+    "route_accuracy": 0.5,
+    "route_macro_recall": 0.34752707052970444,
+    "exactly_one_selected_edge_per_valid_token": true,
+    "strict_primary_metric_transfer_passed": true,
+    "secondary_fidelity_all_improved": false,
+    "heldout_confirmation": false,
+    "fresh_validation": false,
+    "test_data_used": false
+  },
+  "resource_accounting": {
+    "native_replaced_slice_parameters": 441600,
+    "compiled_graph_parameters": 133187,
+    "net_replaced_slice_parameter_savings": 308413,
+    "replaced_slice_parameter_savings_fraction": 0.6983990036231884,
+    "source_whole_model_parameters": 268098176,
+    "candidate_whole_model_parameters": 267789763,
+    "whole_model_parameter_savings_fraction": 0.0011503733617344714,
+    "native_replaced_slice_matrix_macs_per_token": 441600,
+    "compiled_dense_matrix_macs_per_token": 130400,
+    "compiled_executed_matrix_macs_per_token": 126816,
+    "dense_matrix_mac_savings_fraction": 0.7047101449275363,
+    "executed_matrix_mac_savings_fraction": 0.7128260869565217,
+    "latency_or_kernel_speed_claim": false
+  },
+  "integrity": {
+    "guard_claim_sha256": "824e7493e9944d518426afe7428656706aaa9fa74a727ecd1a59b214ae4c16eb",
+    "guard_manifest_sha256": "53dc29646354beed29ceec9969a820f661d0499c2aad25b5bbcea361f1bbc3b9",
+    "guard_claimed_before_materialization": true,
+    "source_model_unchanged": true,
+    "contains_prompt_text": false,
+    "contains_token_ids": false,
+    "contains_activation_or_gradient_rows": false,
+    "contains_model_or_candidate_weights": false,
+    "source_safe": true
+  },
+  "interpretation": "The frozen half-strength conditional edge field transfers a strict NLL improvement to family-disjoint Calibration-A prompts while retaining about 70 percent local parameter and matrix-MAC savings. KL, top-1 agreement, and Euclidean flow do not improve together, so this is evidence for a useful downstream-sensitive correction direction rather than native-equivalent fidelity or whole-model compression.",
+  "next_rung": "shared_hidden_state_chart_rank_ladder_with_fisher_weighted_message_fitting"
+}

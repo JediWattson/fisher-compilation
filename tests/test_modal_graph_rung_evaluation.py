@@ -341,6 +341,31 @@ def test_unified_evaluator_reports_every_control_and_exact_accounting() -> None:
     assert dense.calls == ["generated"]
 
 
+def test_unified_evaluator_can_truthfully_label_a_claimed_closed_guard() -> None:
+    batch, edgeless_logits, interacting_logits, deletion_logits = (
+        _evaluation_fixture()
+    )
+    report = evaluate_modal_graph_rung_conditions(
+        _Adapter(),
+        _GraphExecutor(
+            generated_logits=interacting_logits,
+            deletion_logits=deletion_logits,
+            interactions=3,
+        ),
+        _GraphExecutor(
+            generated_logits=edgeless_logits,
+            deletion_logits=deletion_logits,
+            interactions=0,
+        ),
+        (batch,),
+        assessment_role="claimed_closed_guard_assessment",
+        expected_example_ids=("assessment.0",),
+    )
+
+    assert report["assessment_role"] == "claimed_closed_guard_assessment"
+    assert report["heldout_confirmation"] is True
+
+
 def test_unified_evaluator_rejects_node_or_deletion_control_drift() -> None:
     batch, edgeless_logits, interacting_logits, deletion_logits = (
         _evaluation_fixture()

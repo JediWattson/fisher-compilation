@@ -1,0 +1,206 @@
+{
+  "schema": "fisher_graph.gemma3_downstream_qualification_bank",
+  "format_version": 1,
+  "bank_id": "gemma3-native-qualified-forced-choice-v2",
+  "selection": {
+    "selected_family_count": 6,
+    "qualification_examples_per_family": 5,
+    "evaluation_examples_per_family": 10,
+    "minimum_native_correct_per_family": 3,
+    "selection_order": "first_eligible_declared_family"
+  },
+  "families": [
+    {
+      "family_id": "lexical_synonym",
+      "prompt_template": "Complete with a synonym: A synonym of {stem} is",
+      "answer_pool": ["fast", "quiet", "start", "small", "mad", "big", "happy", "clever", "easy", "end", "answer", "right", "sick", "buy", "shut"],
+      "qualification": [
+        {"stem": "quick", "answer": "fast"},
+        {"stem": "silent", "answer": "quiet"},
+        {"stem": "begin", "answer": "start"},
+        {"stem": "tiny", "answer": "small"},
+        {"stem": "angry", "answer": "mad"}
+      ],
+      "evaluation": [
+        {"stem": "large", "answer": "big"},
+        {"stem": "glad", "answer": "happy"},
+        {"stem": "smart", "answer": "clever"},
+        {"stem": "simple", "answer": "easy"},
+        {"stem": "finish", "answer": "end"},
+        {"stem": "reply", "answer": "answer"},
+        {"stem": "correct", "answer": "right"},
+        {"stem": "ill", "answer": "sick"},
+        {"stem": "purchase", "answer": "buy"},
+        {"stem": "close", "answer": "shut"}
+      ]
+    },
+    {
+      "family_id": "noun_plural",
+      "prompt_template": "Complete the grammar fact: The plural of {stem} is",
+      "answer_pool": ["cats", "dogs", "books", "cars", "apples", "trees", "birds", "chairs", "houses", "rivers", "flowers", "shoes", "cups", "stars", "phones"],
+      "qualification": [
+        {"stem": "cat", "answer": "cats"},
+        {"stem": "dog", "answer": "dogs"},
+        {"stem": "book", "answer": "books"},
+        {"stem": "car", "answer": "cars"},
+        {"stem": "apple", "answer": "apples"}
+      ],
+      "evaluation": [
+        {"stem": "tree", "answer": "trees"},
+        {"stem": "bird", "answer": "birds"},
+        {"stem": "chair", "answer": "chairs"},
+        {"stem": "house", "answer": "houses"},
+        {"stem": "river", "answer": "rivers"},
+        {"stem": "flower", "answer": "flowers"},
+        {"stem": "shoe", "answer": "shoes"},
+        {"stem": "cup", "answer": "cups"},
+        {"stem": "star", "answer": "stars"},
+        {"stem": "phone", "answer": "phones"}
+      ]
+    },
+    {
+      "family_id": "animal_movement",
+      "prompt_template": "Complete the animal-movement fact: A {stem} commonly",
+      "answer_pool": ["flies", "swims", "crawls", "runs", "jumps", "walks", "climbs", "digs", "hunts", "sleeps", "dives", "hops"],
+      "qualification": [
+        {"stem": "bird", "answer": "flies"},
+        {"stem": "fish", "answer": "swims"},
+        {"stem": "snake", "answer": "crawls"},
+        {"stem": "horse", "answer": "runs"},
+        {"stem": "frog", "answer": "jumps"}
+      ],
+      "evaluation": [
+        {"stem": "person", "answer": "walks"},
+        {"stem": "monkey", "answer": "climbs"},
+        {"stem": "mole", "answer": "digs"},
+        {"stem": "lion", "answer": "hunts"},
+        {"stem": "cat", "answer": "sleeps"},
+        {"stem": "whale", "answer": "dives"},
+        {"stem": "rabbit", "answer": "hops"},
+        {"stem": "dog", "answer": "runs"},
+        {"stem": "duck", "answer": "swims"},
+        {"stem": "kangaroo", "answer": "jumps"}
+      ]
+    },
+    {
+      "family_id": "object_material",
+      "prompt_template": "Complete the material fact: A typical {stem} can be made of",
+      "answer_pool": ["metal", "glass", "cloth", "paper", "rubber", "wood", "wool", "clay", "leather", "gold", "aluminum", "silver", "ceramic", "stone", "plastic"],
+      "qualification": [
+        {"stem": "spoon", "answer": "metal"},
+        {"stem": "window", "answer": "glass"},
+        {"stem": "shirt", "answer": "cloth"},
+        {"stem": "book", "answer": "paper"},
+        {"stem": "tire", "answer": "rubber"}
+      ],
+      "evaluation": [
+        {"stem": "table", "answer": "wood"},
+        {"stem": "sweater", "answer": "wool"},
+        {"stem": "brick", "answer": "clay"},
+        {"stem": "shoe", "answer": "leather"},
+        {"stem": "ring", "answer": "gold"},
+        {"stem": "foil", "answer": "aluminum"},
+        {"stem": "coin", "answer": "silver"},
+        {"stem": "vase", "answer": "ceramic"},
+        {"stem": "statue", "answer": "stone"},
+        {"stem": "bottle", "answer": "plastic"}
+      ]
+    },
+    {
+      "family_id": "country_continent",
+      "prompt_template": "Complete the geography fact: {stem} is located in",
+      "answer_pool": ["Europe", "Africa", "Asia", "Australia"],
+      "qualification": [
+        {"stem": "France", "answer": "Europe"},
+        {"stem": "Kenya", "answer": "Africa"},
+        {"stem": "Japan", "answer": "Asia"},
+        {"stem": "Fiji", "answer": "Australia"},
+        {"stem": "Italy", "answer": "Europe"}
+      ],
+      "evaluation": [
+        {"stem": "Nigeria", "answer": "Africa"},
+        {"stem": "China", "answer": "Asia"},
+        {"stem": "Germany", "answer": "Europe"},
+        {"stem": "India", "answer": "Asia"},
+        {"stem": "Spain", "answer": "Europe"},
+        {"stem": "Ghana", "answer": "Africa"},
+        {"stem": "Korea", "answer": "Asia"},
+        {"stem": "New Zealand", "answer": "Australia"},
+        {"stem": "Egypt", "answer": "Africa"},
+        {"stem": "Vietnam", "answer": "Asia"}
+      ]
+    },
+    {
+      "family_id": "country_language",
+      "prompt_template": "Complete the language fact: A major language of {stem} is",
+      "answer_pool": ["Japanese", "French", "German", "Spanish", "Italian", "Arabic", "Portuguese", "Mandarin", "Hindi", "Russian", "Greek", "Dutch", "Korean", "Turkish", "Polish"],
+      "qualification": [
+        {"stem": "Japan", "answer": "Japanese"},
+        {"stem": "France", "answer": "French"},
+        {"stem": "Germany", "answer": "German"},
+        {"stem": "Spain", "answer": "Spanish"},
+        {"stem": "Italy", "answer": "Italian"}
+      ],
+      "evaluation": [
+        {"stem": "Egypt", "answer": "Arabic"},
+        {"stem": "Brazil", "answer": "Portuguese"},
+        {"stem": "China", "answer": "Mandarin"},
+        {"stem": "India", "answer": "Hindi"},
+        {"stem": "Russia", "answer": "Russian"},
+        {"stem": "Greece", "answer": "Greek"},
+        {"stem": "the Netherlands", "answer": "Dutch"},
+        {"stem": "Korea", "answer": "Korean"},
+        {"stem": "Turkey", "answer": "Turkish"},
+        {"stem": "Poland", "answer": "Polish"}
+      ]
+    },
+    {
+      "family_id": "color_association",
+      "prompt_template": "Complete the common color association: {stem} is commonly",
+      "answer_pool": ["white", "black", "green", "blue", "yellow", "red", "brown", "purple", "pink", "gray", "orange", "gold"],
+      "qualification": [
+        {"stem": "snow", "answer": "white"},
+        {"stem": "coal", "answer": "black"},
+        {"stem": "grass", "answer": "green"},
+        {"stem": "the sky", "answer": "blue"},
+        {"stem": "a lemon", "answer": "yellow"}
+      ],
+      "evaluation": [
+        {"stem": "blood", "answer": "red"},
+        {"stem": "chocolate", "answer": "brown"},
+        {"stem": "a grape", "answer": "purple"},
+        {"stem": "a flamingo", "answer": "pink"},
+        {"stem": "a rain cloud", "answer": "gray"},
+        {"stem": "a carrot", "answer": "orange"},
+        {"stem": "a lime", "answer": "green"},
+        {"stem": "the ocean", "answer": "blue"},
+        {"stem": "milk", "answer": "white"},
+        {"stem": "the precious metal gold", "answer": "gold"}
+      ]
+    },
+    {
+      "family_id": "calendar_successor",
+      "prompt_template": "Complete the calendar sequence: {stem} is",
+      "answer_pool": ["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "Monday", "February", "March", "April", "May", "June", "July", "August", "September"],
+      "qualification": [
+        {"stem": "the day after Monday", "answer": "Tuesday"},
+        {"stem": "the day after Tuesday", "answer": "Wednesday"},
+        {"stem": "the day after Wednesday", "answer": "Thursday"},
+        {"stem": "the day after Thursday", "answer": "Friday"},
+        {"stem": "the day after Friday", "answer": "Saturday"}
+      ],
+      "evaluation": [
+        {"stem": "the day after Saturday", "answer": "Sunday"},
+        {"stem": "the day after Sunday", "answer": "Monday"},
+        {"stem": "the month after January", "answer": "February"},
+        {"stem": "the month after February", "answer": "March"},
+        {"stem": "the month after March", "answer": "April"},
+        {"stem": "the month after April", "answer": "May"},
+        {"stem": "the month after May", "answer": "June"},
+        {"stem": "the month after June", "answer": "July"},
+        {"stem": "the month after July", "answer": "August"},
+        {"stem": "the month after August", "answer": "September"}
+      ]
+    }
+  ]
+}

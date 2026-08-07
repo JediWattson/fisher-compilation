@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import re
 
 import torch
@@ -39,17 +40,24 @@ __all__ = [
     "ModalGeneratorGraphPlan",
     "ModalGeneratorInteraction",
     "ModalGeneratorNode",
+    "StateConditionedModalGeneratorInteraction",
 ]
 
 
 _WEIGHTS_KIND = "fisher_graph.linear_modal_generator_node_weights"
 _NODE_KIND = "fisher_graph.modal_generator_node"
 _EDGE_KIND = "fisher_graph.modal_generator_interaction"
+_STATE_CONDITIONED_EDGE_KIND = (
+    "fisher_graph.state_conditioned_modal_generator_interaction"
+)
 _GRAPH_KIND = "fisher_graph.modal_generator_graph_plan"
 _FORMAT_VERSION = 1
 _WEIGHTS_HASH_DOMAIN = b"fisher_graph.linear_modal_generator_node_weights.v1\0"
 _NODE_HASH_DOMAIN = b"fisher_graph.modal_generator_node.v1\0"
 _EDGE_HASH_DOMAIN = b"fisher_graph.modal_generator_interaction.v1\0"
+_STATE_CONDITIONED_EDGE_HASH_DOMAIN = (
+    b"fisher_graph.state_conditioned_modal_generator_interaction.v1\0"
+)
 _GRAPH_HASH_DOMAIN = b"fisher_graph.modal_generator_graph_plan.v1\0"
 _TENSOR_HASH_DOMAIN = b"fisher_graph.modal_generator_graph_tensor.v1\0"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -145,6 +153,11 @@ def _strict_keys(
             f"{label} fields mismatch: expected {sorted(expected)}, "
             f"got {sorted(actual)}"
         )
+
+
+def _unknown_interaction_kind(value: object) -> object:
+    kind = value.get("artifact_kind") if isinstance(value, Mapping) else None
+    raise ValueError(f"unsupported generator interaction kind: {kind!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -895,8 +908,519 @@ class ModalGeneratorInteraction:
 
 
 @dataclass(frozen=True, slots=True)
+class StateConditionedModalGeneratorInteraction:
+    """A source-conditioned polynomial velocity between modal coordinates.
+
+    Edges with the same ``(source_node, routing_group)`` are normalized
+    together by the graph executor.  The proposal is
+
+    ``z @ M + b + ((z @ A) * (z @ C)) @ B``
+
+    and its source-only routing logit is ``z @ g + g0``.  The quadratic term
+    has zero value and zero Jacobian at ``z = 0``, so ``M`` remains the local
+    proposal tangent.  The effective routed edge is nevertheless nonlinear
+    because both the proposal and its normalized route weight depend on the
+    current modal state.
+
+    This artifact deliberately stores no teacher output, Fisher profile,
+    target, prompt, callback, or source-model module.  Those values may guide
+    the offline fit, but serving uses only the final source modal state and
+    copied coefficients below.
+    """
+
+    source_node: str
+    target_node: str
+    routing_group: str
+    message_matrix: Tensor
+    message_bias: Tensor
+    gate_weight: Tensor
+    gate_bias: Tensor
+    quadratic_left: Tensor | None = None
+    quadratic_right: Tensor | None = None
+    quadratic_output: Tensor | None = None
+    temperature: float = 1.0
+    top_k: int = 1
+    message_matrix_sha256: str = ""
+    message_bias_sha256: str = ""
+    gate_weight_sha256: str = ""
+    gate_bias_sha256: str = ""
+    quadratic_left_sha256: str | None = ""
+    quadratic_right_sha256: str | None = ""
+    quadratic_output_sha256: str | None = ""
+    artifact_sha256: str = ""
+    artifact_kind: str = _STATE_CONDITIONED_EDGE_KIND
+    format_version: int = _FORMAT_VERSION
+
+    def __post_init__(self) -> None:
+        _require_name(self.source_node, label="source_node")
+        _require_name(self.target_node, label="target_node")
+        _require_name(self.routing_group, label="routing_group")
+        if self.source_node == self.target_node:
+            raise ValueError("a generator interaction cannot be a self-edge")
+        if (
+            isinstance(self.temperature, bool)
+            or not isinstance(self.temperature, (int, float))
+            or not math.isfinite(float(self.temperature))
+            or float(self.temperature) <= 0.0
+        ):
+            raise ValueError("conditional interaction temperature must be positive")
+        if type(self.top_k) is not int or self.top_k <= 0:
+            raise ValueError("conditional interaction top_k must be positive")
+        object.__setattr__(self, "temperature", float(self.temperature))
+
+        matrix = _as_float64_tensor(
+            self.message_matrix,
+            label="message_matrix",
+            ndim=2,
+        )
+        bias = _as_float64_tensor(
+            self.message_bias,
+            label="message_bias",
+            ndim=1,
+        )
+        gate_weight = _as_float64_tensor(
+            self.gate_weight,
+            label="gate_weight",
+            ndim=1,
+        )
+        gate_bias = _as_float64_tensor(
+            self.gate_bias,
+            label="gate_bias",
+            ndim=1,
+        )
+        if matrix.shape[1] != bias.shape[0]:
+            raise ValueError(
+                "message matrix output and message bias dimensions differ"
+            )
+        if gate_weight.shape != (matrix.shape[0],):
+            raise ValueError(
+                "gate weight must match the conditional edge source width"
+            )
+        if gate_bias.shape != (1,):
+            raise ValueError("gate bias must contain exactly one scalar")
+
+        quadratic_values = (
+            self.quadratic_left,
+            self.quadratic_right,
+            self.quadratic_output,
+        )
+        if any(value is None for value in quadratic_values) and not all(
+            value is None for value in quadratic_values
+        ):
+            raise ValueError(
+                "conditional quadratic factors must be all present or all absent"
+            )
+        left: Tensor | None = None
+        right: Tensor | None = None
+        output: Tensor | None = None
+        if self.quadratic_left is not None:
+            left = _as_float64_tensor(
+                self.quadratic_left,
+                label="quadratic_left",
+                ndim=2,
+            )
+            right = _as_float64_tensor(
+                self.quadratic_right,  # type: ignore[arg-type]
+                label="quadratic_right",
+                ndim=2,
+            )
+            output = _as_float64_tensor(
+                self.quadratic_output,  # type: ignore[arg-type]
+                label="quadratic_output",
+                ndim=2,
+            )
+            if (
+                left.shape != right.shape
+                or left.shape[0] != matrix.shape[0]
+                or output.shape != (left.shape[1], matrix.shape[1])
+            ):
+                raise ValueError(
+                    "conditional quadratic factor dimensions are incompatible"
+                )
+
+        object.__setattr__(self, "message_matrix", matrix)
+        object.__setattr__(self, "message_bias", bias)
+        object.__setattr__(self, "gate_weight", gate_weight)
+        object.__setattr__(self, "gate_bias", gate_bias)
+        object.__setattr__(self, "quadratic_left", left)
+        object.__setattr__(self, "quadratic_right", right)
+        object.__setattr__(self, "quadratic_output", output)
+
+        for field, tensor in (
+            ("message_matrix_sha256", matrix),
+            ("message_bias_sha256", bias),
+            ("gate_weight_sha256", gate_weight),
+            ("gate_bias_sha256", gate_bias),
+        ):
+            computed = _tensor_sha256(tensor, label=field)
+            supplied = getattr(self, field)
+            if supplied == "":
+                object.__setattr__(self, field, computed)
+            elif _require_sha256(supplied, label=field) != computed:
+                raise ValueError(f"{field.removesuffix('_sha256')} hash mismatch")
+        for field, tensor in (
+            ("quadratic_left_sha256", left),
+            ("quadratic_right_sha256", right),
+            ("quadratic_output_sha256", output),
+        ):
+            supplied = getattr(self, field)
+            if tensor is None:
+                if supplied not in ("", None):
+                    raise ValueError(
+                        f"{field} must be absent when its tensor is absent"
+                    )
+                object.__setattr__(self, field, None)
+            else:
+                computed = _tensor_sha256(tensor, label=field)
+                if supplied == "":
+                    object.__setattr__(self, field, computed)
+                elif _require_sha256(supplied, label=field) != computed:
+                    raise ValueError(
+                        f"{field.removesuffix('_sha256')} hash mismatch"
+                    )
+
+        if (
+            self.artifact_kind != _STATE_CONDITIONED_EDGE_KIND
+            or self.format_version != _FORMAT_VERSION
+        ):
+            raise ValueError(
+                "state-conditioned generator interaction header is invalid"
+            )
+        computed_artifact = self._computed_sha256()
+        if self.artifact_sha256 == "":
+            object.__setattr__(self, "artifact_sha256", computed_artifact)
+        elif (
+            _require_sha256(self.artifact_sha256, label="artifact_sha256")
+            != computed_artifact
+        ):
+            raise ValueError(
+                "state-conditioned generator interaction hash mismatch"
+            )
+
+    @property
+    def source_width(self) -> int:
+        return int(self.message_matrix.shape[0])
+
+    @property
+    def target_width(self) -> int:
+        return int(self.message_matrix.shape[1])
+
+    @property
+    def quadratic_rank(self) -> int:
+        return (
+            0
+            if self.quadratic_left is None
+            else int(self.quadratic_left.shape[1])
+        )
+
+    @property
+    def key(self) -> str:
+        return f"{self.source_node}->{self.target_node}"
+
+    @property
+    def routing_key(self) -> str:
+        """Human-readable routing-group label; not an identity key."""
+
+        return f"{self.source_node}:{self.routing_group}"
+
+    @property
+    def routing_group_key(self) -> tuple[str, str]:
+        """Unambiguous identity used for grouping conditional edges."""
+
+        return self.source_node, self.routing_group
+
+    @property
+    def parameter_count(self) -> int:
+        quadratic = (
+            0
+            if self.quadratic_rank == 0
+            else (
+                2 * self.source_width * self.quadratic_rank
+                + self.quadratic_rank * self.target_width
+            )
+        )
+        return (
+            self.source_width * self.target_width
+            + self.target_width
+            + self.source_width
+            + 1
+            + quadratic
+        )
+
+    @property
+    def routing_macs_per_token(self) -> int:
+        return self.source_width
+
+    @property
+    def message_macs_per_selected_token(self) -> int:
+        return (
+            self.source_width * self.target_width
+            + 2 * self.source_width * self.quadratic_rank
+            + self.quadratic_rank * self.target_width
+        )
+
+    @property
+    def elementwise_multiplications_per_selected_token(self) -> int:
+        # One Hadamard product per quadratic coordinate and one route-weight
+        # multiplication per target coordinate.
+        return self.quadratic_rank + self.target_width
+
+    @property
+    def macs_per_token(self) -> int:
+        """Dense-candidate upper bound used by legacy graph accounting."""
+
+        return self.routing_macs_per_token + self.message_macs_per_selected_token
+
+    @property
+    def bias_additions_per_token(self) -> int:
+        # Message bias plus routing bias, and (when present) the addition of
+        # the quadratic correction to the affine proposal. This remains a
+        # dense-candidate bound; selected runtime work is route-dependent.
+        return (
+            self.target_width
+            + 1
+            + (self.target_width if self.quadratic_rank else 0)
+        )
+
+    def _hash_payload(self) -> dict[str, object]:
+        return {
+            "artifact_kind": self.artifact_kind,
+            "format_version": self.format_version,
+            "source_node": self.source_node,
+            "target_node": self.target_node,
+            "routing_group": self.routing_group,
+            "temperature": self.temperature,
+            "top_k": self.top_k,
+            "source_width": self.source_width,
+            "target_width": self.target_width,
+            "quadratic_rank": self.quadratic_rank,
+            "message_matrix_sha256": self.message_matrix_sha256,
+            "message_bias_sha256": self.message_bias_sha256,
+            "gate_weight_sha256": self.gate_weight_sha256,
+            "gate_bias_sha256": self.gate_bias_sha256,
+            "quadratic_left_sha256": self.quadratic_left_sha256,
+            "quadratic_right_sha256": self.quadratic_right_sha256,
+            "quadratic_output_sha256": self.quadratic_output_sha256,
+        }
+
+    def _computed_sha256(self) -> str:
+        return _json_sha256(
+            self._hash_payload(),
+            domain=_STATE_CONDITIONED_EDGE_HASH_DOMAIN,
+        )
+
+    def validate_integrity(self) -> None:
+        for field in (
+            "message_matrix",
+            "message_bias",
+            "gate_weight",
+            "gate_bias",
+        ):
+            tensor = getattr(self, field)
+            if _tensor_sha256(tensor, label=field) != getattr(
+                self, f"{field}_sha256"
+            ):
+                raise ValueError(f"{field} hash mismatch")
+        for field in (
+            "quadratic_left",
+            "quadratic_right",
+            "quadratic_output",
+        ):
+            tensor = getattr(self, field)
+            digest = getattr(self, f"{field}_sha256")
+            if tensor is not None and _tensor_sha256(
+                tensor, label=field
+            ) != digest:
+                raise ValueError(f"{field} hash mismatch")
+        if self._computed_sha256() != self.artifact_sha256:
+            raise ValueError(
+                "state-conditioned generator interaction hash mismatch"
+            )
+
+    @staticmethod
+    def _runtime_weight(weight: Tensor, like: Tensor) -> Tensor:
+        result = weight.to(device=like.device, dtype=like.dtype)
+        if not bool(torch.isfinite(result).all()):
+            raise ValueError(
+                "state-conditioned interaction weight is not finite in the "
+                "runtime dtype"
+            )
+        return result
+
+    def routing_logit(self, source_state: Tensor) -> Tensor:
+        if (
+            not isinstance(source_state, Tensor)
+            or source_state.ndim < 1
+            or source_state.shape[-1] != self.source_width
+            or not source_state.is_floating_point()
+            or not bool(torch.isfinite(source_state).all())
+        ):
+            raise ValueError(
+                "source_state must be finite floating modal coordinates"
+            )
+        compute_dtype = (
+            torch.float32
+            if source_state.dtype in (torch.float16, torch.bfloat16)
+            else source_state.dtype
+        )
+        values = source_state.to(dtype=compute_dtype)
+        weight = self.gate_weight.to(
+            device=values.device,
+            dtype=compute_dtype,
+        )
+        bias = self.gate_bias.to(
+            device=values.device,
+            dtype=compute_dtype,
+        )
+        # Routing decisions must not inherit an ambient autocast policy: gate
+        # coefficients are intentionally evaluated in compute_dtype so a
+        # near-boundary top-k choice cannot collapse back to bf16/fp16.
+        with torch.autocast(device_type=values.device.type, enabled=False):
+            result = values @ weight + bias[0]
+        if not bool(torch.isfinite(result).all()):
+            raise ValueError("conditional interaction routing logit is non-finite")
+        return result
+
+    def proposed_message(self, source_state: Tensor) -> Tensor:
+        if (
+            not isinstance(source_state, Tensor)
+            or source_state.ndim < 1
+            or source_state.shape[-1] != self.source_width
+            or not source_state.is_floating_point()
+            or not bool(torch.isfinite(source_state).all())
+        ):
+            raise ValueError(
+                "source_state must be finite floating modal coordinates"
+            )
+        result = source_state @ self._runtime_weight(
+            self.message_matrix,
+            source_state,
+        )
+        result = result + self._runtime_weight(self.message_bias, result)
+        if self.quadratic_left is not None:
+            left = source_state @ self._runtime_weight(
+                self.quadratic_left,
+                source_state,
+            )
+            right = source_state @ self._runtime_weight(
+                self.quadratic_right,  # type: ignore[arg-type]
+                source_state,
+            )
+            result = result + (left * right) @ self._runtime_weight(
+                self.quadratic_output,  # type: ignore[arg-type]
+                source_state,
+            )
+        if not bool(torch.isfinite(result).all()):
+            raise ValueError("conditional interaction proposal is non-finite")
+        return result
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            **self._hash_payload(),
+            "message_matrix": self.message_matrix.clone(),
+            "message_bias": self.message_bias.clone(),
+            "gate_weight": self.gate_weight.clone(),
+            "gate_bias": self.gate_bias.clone(),
+            "quadratic_left": (
+                None
+                if self.quadratic_left is None
+                else self.quadratic_left.clone()
+            ),
+            "quadratic_right": (
+                None
+                if self.quadratic_right is None
+                else self.quadratic_right.clone()
+            ),
+            "quadratic_output": (
+                None
+                if self.quadratic_output is None
+                else self.quadratic_output.clone()
+            ),
+            "artifact_sha256": self.artifact_sha256,
+        }
+
+    to_state_dict = state_dict
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        state: Mapping[str, object],
+    ) -> StateConditionedModalGeneratorInteraction:
+        expected = {
+            "artifact_kind",
+            "format_version",
+            "source_node",
+            "target_node",
+            "routing_group",
+            "temperature",
+            "top_k",
+            "source_width",
+            "target_width",
+            "quadratic_rank",
+            "message_matrix_sha256",
+            "message_bias_sha256",
+            "gate_weight_sha256",
+            "gate_bias_sha256",
+            "quadratic_left_sha256",
+            "quadratic_right_sha256",
+            "quadratic_output_sha256",
+            "message_matrix",
+            "message_bias",
+            "gate_weight",
+            "gate_bias",
+            "quadratic_left",
+            "quadratic_right",
+            "quadratic_output",
+            "artifact_sha256",
+        }
+        _strict_keys(
+            state,
+            expected=expected,
+            label="state-conditioned generator interaction",
+        )
+        result = cls(
+            source_node=state["source_node"],
+            target_node=state["target_node"],
+            routing_group=state["routing_group"],
+            message_matrix=state["message_matrix"],
+            message_bias=state["message_bias"],
+            gate_weight=state["gate_weight"],
+            gate_bias=state["gate_bias"],
+            quadratic_left=state["quadratic_left"],
+            quadratic_right=state["quadratic_right"],
+            quadratic_output=state["quadratic_output"],
+            temperature=state["temperature"],
+            top_k=state["top_k"],
+            message_matrix_sha256=state["message_matrix_sha256"],
+            message_bias_sha256=state["message_bias_sha256"],
+            gate_weight_sha256=state["gate_weight_sha256"],
+            gate_bias_sha256=state["gate_bias_sha256"],
+            quadratic_left_sha256=state["quadratic_left_sha256"],
+            quadratic_right_sha256=state["quadratic_right_sha256"],
+            quadratic_output_sha256=state["quadratic_output_sha256"],
+            artifact_sha256=state["artifact_sha256"],
+            artifact_kind=state["artifact_kind"],
+            format_version=state["format_version"],
+        )
+        if (
+            state["source_width"] != result.source_width
+            or state["target_width"] != result.target_width
+            or state["quadratic_rank"] != result.quadratic_rank
+        ):
+            raise ValueError(
+                "serialized state-conditioned interaction dimensions drifted"
+            )
+        return result
+
+
+@dataclass(frozen=True, slots=True)
 class ModalGeneratorGraphAccounting:
-    """Exact one-token storage and arithmetic accounting."""
+    """Exact storage plus dense-candidate one-token arithmetic bounds.
+
+    Legacy affine graphs execute these arithmetic totals exactly. Conditional
+    graphs use them as conservative dense bounds; selected proposal work is
+    reported separately by ``ModalGeneratorGraphPlan`` and at runtime.
+    """
 
     node_parameter_count: int
     interaction_parameter_count: int
@@ -930,7 +1454,11 @@ class ModalGeneratorGraphPlan:
     model_fingerprint: str
     parameter_cluster_plan_sha256: str
     nodes: tuple[ModalGeneratorNode, ...]
-    interactions: tuple[ModalGeneratorInteraction, ...]
+    interactions: tuple[
+        ModalGeneratorInteraction
+        | StateConditionedModalGeneratorInteraction,
+        ...,
+    ]
     artifact_sha256: str = ""
     artifact_kind: str = _GRAPH_KIND
     format_version: int = _FORMAT_VERSION
@@ -952,12 +1480,18 @@ class ModalGeneratorGraphPlan:
         if (
             type(self.interactions) is not tuple
             or any(
-                not isinstance(edge, ModalGeneratorInteraction)
+                not isinstance(
+                    edge,
+                    (
+                        ModalGeneratorInteraction,
+                        StateConditionedModalGeneratorInteraction,
+                    ),
+                )
                 for edge in self.interactions
             )
         ):
             raise ValueError(
-                "interactions must be a tuple of ModalGeneratorInteraction"
+                "interactions must be authenticated modal interactions"
             )
         expected_nodes = tuple(
             sorted(self.nodes, key=lambda node: (node.causal_order, node.name))
@@ -1063,6 +1597,35 @@ class ModalGeneratorGraphPlan:
                 raise ValueError(
                     "interaction target dimension does not match target latent"
                 )
+        conditional_groups: dict[
+            tuple[str, str],
+            list[StateConditionedModalGeneratorInteraction],
+        ] = defaultdict(list)
+        for edge in self.interactions:
+            if isinstance(edge, StateConditionedModalGeneratorInteraction):
+                conditional_groups[edge.routing_group_key].append(edge)
+        for routing_key, edges in conditional_groups.items():
+            first = edges[0]
+            if len(edges) < 2:
+                raise ValueError(
+                    "state-conditioned routing groups require at least two "
+                    "candidate edges"
+                )
+            if first.top_k > len(edges):
+                raise ValueError(
+                    "state-conditioned interaction top_k exceeds its group"
+                )
+            for edge in edges[1:]:
+                if (
+                    edge.source_node != first.source_node
+                    or edge.routing_group != first.routing_group
+                    or edge.temperature != first.temperature
+                    or edge.top_k != first.top_k
+                ):
+                    raise ValueError(
+                        f"conditional routing group {routing_key!r} has "
+                        "inconsistent configuration"
+                    )
         # Strictly forward edges already imply acyclicity.  Keep an explicit
         # topological audit so this invariant remains true if ordering evolves.
         indegree = {name: 0 for name in by_name}
@@ -1147,6 +1710,76 @@ class ModalGeneratorGraphPlan:
     def macs_per_token(self) -> int:
         return self.accounting.macs_per_token
 
+    @property
+    def conditional_routing_macs_per_token(self) -> int:
+        return sum(
+            edge.routing_macs_per_token
+            for edge in self.interactions
+            if isinstance(edge, StateConditionedModalGeneratorInteraction)
+        )
+
+    @property
+    def conditional_dense_message_macs_per_token(self) -> int:
+        return sum(
+            edge.message_macs_per_selected_token
+            for edge in self.interactions
+            if isinstance(edge, StateConditionedModalGeneratorInteraction)
+        )
+
+    @property
+    def conditional_selected_message_macs_per_token_upper_bound(self) -> int:
+        groups: dict[
+            tuple[str, str],
+            list[StateConditionedModalGeneratorInteraction],
+        ] = defaultdict(list)
+        for edge in self.interactions:
+            if isinstance(edge, StateConditionedModalGeneratorInteraction):
+                groups[edge.routing_group_key].append(edge)
+        return sum(
+            sum(
+                sorted(
+                    (
+                        edge.message_macs_per_selected_token
+                        for edge in edges
+                    ),
+                    reverse=True,
+                )[: edges[0].top_k]
+            )
+            for edges in groups.values()
+        )
+
+    @property
+    def conditional_dense_elementwise_multiplications_per_token(self) -> int:
+        return sum(
+            edge.elementwise_multiplications_per_selected_token
+            for edge in self.interactions
+            if isinstance(edge, StateConditionedModalGeneratorInteraction)
+        )
+
+    @property
+    def conditional_selected_elementwise_multiplications_per_token_upper_bound(
+        self,
+    ) -> int:
+        groups: dict[
+            tuple[str, str],
+            list[StateConditionedModalGeneratorInteraction],
+        ] = defaultdict(list)
+        for edge in self.interactions:
+            if isinstance(edge, StateConditionedModalGeneratorInteraction):
+                groups[edge.routing_group_key].append(edge)
+        return sum(
+            sum(
+                sorted(
+                    (
+                        edge.elementwise_multiplications_per_selected_token
+                        for edge in edges
+                    ),
+                    reverse=True,
+                )[: edges[0].top_k]
+            )
+            for edges in groups.values()
+        )
+
     def _hash_payload(self) -> dict[str, object]:
         return {
             "artifact_kind": self.artifact_kind,
@@ -1193,6 +1826,21 @@ class ModalGeneratorGraphPlan:
             **self._hash_payload(),
             "artifact_sha256": self.artifact_sha256,
             "traversal_order": self.traversal_order,
+            "conditional_routing_macs_per_token": (
+                self.conditional_routing_macs_per_token
+            ),
+            "conditional_dense_message_macs_per_token": (
+                self.conditional_dense_message_macs_per_token
+            ),
+            "conditional_selected_message_macs_per_token_upper_bound": (
+                self.conditional_selected_message_macs_per_token_upper_bound
+            ),
+            "conditional_dense_elementwise_multiplications_per_token": (
+                self.conditional_dense_elementwise_multiplications_per_token
+            ),
+            "conditional_selected_elementwise_multiplications_per_token_upper_bound": (
+                self.conditional_selected_elementwise_multiplications_per_token_upper_bound
+            ),
         }
 
     def state_dict(self) -> dict[str, object]:
@@ -1245,7 +1893,18 @@ class ModalGeneratorGraphPlan:
                 for value in raw_nodes
             ),
             interactions=tuple(
-                ModalGeneratorInteraction.from_state_dict(value)
+                (
+                    ModalGeneratorInteraction.from_state_dict(value)
+                    if isinstance(value, Mapping)
+                    and value.get("artifact_kind") == _EDGE_KIND
+                    else StateConditionedModalGeneratorInteraction.from_state_dict(
+                        value
+                    )
+                    if isinstance(value, Mapping)
+                    and value.get("artifact_kind")
+                    == _STATE_CONDITIONED_EDGE_KIND
+                    else _unknown_interaction_kind(value)
+                )
                 for value in raw_edges
             ),
             artifact_sha256=state["artifact_sha256"],
@@ -1262,6 +1921,112 @@ class ModalGeneratorGraphExecution:
     traversal_order: tuple[str, ...]
     modal_states: dict[str, Tensor] | None = None
     edge_messages: dict[str, Tensor] | None = None
+    routing_weights: dict[str, Tensor] | None = None
+    evaluated_edge_rows: dict[str, int] | None = None
+
+
+def _conditional_outgoing_groups(
+    interactions: tuple[
+        ModalGeneratorInteraction
+        | StateConditionedModalGeneratorInteraction,
+        ...,
+    ],
+) -> dict[
+    str,
+    tuple[tuple[StateConditionedModalGeneratorInteraction, ...], ...],
+]:
+    groups: dict[
+        tuple[str, str],
+        list[StateConditionedModalGeneratorInteraction],
+    ] = defaultdict(list)
+    for edge in interactions:
+        if isinstance(edge, StateConditionedModalGeneratorInteraction):
+            groups[edge.routing_group_key].append(edge)
+    by_source: dict[
+        str,
+        list[tuple[StateConditionedModalGeneratorInteraction, ...]],
+    ] = defaultdict(list)
+    for routing_key in sorted(groups):
+        edges = tuple(
+            sorted(groups[routing_key], key=lambda edge: edge.target_node)
+        )
+        by_source[edges[0].source_node].append(edges)
+    return {
+        source: tuple(source_groups)
+        for source, source_groups in sorted(by_source.items())
+    }
+
+
+def _routed_conditional_messages(
+    source_state: Tensor,
+    edges: tuple[StateConditionedModalGeneratorInteraction, ...],
+) -> tuple[dict[str, Tensor], dict[str, Tensor], dict[str, int]]:
+    """Route one source state while evaluating proposals only on selected rows."""
+
+    if not edges:
+        raise ValueError("conditional routing group cannot be empty")
+    first = edges[0]
+    logits = torch.stack(
+        tuple(edge.routing_logit(source_state) for edge in edges),
+        dim=-1,
+    )
+    if first.top_k < len(edges):
+        # Stable sorting makes equal-logit ties follow canonical target order.
+        order = torch.argsort(
+            logits,
+            dim=-1,
+            descending=True,
+            stable=True,
+        )
+        selected = order[..., : first.top_k]
+        mask = torch.zeros_like(logits, dtype=torch.bool)
+        mask.scatter_(-1, selected, True)
+        selected_logits = logits.masked_fill(~mask, float("-inf"))
+    else:
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        selected_logits = logits
+    centered_logits = selected_logits - selected_logits.max(
+        dim=-1,
+        keepdim=True,
+    ).values
+    scaled = centered_logits / first.temperature
+    weights = torch.softmax(scaled, dim=-1)
+    if not bool(torch.isfinite(weights).all()):
+        raise ValueError("conditional routing weights became non-finite")
+
+    flat_source = source_state.reshape(-1, first.source_width)
+    flat_weights = weights.reshape(-1, len(edges))
+    flat_mask = mask.reshape(-1, len(edges))
+    messages: dict[str, Tensor] = {}
+    route_weights: dict[str, Tensor] = {}
+    evaluated_rows: dict[str, int] = {}
+    for index, edge in enumerate(edges):
+        edge_weights = flat_weights[:, index]
+        selected_rows = torch.nonzero(
+            flat_mask[:, index],
+            as_tuple=False,
+        ).flatten()
+        flat_message = source_state.new_zeros(
+            (flat_source.shape[0], edge.target_width)
+        )
+        if selected_rows.numel():
+            selected_source = flat_source.index_select(0, selected_rows)
+            proposal = edge.proposed_message(selected_source)
+            selected_weights = edge_weights.index_select(
+                0,
+                selected_rows,
+            ).to(dtype=proposal.dtype)
+            flat_message.index_copy_(
+                0,
+                selected_rows,
+                proposal * selected_weights[:, None],
+            )
+        messages[edge.key] = flat_message.reshape(
+            (*source_state.shape[:-1], edge.target_width)
+        )
+        route_weights[edge.key] = weights[..., index]
+        evaluated_rows[edge.key] = int(selected_rows.numel())
+    return messages, route_weights, evaluated_rows
 
 
 class ModalGeneratorGraphExecutor:
@@ -1279,10 +2044,14 @@ class ModalGeneratorGraphExecutor:
         self._nodes = {node.name: node for node in self.plan.nodes}
         incoming: dict[str, list[ModalGeneratorInteraction]] = defaultdict(list)
         for edge in self.plan.interactions:
-            incoming[edge.target_node].append(edge)
+            if isinstance(edge, ModalGeneratorInteraction):
+                incoming[edge.target_node].append(edge)
         self._incoming = {
             name: tuple(edges) for name, edges in incoming.items()
         }
+        self._conditional_outgoing = _conditional_outgoing_groups(
+            self.plan.interactions
+        )
 
     @staticmethod
     def _runtime_weight(weight: Tensor, like: Tensor) -> Tensor:
@@ -1336,12 +2105,18 @@ class ModalGeneratorGraphExecutor:
         *,
         capture_modal_states: bool = False,
         capture_edge_messages: bool = False,
+        capture_routing: bool = False,
     ) -> ModalGeneratorGraphExecution:
         inputs = self._validate_inputs(boundary_inputs)
         states: dict[str, Tensor] = {}
         outputs: dict[str, Tensor] = {}
         captured_states = {} if capture_modal_states else None
         captured_messages = {} if capture_edge_messages else None
+        captured_routing = {} if capture_routing else None
+        captured_evaluated_rows = {} if capture_routing else None
+        conditional_messages: dict[str, list[tuple[str, Tensor]]] = (
+            defaultdict(list)
+        )
 
         for node in self.plan.nodes:
             own_input = inputs[node.input_boundary]
@@ -1382,6 +2157,20 @@ class ModalGeneratorGraphExecutor:
                 if captured_messages is not None:
                     captured_messages[edge.key] = message.detach().clone()
                 latent = latent + message
+            for edge_key, message in conditional_messages.pop(node.name, ()):
+                if (
+                    message.shape[:-1] != latent.shape[:-1]
+                    or message.shape[-1] != latent.shape[-1]
+                    or message.device != latent.device
+                    or message.dtype != latent.dtype
+                ):
+                    raise ValueError(
+                        f"interaction {edge_key!r} runtime batch, device, "
+                        "dtype, or target width drifted"
+                    )
+                if captured_messages is not None:
+                    captured_messages[edge_key] = message.detach().clone()
+                latent = latent + message
             if not bool(torch.isfinite(latent).all()):
                 raise ValueError(
                     f"modal state for node {node.name!r} became non-finite"
@@ -1389,6 +2178,22 @@ class ModalGeneratorGraphExecutor:
             states[node.name] = latent
             if captured_states is not None:
                 captured_states[node.name] = latent.detach().clone()
+            for group in self._conditional_outgoing.get(node.name, ()):
+                messages, route_weights, evaluated_rows = (
+                    _routed_conditional_messages(latent, group)
+                )
+                for edge in group:
+                    conditional_messages[edge.target_node].append(
+                        (edge.key, messages[edge.key])
+                    )
+                    if captured_routing is not None:
+                        captured_routing[edge.key] = route_weights[
+                            edge.key
+                        ].detach().clone()
+                    if captured_evaluated_rows is not None:
+                        captured_evaluated_rows[edge.key] = evaluated_rows[
+                            edge.key
+                        ]
             contribution = latent @ self._runtime_weight(
                 weights.output_factor,
                 latent,
@@ -1418,11 +2223,18 @@ class ModalGeneratorGraphExecutor:
                     )
                 outputs[node.output_boundary] = prior + contribution
 
+        if conditional_messages:
+            raise RuntimeError(
+                "conditional graph traversal left messages for unexecuted targets"
+            )
+
         return ModalGeneratorGraphExecution(
             outputs=outputs,
             traversal_order=self.plan.traversal_order,
             modal_states=captured_states,
             edge_messages=captured_messages,
+            routing_weights=captured_routing,
+            evaluated_edge_rows=captured_evaluated_rows,
         )
 
     __call__ = execute
