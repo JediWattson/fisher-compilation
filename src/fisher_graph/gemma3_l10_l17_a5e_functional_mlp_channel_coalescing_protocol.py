@@ -36,13 +36,16 @@ __all__ = [
 
 A5E_PROTOCOL_SCHEMA = (
     "fisher_graph.gemma3_l10_l17_a5e_functional_mlp_channel_"
-    "coalescing.protocol.v1"
+    "coalescing.protocol.v2"
 )
-A5E_PROTOCOL_FORMAT_VERSION = 1
+A5E_PROTOCOL_FORMAT_VERSION = 2
 A5E_MERGE_RATE_LADDER = (0.01, 0.02, 0.05, 0.10)
 A5E_ARM_IDS = (
     "native_intact",
     "native_intact_plus_residual_diagnostic",
+    "compiled_all_modes_intact",
+    "approximated_all_modes_graph",
+    "chart_conditioned_all_modes_graph",
     "matched_naive_deletion",
     "fisher_jacobian_functional_coalescing",
 )
@@ -258,11 +261,16 @@ def validate_compacted_weight_mocks(
 ) -> None:
     """Require physical gate/up row and down column compaction."""
 
-    observed = GatedMlpProjectionShapes.from_weight_mocks(
-        gate_weight=gate_weight,
-        up_weight=up_weight,
-        down_weight=down_weight,
-    )
+    try:
+        observed = GatedMlpProjectionShapes.from_weight_mocks(
+            gate_weight=gate_weight,
+            up_weight=up_weight,
+            down_weight=down_weight,
+        )
+    except ValueError as error:
+        raise ValueError(
+            "materialized gate/up rows and down columns do not match the plan"
+        ) from error
     if observed != contract.compacted_shapes:
         raise ValueError(
             "materialized gate/up rows and down columns do not match the plan"
@@ -365,6 +373,41 @@ def _arm_specs() -> list[dict[str, object]]:
             "compression_credit_allowed": False,
         },
         {
+            "arm_id": "compiled_all_modes_intact",
+            "native_mlp_intact": False,
+            "all_native_mode_triplets_materialized": True,
+            "source_free_runtime": True,
+            "source_projection_calls_expected": 0,
+            "compiled_projection_calls_preserved": True,
+            "residual_diagnostic": False,
+            "physically_compacted": False,
+            "removed_channel_count": 0,
+            "compression_credit_allowed": False,
+        },
+        {
+            "arm_id": "approximated_all_modes_graph",
+            "native_mlp_intact": False,
+            "all_native_modes_retained": True,
+            "generator_family": "fit_only_affine_per_mode",
+            "source_free_runtime": True,
+            "residual_diagnostic": False,
+            "physically_compacted": False,
+            "removed_channel_count": 0,
+            "compression_credit_allowed": False,
+        },
+        {
+            "arm_id": "chart_conditioned_all_modes_graph",
+            "native_mlp_intact": False,
+            "all_native_modes_retained": True,
+            "generator_family": "global_affine_plus_local_chart_edges",
+            "routing_input": "normalized_hidden_state",
+            "source_free_runtime": True,
+            "residual_diagnostic": False,
+            "physically_compacted": False,
+            "removed_channel_count": 0,
+            "compression_credit_allowed": False,
+        },
+        {
             "arm_id": "matched_naive_deletion",
             "native_mlp_intact": False,
             "residual_diagnostic": False,
@@ -423,6 +466,8 @@ class A5eFunctionalMlpChannelCoalescingProtocol:
             "trials": [trial.state_dict() for trial in self.trials],
             "scientific_order": [
                 "fit_only_compute_grouped_fisher_and_channel_jacobians",
+                "fit_only_construct_fisher_weighted_hidden_state_charts",
+                "fit_only_jointly_fit_chart_to_mode_edge_bank",
                 "fit_only_rank_and_assign_donors_to_survivors",
                 "fit_only_refit_functional_survivor_triplets",
                 "freeze_topology_weights_and_diagnostic_artifacts",
@@ -436,6 +481,34 @@ class A5eFunctionalMlpChannelCoalescingProtocol:
                 "application_boundary": "layer.L.mlp.delta",
                 "post_feedforward_rmsnorm_attached": True,
                 "native_mlp_identity_and_call_preserved": True,
+                "compression_credit_allowed": False,
+            },
+            "compiled_all_modes_control_contract": {
+                "source_free_runtime": True,
+                "all_native_mode_triplets_materialized": True,
+                "source_projection_calls_expected": 0,
+                "removed_channel_count": 0,
+                "parameter_and_matrix_mac_savings": 0,
+                "compression_credit_allowed": False,
+            },
+            "approximated_all_modes_graph_contract": {
+                "all_native_modes_retained": True,
+                "removed_channel_count": 0,
+                "merged_channel_count": 0,
+                "fit_role": "fit_only_then_frozen",
+                "generator_family": "affine_per_mode",
+                "held_data_may_refit_generators": False,
+                "compression_credit_allowed": False,
+            },
+            "chart_conditioned_all_modes_graph_contract": {
+                "all_native_modes_retained": True,
+                "removed_channel_count": 0,
+                "merged_channel_count": 0,
+                "fit_role": "fit_only_then_frozen",
+                "chart_coordinates": "B_c_transpose_times_h_minus_mu_c",
+                "edge_gate": "hidden_state_conditioned_chart_membership",
+                "edge_message": "affine_local_coordinate_residual",
+                "held_data_may_refit_charts_or_edges": False,
                 "compression_credit_allowed": False,
             },
             "nonlinear_merge_contract": {
@@ -453,6 +526,8 @@ class A5eFunctionalMlpChannelCoalescingProtocol:
                 "held_top1_agreement_to_native",
                 "physically_instantiated_learned_parameters",
                 "physically_executed_matrix_macs_per_token",
+                "chart_membership_entropy_and_occupancy",
+                "chart_to_mode_interaction_parameter_and_mac_count",
             ],
             "claim_boundary": (
                 "no_compression_fidelity_or_speed_claim_from_scaffold"

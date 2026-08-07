@@ -66,7 +66,15 @@ def test_native_residual_control_is_intact_and_gets_no_compression_credit() -> N
         hidden_width=8,
         intermediate_width=100,
     ).state_dict()["arms"]
-    native, diagnostic, deletion, coalescing = arms
+    (
+        native,
+        diagnostic,
+        compiled,
+        approximated,
+        charted,
+        deletion,
+        coalescing,
+    ) = arms
 
     assert native["native_mlp_intact"] is True
     assert native["compression_credit_allowed"] is False
@@ -82,6 +90,17 @@ def test_native_residual_control_is_intact_and_gets_no_compression_credit() -> N
     assert diagnostic["post_feedforward_rmsnorm_attached"] is True
     assert diagnostic["physically_compacted"] is False
     assert diagnostic["compression_credit_allowed"] is False
+    assert compiled["all_native_mode_triplets_materialized"] is True
+    assert compiled["source_free_runtime"] is True
+    assert compiled["source_projection_calls_expected"] == 0
+    assert compiled["removed_channel_count"] == 0
+    assert compiled["compression_credit_allowed"] is False
+    assert approximated["all_native_modes_retained"] is True
+    assert approximated["generator_family"] == "fit_only_affine_per_mode"
+    assert approximated["removed_channel_count"] == 0
+    assert charted["all_native_modes_retained"] is True
+    assert charted["routing_input"] == "normalized_hidden_state"
+    assert charted["removed_channel_count"] == 0
     assert deletion["functional_survivor_refit"] is False
     assert coalescing["functional_survivor_refit"] is True
 
@@ -204,6 +223,8 @@ def test_protocol_forbids_held_selection_and_orders_fit_freeze_score() -> None:
     }
     assert state["scientific_order"] == [
         "fit_only_compute_grouped_fisher_and_channel_jacobians",
+        "fit_only_construct_fisher_weighted_hidden_state_charts",
+        "fit_only_jointly_fit_chart_to_mode_edge_bank",
         "fit_only_rank_and_assign_donors_to_survivors",
         "fit_only_refit_functional_survivor_triplets",
         "freeze_topology_weights_and_diagnostic_artifacts",
