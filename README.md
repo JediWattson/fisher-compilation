@@ -5,6 +5,8 @@ frozen model in Fisher-weighted activation and parameter spaces, lowers the
 result into modal generators and causal graph edges, and evaluates whether
 those graph executors can replace native transformer computation.
 
+![Fisher graph compilation abstractions](docs/images/fisher-graph-abstraction-art-v1.png)
+
 ```text
 weights
   ↓
