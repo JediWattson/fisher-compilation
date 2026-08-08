@@ -24,10 +24,12 @@ inference by graph traversal
 ```
 
 The reusable compiler and runtime boundaries are implemented. The toy model
-has validation-backed structural compression; Gemma 3 270M has exact
-replacement boundaries, useful rate/distortion points, compact modal-edge
-executors, and an active token-VJP fitting campaign. It does **not** yet have a
-downstream-qualified whole-model compiled graph.
+has validation-backed structural compression. Gemma 3 270M now has an
+authenticated exact 39-event carrier-transport execution spanning tied lexical
+ingress/egress, every attention and MLP mutation, the residual carrier, and
+terminal normalization. This establishes the whole-model execution ontology;
+it is deliberately full-width and is not yet a downstream-qualified compressed
+graph or deployment result.
 
 The historical experiment chronology and command archive live in
 [`RESEARCH_LOG.md`](RESEARCH_LOG.md). This README focuses on the current
@@ -77,6 +79,77 @@ candidate compilation, and deployment authority:
 | Graph execution | Run a complete graph or advance it incrementally for inspection and intervention, including source-conditioned polynomial edge routing | [`modal_generator_graph.py`](src/fisher_graph/modal_generator_graph.py), [`modal_generator_graph_session.py`](src/fisher_graph/modal_generator_graph_session.py), [`state_conditioned_modal_fitting.py`](src/fisher_graph/state_conditioned_modal_fitting.py) |
 | Validation and iteration | Score shadows, map residuals, propose mutations, and fail closed at declared gates | [`shadow_fidelity.py`](src/fisher_graph/shadow_fidelity.py), [`compiler/progressive.py`](src/fisher_graph/compiler/progressive.py) |
 | Model runtime | Authenticate source identity and capabilities, then dispatch compiled or native segments | [`compiler/manifest.py`](src/fisher_graph/compiler/manifest.py), [`compiler/runtime.py`](src/fisher_graph/compiler/runtime.py) |
+
+### Exact causal carrier-transport result
+
+The causal carrier-transport rung unifies the exact residual identity,
+attention routing, and MLP mutation under one live message abstraction. Each of
+the 36 carrier boundaries receives exactly one parameter-free identity carry
+and one exact generator message; the graph core, rather than a generator
+callback, owns the state commit. Tied lexical ingress/egress and terminal
+RMSNorm close the 39-event model. This is deliberately full-width and retains
+all checkpoint coefficients, so it tests the execution ontology without
+claiming compression, add elimination, kernel fusion, or speedup.
+
+![Abstract carrier-transport graph: a luminous residual stream crosses alternating attention and MLP generator fields from lexical tokens to logits.](docs/images/causal-carrier-transport-art-v1.png)
+
+Authenticate its setup without loading Gemma:
+
+```bash
+fisher-graph-gemma-causal-carrier-transport-setup --check
+```
+
+Run the model-facing exact experiment with:
+
+```bash
+fisher-graph-gemma-causal-carrier-transport-dev \
+  --output .local-runs/google--gemma-3-270m/causal-carrier-transport-exact-v1.json
+```
+
+The first exact run passed. Across 8 CPU-float32 prefill batches—30 prompts,
+406 valid query rows, and 376 supervised tokens—the exact 39-event reference
+and the live carrier-transport runtime both reproduced native Gemma literally.
+
+| Evidence | Exact 39-event reference | Live carrier transport |
+|---|---:|---:|
+| Maximum logit error vs. native | `0.0` | `0.0` |
+| Delta NLL/token | `0.0` | `0.0` |
+| Native KL/query | `0.0` | `0.0` |
+| Top-1 agreement | `100%` | `100%` |
+| Source/projection/fallback calls | `0` | `0` |
+| Stored parameters | `268,098,176` | `268,098,176` |
+
+```mermaid
+flowchart LR
+    D["Same frozen evaluation batches"] --> A["A · Native Gemma"]
+    D --> B["B · Exact 39-event reference"]
+    A --> G1{"Gate 1<br/>literal logit parity"}
+    B --> G1
+    G1 --> C["C · Live carrier transport"]
+    A --> G2{"Native parity<br/>0 error · 100% top-1"}
+    C --> G2
+    B --> G3{"Internal parity<br/>36 inputs + deltas<br/>final carrier + logits"}
+    C --> G3
+    G2 --> W["Execution ontology authenticated"]
+    G3 --> W
+    W -. "strict boundary" .-> N["No compression claim<br/>268,098,176 parameters · 0% reduction"]
+```
+
+The live core owned all 36 carrier commits. Its 36 identity carries, 18
+state-conditioned causal-attention messages, and 18 token-local MLP messages
+matched the exact reference at every mutation input and delta, then at the
+final carrier, normalized output, and logits. Both compiled arms made zero
+source, projection, or fallback calls, and source and compiled states remained
+unchanged.
+
+This is the foundation, not the compression result. It contains no learned
+cross-event corrections and establishes no parameter or byte reduction,
+logical-MAC reduction, kernel fusion, cached decoding, latency improvement, or
+source-free serialized artifact. The result lets edge learning and compression
+become separate controlled variables. The frozen protocol SHA is
+`19930ed077a6c0e8dfbcc1f4306b07ebba25c3ef3382732addf0c918491d3c3f`;
+the first authenticated report SHA is
+`5993a119c8864fa14d7745029bbd682b66388be1c438af38e01b2c3572d66dfd`.
 
 `ModelAdapter` is the model-family boundary. Analysis code does not need to
 know Gemma module paths or calling conventions. `RuntimeManifest` is the
@@ -134,6 +207,7 @@ every attempted parameterization.
 
 | Result | Evidence | What it establishes |
 |---|---|---|
+| Gemma exact causal carrier transport | Native, the exact 39-event reference, and the live carrier-transport graph agreed literally across 8 batches and 406 valid query rows: `0.0` maximum logit error, delta NLL, and KL; `100%` top-1; zero compiled source or fallback calls | The complete tied-lexical, attention, MLP, residual-carrier, and terminal-normalization execution can be expressed under one live message ontology. It retains all `268,098,176` parameters, so this is the foundation for controlled edge and compression experiments—not compression itself. |
 | Toy whole-span graph executor | `19,064` versus `27,872` deployment parameters (`31.60%` fewer); ideal complete matrix work is `60.70%` of native; zero native-block calls; exact behavior on 246 fresh validation contexts | Validation-backed structural compression on the narrow associative-recall task. The reserved 250-context executor test remains sealed. |
 | Gemma structured-layer replacement | Validation block NRMSE `9.21e-7`, top-1 `100%`, and zero source-layer calls | The adapter, activation-only fit, artifact, and replacement boundary can reproduce a real Gemma layer. The retained native shape means this is parity, not compression. |
 | Gemma 18-generator MLP stack | `20.90%` logical whole-model parameter reduction and `79.17%` of native MLP matrix MACs removed; trajectory refit reduced excess NLL by `57.1%` to `+0.149649`, with `81.02%` native top-1 | A real full-stack rate/distortion point. Fidelity is still below acceptance, so it is open-development evidence rather than qualified compression. |
@@ -148,8 +222,8 @@ The prepared 18-generator CPU runtime also measured batch-one fused speedups of
 rate/distortion point, not GPU or downstream-quality-qualified latency.
 
 The toy executor remains the only validation-backed structural compression
-result. The Gemma results prove increasingly useful pieces of the compiler,
-but they have not yet closed the full-model fidelity gate.
+result. Gemma now has an exact whole-model carrier-transport execution, but its
+compressed candidates have not yet closed the full-model fidelity gate.
 
 ## Latest Gemma result: guarded state-conditioned modal flow
 

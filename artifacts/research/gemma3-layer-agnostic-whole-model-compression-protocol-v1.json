@@ -1,0 +1,995 @@
+{
+  "acceptance_gates": {
+    "candidate_fidelity": {
+      "delta_nll_per_token_maximum": 0.1,
+      "mean_downstream_accuracy_retained_minimum": 0.9,
+      "native_to_candidate_kl_per_token_maximum": 0.1,
+      "top1_agreement_minimum": 0.9,
+      "worst_family_bootstrap_lower_bound_minimum": 0.85
+    },
+    "compression": {
+      "logical_mac_reduction_for_compute_claim_minimum": 0.1,
+      "must_match_or_beat_svd_and_deletion_at_same_budget": true,
+      "real_transport_gain_must_be_positive": true,
+      "serialized_byte_reduction_minimum": 0.2,
+      "shuffled_gain_fraction_of_real_maximum": 0.25,
+      "whole_model_unique_parameter_reduction_minimum": 0.2
+    },
+    "full_rank_chart_identity_control": {
+      "absolute_delta_nll_per_token_maximum": 1e-07,
+      "all_causal_audits_must_pass": true,
+      "native_to_candidate_kl_per_token_maximum": 1e-07,
+      "top1_agreement_minimum": 1.0,
+      "valid_query_logit_maximum_absolute_error": 1e-06
+    },
+    "latency_or_speed_claim_without_measurement": false,
+    "standalone_exact_control": {
+      "absolute_delta_nll_per_token_maximum": 0.0,
+      "all_causal_audits_must_pass": true,
+      "copied_checkpoint_coefficients_are_counted": true,
+      "native_to_candidate_kl_per_token_maximum": 0.0,
+      "top1_agreement_minimum": 1.0,
+      "valid_query_logit_maximum_absolute_error": 0.0,
+      "zero_live_teacher_calls_required": true
+    }
+  },
+  "arms": [
+    {
+      "arm_id": "native",
+      "compression_credit_allowed": false,
+      "purpose": "teacher_and_resource_reference"
+    },
+    {
+      "arm_id": "exact_whole_model_graph",
+      "compression_credit_allowed": false,
+      "contains_copied_checkpoint_coefficients": true,
+      "copied_tied_lexical_matrix": true,
+      "exact_ordered_mutations": 36,
+      "exact_terminal_rmsnorm_and_softcap": true,
+      "purpose": "standalone_exact_control_with_zero_live_teacher_calls",
+      "source_free_artifact": false
+    },
+    {
+      "arm_id": "full_rank_layer_agnostic_identity",
+      "compression_credit_allowed": false,
+      "full_rank": true,
+      "purpose": "authenticate_chart_and_transport_machinery"
+    },
+    {
+      "arm_id": "global_residual_basis_control",
+      "compression_credit_allowed_after_guard": true,
+      "cross_invocation_family_sharing": false,
+      "local_atlas": false,
+      "shared_residual_basis": true
+    },
+    {
+      "adjacent_transports_only": true,
+      "arm_id": "boundary_local_basis_control",
+      "basis_per_mutation_boundary": true,
+      "compression_credit_allowed_after_guard": true,
+      "native_layer_objects_in_runtime": false
+    },
+    {
+      "arm_id": "budget_matched_modular_factorization",
+      "compression_credit_allowed_after_guard": true,
+      "cross_provenance_sharing": false,
+      "invocation_local_factors": true
+    },
+    {
+      "arm_id": "unrestricted_layer_agnostic_primary",
+      "compression_credit_allowed_after_guard": true,
+      "cross_provenance_generator_families": true,
+      "forward_skip_fanout_and_fanin": true,
+      "pooled_charts": true,
+      "shared_tied_lexical_factor": true
+    },
+    {
+      "arm_id": "matched_naive_svd",
+      "byte_matching_precedes_mac_proximity": true,
+      "compression_credit_allowed": false,
+      "logical_macs_reported_not_forced_equal": true,
+      "serialized_bytes_must_not_exceed_primary": true
+    },
+    {
+      "arm_id": "matched_fisher_deletion",
+      "compression_credit_allowed": false,
+      "same_physical_budget_as_primary": true
+    },
+    {
+      "arm_id": "primary_zero_transport_ablation",
+      "compression_credit_allowed": false,
+      "primary_transport_weights_zeroed_without_refit": true
+    },
+    {
+      "arm_id": "primary_family_shuffled_negative_control",
+      "compression_credit_allowed": false,
+      "evaluation_rows_are_never_shuffled": true,
+      "fit_rows_only_are_shuffled": true
+    },
+    {
+      "arm_id": "exact_lexical_compressed_body_ablation",
+      "compressed_body": true,
+      "compression_credit_allowed_after_guard": true,
+      "exact_tied_lexical_matrix": true
+    },
+    {
+      "arm_id": "compressed_lexical_exact_body_ablation",
+      "compressed_tied_lexical_factor": true,
+      "compression_credit_allowed_after_guard": true,
+      "exact_body": true
+    }
+  ],
+  "artifact_role": "preregistered_setup_only",
+  "causal_and_runtime_invariants": {
+    "causal_prefix_edges_require_source_position_lte_target": true,
+    "deterministic_replay_required": true,
+    "edge_source_mutation_index_strictly_less_than_target": true,
+    "future_token_edges_forbidden": true,
+    "future_token_perturbation_prefix_invariance_required": true,
+    "invalid_rows_inert": true,
+    "ordered_residual_mutation_closure_required": true,
+    "padding_batch_and_segment_invariance_required": true,
+    "same_sequence_and_segment_required": true,
+    "same_token_edges_do_not_mix_examples_or_positions": true,
+    "self_reverse_and_cyclic_edges_forbidden": true,
+    "skipped_mutation_requires_explicit_validated_replacement": true,
+    "sliding_global_mask_and_rope_semantics_preserved": true,
+    "source_candidate_storage_disjoint_except_candidate_internal_tie": true,
+    "source_fingerprint_gradients_and_training_mode_unchanged": true,
+    "unsupported_chart_state_may_call_native_fallback": false,
+    "zero_live_source_calls_required": true
+  },
+  "claim_boundary": {
+    "compression_success_claimed": false,
+    "fitting_or_evaluation_occurred": false,
+    "latency_or_kernel_speed_claimed": false,
+    "lossless_compression_claimed": false,
+    "model_or_prompt_access_occurred": false,
+    "setup_only": true
+  },
+  "external_rate_references": {
+    "deterministic_groupwise_int4": true,
+    "deterministic_weight_only_int8": true,
+    "graph_plus_quantization_hybrid_in_v1": false,
+    "logical_mac_reduction_credit": false,
+    "native_fp16_storage": true,
+    "primary_graph_candidate_storage_encoding": "float32",
+    "primary_graph_quantized_storage_allowed": false
+  },
+  "fit_and_validation_firewall": {
+    "A_fit": "capture_all_boundaries_and_fit_features_coefficients_communities_charts_and_topology",
+    "A_fit_inner_direction_holdout": "held_direction_jvp_and_finite_displacement_only",
+    "A_fit_inner_holdout_disjoint_from_coefficient_fit_rows": true,
+    "A_fit_inner_holdout_may_touch_A_select_B_or_C": false,
+    "A_select": "select_only_among_already_fitted_frozen_artifacts",
+    "A_select_may_refit_coefficients_or_topology": false,
+    "A_select_nuisance_choice_rule": "each_ordered_resource_point_has_one_frozen_ridge_temperature_and_topology_budget",
+    "B_guard_may_refit_or_change_topology": false,
+    "B_guard_multiplicity_control": "simultaneous_family_clustered_bootstrap_intervals",
+    "B_guard_opened_once": true,
+    "B_guard_resource_failure_stops_frontier": false,
+    "B_guard_scores_entire_frozen_frontier_once": true,
+    "B_guard_selection_rule": "highest_compression_resource_point_passing_all_hard_fidelity_causality_and_accounting_gates",
+    "C_assessment_candidate_count": 1,
+    "C_assessment_may_refit_select_or_change_thresholds": false,
+    "C_assessment_opened_once": true,
+    "C_assessment_opened_only_after_guard_pass": true,
+    "candidate_only_block_coordinate_refinement": true,
+    "existing_a5e_panel_role": "development_smoke_only",
+    "existing_a5e_prompt_split_is_heldout_confirmation": false,
+    "failed_guard_requires_new_protocol_and_fresh_splits": true,
+    "fit_uses_actual_frozen_candidate_prefix_trajectory": true,
+    "manifest_sha256_values": "required_at_execution",
+    "pareto_frontier_frozen_before_B_guard": true,
+    "required_manifests": [
+      "A_fit",
+      "A_select",
+      "B_guard",
+      "C_assessment"
+    ],
+    "row_prompt_and_family_overlap_allowed": false,
+    "source_model_mutated": false,
+    "split_units": "prompt_or_paraphrase_family_is_atomic"
+  },
+  "format_version": 1,
+  "frozen_fit_procedure": {
+    "block_coordinate_sweep_count": 8,
+    "capture_row_identity_hash_required_at_every_site": true,
+    "capture_sites": [
+      "adapter_pinned_lexical_embedding_output",
+      "pre_and_post_each_of_36_source_mutations",
+      "pre_terminal_rmsnorm",
+      "post_terminal_rmsnorm",
+      "pre_softcap_full_vocabulary_logits",
+      "post_softcap_full_vocabulary_logits"
+    ],
+    "causal_shift": "query_t_predicts_valid_token_t_plus_1",
+    "dependency_confirmation": "held_direction_jvp_then_finite_displacement",
+    "dependency_confirmation_may_open_A_select_B_or_C": false,
+    "dependency_confirmation_rows": "A_fit_inner_direction_holdout_disjoint_from_coefficient_fit_rows",
+    "edge_shortlist_limit": "resource_point_maximum_incoming_transports_per_target",
+    "edge_tie_break": "descending_partial_gain_then_source_then_target_canonical_id",
+    "fisher_row_weight": "mean_over_mode_of_squared_mode_state_times_score_gradient",
+    "fisher_weights_normalized_to_mean_one": true,
+    "full_candidate_trajectory_recaptured_each_sweep": true,
+    "global_family_banks_updated_after_freeze": false,
+    "ignore_padding_and_invalid_queries": true,
+    "mode_id_is_a_clustering_feature": false,
+    "monotone_fit_objective_required": true,
+    "primitive_discovery": "joint_shape_compatible_fisher_geometry_jacobian_clustering_across_all_sites",
+    "progressive_order": [
+      "fit_shared_tied_lexical_factor_and_ingress_map",
+      "jointly_fit_and_freeze_all_shared_family_banks",
+      "fit_invocation_local_adapters_and_transports_in_mutation_order_on_actual_candidate_trajectory",
+      "fit_exact_terminal_rmsnorm_boundary_adapter",
+      "fit_egress_map_using_the_same_tied_lexical_factor",
+      "recapture_complete_candidate_trajectory_then_run_canonical_forward_adapter_transport_sweep"
+    ],
+    "row_identity": "prompt_family_id_example_id_logical_token_position",
+    "shared_family_strategy": "jointly_fit_each_family_bank_over_all_member_invocations_then_freeze_before_any_progressive_fit",
+    "source_parameters_gradients_and_training_mode_immutable": true,
+    "teacher_objective": "per_sequence_sum_of_valid_causal_lm_nll_before_cross_sequence_mean",
+    "topology_candidate_scope": "all_strictly_forward_invocations",
+    "topology_score": "partial_fisher_weighted_residual_gain_beyond_local_generator"
+  },
+  "frozen_ladders": {
+    "active_charts_per_token": [
+      1,
+      2
+    ],
+    "atlas_region_count": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "chart_temperature": [
+      0.5,
+      1.0,
+      2.0
+    ],
+    "every_resource_point_is_fitted_before_selection": true,
+    "fidelity_monotonicity_assumed": false,
+    "full_cartesian_product_exhausted": false,
+    "generator_community_budget_ratio": [
+      1.0,
+      0.75,
+      0.5,
+      0.35
+    ],
+    "lexical_rank": [
+      640,
+      512,
+      384,
+      256
+    ],
+    "local_chart_correction_rank": [
+      0,
+      8,
+      16,
+      32
+    ],
+    "maximum_incoming_transport_edges_per_invocation": [
+      1,
+      2,
+      4
+    ],
+    "ordered_resource_points": [
+      {
+        "active_charts_per_token": 1,
+        "atlas_regions": 4,
+        "chart_temperature": 1.0,
+        "generator_community_budget_ratio": 0.75,
+        "lexical_rank": 512,
+        "local_chart_correction_rank": 8,
+        "maximum_incoming_transports": 1,
+        "relative_ridge": 0.001,
+        "residual_rank": 576,
+        "resource_point_id": "conservative"
+      },
+      {
+        "active_charts_per_token": 1,
+        "atlas_regions": 8,
+        "chart_temperature": 1.0,
+        "generator_community_budget_ratio": 0.5,
+        "lexical_rank": 384,
+        "local_chart_correction_rank": 16,
+        "maximum_incoming_transports": 2,
+        "relative_ridge": 0.001,
+        "residual_rank": 512,
+        "resource_point_id": "balanced"
+      },
+      {
+        "active_charts_per_token": 1,
+        "atlas_regions": 8,
+        "chart_temperature": 1.0,
+        "generator_community_budget_ratio": 0.5,
+        "lexical_rank": 384,
+        "local_chart_correction_rank": 16,
+        "maximum_incoming_transports": 2,
+        "relative_ridge": 0.001,
+        "residual_rank": 448,
+        "resource_point_id": "compact"
+      },
+      {
+        "active_charts_per_token": 2,
+        "atlas_regions": 16,
+        "chart_temperature": 1.0,
+        "generator_community_budget_ratio": 0.35,
+        "lexical_rank": 256,
+        "local_chart_correction_rank": 32,
+        "maximum_incoming_transports": 4,
+        "relative_ridge": 0.01,
+        "residual_rank": 384,
+        "resource_point_id": "aggressive"
+      }
+    ],
+    "pilot_point": {
+      "lexical_rank": 512,
+      "residual_rank": 576
+    },
+    "relative_ridge": [
+      1e-06,
+      1e-05,
+      0.0001,
+      0.001,
+      0.01
+    ],
+    "residual_rank": [
+      640,
+      576,
+      512,
+      448,
+      384
+    ],
+    "resource_shortfall_stops_lower_ranks": false
+  },
+  "frozen_numerics": {
+    "block_coordinate_sweeps": 8,
+    "block_objective_must_be_monotone": true,
+    "canonical_svd_sign_rule": "largest_absolute_decoder_entry_is_positive",
+    "deterministic_seed": 1729,
+    "moment_accumulation_dtype": "float64",
+    "relative_ridge_definition": "lambda_times_mean_diagonal_of_weighted_gram",
+    "ridge_solve_dtype": "float64",
+    "runtime_materialization_dtype": "float32",
+    "tie_break_order": [
+      "best_frozen_selection_objective",
+      "fewer_serialized_bytes",
+      "fewer_logical_macs",
+      "lower_region_count",
+      "lower_rank",
+      "canonical_family_and_invocation_id"
+    ],
+    "weighted_centering": true
+  },
+  "known_limits": {
+    "basis_and_transport_overhead_can_erase_savings": true,
+    "dense_carrier_control_materializes_width_640_each_mutation": true,
+    "new_carrier_native_modal_mutation_interface_required": true,
+    "rank_is_capacity_not_automatic_storage_reduction": true,
+    "residual_carrier_swap_alone_compresses_generator_compute": false,
+    "tokenizer_is_external_to_model_compilation": true
+  },
+  "layer_agnostic_discovery_policy": {
+    "allowed_feature_families": [
+      "activation_geometry",
+      "fisher_score_factors",
+      "jacobian_and_jvp_fingerprints",
+      "finite_displacement_flow",
+      "operator_shape_and_token_dependency_contract"
+    ],
+    "candidate_pair_scope": "any_shape_compatible_source_modes",
+    "dependency_confirmation": "partial_residual_gain_then_held_direction_jvp_then_finite_displacement",
+    "forbidden_clustering_and_routing_features": [
+      "layer_id",
+      "layer_ordinal",
+      "layer_distance",
+      "same_layer",
+      "adjacent_layer",
+      "source_boundary_label"
+    ],
+    "provenance_is_still_authenticated_in_artifact_hash": true,
+    "provenance_label_permutation_must_preserve_assignments": true,
+    "raw_correlation_alone_establishes_dependency": false
+  },
+  "pinned_source": {
+    "decode_and_kv_cache": "deferred_to_future_protocol",
+    "hidden_width": 640,
+    "layer_count_as_provenance": 18,
+    "mlp_width": 2048,
+    "model_id": "google/gemma-3-270m",
+    "model_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "runtime": "cpu_float32_eager_cache_free_prefill",
+    "tokenizer_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "valid_query_rows_only": true,
+    "vocabulary_size": 262144
+  },
+  "protocol_sha256": "4825f3e4e21475c54dae917d16a647c105f2d45afc191dec0b5689d0064d6107",
+  "required_metrics": {
+    "causality": [
+      "future_token_perturbation",
+      "variable_sequence_length",
+      "left_and_right_padding",
+      "batch_composition",
+      "deterministic_replay"
+    ],
+    "external": [
+      "nll_per_token_and_delta",
+      "perplexity_ratio",
+      "native_to_candidate_kl_per_token",
+      "top1_agreement_and_topk_overlap",
+      "logit_nrmse_max_error_and_cosine",
+      "downstream_accuracy_retained",
+      "worst_family_metrics",
+      "family_clustered_bootstrap_intervals"
+    ],
+    "internal": [
+      "per_boundary_residual_and_flow_nrmse_and_cosine",
+      "fisher_weighted_residual",
+      "held_direction_jvp_relative_error",
+      "finite_displacement_error",
+      "chart_reconstruction_occupancy_entropy_and_dead_regions",
+      "family_reuse_fanout_and_fanin",
+      "zero_transport_and_shuffled_gains",
+      "first_divergence_invocation"
+    ]
+  },
+  "resource_accounting": {
+    "candidate_shared_lexical_factor_counted_once": true,
+    "causal_pair_workload_keyed_by_sequence_operator_contract": true,
+    "count_all_transports_corrections_and_sparse_indices": true,
+    "count_chart_bases_centers_metrics_and_routers": true,
+    "count_fixed_coefficients_and_codebooks": true,
+    "count_legitimately_retained_exact_components": true,
+    "count_unaccounted_or_live_fallbacks": true,
+    "count_unique_learned_scalars": true,
+    "counted_exact_components_disqualify_partial_compression": false,
+    "deduplicate_only_proven_physical_aliases": true,
+    "deployment_artifact_component_spans_must_close_exactly": true,
+    "equal_values_without_alias_are_deduplicated": false,
+    "expected_and_worst_case_conditional_macs_reported": true,
+    "gemma_bridge_and_family_disjoint_guard_required": true,
+    "generic_resource_eligibility_authorizes_gemma_compression": false,
+    "latency_inferred_from_macs": false,
+    "logical_macs_and_executed_kernel_costs_separate": true,
+    "mixed_global_and_sliding_attention_priced_separately": true,
+    "negative_savings_are_preserved_not_clamped": true,
+    "peak_live_carrier_and_activation_bytes_reported": true,
+    "primary_stored_scalar_footprint": "unique_learned_plus_fixed_inference_scalars",
+    "reachable_native_fallback_disqualifies_compression": true,
+    "serialized_bytes_come_from_audited_artifact_spans": true,
+    "tied_source_embedding_and_head_counted_once": true,
+    "unaccounted_teacher_duplicate_disqualifies_compression": true,
+    "whole_model_and_target_component_ratios_reported": true,
+    "workload_pair_counts_bound_to_sequence_mask_receipts": true
+  },
+  "runtime_ontology": {
+    "attention_cross_token_contract_is_preserved": true,
+    "causal_order_key": "mutation_index",
+    "generator_family_is_parameter_identity": true,
+    "generator_invocation_is_temporal_identity": true,
+    "layer_adjacency_is_edge_eligibility_feature": false,
+    "native_layer_ids_retained_as_provenance_only": true,
+    "native_layers_are_execution_objects": false,
+    "same_family_invocations_are_not_self_edges": true,
+    "same_family_may_have_multiple_invocations": true,
+    "skip_fanout_and_fanin_edges_allowed": true
+  },
+  "schema": "fisher_graph.gemma3_layer_agnostic_whole_model_compression.protocol.v1",
+  "setup_receipt": {
+    "compression_success_claimed": false,
+    "experiment_executed": false,
+    "fitting_performed": false,
+    "metrics_present": false,
+    "model_weights_loaded": false,
+    "prompt_data_opened": false,
+    "tokenization_performed": false
+  },
+  "shared_lexical_boundary": {
+    "adapter_embedding_semantics_and_scaling_preserved_exactly": true,
+    "arbitrary_basis_folding_across_nonlinearity_is_exact": false,
+    "decoder_orientation_preserved_exactly": true,
+    "egress": "candidate_logits_use_D_transpose_and_C_transpose",
+    "equal_but_distinct_copies_count_as_tied": false,
+    "factor_storage_layout": "single_packed_C_then_D_backing_span",
+    "factorization": "E_approximately_C_times_D",
+    "full_vocabulary_retained": true,
+    "ingress": "candidate_embedding_lookup_uses_shared_C_and_D",
+    "ingress_and_egress_reference_same_factor": true,
+    "lexical_rank_resource_curve": [
+      {
+        "rank": 640,
+        "rank_640_is_exact_copied_tied_matrix": true,
+        "source_scalar_reduction": 0,
+        "stored_scalars": 167772160
+      },
+      {
+        "rank": 512,
+        "rank_640_is_exact_copied_tied_matrix": false,
+        "source_scalar_reduction": 33226752,
+        "stored_scalars": 134545408
+      },
+      {
+        "rank": 384,
+        "rank_640_is_exact_copied_tied_matrix": false,
+        "source_scalar_reduction": 66863104,
+        "stored_scalars": 100909056
+      },
+      {
+        "rank": 256,
+        "rank_640_is_exact_copied_tied_matrix": false,
+        "source_scalar_reduction": 100499456,
+        "stored_scalars": 67272704
+      }
+    ],
+    "logit_softcap_preserved_exactly": true,
+    "physical_alias_audit_required": true,
+    "physical_span_receipt_covers_C_and_D": true,
+    "physical_storage_multiplicity": 1,
+    "separate_C_and_D_storage_allowed_in_v1": false,
+    "shared_factor_id": "lexical.shared_factor",
+    "terminal_rmsnorm_preserved_exactly": true
+  },
+  "source_parameter_inventory": {
+    "final_rmsnorm": 640,
+    "inventory_closes_exactly": true,
+    "tied_embedding_and_head_counted_once": 167772160,
+    "transformer_body": 100325376,
+    "whole_model_unique_parameters": 268098176
+  },
+  "whole_model_boundary_graph": {
+    "attention_runtime_contracts": {
+      "global": {
+        "rope_theta": 1000000.0,
+        "window": null
+      },
+      "global_source_layer_ordinals": [
+        5,
+        11,
+        17
+      ],
+      "shared": {
+        "attention_logit_softcap": null,
+        "attention_softmax_dtype": "float32",
+        "causal_mask_required": true,
+        "grouped_query_attention": true,
+        "head_dimension": 256,
+        "key_value_heads": 1,
+        "query_and_key_rmsnorm": true,
+        "query_heads": 4,
+        "query_pre_attention_scalar": 256,
+        "rope_scaling": null
+      },
+      "sliding_512": {
+        "rope_theta": 10000.0,
+        "window": 512
+      }
+    },
+    "candidate_requires_carrier_native_chart_mutations": true,
+    "dense_residual_carrier_is_exact_control_not_compression": true,
+    "exact_body_execution_fingerprint_required": true,
+    "exact_carrier_session_scope": "body_mutations_only",
+    "expected_ordered_mutation_count": 36,
+    "fitted_plan_protocol_hash_must_equal_this_artifact": true,
+    "fitted_plan_required_assembly_indexes": "0_through_38",
+    "inputs_embeds_bypass_policy": "unsupported_in_v1_fail_closed_no_native_bypass",
+    "lexical_and_terminal_boundaries_outside_body_session": true,
+    "lexical_egress": {
+      "invocation_id": "lexical.egress",
+      "logit_softcap_compiled_exact": true,
+      "mutation_index": 38,
+      "operator_contract": "vocabulary_boundary"
+    },
+    "lexical_ingress": {
+      "invocation_id": "lexical.ingress",
+      "mutation_index": 0,
+      "operator_contract": "vocabulary_boundary"
+    },
+    "mutation_invocations": [
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.1",
+        "mutation_index": 1,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 0,
+          "source_mutation_id": "layer.0.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.2",
+        "mutation_index": 2,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 0,
+          "source_mutation_id": "layer.0.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.3",
+        "mutation_index": 3,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 1,
+          "source_mutation_id": "layer.1.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.4",
+        "mutation_index": 4,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 1,
+          "source_mutation_id": "layer.1.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.5",
+        "mutation_index": 5,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 2,
+          "source_mutation_id": "layer.2.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.6",
+        "mutation_index": 6,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 2,
+          "source_mutation_id": "layer.2.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.7",
+        "mutation_index": 7,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 3,
+          "source_mutation_id": "layer.3.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.8",
+        "mutation_index": 8,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 3,
+          "source_mutation_id": "layer.3.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.9",
+        "mutation_index": 9,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 4,
+          "source_mutation_id": "layer.4.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.10",
+        "mutation_index": 10,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 4,
+          "source_mutation_id": "layer.4.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "global",
+        "invocation_id": "mutation.11",
+        "mutation_index": 11,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 5,
+          "source_mutation_id": "layer.5.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.12",
+        "mutation_index": 12,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 5,
+          "source_mutation_id": "layer.5.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.13",
+        "mutation_index": 13,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 6,
+          "source_mutation_id": "layer.6.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.14",
+        "mutation_index": 14,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 6,
+          "source_mutation_id": "layer.6.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.15",
+        "mutation_index": 15,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 7,
+          "source_mutation_id": "layer.7.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.16",
+        "mutation_index": 16,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 7,
+          "source_mutation_id": "layer.7.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.17",
+        "mutation_index": 17,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 8,
+          "source_mutation_id": "layer.8.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.18",
+        "mutation_index": 18,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 8,
+          "source_mutation_id": "layer.8.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.19",
+        "mutation_index": 19,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 9,
+          "source_mutation_id": "layer.9.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.20",
+        "mutation_index": 20,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 9,
+          "source_mutation_id": "layer.9.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.21",
+        "mutation_index": 21,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 10,
+          "source_mutation_id": "layer.10.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.22",
+        "mutation_index": 22,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 10,
+          "source_mutation_id": "layer.10.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "global",
+        "invocation_id": "mutation.23",
+        "mutation_index": 23,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 11,
+          "source_mutation_id": "layer.11.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.24",
+        "mutation_index": 24,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 11,
+          "source_mutation_id": "layer.11.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.25",
+        "mutation_index": 25,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 12,
+          "source_mutation_id": "layer.12.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.26",
+        "mutation_index": 26,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 12,
+          "source_mutation_id": "layer.12.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.27",
+        "mutation_index": 27,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 13,
+          "source_mutation_id": "layer.13.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.28",
+        "mutation_index": 28,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 13,
+          "source_mutation_id": "layer.13.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.29",
+        "mutation_index": 29,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 14,
+          "source_mutation_id": "layer.14.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.30",
+        "mutation_index": 30,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 14,
+          "source_mutation_id": "layer.14.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.31",
+        "mutation_index": 31,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 15,
+          "source_mutation_id": "layer.15.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.32",
+        "mutation_index": 32,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 15,
+          "source_mutation_id": "layer.15.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "sliding_512",
+        "invocation_id": "mutation.33",
+        "mutation_index": 33,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 16,
+          "source_mutation_id": "layer.16.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.34",
+        "mutation_index": 34,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 16,
+          "source_mutation_id": "layer.16.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      },
+      {
+        "attention_contract": "global",
+        "invocation_id": "mutation.35",
+        "mutation_index": 35,
+        "operator_contract": "causal_prefix_mixer",
+        "provenance_only": {
+          "source_layer_ordinal": 17,
+          "source_mutation_id": "layer.17.attention",
+          "source_stage": "attention"
+        }
+      },
+      {
+        "attention_contract": null,
+        "invocation_id": "mutation.36",
+        "mutation_index": 36,
+        "operator_contract": "token_local",
+        "provenance_only": {
+          "source_layer_ordinal": 17,
+          "source_mutation_id": "layer.17.feed_forward",
+          "source_stage": "feed_forward"
+        }
+      }
+    ],
+    "residual_state_wire_is_first_class": true,
+    "source_mutation_id_scheme": "layer.N.attention_then_layer.N.feed_forward",
+    "terminal_rmsnorm": {
+      "compiled_exact_in_v1": true,
+      "invocation_id": "terminal.rmsnorm",
+      "mutation_index": 37
+    }
+  }
+}

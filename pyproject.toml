@@ -141,6 +141,10 @@ fisher-graph-gemma-l3-l4-attenuation-localization-dev = "fisher_graph.gemma3_l3_
 fisher-graph-gemma-l10-l17-a5e-coalescing-dev = "fisher_graph.gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment:main"
 fisher-graph-gemma-one-block-residual-dev = "fisher_graph.gemma3_one_block_residual_form_experiment:main"
 fisher-graph-gemma-full-body-residual-carrier-dev = "fisher_graph.gemma3_full_body_residual_carrier_experiment:main"
+fisher-graph-gemma-layer-agnostic-compression-setup = "fisher_graph_layer_agnostic_compression_setup:main"
+fisher-graph-gemma-layer-agnostic-compression-worker = "fisher_graph.gemma3_layer_agnostic_whole_model_compression_worker:main"
+fisher-graph-gemma-causal-carrier-transport-setup = "fisher_graph_causal_carrier_transport_setup:main"
+fisher-graph-gemma-causal-carrier-transport-dev = "fisher_graph.gemma3_causal_carrier_transport_experiment:main"
 fisher-graph-gemma-l3-l4-frozen-provider-v3 = "fisher_graph.gemma3_l3_l4_frozen_provider_assessment_v3:main"
 fisher-graph-gemma-l3-l4-contrast-provider-dev = "fisher_graph.gemma3_l3_l4_contrast_provider_development:main"
 fisher-graph-gemma-l3-l4-objective-balance-dev = "fisher_graph.gemma3_l3_l4_objective_balance_diagnostic:main"
@@ -178,6 +182,12 @@ fisher-graph-verify = "fisher_graph.verify:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools]
+py-modules = [
+  "fisher_graph_layer_agnostic_compression_setup",
+  "fisher_graph_causal_carrier_transport_setup",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

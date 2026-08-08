@@ -1,0 +1,1224 @@
+{
+  "arms": [
+    {
+      "arm_id": "native_gemma_reference",
+      "purpose": "source_authoritative_reference",
+      "source_modules_live": true
+    },
+    {
+      "arm_id": "exact_39_event_reference",
+      "checkpoint_coefficients_copied": true,
+      "purpose": "authenticate_existing_exact_event_compiler",
+      "source_modules_live": false
+    },
+    {
+      "arm_id": "exact_causal_carrier_transport",
+      "checkpoint_coefficients_copied": true,
+      "learned_cross_event_corrections_present": false,
+      "purpose": "authenticate_unified_carry_attention_mlp_message_ontology",
+      "source_modules_live": false
+    }
+  ],
+  "artifact_role": "setup_only_preregistered_exact_execution_rung",
+  "data_contract": {
+    "evaluation_example_count": 30,
+    "evaluation_example_ids_sha256": "0e3f67fd1f04af0e3fa343822760839de161fd28b475f7cc52f2ac72e92da6f2",
+    "evaluation_partition": "existing_prompt_disjoint_evaluation_half",
+    "family_count": 6,
+    "family_disjoint": false,
+    "fit_example_count_in_panel": 30,
+    "fit_example_ids_sha256": "a31de7aa4bf98d90bb0f9bf4bf50ffdd8a2274fe4e4b6415269519fe544dc4ce",
+    "fit_rows_used": 0,
+    "fitting_performed": false,
+    "panel_path": "examples/gemma3_downstream_retention_v1.json",
+    "panel_sha256": "47d91ae000b4036d7744509bbbfec67aa0bd48bb1e1162fd6efa53974c23e6ff",
+    "prompt_disjoint": true,
+    "raw_prompt_text_or_token_ids_written_to_report": false,
+    "tokenization_receipt_required": true
+  },
+  "exactness_gates": {
+    "absolute_delta_nll_per_token": 0.0,
+    "attention_routing_receipt_count_per_forward": 18,
+    "compared_tensor_contract": "valid_query_rows_only",
+    "event_order_exact": true,
+    "exact_reference_must_pass_before_transport_arm": true,
+    "final_carrier_hash_exact": true,
+    "global_attention_blocks": [
+      5,
+      11,
+      17
+    ],
+    "maximum_absolute_logit_error": 0.0,
+    "mutation_delta_hashes_exact": true,
+    "native_fallback_call_total_for_compiled_arms": 0,
+    "native_to_candidate_kl_per_query": 0.0,
+    "source_and_compiled_fingerprints_unchanged": true,
+    "source_module_call_total_for_compiled_arms": 0,
+    "top1_agreement": 1.0
+  },
+  "format_version": 1,
+  "future_extension_boundary": {
+    "compression_must_remain_disabled_during_edge_discovery": true,
+    "learned_transport_or_correction_edges_in_this_rung": false,
+    "next_rung_may_add_strictly_forward_correction_messages": true,
+    "next_rung_must_hold_generator_coefficients_exact_first": true
+  },
+  "graph_contract": {
+    "attention_generator_count": 18,
+    "attention_message_owns_qkv_norm_rope_mask_softmax_and_output": true,
+    "carrier_final_version": 36,
+    "carrier_initial_version": 0,
+    "carry_message_is_the_residual_identity_path": true,
+    "cross_example_messages_forbidden": true,
+    "event_count": 39,
+    "event_ids": [
+      "lexical.ingress",
+      "mutation.1",
+      "mutation.2",
+      "mutation.3",
+      "mutation.4",
+      "mutation.5",
+      "mutation.6",
+      "mutation.7",
+      "mutation.8",
+      "mutation.9",
+      "mutation.10",
+      "mutation.11",
+      "mutation.12",
+      "mutation.13",
+      "mutation.14",
+      "mutation.15",
+      "mutation.16",
+      "mutation.17",
+      "mutation.18",
+      "mutation.19",
+      "mutation.20",
+      "mutation.21",
+      "mutation.22",
+      "mutation.23",
+      "mutation.24",
+      "mutation.25",
+      "mutation.26",
+      "mutation.27",
+      "mutation.28",
+      "mutation.29",
+      "mutation.30",
+      "mutation.31",
+      "mutation.32",
+      "mutation.33",
+      "mutation.34",
+      "mutation.35",
+      "mutation.36",
+      "terminal.rmsnorm",
+      "lexical.egress"
+    ],
+    "events": [
+      {
+        "block_ordinal": null,
+        "component_family": "lexical",
+        "event_id": "lexical.ingress",
+        "event_index": 0,
+        "event_kind": "tied_lexical_ingress",
+        "source_mutation_id": null
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 0,
+        "component_family": "attention",
+        "event_id": "mutation.1",
+        "event_index": 1,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.0.attention"
+      },
+      {
+        "block_ordinal": 0,
+        "component_family": "mlp",
+        "event_id": "mutation.2",
+        "event_index": 2,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.0.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 1,
+        "component_family": "attention",
+        "event_id": "mutation.3",
+        "event_index": 3,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.1.attention"
+      },
+      {
+        "block_ordinal": 1,
+        "component_family": "mlp",
+        "event_id": "mutation.4",
+        "event_index": 4,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.1.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 2,
+        "component_family": "attention",
+        "event_id": "mutation.5",
+        "event_index": 5,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.2.attention"
+      },
+      {
+        "block_ordinal": 2,
+        "component_family": "mlp",
+        "event_id": "mutation.6",
+        "event_index": 6,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.2.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 3,
+        "component_family": "attention",
+        "event_id": "mutation.7",
+        "event_index": 7,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.3.attention"
+      },
+      {
+        "block_ordinal": 3,
+        "component_family": "mlp",
+        "event_id": "mutation.8",
+        "event_index": 8,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.3.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 4,
+        "component_family": "attention",
+        "event_id": "mutation.9",
+        "event_index": 9,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.4.attention"
+      },
+      {
+        "block_ordinal": 4,
+        "component_family": "mlp",
+        "event_id": "mutation.10",
+        "event_index": 10,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.4.feed_forward"
+      },
+      {
+        "attention_kind": "global_causal",
+        "block_ordinal": 5,
+        "component_family": "attention",
+        "event_id": "mutation.11",
+        "event_index": 11,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.5.attention"
+      },
+      {
+        "block_ordinal": 5,
+        "component_family": "mlp",
+        "event_id": "mutation.12",
+        "event_index": 12,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.5.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 6,
+        "component_family": "attention",
+        "event_id": "mutation.13",
+        "event_index": 13,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.6.attention"
+      },
+      {
+        "block_ordinal": 6,
+        "component_family": "mlp",
+        "event_id": "mutation.14",
+        "event_index": 14,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.6.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 7,
+        "component_family": "attention",
+        "event_id": "mutation.15",
+        "event_index": 15,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.7.attention"
+      },
+      {
+        "block_ordinal": 7,
+        "component_family": "mlp",
+        "event_id": "mutation.16",
+        "event_index": 16,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.7.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 8,
+        "component_family": "attention",
+        "event_id": "mutation.17",
+        "event_index": 17,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.8.attention"
+      },
+      {
+        "block_ordinal": 8,
+        "component_family": "mlp",
+        "event_id": "mutation.18",
+        "event_index": 18,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.8.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 9,
+        "component_family": "attention",
+        "event_id": "mutation.19",
+        "event_index": 19,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.9.attention"
+      },
+      {
+        "block_ordinal": 9,
+        "component_family": "mlp",
+        "event_id": "mutation.20",
+        "event_index": 20,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.9.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 10,
+        "component_family": "attention",
+        "event_id": "mutation.21",
+        "event_index": 21,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.10.attention"
+      },
+      {
+        "block_ordinal": 10,
+        "component_family": "mlp",
+        "event_id": "mutation.22",
+        "event_index": 22,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.10.feed_forward"
+      },
+      {
+        "attention_kind": "global_causal",
+        "block_ordinal": 11,
+        "component_family": "attention",
+        "event_id": "mutation.23",
+        "event_index": 23,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.11.attention"
+      },
+      {
+        "block_ordinal": 11,
+        "component_family": "mlp",
+        "event_id": "mutation.24",
+        "event_index": 24,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.11.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 12,
+        "component_family": "attention",
+        "event_id": "mutation.25",
+        "event_index": 25,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.12.attention"
+      },
+      {
+        "block_ordinal": 12,
+        "component_family": "mlp",
+        "event_id": "mutation.26",
+        "event_index": 26,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.12.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 13,
+        "component_family": "attention",
+        "event_id": "mutation.27",
+        "event_index": 27,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.13.attention"
+      },
+      {
+        "block_ordinal": 13,
+        "component_family": "mlp",
+        "event_id": "mutation.28",
+        "event_index": 28,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.13.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 14,
+        "component_family": "attention",
+        "event_id": "mutation.29",
+        "event_index": 29,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.14.attention"
+      },
+      {
+        "block_ordinal": 14,
+        "component_family": "mlp",
+        "event_id": "mutation.30",
+        "event_index": 30,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.14.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 15,
+        "component_family": "attention",
+        "event_id": "mutation.31",
+        "event_index": 31,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.15.attention"
+      },
+      {
+        "block_ordinal": 15,
+        "component_family": "mlp",
+        "event_id": "mutation.32",
+        "event_index": 32,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.15.feed_forward"
+      },
+      {
+        "attention_kind": "sliding_causal_512",
+        "block_ordinal": 16,
+        "component_family": "attention",
+        "event_id": "mutation.33",
+        "event_index": 33,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.16.attention"
+      },
+      {
+        "block_ordinal": 16,
+        "component_family": "mlp",
+        "event_id": "mutation.34",
+        "event_index": 34,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.16.feed_forward"
+      },
+      {
+        "attention_kind": "global_causal",
+        "block_ordinal": 17,
+        "component_family": "attention",
+        "event_id": "mutation.35",
+        "event_index": 35,
+        "event_kind": "attention_generator_message",
+        "source_mutation_id": "layer.17.attention"
+      },
+      {
+        "block_ordinal": 17,
+        "component_family": "mlp",
+        "event_id": "mutation.36",
+        "event_index": 36,
+        "event_kind": "token_local_mlp_generator_message",
+        "source_mutation_id": "layer.17.feed_forward"
+      },
+      {
+        "block_ordinal": null,
+        "component_family": "terminal",
+        "event_id": "terminal.rmsnorm",
+        "event_index": 37,
+        "event_kind": "exact_terminal_rmsnorm",
+        "source_mutation_id": null
+      },
+      {
+        "block_ordinal": null,
+        "component_family": "lexical",
+        "event_id": "lexical.egress",
+        "event_index": 38,
+        "event_kind": "tied_lexical_egress",
+        "source_mutation_id": null
+      }
+    ],
+    "every_mutation_aggregates_exactly_one_carry_and_one_generator": true,
+    "future_token_messages_forbidden": true,
+    "generator_message_count": 36,
+    "graph_name": "causal_carrier_transport_graph",
+    "identity_carry_message_count": 36,
+    "invalid_query_rows_inert": true,
+    "learned_cross_event_correction_message_count": 0,
+    "lexical_message_count": 2,
+    "message_ids": [
+      "message.lexical.ingress",
+      "message.mutation.1.carry",
+      "message.mutation.1.generator",
+      "message.mutation.2.carry",
+      "message.mutation.2.generator",
+      "message.mutation.3.carry",
+      "message.mutation.3.generator",
+      "message.mutation.4.carry",
+      "message.mutation.4.generator",
+      "message.mutation.5.carry",
+      "message.mutation.5.generator",
+      "message.mutation.6.carry",
+      "message.mutation.6.generator",
+      "message.mutation.7.carry",
+      "message.mutation.7.generator",
+      "message.mutation.8.carry",
+      "message.mutation.8.generator",
+      "message.mutation.9.carry",
+      "message.mutation.9.generator",
+      "message.mutation.10.carry",
+      "message.mutation.10.generator",
+      "message.mutation.11.carry",
+      "message.mutation.11.generator",
+      "message.mutation.12.carry",
+      "message.mutation.12.generator",
+      "message.mutation.13.carry",
+      "message.mutation.13.generator",
+      "message.mutation.14.carry",
+      "message.mutation.14.generator",
+      "message.mutation.15.carry",
+      "message.mutation.15.generator",
+      "message.mutation.16.carry",
+      "message.mutation.16.generator",
+      "message.mutation.17.carry",
+      "message.mutation.17.generator",
+      "message.mutation.18.carry",
+      "message.mutation.18.generator",
+      "message.mutation.19.carry",
+      "message.mutation.19.generator",
+      "message.mutation.20.carry",
+      "message.mutation.20.generator",
+      "message.mutation.21.carry",
+      "message.mutation.21.generator",
+      "message.mutation.22.carry",
+      "message.mutation.22.generator",
+      "message.mutation.23.carry",
+      "message.mutation.23.generator",
+      "message.mutation.24.carry",
+      "message.mutation.24.generator",
+      "message.mutation.25.carry",
+      "message.mutation.25.generator",
+      "message.mutation.26.carry",
+      "message.mutation.26.generator",
+      "message.mutation.27.carry",
+      "message.mutation.27.generator",
+      "message.mutation.28.carry",
+      "message.mutation.28.generator",
+      "message.mutation.29.carry",
+      "message.mutation.29.generator",
+      "message.mutation.30.carry",
+      "message.mutation.30.generator",
+      "message.mutation.31.carry",
+      "message.mutation.31.generator",
+      "message.mutation.32.carry",
+      "message.mutation.32.generator",
+      "message.mutation.33.carry",
+      "message.mutation.33.generator",
+      "message.mutation.34.carry",
+      "message.mutation.34.generator",
+      "message.mutation.35.carry",
+      "message.mutation.35.generator",
+      "message.mutation.36.carry",
+      "message.mutation.36.generator",
+      "message.terminal.rmsnorm",
+      "message.lexical.egress"
+    ],
+    "messages": [
+      {
+        "message_id": "message.lexical.ingress",
+        "message_kind": "lexical_ingress",
+        "routing_kind": "token_id_lookup",
+        "stored_scalar_credit": "shared_lexical_factor_counted_once",
+        "target_event_id": "lexical.ingress",
+        "transform_kind": "exact_tied_lexical_weight"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.1.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.1",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.1.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.1",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.2.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.2",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.2.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.2",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.3.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.3",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.3.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.3",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.4.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.4",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.4.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.4",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.5.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.5",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.5.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.5",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.6.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.6",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.6.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.6",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.7.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.7",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.7.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.7",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.8.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.8",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.8.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.8",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.9.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.9",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.9.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.9",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.10.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.10",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.10.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.10",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.11.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.11",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.11.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.11",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.12.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.12",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.12.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.12",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.13.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.13",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.13.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.13",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.14.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.14",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.14.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.14",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.15.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.15",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.15.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.15",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.16.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.16",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.16.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.16",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.17.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.17",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.17.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.17",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.18.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.18",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.18.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.18",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.19.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.19",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.19.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.19",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.20.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.20",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.20.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.20",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.21.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.21",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.21.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.21",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.22.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.22",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.22.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.22",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.23.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.23",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.23.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.23",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.24.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.24",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.24.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.24",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.25.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.25",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.25.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.25",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.26.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.26",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.26.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.26",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.27.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.27",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.27.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.27",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.28.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.28",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.28.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.28",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.29.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.29",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.29.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.29",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.30.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.30",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.30.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.30",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.31.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.31",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.31.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.31",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.32.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.32",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.32.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.32",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.33.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.33",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.33.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.33",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.34.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.34",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.34.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.34",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.35.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.35",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.35.generator",
+        "message_kind": "state_conditioned_causal_attention",
+        "routing_kind": "causal_prefix_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.35",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "coefficient": 1.0,
+        "message_id": "message.mutation.36.carry",
+        "message_kind": "identity_carry",
+        "routing_kind": "same_token_identity",
+        "stored_scalar_count": 0,
+        "target_event_id": "mutation.36",
+        "transform_kind": "parameter_free_identity"
+      },
+      {
+        "message_id": "message.mutation.36.generator",
+        "message_kind": "state_conditioned_token_local_mlp",
+        "routing_kind": "same_token_routing",
+        "stored_scalar_credit": "owned_exact_generator_coefficients",
+        "target_event_id": "mutation.36",
+        "transform_kind": "exact_cloned_checkpoint_operator"
+      },
+      {
+        "message_id": "message.terminal.rmsnorm",
+        "message_kind": "terminal_normalization",
+        "routing_kind": "same_token",
+        "target_event_id": "terminal.rmsnorm",
+        "transform_kind": "exact_cloned_rmsnorm"
+      },
+      {
+        "message_id": "message.lexical.egress",
+        "message_kind": "lexical_egress",
+        "routing_kind": "same_token_to_vocabulary",
+        "stored_scalar_credit": "shared_lexical_factor_counted_once",
+        "target_event_id": "lexical.egress",
+        "transform_kind": "exact_same_tied_lexical_weight"
+      }
+    ],
+    "mlp_generator_count": 18,
+    "mlp_message_is_token_local_nonlinear_mutation": true,
+    "mutation_count": 36,
+    "strict_causal_token_routing_required": true,
+    "strict_event_order_required": true,
+    "terminal_normalization_message_count": 1
+  },
+  "model_contract": {
+    "hidden_width": 640,
+    "layer_count": 18,
+    "model_id": "google/gemma-3-270m",
+    "revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "source_checkpoint_storage_alias_must_be_authenticated": true,
+    "source_unique_parameter_count": 268098176,
+    "tied_embedding_and_head_required": true
+  },
+  "protocol_sha256": "19930ed077a6c0e8dfbcc1f4306b07ebba25c3ef3382732addf0c918491d3c3f",
+  "resource_and_claim_firewall": {
+    "candidate_unique_stored_scalar_count": 268098176,
+    "identity_carry_stored_scalar_count": 0,
+    "latency_or_speedup": false,
+    "logical_mac_compression": false,
+    "logical_residual_additions_removed": 0,
+    "model_semantics_compressed": false,
+    "parameter_compression": false,
+    "physical_kernel_fusion_established": false,
+    "representation_level_public_residual_add_nodes_reexpressed": true,
+    "serialized_byte_compression": false,
+    "shared_tied_lexical_factor_counted_once": true,
+    "source_free_serialized_artifact": false,
+    "source_parameter_inventory_parity_required": true,
+    "source_plus_candidate_residency_must_be_reported": true
+  },
+  "runtime_contract": {
+    "batch_size": 4,
+    "cached_decode_supported": false,
+    "deterministic_algorithms_required": true,
+    "device": "cpu",
+    "dtype": "torch.float32",
+    "input_mode": "input_ids_only",
+    "invalid_padding_query_parity_claimed": false,
+    "packed_or_segment_reset_sequences_supported": false,
+    "phase": "cache_free_eager_prefill",
+    "valid_query_rows_only": true
+  },
+  "schema": "fisher_graph.gemma3_causal_carrier_transport.protocol.v1",
+  "setup_receipt": {
+    "compiler_executed": false,
+    "compression_performed": false,
+    "metrics_present": false,
+    "model_experiment_executed": false,
+    "model_weights_loaded": false,
+    "prompt_data_opened": false,
+    "tokenization_performed": false
+  }
+}
