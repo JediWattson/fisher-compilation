@@ -1758,9 +1758,10 @@ def heldout_evaluation_policy() -> dict[str, object]:
                 "sharding_policy"
             ),
             "all_18_compiled_layer_call_counts_equal_forward_call_count": True,
-            "native_module_projection_profiler_fallback_alias_counts": (
+            "native_module_projection_fallback_alias_inventory_counts": (
                 "all_exactly_zero"
             ),
+            "no_generic_operator_absence_MAC_or_latency_claim": True,
         },
         "safety": {
             "contains_prompt_text": False,
@@ -2297,15 +2298,14 @@ class D3NoNativeMLPTraceReceipt:
     trace_protocol_sha256: str
     module_inventory_sha256: str
     trace_event_stream_sha256: str
-    profiler_backend: str
+    proof_backend: str
     traced_forward_call_count: int
     traced_example_count: int
     traced_predicted_token_count: int
     compiled_layer_call_counts: tuple[int, ...]
-    native_mlp_module_call_count: int
-    native_mlp_projection_call_count: int
-    native_mlp_profiler_op_count: int
-    native_mlp_fallback_call_count: int
+    native_mlp_module_inventory_count: int
+    native_mlp_projection_inventory_count: int
+    native_mlp_fallback_inventory_count: int
     native_mlp_parameter_storage_alias_count: int
     passed: bool
     artifact_sha256: str = ""
@@ -2321,7 +2321,7 @@ class D3NoNativeMLPTraceReceipt:
             "trace_event_stream_sha256",
         ):
             _require_sha(getattr(self, label), label=label)
-        _require_string(self.profiler_backend, label="profiler_backend")
+        _require_string(self.proof_backend, label="proof_backend")
         for label in (
             "traced_forward_call_count",
             "traced_example_count",
@@ -2336,18 +2336,16 @@ class D3NoNativeMLPTraceReceipt:
         for index, value in enumerate(self.compiled_layer_call_counts):
             _require_int(value, label=f"compiled_layer_call_counts[{index}]")
         zero_fields = (
-            self.native_mlp_module_call_count,
-            self.native_mlp_projection_call_count,
-            self.native_mlp_profiler_op_count,
-            self.native_mlp_fallback_call_count,
+            self.native_mlp_module_inventory_count,
+            self.native_mlp_projection_inventory_count,
+            self.native_mlp_fallback_inventory_count,
             self.native_mlp_parameter_storage_alias_count,
         )
         for label, value in zip(
             (
-                "native_mlp_module_call_count",
-                "native_mlp_projection_call_count",
-                "native_mlp_profiler_op_count",
-                "native_mlp_fallback_call_count",
+                "native_mlp_module_inventory_count",
+                "native_mlp_projection_inventory_count",
+                "native_mlp_fallback_inventory_count",
                 "native_mlp_parameter_storage_alias_count",
             ),
             zero_fields,
@@ -2376,17 +2374,20 @@ class D3NoNativeMLPTraceReceipt:
             "trace_protocol_sha256": self.trace_protocol_sha256,
             "module_inventory_sha256": self.module_inventory_sha256,
             "trace_event_stream_sha256": self.trace_event_stream_sha256,
-            "profiler_backend": self.profiler_backend,
+            "proof_backend": self.proof_backend,
             "traced_forward_call_count": self.traced_forward_call_count,
             "traced_example_count": self.traced_example_count,
             "traced_predicted_token_count": self.traced_predicted_token_count,
             "compiled_layer_call_counts": self.compiled_layer_call_counts,
-            "native_mlp_module_call_count": self.native_mlp_module_call_count,
-            "native_mlp_projection_call_count": (
-                self.native_mlp_projection_call_count
+            "native_mlp_module_inventory_count": (
+                self.native_mlp_module_inventory_count
             ),
-            "native_mlp_profiler_op_count": self.native_mlp_profiler_op_count,
-            "native_mlp_fallback_call_count": self.native_mlp_fallback_call_count,
+            "native_mlp_projection_inventory_count": (
+                self.native_mlp_projection_inventory_count
+            ),
+            "native_mlp_fallback_inventory_count": (
+                self.native_mlp_fallback_inventory_count
+            ),
             "native_mlp_parameter_storage_alias_count": (
                 self.native_mlp_parameter_storage_alias_count
             ),
@@ -2413,15 +2414,14 @@ class D3NoNativeMLPTraceReceipt:
                 "trace_protocol_sha256",
                 "module_inventory_sha256",
                 "trace_event_stream_sha256",
-                "profiler_backend",
+                "proof_backend",
                 "traced_forward_call_count",
                 "traced_example_count",
                 "traced_predicted_token_count",
                 "compiled_layer_call_counts",
-                "native_mlp_module_call_count",
-                "native_mlp_projection_call_count",
-                "native_mlp_profiler_op_count",
-                "native_mlp_fallback_call_count",
+                "native_mlp_module_inventory_count",
+                "native_mlp_projection_inventory_count",
+                "native_mlp_fallback_inventory_count",
                 "native_mlp_parameter_storage_alias_count",
                 "passed",
                 "artifact_sha256",

@@ -290,7 +290,7 @@ def test_A_selection_freezes_fidelity_distinctness_and_minimum_size_rule() -> No
     assert (
         b3["heldout_evaluation_policy_sha256"]
         == c3["heldout_evaluation_policy_sha256"]
-        == "4a6f6379571f348fc7a0a477c83ffdf52ae119903cb6e8859a12c4f66e4e9266"
+        == setup.HELDOUT_EVALUATION_POLICY_SHA256
     )
 
 
@@ -365,8 +365,32 @@ def test_B3_C3_and_D3_gates_are_exact_and_nonadaptive() -> None:
         "native_top1_agreement_lower_bound_at_least": 0.95,
     }
     assert D["native_MLP_source_fallback_alias_or_hidden_call_forbidden"]
+    assert D[
+        "qualified_module_inventory_and_all_replacement_forward_hooks_"
+        "must_prove_exactly_18_replacements_execute_and_no_native_MLP_"
+        "module_projection_fallback_or_parameter_storage_alias_is_present"
+    ]
+    assert D[
+        "no_native_MLP_proof_does_not_claim_absence_of_generic_tensor_"
+        "ops_MAC_reduction_or_latency_improvement"
+    ]
+    assert "profiler_and_module_trace_must_prove_no_native_MLP_call" not in D
     assert D["exact_formula_parameter_count_must_be_lower"]
     assert D["actual_serialized_full_model_bytes_must_be_lower"]
+
+
+def test_heldout_policy_pin_equals_live_evaluation_policy() -> None:
+    from fisher_graph import gemma3_layer_multimode_evaluation as evaluation
+
+    live_policy = evaluation.heldout_evaluation_policy_sha256()
+    state = setup.build_setup()
+    assert setup.HELDOUT_EVALUATION_POLICY_SHA256 == live_policy
+    for stage in (
+        "B3_teacher_forced_layerwise",
+        "C3_full_stack_source_free",
+        "D3_final_validation",
+    ):
+        assert state[stage]["heldout_evaluation_policy_sha256"] == live_policy
 
 
 def test_v2_negative_result_is_bound_but_non_authorizing() -> None:
@@ -380,6 +404,27 @@ def test_v2_negative_result_is_bound_but_non_authorizing() -> None:
     assert provenance["predecessor_v2_report_file_sha256"] == (
         setup.PREDECESSOR_V2_REPORT_FILE_SHA256
     )
+    assert provenance["predecessor_v2_preflight_receipt_sha256"] == (
+        setup.PREDECESSOR_V2_PREFLIGHT_RECEIPT_SHA256
+    )
+    assert provenance[
+        "predecessor_v2_runtime_qualification_receipt_sha256"
+    ] == setup.PREDECESSOR_V2_RUNTIME_QUALIFICATION_RECEIPT_SHA256
+    assert provenance["predecessor_v2_runtime_session_binding_sha256"] == (
+        setup.PREDECESSOR_V2_RUNTIME_SESSION_BINDING_SHA256
+    )
+    assert provenance["predecessor_v2_A_capture_receipt_sha256"] == (
+        setup.PREDECESSOR_V2_A_CAPTURE_RECEIPT_SHA256
+    )
+    assert provenance["predecessor_v2_runtime_execution_receipt_sha256"] == (
+        setup.PREDECESSOR_V2_RUNTIME_EXECUTION_RECEIPT_SHA256
+    )
+    assert provenance["predecessor_v2_source_model_fingerprint_sha256"] == (
+        setup.PREDECESSOR_V2_SOURCE_MODEL_FINGERPRINT_SHA256
+    )
+    assert provenance[
+        "predecessor_v2_source_execution_fingerprint_sha256"
+    ] == setup.PREDECESSOR_V2_SOURCE_EXECUTION_FINGERPRINT_SHA256
     assert provenance["predecessor_v2_selected_chart_count"] == 2
     assert provenance["predecessor_v2_B_raw_mutual_pair_count"] == 5
     assert provenance["predecessor_v2_B_frozen_candidate_count"] == 0
@@ -402,20 +447,33 @@ def test_setup_binds_production_execution_fingerprint_checks() -> None:
     ]
 
 
-def test_prospective_check_passes_but_preflight_and_run_fail_closed(tmp_path) -> None:
+def test_setup_component_preflight_uses_panel_receipt_only(tmp_path) -> None:
     output = tmp_path / "setup.json"
     expected = setup.write_setup(output)
     assert setup.check_setup(output, verify_predecessor=False) == expected
     readiness = expected["implementation_readiness"]
-    assert readiness["default_setup_artifact_published"] is False
-    assert readiness["panel_manifest_frozen"] is False
-    assert readiness["implementation_qualification_frozen"] is False
-    assert readiness["preflight_authorized"] is False
-    assert readiness["run_authorized"] is False
-    with pytest.raises(setup.ExecutionNotAuthorizedError, match="not authorized"):
-        setup.preflight_setup(output, verify_predecessor=False)
-    with pytest.raises(setup.ExecutionNotAuthorizedError, match="not authorized"):
-        setup.authorize_run(output, verify_predecessor=False)
+    assert readiness[
+        "default_setup_publication_requires_prior_absence"
+    ] is True
+    assert "default_setup_artifact_published" not in readiness
+    assert readiness["panel_receipt_frozen"] is True
+    assert readiness["qualification_path_or_digest_in_setup_identity"] is False
+    assert readiness["setup_component_preflight_authorized"] is True
+    assert readiness["run_authorized_by_setup_alone"] is False
+    canonical = setup.canonical_json_bytes(expected)
+    assert b"implementation_qualification_path" not in canonical
+    assert b"implementation_qualification_file_sha256" not in canonical
+    assert setup.preflight_setup(output, verify_predecessor=False) == expected
+    assert setup.authorize_run(output, verify_predecessor=False) == expected
+
+
+def test_output_contract_freezes_transaction_and_summary_paths() -> None:
+    contract = setup.build_setup()["output_contract"]
+    assert contract["deterministic_summary"] == str(setup.DEFAULT_SUMMARY_OUTPUT)
+    assert contract["bundle_and_summary_are_durable_before_report"] is True
+    assert contract["report_is_published_last_as_commit_marker"] is True
+    assert contract["publication_is_no_clobber_all_or_none"] is True
+    assert contract["rollback_removes_report_and_fsyncs_before_sidecars"] is True
 
 
 def test_setup_validation_rejects_drift_and_bool_integer_substitution() -> None:
@@ -446,6 +504,264 @@ def test_setup_roundtrip_is_exact_and_no_clobber(tmp_path) -> None:
     reformatted.write_text(json.dumps(expected), encoding="utf-8")
     with pytest.raises(ValueError, match="formatting drifted"):
         setup.check_setup(reformatted, verify_predecessor=False)
+
+
+def test_setup_writer_rolls_back_a_post_link_identity_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "setup.json"
+    original_stat = setup.os.stat
+    injected = False
+
+    def fail_first_published_stat(path, *args, **kwargs):
+        nonlocal injected
+        status = original_stat(path, *args, **kwargs)
+        if (
+            path == output.name
+            and kwargs.get("dir_fd") is not None
+            and not injected
+        ):
+            injected = True
+            raise OSError("injected post-link lstat failure")
+        return status
+
+    monkeypatch.setattr(setup.os, "stat", fail_first_published_stat)
+    with pytest.raises(OSError, match="injected post-link"):
+        setup.write_setup(output)
+    assert injected
+    assert not output.exists()
+    assert list(tmp_path.glob(".setup.json.*.tmp")) == []
+
+
+def test_setup_writer_requires_preexisting_nonsymlink_parent(tmp_path) -> None:
+    missing = tmp_path / "missing" / "setup.json"
+    with pytest.raises(ValueError, match="must already exist"):
+        setup.write_setup(missing)
+
+    real = tmp_path / "real"
+    real.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(real, target_is_directory=True)
+    with pytest.raises(ValueError, match="not a regular directory"):
+        setup.write_setup(linked / "setup.json")
+    assert list(real.iterdir()) == []
+
+
+def test_setup_writer_rejects_and_preserves_an_exact_byte_target_replacement(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "setup.json"
+    replacement = setup.render_setup_bytes()
+    original_read = setup._read_regular_at
+    injected = False
+
+    def replace_before_read(directory_descriptor, name, **kwargs):
+        nonlocal injected
+        if not injected:
+            injected = True
+            setup.os.unlink(name, dir_fd=directory_descriptor)
+            descriptor = setup.os.open(
+                name,
+                setup.os.O_WRONLY | setup.os.O_CREAT | setup.os.O_EXCL,
+                0o600,
+                dir_fd=directory_descriptor,
+            )
+            try:
+                setup.os.write(descriptor, replacement)
+                setup.os.fsync(descriptor)
+            finally:
+                setup.os.close(descriptor)
+        return original_read(directory_descriptor, name, **kwargs)
+
+    monkeypatch.setattr(setup, "_read_regular_at", replace_before_read)
+    with pytest.raises(ValueError, match="identity or size") as captured:
+        setup.write_setup(output)
+    assert injected
+    assert output.read_bytes() == replacement
+    assert any(
+        "rollback target was replaced" in note
+        for note in captured.value.__notes__
+    )
+    assert list(tmp_path.glob(".setup.json.*.tmp")) == []
+
+
+def test_setup_writer_preserves_a_replaced_temporary_after_link(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "setup.json"
+    replacement = b"replacement temporary must survive\n"
+    original_link = setup.os.link
+    original_unlink = setup.os.unlink
+    original_open = setup.os.open
+    original_close = setup.os.close
+    original_fsync = setup.os.fsync
+    injected = False
+    fsyncs_after_replacement: list[int] = []
+
+    def replace_source_after_link(source, target, *args, **kwargs):
+        nonlocal injected
+        result = original_link(source, target, *args, **kwargs)
+        if target == output.name and not injected:
+            source_parent = kwargs.get("src_dir_fd")
+            original_unlink(source, dir_fd=source_parent)
+            descriptor = original_open(
+                source,
+                setup.os.O_WRONLY | setup.os.O_CREAT | setup.os.O_EXCL,
+                0o600,
+                dir_fd=source_parent,
+            )
+            try:
+                setup.os.write(descriptor, replacement)
+                original_fsync(descriptor)
+            finally:
+                original_close(descriptor)
+            injected = True
+        return result
+
+    def record_fsync(descriptor):
+        if injected:
+            fsyncs_after_replacement.append(descriptor)
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(setup.os, "link", replace_source_after_link)
+    monkeypatch.setattr(setup.os, "fsync", record_fsync)
+    with pytest.raises(RuntimeError, match="temporary was replaced before unlink"):
+        setup.write_setup(output)
+    assert injected
+    assert not output.exists()
+    temporaries = list(tmp_path.glob(".setup.json.*.tmp"))
+    assert len(temporaries) == 1
+    assert temporaries[0].read_bytes() == replacement
+    assert fsyncs_after_replacement
+
+
+def test_directory_chain_closes_anchor_when_initial_descriptor_stat_fails(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    original_open = setup.os.open
+    opened: list[int] = []
+
+    def record_open(path, flags, *args, **kwargs):
+        descriptor = original_open(path, flags, *args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def fail_descriptor_stat(_descriptor):
+        raise OSError("injected anchor descriptor stat failure")
+
+    monkeypatch.setattr(setup.os, "open", record_open)
+    monkeypatch.setattr(setup, "_descriptor_stat", fail_descriptor_stat)
+    with pytest.raises(OSError, match="injected anchor descriptor stat failure"):
+        setup._open_directory_chain(tmp_path)
+    assert len(opened) == 1
+    with pytest.raises(OSError):
+        setup.os.fstat(opened[0])
+
+
+def test_regular_descriptor_close_failure_does_not_mask_read_failure(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "setup.json"
+    output.write_bytes(setup.render_setup_bytes())
+    status = output.stat()
+    parent_descriptor = setup.os.open(
+        tmp_path,
+        setup.os.O_RDONLY | getattr(setup.os, "O_DIRECTORY", 0),
+    )
+    original_open = setup.os.open
+    original_close = setup.os.close
+    opened_target: list[int] = []
+
+    def record_open(path, flags, *args, **kwargs):
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if path == output.name and kwargs.get("dir_fd") == parent_descriptor:
+            opened_target.append(descriptor)
+        return descriptor
+
+    def fail_read(_descriptor, _size):
+        raise OSError("injected setup read failure")
+
+    def close_then_fail(descriptor):
+        original_close(descriptor)
+        if descriptor in opened_target:
+            raise OSError("injected target descriptor close failure")
+
+    monkeypatch.setattr(setup.os, "open", record_open)
+    monkeypatch.setattr(setup.os, "read", fail_read)
+    monkeypatch.setattr(setup.os, "close", close_then_fail)
+    try:
+        with pytest.raises(OSError, match="injected setup read failure") as captured:
+            setup._read_regular_at(
+                parent_descriptor,
+                output.name,
+                byte_cap=len(setup.render_setup_bytes()) + 1,
+                expected_inode=(status.st_dev, status.st_ino),
+            )
+    finally:
+        original_close(parent_descriptor)
+    assert opened_target
+    assert any(
+        "injected target descriptor close failure" in note
+        for note in captured.value.__notes__
+    )
+
+
+@pytest.mark.parametrize("helper_name", ["_read_regular", "_sha256_regular"])
+def test_path_reader_close_failure_does_not_mask_primary(
+    tmp_path,
+    monkeypatch,
+    helper_name,
+) -> None:
+    output = tmp_path / "setup.json"
+    output.write_bytes(setup.render_setup_bytes())
+    original_open = setup.os.open
+    original_close = setup.os.close
+    opened: list[int] = []
+
+    def record_open(path, flags, *args, **kwargs):
+        descriptor = original_open(path, flags, *args, **kwargs)
+        if Path(path) == output:
+            opened.append(descriptor)
+        return descriptor
+
+    def fail_read(_descriptor, _size):
+        raise OSError("injected path read failure")
+
+    def close_then_fail(descriptor):
+        original_close(descriptor)
+        if descriptor in opened:
+            raise OSError("injected path descriptor close failure")
+
+    monkeypatch.setattr(setup.os, "open", record_open)
+    monkeypatch.setattr(setup.os, "read", fail_read)
+    monkeypatch.setattr(setup.os, "close", close_then_fail)
+    helper = getattr(setup, helper_name)
+    kwargs = {"byte_cap": len(setup.render_setup_bytes()) + 1}
+    with pytest.raises(OSError, match="injected path read failure") as captured:
+        helper(output, **kwargs)
+    assert opened
+    assert any(
+        "injected path descriptor close failure" in note
+        for note in captured.value.__notes__
+    )
+
+
+def test_canonical_check_requires_private_single_link(tmp_path) -> None:
+    output = tmp_path / "setup.json"
+    setup.write_setup(output)
+    output.chmod(0o644)
+    with pytest.raises(ValueError, match="mode 0600"):
+        setup.check_setup(output)
+    output.chmod(0o600)
+    alias = tmp_path / "setup-alias.json"
+    setup.os.link(output, alias)
+    with pytest.raises(ValueError, match="exactly one hard link"):
+        setup.check_setup(output)
 
 
 def test_strict_loader_rejects_duplicate_keys_and_symlinks(tmp_path) -> None:

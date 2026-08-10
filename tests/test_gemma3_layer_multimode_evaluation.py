@@ -250,7 +250,7 @@ def _trace(
         trace_protocol_sha256=_digest("trace-protocol"),
         module_inventory_sha256=_digest("module-inventory"),
         trace_event_stream_sha256=_digest("trace-events"),
-        profiler_backend="mlx-profiler-plus-module-hooks-v1",
+        proof_backend="qualified-inventory-plus-module-hooks-v1",
         traced_forward_call_count=forward_calls,
         traced_example_count=len(records),
         traced_predicted_token_count=sum(
@@ -259,10 +259,9 @@ def _trace(
         compiled_layer_call_counts=tuple(
             forward_calls for _ in range(18)
         ),
-        native_mlp_module_call_count=0 if passing else 1,
-        native_mlp_projection_call_count=0,
-        native_mlp_profiler_op_count=0,
-        native_mlp_fallback_call_count=0,
+        native_mlp_module_inventory_count=0 if passing else 1,
+        native_mlp_projection_inventory_count=0,
+        native_mlp_fallback_inventory_count=0,
         native_mlp_parameter_storage_alias_count=0,
         passed=passing,
     )
@@ -712,7 +711,7 @@ def test_resource_and_trace_negative_evidence_is_terminal_not_malformed() -> Non
     assert resources.formula_parameter_reduction_passed is False
     assert resources.serialized_byte_reduction_passed is False
     assert trace.passed is False
-    assert trace.native_mlp_module_call_count == 1
+    assert trace.native_mlp_module_inventory_count == 1
 
 
 def test_all_nested_json_parsers_reject_numeric_type_confusion() -> None:

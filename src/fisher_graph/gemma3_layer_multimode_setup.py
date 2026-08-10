@@ -19,8 +19,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
 import stat
-import tempfile
 from typing import Mapping, Sequence
 
 
@@ -37,18 +37,21 @@ DEFAULT_REPORT_OUTPUT = Path(
 DEFAULT_BUNDLE_OUTPUT = Path(
     ".local-runs/google--gemma-3-270m/layer-multimode-experiment-v1.bundle"
 )
-FUTURE_PANEL_MANIFEST = Path(
+DEFAULT_SUMMARY_OUTPUT = Path(
+    ".local-runs/google--gemma-3-270m/"
+    "layer-multimode-experiment-v1.summary.json"
+)
+FUTURE_PANEL_RECEIPT = Path(
     "artifacts/research/gemma3-layer-multimode-fresh-panels-v1.json"
 )
-FUTURE_IMPLEMENTATION_QUALIFICATION = Path(
-    "artifacts/research/"
-    "gemma3-layer-multimode-implementation-qualification-v1.json"
-)
 
-# Deliberately absent during prospective implementation.  A reviewed freeze
-# replaces these with lowercase SHA-256 digests before any live preflight.
-PINNED_PANEL_MANIFEST_FILE_SHA256: str | None = None
-PINNED_IMPLEMENTATION_QUALIFICATION_FILE_SHA256: str | None = None
+# Deliberately absent until the reviewed panel transaction is published.  The
+# one-way root pin is the receipt commit marker; its strict loader derives and
+# authenticates the manifest and all four role files.  Qualification is an
+# external live-build gate and is intentionally absent from setup identity.
+PINNED_PANEL_RECEIPT_FILE_SHA256: str | None = (
+    "05689087d721af07c7fbd7cce8d2da0dc364d45bc4c4519e2e0eefac3d23027b"
+)
 
 PREDECESSOR_V2_SETUP = Path(
     "artifacts/research/gemma3-chart-native-neighbor-setup-v2.json"
@@ -69,6 +72,27 @@ PREDECESSOR_V2_REPORT_SHA256 = (
 PREDECESSOR_V2_REPORT_FILE_SHA256 = (
     "d8a3d1f528a889d4aa941e688825ca1c608da6b28a2c25ce0b70efdc406c3ee6"
 )
+PREDECESSOR_V2_PREFLIGHT_RECEIPT_SHA256 = (
+    "364b94f45728c4277054a9d98b26d78c709a3b4e98821e4860f1469fedc799ba"
+)
+PREDECESSOR_V2_RUNTIME_QUALIFICATION_RECEIPT_SHA256 = (
+    "d430889be9f91fdbc76b8c59d4ced252c860b9fc3d7ea6c655f43b25c8f693ca"
+)
+PREDECESSOR_V2_RUNTIME_SESSION_BINDING_SHA256 = (
+    "2520da9dbfa0233fbc299406b3f339a79d6a429708a888ba8bd1fd8e241952c4"
+)
+PREDECESSOR_V2_A_CAPTURE_RECEIPT_SHA256 = (
+    "f750de9c389c3b6db42875f3a5df9562b6e6a413bffefe662abfcada01c6dc50"
+)
+PREDECESSOR_V2_RUNTIME_EXECUTION_RECEIPT_SHA256 = (
+    "c5867985cbbe0730c4ef1ab70352a02b7fa06bf47f60dac60cfc10666399b6f8"
+)
+PREDECESSOR_V2_SOURCE_MODEL_FINGERPRINT_SHA256 = (
+    "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9"
+)
+PREDECESSOR_V2_SOURCE_EXECUTION_FINGERPRINT_SHA256 = (
+    "b04085b6cd7c076596dd074e3693feb465e69a917c61a46cc0f7310afb444e60"
+)
 
 LAYER_COUNT = 18
 HIDDEN_WIDTH = 640
@@ -76,6 +100,9 @@ MLP_INTERMEDIATE_WIDTH = 2_048
 CHART_COUNT_CANDIDATES = (2, 1)
 MODE_COUNT_CANDIDATES = (4, 2, 1)
 TANGENT_RANK_CANDIDATES = (64, 32, 16)
+HELDOUT_EVALUATION_POLICY_SHA256 = (
+    "f5cb0608305c92195ccd973d705f44178fce23769bb99559fa3f2172fe1ca375"
+)
 CANDIDATE_COUNT_PER_LAYER = (
     len(CHART_COUNT_CANDIDATES)
     * len(MODE_COUNT_CANDIDATES)
@@ -233,10 +260,7 @@ def _candidate_table() -> list[dict[str, object]]:
 
 
 def _build_state() -> dict[str, object]:
-    panel_ready = PINNED_PANEL_MANIFEST_FILE_SHA256 is not None
-    implementation_ready = (
-        PINNED_IMPLEMENTATION_QUALIFICATION_FILE_SHA256 is not None
-    )
+    panel_ready = PINNED_PANEL_RECEIPT_FILE_SHA256 is not None
     return {
         "schema": SCHEMA,
         "format_version": FORMAT_VERSION,
@@ -252,6 +276,27 @@ def _build_state() -> dict[str, object]:
             "predecessor_v2_report_sha256": PREDECESSOR_V2_REPORT_SHA256,
             "predecessor_v2_report_file_sha256": (
                 PREDECESSOR_V2_REPORT_FILE_SHA256
+            ),
+            "predecessor_v2_preflight_receipt_sha256": (
+                PREDECESSOR_V2_PREFLIGHT_RECEIPT_SHA256
+            ),
+            "predecessor_v2_runtime_qualification_receipt_sha256": (
+                PREDECESSOR_V2_RUNTIME_QUALIFICATION_RECEIPT_SHA256
+            ),
+            "predecessor_v2_runtime_session_binding_sha256": (
+                PREDECESSOR_V2_RUNTIME_SESSION_BINDING_SHA256
+            ),
+            "predecessor_v2_A_capture_receipt_sha256": (
+                PREDECESSOR_V2_A_CAPTURE_RECEIPT_SHA256
+            ),
+            "predecessor_v2_runtime_execution_receipt_sha256": (
+                PREDECESSOR_V2_RUNTIME_EXECUTION_RECEIPT_SHA256
+            ),
+            "predecessor_v2_source_model_fingerprint_sha256": (
+                PREDECESSOR_V2_SOURCE_MODEL_FINGERPRINT_SHA256
+            ),
+            "predecessor_v2_source_execution_fingerprint_sha256": (
+                PREDECESSOR_V2_SOURCE_EXECUTION_FINGERPRINT_SHA256
             ),
             "predecessor_v2_selected_chart_count": 2,
             "predecessor_v2_selected_tangent_rank": 16,
@@ -691,9 +736,12 @@ def _build_state() -> dict[str, object]:
             "disjoint": True,
             "existing_v2_D_is_not_repurposed": True,
             "existing_v2_reserve_is_not_repurposed_or_opened": True,
-            "future_manifest_path": str(FUTURE_PANEL_MANIFEST),
-            "future_manifest_file_sha256": PINNED_PANEL_MANIFEST_FILE_SHA256,
-            "panel_manifest_frozen_in_current_source": panel_ready,
+            "panel_receipt_commit_marker_path": str(FUTURE_PANEL_RECEIPT),
+            "panel_receipt_file_sha256": PINNED_PANEL_RECEIPT_FILE_SHA256,
+            "panel_receipt_frozen_in_current_source": panel_ready,
+            "strict_panel_loader_derives_manifest_and_all_role_file_hashes": (
+                True
+            ),
             "all_role_raw_hashes_verified_before_semantic_access": True,
             "B3_opens_only_after_all_18_A_selections_are_frozen": True,
             "C3_opens_only_after_B3_terminal_receipt_is_frozen": True,
@@ -704,7 +752,7 @@ def _build_state() -> dict[str, object]:
         "B3_teacher_forced_layerwise": {
             "role": DISCOVERY_ROLE,
             "heldout_evaluation_policy_sha256": (
-                "4a6f6379571f348fc7a0a477c83ffdf52ae119903cb6e8859a12c4f66e4e9266"
+                HELDOUT_EVALUATION_POLICY_SHA256
             ),
             "evaluation_is_layerwise_on_native_teacher_forced_inputs": True,
             "each_layer_uses_its_A_frozen_candidate_without_refit": True,
@@ -733,7 +781,7 @@ def _build_state() -> dict[str, object]:
         "C3_full_stack_source_free": {
             "role": CONFIRMATION_ROLE,
             "heldout_evaluation_policy_sha256": (
-                "4a6f6379571f348fc7a0a477c83ffdf52ae119903cb6e8859a12c4f66e4e9266"
+                HELDOUT_EVALUATION_POLICY_SHA256
             ),
             "all_18_selected_MLP_replacements_execute_together": True,
             "strict_typed_passing_B3_receipt_required": True,
@@ -773,7 +821,7 @@ def _build_state() -> dict[str, object]:
         "D3_final_validation": {
             "role": FINAL_ROLE,
             "heldout_evaluation_policy_sha256": (
-                "4a6f6379571f348fc7a0a477c83ffdf52ae119903cb6e8859a12c4f66e4e9266"
+                HELDOUT_EVALUATION_POLICY_SHA256
             ),
             "bootstrap_policy_sha256": (
                 "fdfc8be6463e959f02cc17ca5b17168405d3bca987d57e9a9ed3d621063cd026"
@@ -816,7 +864,12 @@ def _build_state() -> dict[str, object]:
             "hard_long_point_gates_equal_C3": True,
             "all_values_finite": True,
             "native_MLP_source_fallback_alias_or_hidden_call_forbidden": True,
-            "profiler_and_module_trace_must_prove_no_native_MLP_call": True,
+            "qualified_module_inventory_and_all_replacement_forward_hooks_"
+            "must_prove_exactly_18_replacements_execute_and_no_native_MLP_"
+            "module_projection_fallback_or_parameter_storage_alias_is_"
+            "present": True,
+            "no_native_MLP_proof_does_not_claim_absence_of_generic_tensor_"
+            "ops_MAC_reduction_or_latency_improvement": True,
             "exact_formula_parameter_count_must_be_lower": True,
             "actual_serialized_full_model_bytes_must_be_lower": True,
             "native_and_compiled_byte_counts_must_use_the_same_frozen_"
@@ -850,25 +903,23 @@ def _build_state() -> dict[str, object]:
         },
         "implementation_readiness": {
             "setup_is_prospective": True,
-            "default_setup_artifact_published": False,
+            "default_setup_publication_requires_prior_absence": True,
             "check_authenticates_without_authorizing_execution": True,
-            "panel_manifest_path": str(FUTURE_PANEL_MANIFEST),
-            "panel_manifest_file_sha256": PINNED_PANEL_MANIFEST_FILE_SHA256,
-            "panel_manifest_frozen": panel_ready,
-            "implementation_qualification_path": str(
-                FUTURE_IMPLEMENTATION_QUALIFICATION
-            ),
-            "implementation_qualification_file_sha256": (
-                PINNED_IMPLEMENTATION_QUALIFICATION_FILE_SHA256
-            ),
-            "implementation_qualification_frozen": implementation_ready,
+            "panel_receipt_path": str(FUTURE_PANEL_RECEIPT),
+            "panel_receipt_file_sha256": PINNED_PANEL_RECEIPT_FILE_SHA256,
+            "panel_receipt_frozen": panel_ready,
+            "implementation_qualification_is_external_live_build_gate": True,
+            "qualification_path_or_digest_in_setup_identity": False,
             "qualification_must_bind_unchanged_setup_sha256": True,
             "qualification_must_bind_worker_and_full_dependency_source_closure": (
                 True
             ),
             "qualification_must_bind_model_free_adversarial_tests": True,
-            "preflight_authorized": panel_ready and implementation_ready,
-            "run_authorized": panel_ready and implementation_ready,
+            "setup_component_preflight_authorized": panel_ready,
+            "complete_experiment_preflight_requires_external_qualification": (
+                True
+            ),
+            "run_authorized_by_setup_alone": False,
             "model_tensor_or_panel_semantic_access_before_successful_preflight_"
             "forbidden": True,
         },
@@ -881,8 +932,14 @@ def _build_state() -> dict[str, object]:
         "output_contract": {
             "report": str(DEFAULT_REPORT_OUTPUT),
             "coefficient_bundle": str(DEFAULT_BUNDLE_OUTPUT),
+            "deterministic_summary": str(DEFAULT_SUMMARY_OUTPUT),
             "outputs_are_distinct_from_v1_and_v2": True,
+            "bundle_and_summary_are_durable_before_report": True,
             "report_is_published_last_as_commit_marker": True,
+            "publication_is_no_clobber_all_or_none": True,
+            "rollback_removes_report_and_fsyncs_before_sidecars": True,
+            "rollback_is_inode_identity_guarded": True,
+            "public_strict_reload_required_before_success": True,
             "large_numeric_payloads_are_content_addressed_out_of_line": True,
             "prompt_text_token_ids_teacher_velocities_and_raw_states_forbidden_"
             "from_report": True,
@@ -955,6 +1012,7 @@ def _regular_stat(path: Path, *, byte_cap: int) -> os.stat_result:
 def _read_regular(path: Path, *, byte_cap: int = _MAX_SETUP_BYTES) -> bytes:
     before = _regular_stat(path, byte_cap=byte_cap)
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    primary: BaseException | None = None
     try:
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino, opened.st_size) != (
@@ -971,8 +1029,19 @@ def _read_regular(path: Path, *, byte_cap: int = _MAX_SETUP_BYTES) -> bytes:
                 raise ValueError(f"required artifact was truncated: {path}")
             chunks.append(chunk)
             remaining -= len(chunk)
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if primary is None:
+                raise
+            primary.add_note(
+                "required artifact descriptor close also failed: "
+                f"{type(close_error).__name__}: {close_error}"
+            )
     after = path.lstat()
     if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != (
         before.st_dev,
@@ -988,6 +1057,7 @@ def _sha256_regular(path: Path, *, byte_cap: int) -> str:
     before = _regular_stat(path, byte_cap=byte_cap)
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     digest = hashlib.sha256()
+    primary: BaseException | None = None
     try:
         opened = os.fstat(descriptor)
         if (opened.st_dev, opened.st_ino, opened.st_size) != (
@@ -1003,8 +1073,19 @@ def _sha256_regular(path: Path, *, byte_cap: int) -> str:
                 raise ValueError(f"required artifact was truncated: {path}")
             digest.update(chunk)
             remaining -= len(chunk)
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if primary is None:
+                raise
+            primary.add_note(
+                "required artifact digest descriptor close also failed: "
+                f"{type(close_error).__name__}: {close_error}"
+            )
     after = path.lstat()
     if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != (
         before.st_dev,
@@ -1027,58 +1108,439 @@ def load_setup(source: Path | str = DEFAULT_OUTPUT) -> dict[str, object]:
     return validate_setup(value)
 
 
+def _inode_identity(value: os.stat_result) -> tuple[int, int]:
+    return (value.st_dev, value.st_ino)
+
+
+def _descriptor_stat(descriptor: int) -> os.stat_result:
+    try:
+        return os.fstat(descriptor)
+    except OSError as first_error:
+        try:
+            return os.stat(descriptor)
+        except OSError as second_error:
+            first_error.add_note(
+                "descriptor stat fallback also failed: "
+                f"{type(second_error).__name__}: {second_error}"
+            )
+            raise first_error
+
+
+def _close_descriptors(
+    descriptors: Sequence[int],
+    *,
+    primary: BaseException | None,
+    label: str,
+) -> tuple[BaseException, ...]:
+    failures: list[BaseException] = []
+    for descriptor in reversed(descriptors):
+        try:
+            os.close(descriptor)
+        except BaseException as error:
+            failures.append(error)
+            if primary is not None:
+                primary.add_note(
+                    f"{label} close also failed: "
+                    f"{type(error).__name__}: {error}"
+                )
+    return tuple(failures)
+
+
+def _require_existing_regular_directory(path: Path) -> None:
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current = current / component
+        try:
+            status = os.lstat(current)
+        except FileNotFoundError as error:
+            raise ValueError(
+                f"setup publication parent must already exist: {current}"
+            ) from error
+        if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
+            raise ValueError(
+                f"setup publication parent is not a regular directory: {current}"
+            )
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _open_directory_chain(
+    path: Path,
+) -> tuple[tuple[int, ...], tuple[tuple[int, int], ...]]:
+    absolute = Path(os.path.abspath(path))
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptors: list[int] = []
+    identities: list[tuple[int, int]] = []
+    try:
+        descriptor = os.open(absolute.anchor, flags)
+        descriptors.append(descriptor)
+        identities.append(_inode_identity(_descriptor_stat(descriptor)))
+        for component in absolute.parts[1:]:
+            descriptor = os.open(component, flags, dir_fd=descriptor)
+            descriptors.append(descriptor)
+            identities.append(_inode_identity(_descriptor_stat(descriptor)))
+    except BaseException as error:
+        _close_descriptors(
+            descriptors,
+            primary=error,
+            label="directory-chain failure cleanup",
+        )
+        raise
+    return tuple(descriptors), tuple(identities)
+
+
+def _verify_directory_chain(path: Path, expected: tuple[tuple[int, int], ...]) -> None:
+    descriptors, observed = _open_directory_chain(path)
+    primary: BaseException | None = None
+    try:
+        if observed != expected:
+            raise RuntimeError("setup publication directory chain changed")
+    except BaseException as error:
+        primary = error
+    close_failures = _close_descriptors(
+        descriptors,
+        primary=primary,
+        label="directory-chain verification cleanup",
+    )
+    if primary is None and close_failures:
+        primary = RuntimeError("directory-chain verification cleanup failed")
+        for error in close_failures:
+            primary.add_note(f"{type(error).__name__}: {error}")
+    if primary is not None:
+        raise primary
+
+
+def _read_regular_at(
+    directory_descriptor: int,
+    name: str,
+    *,
+    byte_cap: int,
+    expected_inode: tuple[int, int],
+) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(name, flags, dir_fd=directory_descriptor)
+    primary: BaseException | None = None
+    payload: bytes | None = None
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_size <= 0
+            or before.st_size > byte_cap
+            or _inode_identity(before) != expected_inode
+        ):
+            raise ValueError("published setup file identity or size is invalid")
+        chunks: list[bytes] = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                raise RuntimeError("published setup was truncated")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise RuntimeError("published setup grew while reading")
+        after = os.fstat(descriptor)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            raise RuntimeError("published setup changed while reading")
+        by_name = os.stat(
+            name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        if _inode_identity(by_name) != expected_inode:
+            raise RuntimeError("published setup was replaced after read")
+        payload = b"".join(chunks)
+    except BaseException as error:
+        primary = error
+    try:
+        os.close(descriptor)
+    except BaseException as close_error:
+        if primary is None:
+            primary = close_error
+        else:
+            primary.add_note(
+                "published setup descriptor close also failed: "
+                f"{type(close_error).__name__}: {close_error}"
+            )
+    if primary is not None:
+        raise primary
+    if payload is None:
+        raise AssertionError("published setup read produced no payload")
+    return payload
+
+
+def _rollback_published_after_close(
+    path: Path,
+    *,
+    expected_chain: tuple[tuple[int, int], ...],
+    expected_inode: tuple[int, int],
+) -> None:
+    descriptors, observed = _open_directory_chain(path.parent)
+    primary: BaseException | None = None
+    try:
+        if observed != expected_chain:
+            raise RuntimeError(
+                "setup directory chain changed before late rollback"
+            )
+        parent = descriptors[-1]
+        current = os.stat(
+            path.name,
+            dir_fd=parent,
+            follow_symlinks=False,
+        )
+        if _inode_identity(current) != expected_inode:
+            raise RuntimeError("late setup rollback target was replaced")
+        os.unlink(path.name, dir_fd=parent)
+        os.fsync(parent)
+    except BaseException as error:
+        primary = error
+    close_failures = _close_descriptors(
+        descriptors,
+        primary=primary,
+        label="late setup rollback directory cleanup",
+    )
+    if primary is None and close_failures:
+        primary = RuntimeError("late setup rollback directory cleanup failed")
+        for error in close_failures:
+            primary.add_note(f"{type(error).__name__}: {error}")
+    if primary is not None:
+        raise primary
+
+
 def write_setup(destination: Path | str = DEFAULT_OUTPUT) -> dict[str, object]:
     path = Path(destination)
-    if path.exists() or path.is_symlink():
+    _require_existing_regular_directory(path.parent)
+    if os.path.lexists(path):
         raise FileExistsError(path)
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     value = build_setup()
     payload = render_setup_bytes(value)
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    directory_descriptors, directory_identities = _open_directory_chain(
+        path.parent
     )
-    published = False
+    parent_descriptor = directory_descriptors[-1]
+    temporary_name = ""
+    descriptor = -1
+    temporary_inode: tuple[int, int] | None = None
+    linked_inode: tuple[int, int] | None = None
+    target_link_attempted = False
+    temporary_present = True
+    primary: BaseException | None = None
     try:
+        for _attempt in range(128):
+            candidate = f".{path.name}.{secrets.token_hex(16)}.tmp"
+            try:
+                descriptor = os.open(
+                    candidate,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                    dir_fd=parent_descriptor,
+                )
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            break
+        if descriptor < 0 or temporary_name == "":
+            raise RuntimeError("could not allocate a unique setup temporary")
+        temporary_inode = _inode_identity(_descriptor_stat(descriptor))
+        # Register the expected target inode before the atomic link.  If link
+        # fails without publishing, rollback harmlessly observes ENOENT; if a
+        # fault is raised after the link side effect, the target is owned.
+        linked_inode = temporary_inode
         with os.fdopen(descriptor, "wb") as handle:
+            os.fchmod(handle.fileno(), 0o600)
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        temporary_stat = os.lstat(temporary)
-        os.link(temporary, path)
-        published = True
-        published_stat = path.lstat()
+        descriptor = -1
+        if temporary_inode is None or _inode_identity(
+            os.stat(
+                temporary_name,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+        ) != temporary_inode:
+            raise RuntimeError("layer-multimode setup temporary was replaced")
+        target_link_attempted = True
+        os.link(
+            temporary_name,
+            path.name,
+            src_dir_fd=parent_descriptor,
+            dst_dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        published_stat = os.stat(
+            path.name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
         if (
             stat.S_ISLNK(published_stat.st_mode)
             or not stat.S_ISREG(published_stat.st_mode)
-            or (published_stat.st_dev, published_stat.st_ino)
-            != (temporary_stat.st_dev, temporary_stat.st_ino)
+            or linked_inode is None
+            or _inode_identity(published_stat) != linked_inode
         ):
             raise RuntimeError("layer-multimode setup publication identity drifted")
-        os.unlink(temporary)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-        if _read_regular(path) != payload or load_setup(path) != value:
+        current_temporary = os.stat(
+            temporary_name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        if (
+            temporary_inode is None
+            or _inode_identity(current_temporary) != temporary_inode
+        ):
+            raise RuntimeError(
+                "layer-multimode setup temporary was replaced before unlink"
+            )
+        os.unlink(temporary_name, dir_fd=parent_descriptor)
+        temporary_present = False
+        os.fsync(parent_descriptor)
+        observed_raw = _read_regular_at(
+            parent_descriptor,
+            path.name,
+            byte_cap=_MAX_SETUP_BYTES,
+            expected_inode=linked_inode,
+        )
+        observed_value = _strict_json_loads(observed_raw)
+        if (
+            observed_raw != payload
+            or not isinstance(observed_value, dict)
+            or validate_setup(observed_value) != value
+        ):
             raise RuntimeError("layer-multimode setup strict reload drifted")
-    except BaseException:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-        if published:
+        _verify_directory_chain(path.parent, directory_identities)
+    except BaseException as error:
+        primary = error
+    finally:
+        cleanup_failures: list[str] = []
+        if descriptor >= 0:
             try:
-                os.unlink(path)
+                os.close(descriptor)
+            except BaseException as cleanup_error:
+                cleanup_failures.append(
+                    "setup temporary descriptor close: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+        if temporary_present and temporary_name:
+            try:
+                current = os.stat(
+                    temporary_name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
+                if (
+                    temporary_inode is None
+                    or _inode_identity(current) != temporary_inode
+                ):
+                    raise RuntimeError(
+                        "setup temporary cleanup target was replaced"
+                    )
+                os.unlink(temporary_name, dir_fd=parent_descriptor)
+                temporary_present = False
+            except BaseException as cleanup_error:
+                if not isinstance(cleanup_error, FileNotFoundError):
+                    cleanup_failures.append(
+                        "setup temporary cleanup: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+                else:
+                    temporary_present = False
+        if not temporary_present:
+            try:
+                os.fsync(parent_descriptor)
+            except BaseException as cleanup_error:
+                cleanup_failures.append(
+                    "setup temporary parent fsync: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+        if primary is None and cleanup_failures:
+            primary = RuntimeError("setup publication cleanup failed")
+        if (
+            primary is not None
+            and target_link_attempted
+            and linked_inode is not None
+        ):
+            try:
+                current = os.stat(
+                    path.name,
+                    dir_fd=parent_descriptor,
+                    follow_symlinks=False,
+                )
+                if _inode_identity(current) != linked_inode:
+                    raise RuntimeError("setup rollback target was replaced")
+                os.unlink(path.name, dir_fd=parent_descriptor)
             except FileNotFoundError:
                 pass
-            else:
-                directory = os.open(path.parent, os.O_RDONLY)
+            except BaseException as cleanup_error:
+                cleanup_failures.append(
+                    "published setup rollback: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+            try:
+                os.fsync(parent_descriptor)
+            except BaseException as cleanup_error:
+                cleanup_failures.append(
+                    "setup rollback directory fsync: "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+        had_primary_before_close = primary is not None
+        close_failures = _close_descriptors(
+            directory_descriptors,
+            primary=primary,
+            label="setup directory descriptor cleanup",
+        )
+        for cleanup_error in close_failures:
+            cleanup_failures.append(
+                "setup directory descriptor close: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+        if primary is None and close_failures:
+            primary = RuntimeError("setup directory descriptor cleanup failed")
+            if target_link_attempted and linked_inode is not None:
                 try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-        raise
+                    _rollback_published_after_close(
+                        path,
+                        expected_chain=directory_identities,
+                        expected_inode=linked_inode,
+                    )
+                except BaseException as cleanup_error:
+                    cleanup_failures.append(
+                        "late published setup rollback: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+        elif not had_primary_before_close and close_failures:
+            raise AssertionError("unreachable close-failure state")
+        if primary is not None:
+            for failure in cleanup_failures:
+                primary.add_note(failure)
+            raise primary
     return value
 
 
@@ -1113,6 +1575,11 @@ def check_setup(
         raise ValueError("Gemma-3 layer-multimode setup formatting drifted")
     if not verify_predecessor:
         return value
+    canonical_status = _regular_stat(path, byte_cap=_MAX_SETUP_BYTES)
+    if canonical_status.st_nlink != 1:
+        raise ValueError("canonical setup must have exactly one hard link")
+    if stat.S_IMODE(canonical_status.st_mode) != 0o600:
+        raise ValueError("canonical setup must have mode 0600")
     root = _repository_root(repository_root)
     provenance = value["methodology_provenance"]
     predecessor_setup = root / _safe_relative(
@@ -1148,7 +1615,12 @@ def preflight_setup(
     repository_root: Path | str | None = None,
     verify_predecessor: bool = True,
 ) -> dict[str, object]:
-    """Fail before panel semantics, tensors, or model access until frozen."""
+    """Authenticate the setup, predecessor, and opaque panel commit marker.
+
+    This is one component of the experiment preflight.  The worker must still
+    strict-build and authenticate the external implementation qualification;
+    setup intentionally cannot name or hash that downstream artifact.
+    """
 
     value = check_setup(
         source,
@@ -1156,31 +1628,42 @@ def preflight_setup(
         verify_predecessor=verify_predecessor,
     )
     readiness = value["implementation_readiness"]
-    missing: list[str] = []
     if (
-        readiness["panel_manifest_frozen"] is not True  # type: ignore[index]
-        or readiness["panel_manifest_file_sha256"] is None  # type: ignore[index]
-    ):
-        missing.append("frozen fresh-panel manifest")
-    if (
-        readiness["implementation_qualification_frozen"]  # type: ignore[index]
+        readiness["panel_receipt_frozen"] is not True  # type: ignore[index]
+        or readiness["panel_receipt_file_sha256"] is None  # type: ignore[index]
+        or readiness["setup_component_preflight_authorized"]  # type: ignore[index]
         is not True
-        or readiness["implementation_qualification_file_sha256"]  # type: ignore[index]
-        is None
     ):
-        missing.append("frozen implementation qualification")
-    if (
-        readiness["preflight_authorized"] is not True  # type: ignore[index]
-        or readiness["run_authorized"] is not True  # type: ignore[index]
-    ):
-        missing.append("reviewed execution authorization")
-    if missing:
         raise ExecutionNotAuthorizedError(
-            "layer-multimode v3 execution is not authorized: " + ", ".join(missing)
+            "layer-multimode v3 setup component lacks a frozen panel receipt"
         )
-    raise ExecutionNotAuthorizedError(
-        "readiness pins changed without adding their strict artifact validators"
+    if (
+        readiness[  # type: ignore[index]
+            "qualification_path_or_digest_in_setup_identity"
+        ]
+        is not False
+        or readiness[  # type: ignore[index]
+            "complete_experiment_preflight_requires_external_qualification"
+        ]
+        is not True
+        or readiness["run_authorized_by_setup_alone"]  # type: ignore[index]
+        is not False
+    ):
+        raise ValueError("setup/qualification acyclic boundary drifted")
+    from . import gemma3_layer_multimode_fresh_panels as panels
+
+    root = _repository_root(repository_root)
+    panel_preflight = panels.load_frozen_preflight(
+        repository_root=root,
+        expected_receipt_file_sha256=readiness[  # type: ignore[index]
+            "panel_receipt_file_sha256"
+        ],
     )
+    if panel_preflight.receipt_file_sha256 != (
+        readiness["panel_receipt_file_sha256"]  # type: ignore[index]
+    ):
+        raise ValueError("strict panel receipt file binding drifted")
+    return value
 
 
 def authorize_run(
@@ -1189,7 +1672,7 @@ def authorize_run(
     repository_root: Path | str | None = None,
     verify_predecessor: bool = True,
 ) -> dict[str, object]:
-    """Expose only the static authorization barrier; this module has no runner."""
+    """Authorize only the setup component; the worker adds qualification."""
 
     return preflight_setup(
         source,
@@ -1239,19 +1722,27 @@ __all__ = [
     "DEFAULT_BUNDLE_OUTPUT",
     "DEFAULT_OUTPUT",
     "DEFAULT_REPORT_OUTPUT",
+    "DEFAULT_SUMMARY_OUTPUT",
     "ExecutionNotAuthorizedError",
     "FORMAT_VERSION",
-    "FUTURE_IMPLEMENTATION_QUALIFICATION",
-    "FUTURE_PANEL_MANIFEST",
+    "FUTURE_PANEL_RECEIPT",
     "Gemma3LayerMultimodeSetup",
+    "HELDOUT_EVALUATION_POLICY_SHA256",
     "HIDDEN_WIDTH",
     "LAYER_COUNT",
     "MLP_INTERMEDIATE_WIDTH",
     "MODE_COUNT_CANDIDATES",
     "NATIVE_MLP_MATRIX_PARAMETER_COUNT_PER_LAYER",
     "PREDECESSOR_V2_REPORT",
+    "PREDECESSOR_V2_A_CAPTURE_RECEIPT_SHA256",
+    "PREDECESSOR_V2_PREFLIGHT_RECEIPT_SHA256",
     "PREDECESSOR_V2_REPORT_FILE_SHA256",
     "PREDECESSOR_V2_REPORT_SHA256",
+    "PREDECESSOR_V2_RUNTIME_EXECUTION_RECEIPT_SHA256",
+    "PREDECESSOR_V2_RUNTIME_QUALIFICATION_RECEIPT_SHA256",
+    "PREDECESSOR_V2_RUNTIME_SESSION_BINDING_SHA256",
+    "PREDECESSOR_V2_SOURCE_EXECUTION_FINGERPRINT_SHA256",
+    "PREDECESSOR_V2_SOURCE_MODEL_FINGERPRINT_SHA256",
     "SCHEMA",
     "SETUP_ID",
     "TANGENT_RANK_CANDIDATES",
