@@ -134,6 +134,8 @@ BOOTSTRAP_U95_ZERO_BASED_INDEX: Final = 9_499
 BOOTSTRAP_L95_ZERO_BASED_INDEX: Final = 499
 EMPIRICAL_P90_ZERO_BASED_INDEX: Final = 53
 WILSON_Z_TWO_SIDED_95: Final = 1.959963984540054
+MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL: Final = 0.0001
+MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE: Final = 0.0001
 _BOOTSTRAP_PRNG_DOMAIN = (
     b"fisher_graph:attention-edge-fidelity-b-bootstrap:sha256-counter-modulo:v1\0"
 )
@@ -1208,6 +1210,14 @@ def _frozen_contract() -> dict[str, object]:
             "selected_route_count_formula": (
                 "min(8,allowed_global_head_key_route_count)"
             ),
+            "sequence_length_domain": "integer_1_through_128_inclusive",
+            "row_available_route_count_formula": (
+                "18*4*sum_q_0_to_L_minus_1(q+1)=36*L*(L+1)"
+            ),
+            "row_selected_route_count_formula": (
+                "18*sum_q_0_to_L_minus_1(min(8,4*(q+1)))=18*(8*L-4)"
+            ),
+            "row_route_count_formula_domain": "1<=L<=128",
             "query_ordinal_zero_allowed_route_count": QUERY_HEAD_COUNT,
             "query_ordinal_zero_selected_route_count": QUERY_HEAD_COUNT,
             "omitted_route_semantics": "zero_fill_without_renormalization",
@@ -1245,10 +1255,13 @@ def _frozen_contract() -> dict[str, object]:
         },
         "primary_metrics": {
             "delta_NLL": (
-                "sparse_correct_target_full_vocab_NLL_minus_native_"
-                "correct_target_full_vocab_NLL"
+                "sparse_target_only_correct_target_full_vocab_NLL_minus_"
+                "matched_dense_target_only_correct_target_full_vocab_NLL"
             ),
-            "top1_agreement": "sparse_full_vocab_argmax_equals_native_argmax",
+            "top1_agreement": (
+                "sparse_target_only_full_vocab_argmax_equals_matched_dense_"
+                "target_only_full_vocab_argmax"
+            ),
             "argmax_tie_rule": (
                 "lowest_vocabulary_token_ordinal_among_equal_maximum_logits"
             ),
@@ -1256,9 +1269,53 @@ def _frozen_contract() -> dict[str, object]:
                 "cosine_at_the_single_supervised_terminal_hidden_vector"
             ),
             "centered_logit_NRMSE": (
-                "RMS((sparse_logits-mean_sparse)-(native_logits-mean_native))_"
-                "divided_by_RMS(native_logits-mean_native)_at_the_single_"
+                "RMS((sparse_target_only_logits-mean_sparse)-(matched_dense_"
+                "target_only_logits-mean_matched_dense))/RMS(matched_dense_"
+                "target_only_logits-mean_matched_dense)_at_the_single_"
                 "supervised_query"
+            ),
+            "native_full_sequence_egress_role": (
+                "literal_native_all_route_control_only"
+            ),
+            "gated_logit_metric_reference": (
+                "matched_dense_target_only_tied_egress"
+            ),
+            "matched_target_only_egress_control": {
+                "dense_input": (
+                    "literal_dense_normalized_output_supervised_row"
+                ),
+                "sparse_input": (
+                    "dynamic_sparse_normalized_output_supervised_row"
+                ),
+                "batch_size": 1,
+                "query_length": 1,
+                "dtype": "float32",
+                "device": "cpu",
+                "identical_tied_weights_and_final_softcap": True,
+                "sparse_independent_reprojection_must_match": True,
+                "all_row_validity_bounds": {
+                    "maximum_absolute_native_to_matched_target_only_"
+                    "delta_NLL_max": (
+                        MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+                    ),
+                    "maximum_native_to_matched_target_only_centered_logit_"
+                    "NRMSE_max": (
+                        MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+                    ),
+                },
+                "equality_at_validity_bound_passes": True,
+                "validity_failure_semantics": (
+                    "abort_before_interpreting_the_six_sparse_fidelity_gates"
+                ),
+            },
+            "native_to_matched_target_only_drift_diagnostics": [
+                "correct_target_delta_NLL",
+                "centered_logit_NRMSE",
+                "full_vocab_top1_agreement",
+            ],
+            "native_to_matched_target_only_argmax_mismatch_aborts": True,
+            "native_to_matched_target_only_quantitative_bound_failure_aborts": (
+                True
             ),
             "teacher_operator_NRMSE": (
                 "sqrt(sum_over_all_18_layers_and_valid_queries_squared_L2_"
@@ -1334,7 +1391,8 @@ def _frozen_contract() -> dict[str, object]:
                 "continuity_correction": False,
                 "n": 60,
                 "success": (
-                    "sparse_and_native_argmax_token_ordinals_are_equal"
+                    "sparse_and_matched_dense_target_only_argmax_token_"
+                    "ordinals_are_equal"
                 ),
             },
             "all_six_gates_are_conjunctive": True,
@@ -1352,11 +1410,13 @@ def _frozen_contract() -> dict[str, object]:
             "if_a_future_separately_audited_consumer_passes_all_gates_supports": (
                 "the_frozen_gradient_free_A_motif_global_K8_cap_zero_fill_"
                 "procedure_"
-                "preserved_behavior_on_this_B_panel"
+                "preserved_measured_behavior_under_the_matched_target_only_"
+                "egress_control_on_this_B_panel"
             ),
             "setup_contains_B_result": False,
             "setup_claims_B_runtime_exists": EXECUTION_CONSUMER_IMPLEMENTED,
             "setup_or_issuance_authorizes_model_run": False,
+            "matched_target_only_reference_validity_required": True,
             "semantic_interpretation_claimed": False,
             "selection_optimality_claimed": False,
             "compression_qualified": False,
@@ -2304,6 +2364,8 @@ __all__ = [
     "IMPLEMENTATION_TEST_PATHS",
     "IMPLEMENTATION_RECEIPT_SCHEMA",
     "ISSUANCE_AUTHORIZATION",
+    "MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL",
+    "MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE",
     "PRIMARY_K",
     "SETUP_FORMAT_VERSION",
     "SETUP_ID",

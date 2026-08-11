@@ -10,10 +10,14 @@ by the selector API.
 For each B prompt the runner freezes all eighteen masks, then performs a dense
 teacher execution, a separate batch-one all-route replay, and a separate
 batch-one sparse replay.  The all-route replay must be literally identical at
-every mutation and endpoint.  The sparse replay uses a global K=8 cap across
-``(query head, key)`` and zero-fills omitted routes without renormalization
-while later Q/K/V and probabilities are recomputed on the evolving sparse
-state.
+every mutation and at the native full-sequence egress endpoint.  Gated logit
+metrics use a second numerical control: the literally matched dense terminal
+row and the sparse terminal row are both projected with the same batch-one,
+single-query tied egress and softcap.  This prevents a CPU GEMM-versus-GEMV
+accumulation difference from being mistaken for attention-edge error.  The
+sparse replay uses a global K=8 cap across ``(query head, key)`` and zero-fills
+omitted routes without renormalization while later Q/K/V and probabilities are
+recomputed on the evolving sparse state.
 
 The report is deliberately narrow.  Passing all six preregistered gates says
 only that this frozen, gradient-free A-motif procedure preserved the measured
@@ -61,6 +65,8 @@ from .gemma3_parts_first_attention_edge_fidelity_b_setup import (
     DISTANCE_BINS,
     EMPIRICAL_P90_ZERO_BASED_INDEX as _SETUP_EMPIRICAL_P90_INDEX,
     FAMILY_IDS,
+    MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL,
+    MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE,
     PRIMARY_K,
     SETUP_ID,
     WILSON_Z_TWO_SIDED_95 as _SETUP_WILSON_Z95,
@@ -85,7 +91,8 @@ ATTENTION_EDGE_FIDELITY_B_SCHEMA: Final = (
 )
 ATTENTION_EDGE_FIDELITY_B_FORMAT_VERSION: Final = 1
 ATTENTION_EDGE_FIDELITY_B_ABI: Final = (
-    "A_atlas_motif_mean_global_k8_cap_zero_fill_dynamic_all_layer_replay.v1"
+    "A_atlas_motif_mean_global_k8_cap_zero_fill_dynamic_all_layer_replay_"
+    "matched_target_only_egress.v1"
 )
 ATTENTION_EDGE_FIDELITY_B_ROLE: Final = "B_fresh_execution_confirmation"
 ATTENTION_EDGE_MAXIMUM_PROMPT_TOKENS: Final = 128
@@ -112,6 +119,14 @@ GATE_THRESHOLDS: Final = {
     "macro_family_bootstrap_terminal_cosine_L95_min": 0.995,
     "macro_family_bootstrap_centered_logit_NRMSE_U95_max": 0.05,
     "macro_family_bootstrap_teacher_operator_NRMSE_U95_max": 0.15,
+}
+MATCHED_TARGET_ONLY_REFERENCE_CONTROL_THRESHOLDS: Final = {
+    "maximum_absolute_native_to_matched_target_only_delta_NLL_max": (
+        MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+    ),
+    "maximum_native_to_matched_target_only_centered_logit_NRMSE_max": (
+        MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+    ),
 }
 
 _REPORT_DOMAIN = b"fisher_graph:attention-edge-fidelity-b-report:v1\0"
@@ -692,6 +707,22 @@ def _nearest_rank(values: Sequence[float], index: int) -> float:
     return sorted(materialized)[index]
 
 
+def _expected_row_route_counts(sequence_length: int) -> tuple[int, int]:
+    length = _require_int(
+        sequence_length, label="sequence_length", minimum=1
+    )
+    if length > ATTENTION_EDGE_MAXIMUM_PROMPT_TOKENS:
+        raise ValueError("sequence_length exceeds the frozen 128-token limit")
+    available = 0
+    selected = 0
+    for _layer in range(GEMMA3_LAYER_COUNT):
+        for query in range(length):
+            allowed_for_query = ATTENTION_HEAD_COUNT * (query + 1)
+            available += allowed_for_query
+            selected += min(PRIMARY_K, allowed_for_query)
+    return available, selected
+
+
 @dataclass(frozen=True, slots=True)
 class AttentionEdgeFidelityBRowCapture:
     row_ordinal: int
@@ -701,11 +732,15 @@ class AttentionEdgeFidelityBRowCapture:
     selection_catalog_sha256: str
     available_route_count: int
     selected_route_count: int
-    native_correct_target_nll: float
-    sparse_correct_target_nll: float
-    full_vocab_top1_agreement: bool
+    native_full_sequence_correct_target_nll: float
+    matched_dense_target_only_correct_target_nll: float
+    sparse_target_only_correct_target_nll: float
+    native_to_matched_target_only_centered_logit_nrmse: float
+    native_to_matched_target_only_top1_agreement: bool
+    matched_target_only_full_vocab_top1_agreement: bool
+    target_only_egress_reprojection_literal_parity_passed: bool
     terminal_supervised_vector_cosine: float
-    centered_logit_nrmse: float
+    matched_target_only_centered_logit_nrmse: float
     dense_teacher_operator_nrmse: float
     dense_replay_literal_parity_passed: bool
     all_route_attention_operator_delta_parity_passed: bool
@@ -715,7 +750,9 @@ class AttentionEdgeFidelityBRowCapture:
         _require_int(self.row_ordinal, label="row_ordinal")
         if self.family_id not in FAMILY_IDS:
             raise ValueError("B row family is outside the preregistered panel")
-        _require_int(self.sequence_length, label="sequence_length", minimum=1)
+        expected_available, expected_selected = _expected_row_route_counts(
+            self.sequence_length
+        )
         _require_sha256(self.tokenization_sha256, label="tokenization")
         _require_sha256(self.selection_catalog_sha256, label="selection catalog")
         available = _require_int(
@@ -726,20 +763,72 @@ class AttentionEdgeFidelityBRowCapture:
         )
         if selected > available:
             raise ValueError("selected B routes exceed available routes")
-        _finite(self.native_correct_target_nll, label="native NLL")
-        _finite(self.sparse_correct_target_nll, label="sparse NLL")
+        if available != expected_available:
+            raise ValueError(
+                "available B route count disagrees with frozen causal geometry"
+            )
+        if selected != expected_selected:
+            raise ValueError(
+                "selected B route count disagrees with frozen global-K geometry"
+            )
+        _nonnegative(
+            self.native_full_sequence_correct_target_nll,
+            label="native full-sequence NLL",
+        )
+        _nonnegative(
+            self.matched_dense_target_only_correct_target_nll,
+            label="matched dense target-only NLL",
+        )
+        _nonnegative(
+            self.sparse_target_only_correct_target_nll,
+            label="sparse target-only NLL",
+        )
+        _nonnegative(
+            self.native_to_matched_target_only_centered_logit_nrmse,
+            label="native-to-matched target-only centered logit NRMSE",
+        )
+        if (
+            self.native_to_matched_target_only_absolute_delta_nll
+            > MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+        ):
+            raise ValueError(
+                "native-to-matched target-only absolute delta NLL exceeds "
+                "the preregistered validity bound"
+            )
+        if (
+            self.native_to_matched_target_only_centered_logit_nrmse
+            > MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+        ):
+            raise ValueError(
+                "native-to-matched target-only centered logit NRMSE exceeds "
+                "the preregistered validity bound"
+            )
         terminal = _finite(
             self.terminal_supervised_vector_cosine, label="terminal cosine"
         )
         if not -1.0 <= terminal <= 1.0:
             raise ValueError("terminal cosine is outside [-1,1]")
-        _nonnegative(self.centered_logit_nrmse, label="centered logit NRMSE")
+        _nonnegative(
+            self.matched_target_only_centered_logit_nrmse,
+            label="matched target-only centered logit NRMSE",
+        )
         _nonnegative(
             self.dense_teacher_operator_nrmse,
             label="dense teacher operator NRMSE",
         )
         for label, flag in (
-            ("full_vocab_top1_agreement", self.full_vocab_top1_agreement),
+            (
+                "native-to-matched target-only top1 agreement",
+                self.native_to_matched_target_only_top1_agreement,
+            ),
+            (
+                "matched target-only full-vocabulary top1 agreement",
+                self.matched_target_only_full_vocab_top1_agreement,
+            ),
+            (
+                "target-only egress reprojection parity",
+                self.target_only_egress_reprojection_literal_parity_passed,
+            ),
             ("dense replay parity", self.dense_replay_literal_parity_passed),
             (
                 "all-route attention parity",
@@ -749,8 +838,13 @@ class AttentionEdgeFidelityBRowCapture:
         ):
             if type(flag) is not bool:
                 raise TypeError(f"{label} must be bool")
+        if self.native_to_matched_target_only_top1_agreement is not True:
+            raise ValueError(
+                "native and matched target-only dense argmax must agree"
+            )
         if not (
-            self.dense_replay_literal_parity_passed
+            self.target_only_egress_reprojection_literal_parity_passed
+            and self.dense_replay_literal_parity_passed
             and self.all_route_attention_operator_delta_parity_passed
             and self.mutation_boundary_literal_parity_passed
         ):
@@ -758,11 +852,25 @@ class AttentionEdgeFidelityBRowCapture:
 
     @property
     def delta_nll(self) -> float:
-        return self.sparse_correct_target_nll - self.native_correct_target_nll
+        return (
+            self.sparse_target_only_correct_target_nll
+            - self.matched_dense_target_only_correct_target_nll
+        )
 
     @property
     def absolute_delta_nll(self) -> float:
         return abs(self.delta_nll)
+
+    @property
+    def native_to_matched_target_only_delta_nll(self) -> float:
+        return (
+            self.matched_dense_target_only_correct_target_nll
+            - self.native_full_sequence_correct_target_nll
+        )
+
+    @property
+    def native_to_matched_target_only_absolute_delta_nll(self) -> float:
+        return abs(self.native_to_matched_target_only_delta_nll)
 
     def _payload(self) -> dict[str, object]:
         return {
@@ -773,15 +881,41 @@ class AttentionEdgeFidelityBRowCapture:
             "selection_catalog_sha256": self.selection_catalog_sha256,
             "available_route_count": self.available_route_count,
             "selected_route_count": self.selected_route_count,
-            "native_correct_target_nll": self.native_correct_target_nll,
-            "sparse_correct_target_nll": self.sparse_correct_target_nll,
+            "native_full_sequence_correct_target_nll": (
+                self.native_full_sequence_correct_target_nll
+            ),
+            "matched_dense_target_only_correct_target_nll": (
+                self.matched_dense_target_only_correct_target_nll
+            ),
+            "sparse_target_only_correct_target_nll": (
+                self.sparse_target_only_correct_target_nll
+            ),
             "delta_nll": self.delta_nll,
             "absolute_delta_nll": self.absolute_delta_nll,
-            "full_vocab_top1_agreement": self.full_vocab_top1_agreement,
+            "native_to_matched_target_only_delta_nll": (
+                self.native_to_matched_target_only_delta_nll
+            ),
+            "native_to_matched_target_only_absolute_delta_nll": (
+                self.native_to_matched_target_only_absolute_delta_nll
+            ),
+            "native_to_matched_target_only_centered_logit_nrmse": (
+                self.native_to_matched_target_only_centered_logit_nrmse
+            ),
+            "native_to_matched_target_only_top1_agreement": (
+                self.native_to_matched_target_only_top1_agreement
+            ),
+            "matched_target_only_full_vocab_top1_agreement": (
+                self.matched_target_only_full_vocab_top1_agreement
+            ),
+            "target_only_egress_reprojection_literal_parity_passed": (
+                self.target_only_egress_reprojection_literal_parity_passed
+            ),
             "terminal_supervised_vector_cosine": (
                 self.terminal_supervised_vector_cosine
             ),
-            "centered_logit_nrmse": self.centered_logit_nrmse,
+            "matched_target_only_centered_logit_nrmse": (
+                self.matched_target_only_centered_logit_nrmse
+            ),
             "dense_teacher_operator_nrmse": (
                 self.dense_teacher_operator_nrmse
             ),
@@ -812,13 +946,19 @@ class AttentionEdgeFidelityBRowCapture:
             "selection_catalog_sha256",
             "available_route_count",
             "selected_route_count",
-            "native_correct_target_nll",
-            "sparse_correct_target_nll",
+            "native_full_sequence_correct_target_nll",
+            "matched_dense_target_only_correct_target_nll",
+            "sparse_target_only_correct_target_nll",
             "delta_nll",
             "absolute_delta_nll",
-            "full_vocab_top1_agreement",
+            "native_to_matched_target_only_delta_nll",
+            "native_to_matched_target_only_absolute_delta_nll",
+            "native_to_matched_target_only_centered_logit_nrmse",
+            "native_to_matched_target_only_top1_agreement",
+            "matched_target_only_full_vocab_top1_agreement",
+            "target_only_egress_reprojection_literal_parity_passed",
             "terminal_supervised_vector_cosine",
-            "centered_logit_nrmse",
+            "matched_target_only_centered_logit_nrmse",
             "dense_teacher_operator_nrmse",
             "dense_replay_literal_parity_passed",
             "all_route_attention_operator_delta_parity_passed",
@@ -848,19 +988,40 @@ class AttentionEdgeFidelityBRowCapture:
                 label="selected_route_count",
                 minimum=1,
             ),
-            native_correct_target_nll=_finite(
-                value["native_correct_target_nll"], label="native NLL"
+            native_full_sequence_correct_target_nll=_nonnegative(
+                value["native_full_sequence_correct_target_nll"],
+                label="native full-sequence NLL",
             ),
-            sparse_correct_target_nll=_finite(
-                value["sparse_correct_target_nll"], label="sparse NLL"
+            matched_dense_target_only_correct_target_nll=_nonnegative(
+                value["matched_dense_target_only_correct_target_nll"],
+                label="matched dense target-only NLL",
             ),
-            full_vocab_top1_agreement=value["full_vocab_top1_agreement"],  # type: ignore[arg-type]
+            sparse_target_only_correct_target_nll=_nonnegative(
+                value["sparse_target_only_correct_target_nll"],
+                label="sparse target-only NLL",
+            ),
+            native_to_matched_target_only_centered_logit_nrmse=_nonnegative(
+                value[
+                    "native_to_matched_target_only_centered_logit_nrmse"
+                ],
+                label="native-to-matched target-only centered logit NRMSE",
+            ),
+            native_to_matched_target_only_top1_agreement=value[
+                "native_to_matched_target_only_top1_agreement"
+            ],  # type: ignore[arg-type]
+            matched_target_only_full_vocab_top1_agreement=value[
+                "matched_target_only_full_vocab_top1_agreement"
+            ],  # type: ignore[arg-type]
+            target_only_egress_reprojection_literal_parity_passed=value[
+                "target_only_egress_reprojection_literal_parity_passed"
+            ],  # type: ignore[arg-type]
             terminal_supervised_vector_cosine=_finite(
                 value["terminal_supervised_vector_cosine"],
                 label="terminal cosine",
             ),
-            centered_logit_nrmse=_nonnegative(
-                value["centered_logit_nrmse"], label="centered logit NRMSE"
+            matched_target_only_centered_logit_nrmse=_nonnegative(
+                value["matched_target_only_centered_logit_nrmse"],
+                label="matched target-only centered logit NRMSE",
             ),
             dense_teacher_operator_nrmse=_nonnegative(
                 value["dense_teacher_operator_nrmse"],
@@ -883,6 +1044,29 @@ class AttentionEdgeFidelityBRowCapture:
             != result.absolute_delta_nll
         ):
             raise ValueError("B row absolute delta NLL algebra drifted")
+        if (
+            _finite(
+                value["native_to_matched_target_only_delta_nll"],
+                label="native-to-matched target-only delta NLL",
+            )
+            != result.native_to_matched_target_only_delta_nll
+        ):
+            raise ValueError(
+                "B row native-to-matched target-only delta NLL algebra drifted"
+            )
+        if (
+            _nonnegative(
+                value[
+                    "native_to_matched_target_only_absolute_delta_nll"
+                ],
+                label="native-to-matched target-only absolute delta NLL",
+            )
+            != result.native_to_matched_target_only_absolute_delta_nll
+        ):
+            raise ValueError(
+                "B row native-to-matched target-only absolute delta NLL "
+                "algebra drifted"
+            )
         if value["row_sha256"] != _digest(_ROW_DOMAIN, result._payload()):
             raise ValueError("B row semantic digest mismatch")
         return result
@@ -916,18 +1100,39 @@ def _family_ledgers(
                 )
                 / len(values),
                 "top1_agreement_count": sum(
-                    int(row.full_vocab_top1_agreement) for row in values
+                    int(row.matched_target_only_full_vocab_top1_agreement)
+                    for row in values
                 ),
                 "top1_agreement_rate": sum(
-                    int(row.full_vocab_top1_agreement) for row in values
+                    int(row.matched_target_only_full_vocab_top1_agreement)
+                    for row in values
                 )
                 / len(values),
+                "mean_absolute_native_to_matched_target_only_delta_nll": (
+                    math.fsum(
+                        row.native_to_matched_target_only_absolute_delta_nll
+                        for row in values
+                    )
+                    / len(values)
+                ),
+                "mean_native_to_matched_target_only_centered_logit_nrmse": (
+                    math.fsum(
+                        row.native_to_matched_target_only_centered_logit_nrmse
+                        for row in values
+                    )
+                    / len(values)
+                ),
+                "native_to_matched_target_only_top1_agreement_count": sum(
+                    int(row.native_to_matched_target_only_top1_agreement)
+                    for row in values
+                ),
                 "mean_terminal_cosine": math.fsum(
                     row.terminal_supervised_vector_cosine for row in values
                 )
                 / len(values),
                 "mean_centered_logit_nrmse": math.fsum(
-                    row.centered_logit_nrmse for row in values
+                    row.matched_target_only_centered_logit_nrmse
+                    for row in values
                 )
                 / len(values),
                 "mean_dense_teacher_operator_nrmse": math.fsum(
@@ -973,7 +1178,10 @@ def _paired_bootstrap_catalog(
                 / denominator
             )
             centered_family.append(
-                math.fsum(row.centered_logit_nrmse for row in sample)
+                math.fsum(
+                    row.matched_target_only_centered_logit_nrmse
+                    for row in sample
+                )
                 / denominator
             )
             teacher_family.append(
@@ -1013,7 +1221,12 @@ def _aggregate_statistics(
         "centered_logit_nrmse": [value.hex() for value in centered_bootstrap],
         "teacher_operator_nrmse": [value.hex() for value in teacher_bootstrap],
     }
-    agreements = sum(int(row.full_vocab_top1_agreement) for row in rows)
+    agreements = sum(
+        int(row.matched_target_only_full_vocab_top1_agreement) for row in rows
+    )
+    native_matched_agreements = sum(
+        int(row.native_to_matched_target_only_top1_agreement) for row in rows
+    )
     return {
         "bootstrap_prng_id": BOOTSTRAP_PRNG_ID,
         "bootstrap_seed": BOOTSTRAP_SEED,
@@ -1044,6 +1257,16 @@ def _aggregate_statistics(
         "full_vocab_top1_agreement_rate": agreements / len(rows),
         "full_vocab_top1_agreement_Wilson_L95": _wilson_lower(
             agreements, len(rows)
+        ),
+        "native_to_matched_target_only_top1_agreement_count": (
+            native_matched_agreements
+        ),
+        "maximum_absolute_native_to_matched_target_only_delta_NLL": max(
+            row.native_to_matched_target_only_absolute_delta_nll for row in rows
+        ),
+        "maximum_native_to_matched_target_only_centered_logit_NRMSE": max(
+            row.native_to_matched_target_only_centered_logit_nrmse
+            for row in rows
         ),
         "macro_family_bootstrap_terminal_cosine_L95": _nearest_rank(
             terminal_bootstrap, BOOTSTRAP_L95_INDEX
@@ -1109,13 +1332,46 @@ def _gate_outcomes(aggregates: Mapping[str, object]) -> list[dict[str, object]]:
     return result
 
 
+def _matched_target_only_reference_control_outcomes(
+    aggregates: Mapping[str, object],
+) -> list[dict[str, object]]:
+    specifications = (
+        (
+            "maximum_absolute_native_to_matched_target_only_delta_NLL_max",
+            "maximum_absolute_native_to_matched_target_only_delta_NLL",
+        ),
+        (
+            "maximum_native_to_matched_target_only_centered_logit_NRMSE_max",
+            "maximum_native_to_matched_target_only_centered_logit_NRMSE",
+        ),
+    )
+    result: list[dict[str, object]] = []
+    for control_id, metric_id in specifications:
+        observed = _nonnegative(aggregates.get(metric_id), label=metric_id)
+        threshold = MATCHED_TARGET_ONLY_REFERENCE_CONTROL_THRESHOLDS[control_id]
+        result.append(
+            {
+                "control_id": control_id,
+                "metric_id": metric_id,
+                "comparison": "max",
+                "threshold": threshold,
+                "observed": observed,
+                "equality_at_threshold_passes": True,
+                "passed": observed <= threshold,
+            }
+        )
+    return result
+
+
 def _claim_boundary() -> dict[str, object]:
     return {
         "passing_supports": (
             "the_frozen_gradient_free_A_motif_global_K8_cap_zero_fill_procedure_"
-            "preserved_behavior_on_this_B_panel"
+            "preserved_measured_behavior_under_the_matched_target_only_egress_"
+            "control_on_this_B_panel"
         ),
         "bounded_to_this_B_panel": True,
+        "matched_target_only_reference_validity_required": True,
         "semantic_interpretation_claimed": False,
         "selection_optimality_claimed": False,
         "compression_qualified": False,
@@ -1140,6 +1396,14 @@ def _protocol_receipt() -> dict[str, object]:
         "selected_route_count_formula": (
             "min(8,allowed_global_head_key_route_count)"
         ),
+        "sequence_length_domain": "integer_1_through_128_inclusive",
+        "row_available_route_count_formula": (
+            "18*4*sum_q_0_to_L_minus_1(q+1)=36*L*(L+1)"
+        ),
+        "row_selected_route_count_formula": (
+            "18*sum_q_0_to_L_minus_1(min(8,4*(q+1)))=18*(8*L-4)"
+        ),
+        "row_route_count_formula_domain": "1<=L<=128",
         "query_ordinal_zero_allowed_route_count": ATTENTION_HEAD_COUNT,
         "query_ordinal_zero_selected_route_count": ATTENTION_HEAD_COUNT,
         "tie_break": [
@@ -1154,6 +1418,42 @@ def _protocol_receipt() -> dict[str, object]:
         "dense_control_execution_batch_size": 1,
         "sparse_execution_batch_size": 1,
         "cross_batch_literal_parity_assumed": False,
+        "native_full_sequence_egress_role": (
+            "literal_native_all_route_control_only"
+        ),
+        "gated_logit_metric_reference": (
+            "matched_dense_target_only_tied_egress"
+        ),
+        "matched_dense_target_only_egress_input": (
+            "literal_dense_normalized_output_supervised_row"
+        ),
+        "matched_sparse_target_only_egress_input": (
+            "dynamic_sparse_normalized_output_supervised_row"
+        ),
+        "matched_target_only_egress_batch_size": 1,
+        "matched_target_only_egress_query_length": 1,
+        "matched_target_only_egress_dtype": "float32",
+        "matched_target_only_egress_device": "cpu",
+        "matched_target_only_tied_weights_and_softcap_identical": True,
+        "sparse_target_only_egress_independent_reprojection_must_match": True,
+        "native_to_matched_target_only_drift_diagnostics_persisted": [
+            "correct_target_delta_NLL",
+            "centered_logit_NRMSE",
+            "full_vocab_top1_agreement",
+        ],
+        "native_to_matched_target_only_argmax_agreement_required": True,
+        "native_to_matched_target_only_all_row_validity_bounds": {
+            "maximum_absolute_native_to_matched_target_only_delta_NLL_max": (
+                MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+            ),
+            "maximum_native_to_matched_target_only_centered_logit_NRMSE_max": (
+                MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+            ),
+        },
+        "native_to_matched_target_only_equality_at_validity_bound_passes": True,
+        "native_to_matched_target_only_validity_failure_semantics": (
+            "abort_before_interpreting_the_six_sparse_fidelity_gates"
+        ),
         "dense_teacher_operator_NRMSE_semantics": (
             "teacher_forced_local_dense_baseline_input_P_V_apply_frozen_mask_"
             "zero_fill_compare_operator_over_valid_queries"
@@ -1166,8 +1466,9 @@ def _protocol_receipt() -> dict[str, object]:
             "full_vocab_top1_agreement",
         ],
         "centered_logit_NRMSE_semantics": (
-            "norm((sparse-mean_sparse)-(native-mean_native))_divided_by_"
-            "norm(native-mean_native)_at_supervised_query"
+            "norm((sparse_target_only-mean_sparse)-(matched_dense_target_only-"
+            "mean_matched_dense))_divided_by_norm(matched_dense_target_only-"
+            "mean_matched_dense)_at_supervised_query"
         ),
         "all_B_masks_frozen_before_correct_target_metric_access": True,
         "B_example_id_used_for_selection": False,
@@ -1221,6 +1522,14 @@ def build_attention_edge_fidelity_b_report(
     if not isinstance(exact, dict):
         raise ValueError("exact-control receipt must be an object")
     aggregates = _aggregate_statistics(materialized)
+    reference_controls = _matched_target_only_reference_control_outcomes(
+        aggregates
+    )
+    if not all(bool(control["passed"]) for control in reference_controls):
+        raise ValueError(
+            "matched target-only reference failed its preregistered validity "
+            "bounds"
+        )
     gates = _gate_outcomes(aggregates)
     state: dict[str, object] = {
         "schema": ATTENTION_EDGE_FIDELITY_B_SCHEMA,
@@ -1281,6 +1590,8 @@ def build_attention_edge_fidelity_b_report(
         "row_metrics": [row.to_dict() for row in materialized],
         "family_ledgers": _family_ledgers(materialized),
         "aggregate_statistics": aggregates,
+        "matched_target_only_reference_control_outcomes": reference_controls,
+        "all_matched_target_only_reference_controls_passed": True,
         "gate_outcomes": gates,
         "all_six_preregistered_gates_passed": all(
             bool(gate["passed"]) for gate in gates
@@ -1360,6 +1671,14 @@ def _exact_control_receipt(
         "separate_batch1_all_route_replay_count": all_route_row_count,
         "separate_batch1_sparse_replay_count": all_route_row_count,
         "dense_and_sparse_logically_paired_row_count": all_route_row_count,
+        "matched_dense_target_only_egress_projection_count": all_route_row_count,
+        "matched_sparse_target_only_egress_projection_count": all_route_row_count,
+        "sparse_target_only_egress_reprojection_literal_parity_count": (
+            all_route_row_count
+        ),
+        "native_to_matched_target_only_argmax_agreement_count": (
+            all_route_row_count
+        ),
         "B_gradients_computed": False,
     }
     state["receipt_sha256"] = _digest(_EXACT_CONTROL_DOMAIN, state)
@@ -1389,6 +1708,10 @@ def _validate_exact_control(value: Mapping[str, object]) -> dict[str, object]:
         "separate_batch1_all_route_replay_count",
         "separate_batch1_sparse_replay_count",
         "dense_and_sparse_logically_paired_row_count",
+        "matched_dense_target_only_egress_projection_count",
+        "matched_sparse_target_only_egress_projection_count",
+        "sparse_target_only_egress_reprojection_literal_parity_count",
+        "native_to_matched_target_only_argmax_agreement_count",
         "B_gradients_computed",
         "receipt_sha256",
     }
@@ -1426,6 +1749,10 @@ def _validate_exact_control(value: Mapping[str, object]) -> dict[str, object]:
         "separate_batch1_all_route_replay_count",
         "separate_batch1_sparse_replay_count",
         "dense_and_sparse_logically_paired_row_count",
+        "matched_dense_target_only_egress_projection_count",
+        "matched_sparse_target_only_egress_projection_count",
+        "sparse_target_only_egress_reprojection_literal_parity_count",
+        "native_to_matched_target_only_argmax_agreement_count",
     ):
         if _require_int(value[field], label=field) != count:
             raise ValueError("B exact-control count ledger does not close")
@@ -1485,6 +1812,8 @@ def validate_attention_edge_fidelity_b_content(
         "row_metrics",
         "family_ledgers",
         "aggregate_statistics",
+        "matched_target_only_reference_control_outcomes",
+        "all_matched_target_only_reference_controls_passed",
         "gate_outcomes",
         "all_six_preregistered_gates_passed",
         "claim_boundary",
@@ -1664,23 +1993,45 @@ def validate_attention_edge_fidelity_b_content(
         raise ValueError("B row-to-family sequence drifted")
     if any(
         not (
-            row.dense_replay_literal_parity_passed
+            row.native_to_matched_target_only_top1_agreement
+            and row.target_only_egress_reprojection_literal_parity_passed
+            and row.dense_replay_literal_parity_passed
             and row.all_route_attention_operator_delta_parity_passed
             and row.mutation_boundary_literal_parity_passed
         )
         for row in rows
     ):
         raise ValueError("B row exact-control ledger contains a failure")
+    expected_aggregates = _aggregate_statistics(rows)
+    if expected_aggregates[
+        "native_to_matched_target_only_top1_agreement_count"
+    ] != 60:
+        raise ValueError("B native-to-matched target-only argmax control failed")
     expected_families = _family_ledgers(rows)
     if _canonical_json_bytes(state["family_ledgers"]) != _canonical_json_bytes(
         expected_families
     ):
         raise ValueError("B family ledgers do not rebuild")
-    expected_aggregates = _aggregate_statistics(rows)
     if _canonical_json_bytes(state["aggregate_statistics"]) != _canonical_json_bytes(
         expected_aggregates
     ):
         raise ValueError("B aggregate statistics do not rebuild")
+    expected_reference_controls = (
+        _matched_target_only_reference_control_outcomes(expected_aggregates)
+    )
+    if _canonical_json_bytes(
+        state["matched_target_only_reference_control_outcomes"]
+    ) != _canonical_json_bytes(expected_reference_controls):
+        raise ValueError("B matched target-only reference controls do not rebuild")
+    reference_controls_passed = all(
+        bool(control["passed"]) for control in expected_reference_controls
+    )
+    if (
+        state["all_matched_target_only_reference_controls_passed"]
+        is not reference_controls_passed
+        or not reference_controls_passed
+    ):
+        raise ValueError("B matched target-only reference validity failed")
     expected_gates = _gate_outcomes(expected_aggregates)
     if _canonical_json_bytes(state["gate_outcomes"]) != _canonical_json_bytes(
         expected_gates
@@ -2123,6 +2474,7 @@ def build_deterministic_attention_edge_fidelity_b_fixture() -> dict[str, object]
     for row in range(60):
         family = EXPECTED_B_ROW_FAMILIES[row]
         delta = 0.008 + (row % 5) * 0.001
+        egress_drift = (row % 3) * 0.000001
         sequence_length = 8 + row % 4
         rows.append(
             AttentionEdgeFidelityBRowCapture(
@@ -2141,11 +2493,23 @@ def build_deterministic_attention_edge_fidelity_b_fixture() -> dict[str, object]
                 selected_route_count=(
                     18 * (4 + PRIMARY_K * (sequence_length - 1))
                 ),
-                native_correct_target_nll=2.0 + row * 0.001,
-                sparse_correct_target_nll=2.0 + row * 0.001 + delta,
-                full_vocab_top1_agreement=True,
+                native_full_sequence_correct_target_nll=2.0 + row * 0.001,
+                matched_dense_target_only_correct_target_nll=(
+                    2.0 + row * 0.001 + egress_drift
+                ),
+                sparse_target_only_correct_target_nll=(
+                    2.0 + row * 0.001 + egress_drift + delta
+                ),
+                native_to_matched_target_only_centered_logit_nrmse=(
+                    0.000001 + (row % 3) * 0.0000001
+                ),
+                native_to_matched_target_only_top1_agreement=True,
+                matched_target_only_full_vocab_top1_agreement=True,
+                target_only_egress_reprojection_literal_parity_passed=True,
                 terminal_supervised_vector_cosine=0.9985 - (row % 3) * 0.0001,
-                centered_logit_nrmse=0.018 + (row % 4) * 0.001,
+                matched_target_only_centered_logit_nrmse=(
+                    0.018 + (row % 4) * 0.001
+                ),
                 dense_teacher_operator_nrmse=0.08 + (row % 5) * 0.002,
                 dense_replay_literal_parity_passed=True,
                 all_route_attention_operator_delta_parity_passed=True,
@@ -2605,6 +2969,46 @@ def _centered_logit_nrmse(reference: Tensor, sparse: Tensor) -> float:
     return result
 
 
+def _target_only_egress_from_normalized(
+    executor: object,
+    normalized_output: Tensor,
+    supervised_query: int,
+) -> Tensor:
+    """Project one terminal row with the replay's exact egress semantics."""
+
+    lexical = getattr(executor, "lexical", None)
+    egress = getattr(lexical, "egress", None)
+    if (
+        not isinstance(normalized_output, Tensor)
+        or normalized_output.ndim != 3
+        or normalized_output.shape[0] != 1
+        or not normalized_output.is_floating_point()
+        or normalized_output.device.type != "cpu"
+        or not bool(torch.isfinite(normalized_output).all())
+        or type(supervised_query) is not int
+        or not 0 <= supervised_query < normalized_output.shape[1]
+        or not callable(egress)
+    ):
+        raise ValueError("matched target-only egress input is invalid")
+    target_row = normalized_output[
+        :, supervised_query : supervised_query + 1
+    ]
+    logits = egress(target_row)
+    cap = getattr(executor, "final_logit_softcap", None)
+    if cap is not None:
+        logits = torch.tanh(logits / float(cap)) * float(cap)
+    if (
+        not isinstance(logits, Tensor)
+        or logits.ndim != 3
+        or tuple(logits.shape[:2]) != (1, 1)
+        or not logits.is_floating_point()
+        or logits.device.type != "cpu"
+        or not bool(torch.isfinite(logits).all())
+    ):
+        raise ValueError("matched target-only egress output is invalid")
+    return logits
+
+
 def _reconstruct_dense_residual_carriers(
     lexical_output: Tensor,
     mutation_deltas: Sequence[Tensor],
@@ -2674,7 +3078,6 @@ def _run_separate_batch1_dense_and_sparse_replays(
         sequence,
         all_route_masks,
         renormalize_rows=torch.zeros(1, dtype=torch.bool),
-        egress_query_ordinal=supervised_query,
     )
     sparse = fidelity_kernel.replay_exact_with_attention_masks(
         executor,
@@ -2957,6 +3360,27 @@ class AttentionEdgeFidelityBRuntime:
                 sparse_masks=prepared.layer_masks,
                 supervised_query=supervised_query,
             )
+            matched_dense_target_only_logits = (
+                _target_only_egress_from_normalized(
+                    self.executor,
+                    dense.normalized_output,
+                    supervised_query,
+                )
+            )
+            matched_observed_target_only_logits = (
+                _target_only_egress_from_normalized(
+                    self.executor,
+                    observed.execution.normalized_output,
+                    supervised_query,
+                )
+            )
+            sparse_target_only_reprojection = (
+                _target_only_egress_from_normalized(
+                    self.executor,
+                    sparse.normalized_output,
+                    supervised_query,
+                )
+            )
         dense_attention_parity = all(
             torch.equal(actual, route.reference_operator_output)
             for actual, route in zip(
@@ -2991,8 +3415,16 @@ class AttentionEdgeFidelityBRuntime:
         )
         mutation_parity = mutation_delta_parity and mutation_carrier_parity
         baseline_valid = _valid_logits(observed.execution.logits, batch)[0]
-        dense_valid = dense.logits[0, 0]
+        dense_valid = dense.logits[0, supervised_query]
+        matched_dense_valid = matched_dense_target_only_logits[0, 0]
         sparse_valid = sparse.logits[0, 0]
+        target_only_egress_reprojection_parity = bool(
+            torch.equal(
+                matched_dense_target_only_logits,
+                matched_observed_target_only_logits,
+            )
+            and torch.equal(sparse.logits, sparse_target_only_reprojection)
+        )
         dense_endpoint_parity = bool(
             torch.equal(dense.output, observed.execution.output)
             and torch.equal(
@@ -3013,6 +3445,13 @@ class AttentionEdgeFidelityBRuntime:
                 dense_valid.unsqueeze(0), target_tensor, reduction="sum"
             ).item()
         )
+        matched_dense_nll = float(
+            F.cross_entropy(
+                matched_dense_valid.unsqueeze(0),
+                target_tensor,
+                reduction="sum",
+            ).item()
+        )
         sparse_nll = float(
             F.cross_entropy(
                 sparse_valid.unsqueeze(0), target_tensor, reduction="sum"
@@ -3029,13 +3468,27 @@ class AttentionEdgeFidelityBRuntime:
             and dense_attention_parity
             and mutation_parity
             and dense_replay_parity
+            and target_only_egress_reprojection_parity
         ):
             raise RuntimeError("prospective B all-route replay failed literal parity")
+        native_to_matched_top1_agreement = bool(
+            _smallest_index_argmax(matched_dense_valid)
+            == _smallest_index_argmax(baseline_valid)
+        )
+        if not native_to_matched_top1_agreement:
+            raise RuntimeError(
+                "prospective B native and matched target-only argmax disagree"
+            )
         terminal_cosine = _strict_cosine(
             observed.execution.normalized_output[0, supervised_query],
             sparse.normalized_output[0, supervised_query],
         )
-        centered_nrmse = _centered_logit_nrmse(baseline_valid, sparse_valid)
+        centered_nrmse = _centered_logit_nrmse(
+            matched_dense_valid, sparse_valid
+        )
+        native_to_matched_centered_nrmse = _centered_logit_nrmse(
+            baseline_valid, matched_dense_valid
+        )
         return AttentionEdgeFidelityBRowCapture(
             row_ordinal=row_ordinal,
             family_id=self.family_ids[row_ordinal],
@@ -3044,14 +3497,24 @@ class AttentionEdgeFidelityBRuntime:
             selection_catalog_sha256=prepared.selection_catalog_sha256,
             available_route_count=available_route_count,
             selected_route_count=selected_route_count,
-            native_correct_target_nll=native_nll,
-            sparse_correct_target_nll=sparse_nll,
-            full_vocab_top1_agreement=(
+            native_full_sequence_correct_target_nll=native_nll,
+            matched_dense_target_only_correct_target_nll=matched_dense_nll,
+            sparse_target_only_correct_target_nll=sparse_nll,
+            native_to_matched_target_only_centered_logit_nrmse=(
+                native_to_matched_centered_nrmse
+            ),
+            native_to_matched_target_only_top1_agreement=(
+                native_to_matched_top1_agreement
+            ),
+            matched_target_only_full_vocab_top1_agreement=(
                 _smallest_index_argmax(sparse_valid)
-                == _smallest_index_argmax(baseline_valid)
+                == _smallest_index_argmax(matched_dense_valid)
+            ),
+            target_only_egress_reprojection_literal_parity_passed=(
+                target_only_egress_reprojection_parity
             ),
             terminal_supervised_vector_cosine=terminal_cosine,
-            centered_logit_nrmse=centered_nrmse,
+            matched_target_only_centered_logit_nrmse=centered_nrmse,
             dense_teacher_operator_nrmse=teacher_nrmse,
             dense_replay_literal_parity_passed=dense_replay_parity,
             all_route_attention_operator_delta_parity_passed=(
@@ -3141,11 +3604,15 @@ def _compact_summary(report: Mapping[str, object]) -> dict[str, object]:
     exact = report.get("exact_control_receipt")
     panel = report.get("panel_binding")
     gates = report.get("gate_outcomes")
+    reference_controls = report.get(
+        "matched_target_only_reference_control_outcomes"
+    )
     if (
         not isinstance(aggregates, Mapping)
         or not isinstance(exact, Mapping)
         or not isinstance(panel, Mapping)
         or not isinstance(gates, list)
+        or not isinstance(reference_controls, list)
     ):
         raise ValueError("prospective B report omitted aggregates")
     return {
@@ -3159,6 +3626,7 @@ def _compact_summary(report: Mapping[str, object]) -> dict[str, object]:
         ),
         "report_sha256": report["report_sha256"],
         "gates": gates,
+        "matched_target_only_reference_controls": reference_controls,
         "outcome": (
             "pass"
             if report["all_six_preregistered_gates_passed"] is True
@@ -3172,6 +3640,15 @@ def _compact_summary(report: Mapping[str, object]) -> dict[str, object]:
         ],
         "top1_agreement_Wilson_L95": aggregates[
             "full_vocab_top1_agreement_Wilson_L95"
+        ],
+        "native_to_matched_target_only_top1_agreement_count": aggregates[
+            "native_to_matched_target_only_top1_agreement_count"
+        ],
+        "native_to_matched_target_only_max_absolute_delta_NLL": aggregates[
+            "maximum_absolute_native_to_matched_target_only_delta_NLL"
+        ],
+        "native_to_matched_target_only_max_centered_logit_NRMSE": aggregates[
+            "maximum_native_to_matched_target_only_centered_logit_NRMSE"
         ],
         "terminal_cosine_L95": aggregates[
             "macro_family_bootstrap_terminal_cosine_L95"

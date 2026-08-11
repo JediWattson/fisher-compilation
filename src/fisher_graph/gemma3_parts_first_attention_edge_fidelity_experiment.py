@@ -19,12 +19,17 @@ starved head has exactly zero output under the latter convention and is
 reported.
 
 The live path uses the committed exact executor only.  It first captures the
-native graph and score gradient, then proves that this module's dense replay
-is literally logit-identical to that executor.  Finally it evaluates all 53
-conditions in one batched replay with the baseline-selected graph fixed while
-Q/K/V and attention probabilities are recomputed from the evolving sparse
-state.  Thus the end-to-end result is a genuine all-layer sparse-attention
-intervention, not a linearised Fisher estimate.
+native graph and score gradient, then proves that this module's batch-one dense
+replay is literally logit-identical to that executor.  Finally it evaluates a
+pair of 53-row batches with identical shape and condition order: one
+all-routes matched-control batch and one sparse-condition batch.  Each sparse
+condition is compared with the all-routes control at the same batch ordinal,
+eliminating both batch-size and row-ordinal kernel drift.  End-to-end fidelity
+uses those ordinal-matched controls, while the local teacher-forced operator
+and post-norm-delta diagnostics remain referenced to the native graph.  Q/K/V
+and attention probabilities are recomputed from each evolving sparse state.
+Thus the result is a genuine all-layer sparse-attention intervention, not a
+linearised Fisher estimate or an unmeasured batch-shape artefact.
 
 This remains a retrospective A-panel fidelity measurement.  It is not fresh
 confirmation, semantic interpretation, compression qualification, or a
@@ -122,6 +127,9 @@ ATTENTION_EDGE_FIDELITY_RANDOM_SALTS: Final = (
 ATTENTION_EDGE_FIDELITY_RANDOM_SEED_ID: Final = (
     "sha256_salt_row_layer_query_head_key.v1"
 )
+ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA: Final = 1e-4
+ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE: Final = 1e-4
+ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE: Final = 1e-5
 ATTENTION_EDGE_FIDELITY_ROLE: Final = "A_retrospective_fidelity_diagnostic"
 DEFAULT_ATTENTION_EDGE_FIDELITY_OUTPUT: Final = Path(
     ".local-runs/google--gemma-3-270m/"
@@ -145,6 +153,12 @@ _TOKENIZATION_CATALOG_DOMAIN = (
     b"fisher_graph:parts-first-attention-edge-tokenization-catalog:v1\0"
 )
 _TENSOR_DOMAIN = b"fisher_graph:parts-first-attention-edge-fidelity-tensor:v1\0"
+_MATCHED_SURFACE_DOMAIN = (
+    b"fisher_graph:parts-first-attention-edge-fidelity-matched-surface:v1\0"
+)
+_MATCHED_DIAGNOSTIC_DOMAIN = (
+    b"fisher_graph:parts-first-attention-edge-fidelity-matched-diagnostic:v1\0"
+)
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
@@ -152,6 +166,9 @@ __all__ = [
     "ATTENTION_EDGE_FIDELITY_ABI",
     "ATTENTION_EDGE_FIDELITY_FORMAT_VERSION",
     "ATTENTION_EDGE_FIDELITY_K_VALUES",
+    "ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA",
+    "ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE",
+    "ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE",
     "ATTENTION_EDGE_FIDELITY_PRIMARY_RANKERS",
     "ATTENTION_EDGE_FIDELITY_DIAGNOSTIC_RANKERS",
     "ATTENTION_EDGE_FIDELITY_RANDOM_SEED_ID",
@@ -170,6 +187,7 @@ __all__ = [
     "AttentionEdgeFidelityCondition",
     "AttentionEdgeFidelityLiveConfig",
     "AttentionEdgeFidelityMeasurement",
+    "AttentionEdgeFidelityMatchedControlDiagnostic",
     "AttentionEdgeFidelityReport",
     "AttentionEdgeFidelityRuntime",
     "AttentionEdgeFidelityRowCapture",
@@ -230,6 +248,43 @@ def _integer(value: object, *, label: str, minimum: int = 0) -> int:
     if type(value) is not int or value < minimum:
         raise ValueError(f"{label} must be an integer >= {minimum}")
     return value
+
+
+def _validate_matched_control_bounds(
+    *,
+    maximum_absolute_nll_delta: float,
+    maximum_centered_logit_nrmse: float,
+    maximum_final_carrier_nrmse: float,
+) -> None:
+    observed = (
+        (
+            "matched control NLL drift",
+            _nonnegative(
+                maximum_absolute_nll_delta,
+                label="maximum_absolute_nll_delta",
+            ),
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA,
+        ),
+        (
+            "matched control centered-logit NRMSE",
+            _nonnegative(
+                maximum_centered_logit_nrmse,
+                label="maximum_centered_logit_nrmse",
+            ),
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE,
+        ),
+        (
+            "matched control final-carrier NRMSE",
+            _nonnegative(
+                maximum_final_carrier_nrmse,
+                label="maximum_final_carrier_nrmse",
+            ),
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE,
+        ),
+    )
+    for label, value, bound in observed:
+        if value > bound:
+            raise ValueError(f"{label} exceeds frozen bound")
 
 
 def _exact_keys(
@@ -736,6 +791,119 @@ def _conditions() -> tuple[AttentionEdgeFidelityCondition, ...]:
 
 
 @dataclass(frozen=True, slots=True)
+class AttentionEdgeFidelityMatchedControlDiagnostic:
+    """Authenticated native-to-control diagnostic for one condition ordinal."""
+
+    condition: AttentionEdgeFidelityCondition
+    matched_control_receipt_sha256: str
+    native_to_matched_valid_logit_max_abs_error: float
+    absolute_nll_delta: float
+    centered_logit_nrmse: float
+    final_carrier_nrmse: float
+    native_top1_parity_passed: bool
+    diagnostic_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.condition, AttentionEdgeFidelityCondition):
+            raise TypeError("matched control diagnostic condition is invalid")
+        _require_sha256(
+            self.matched_control_receipt_sha256,
+            label="matched_control_receipt_sha256",
+        )
+        _nonnegative(
+            self.native_to_matched_valid_logit_max_abs_error,
+            label="native_to_matched_valid_logit_max_abs_error",
+        )
+        _nonnegative(self.absolute_nll_delta, label="absolute_nll_delta")
+        _nonnegative(self.centered_logit_nrmse, label="centered_logit_nrmse")
+        _nonnegative(self.final_carrier_nrmse, label="final_carrier_nrmse")
+        if type(self.native_top1_parity_passed) is not bool:
+            raise TypeError("native_top1_parity_passed must be bool")
+        computed = _json_sha256(self._payload(), domain=_MATCHED_DIAGNOSTIC_DOMAIN)
+        if self.diagnostic_sha256 == "":
+            object.__setattr__(self, "diagnostic_sha256", computed)
+        elif (
+            _require_sha256(
+                self.diagnostic_sha256, label="diagnostic_sha256"
+            )
+            != computed
+        ):
+            raise ValueError("matched control diagnostic hash mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "condition": self.condition.to_dict(),
+            "matched_control_receipt_sha256": (
+                self.matched_control_receipt_sha256
+            ),
+            "native_to_matched_valid_logit_max_abs_error": (
+                self.native_to_matched_valid_logit_max_abs_error
+            ),
+            "absolute_nll_delta": self.absolute_nll_delta,
+            "centered_logit_nrmse": self.centered_logit_nrmse,
+            "final_carrier_nrmse": self.final_carrier_nrmse,
+            "native_top1_parity_passed": self.native_top1_parity_passed,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "diagnostic_sha256": self.diagnostic_sha256}
+
+    @classmethod
+    def from_dict(
+        cls, value: Mapping[str, object]
+    ) -> "AttentionEdgeFidelityMatchedControlDiagnostic":
+        _exact_keys(
+            value,
+            {
+                "condition",
+                "matched_control_receipt_sha256",
+                "native_to_matched_valid_logit_max_abs_error",
+                "absolute_nll_delta",
+                "centered_logit_nrmse",
+                "final_carrier_nrmse",
+                "native_top1_parity_passed",
+                "diagnostic_sha256",
+            },
+            label="matched control diagnostic",
+        )
+        condition = value["condition"]
+        if not isinstance(condition, Mapping):
+            raise ValueError("matched control diagnostic condition must be an object")
+        if type(value["native_top1_parity_passed"]) is not bool:
+            raise TypeError("native_top1_parity_passed must be bool")
+        return cls(
+            condition=AttentionEdgeFidelityCondition.from_dict(condition),
+            matched_control_receipt_sha256=str(
+                value["matched_control_receipt_sha256"]
+            ),
+            native_to_matched_valid_logit_max_abs_error=_nonnegative(
+                value["native_to_matched_valid_logit_max_abs_error"],
+                label="native_to_matched_valid_logit_max_abs_error",
+            ),
+            absolute_nll_delta=_nonnegative(
+                value["absolute_nll_delta"], label="absolute_nll_delta"
+            ),
+            centered_logit_nrmse=_nonnegative(
+                value["centered_logit_nrmse"], label="centered_logit_nrmse"
+            ),
+            final_carrier_nrmse=_nonnegative(
+                value["final_carrier_nrmse"], label="final_carrier_nrmse"
+            ),
+            native_top1_parity_passed=value["native_top1_parity_passed"],
+            diagnostic_sha256=str(value["diagnostic_sha256"]),
+        )
+
+
+def _matched_control_diagnostic_catalog_sha256(
+    values: Sequence[AttentionEdgeFidelityMatchedControlDiagnostic],
+) -> str:
+    return _json_sha256(
+        {"diagnostics": [item.to_dict() for item in values]},
+        domain=_MATCHED_DIAGNOSTIC_DOMAIN,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AttentionRouteSelection:
     ranker: str
     k: int
@@ -900,6 +1068,7 @@ class AttentionEdgeFidelityMeasurement:
 
     condition: AttentionEdgeFidelityCondition
     selection_catalog_sha256: str
+    matched_control_receipt_sha256: str
     available_route_count: int
     selected_route_count: int
     active_head_query_count: int
@@ -940,6 +1109,10 @@ class AttentionEdgeFidelityMeasurement:
         _require_sha256(
             self.selection_catalog_sha256,
             label="selection_catalog_sha256",
+        )
+        _require_sha256(
+            self.matched_control_receipt_sha256,
+            label="matched_control_receipt_sha256",
         )
         available = _integer(
             self.available_route_count, label="available_route_count"
@@ -1068,6 +1241,9 @@ class AttentionEdgeFidelityMeasurement:
         return {
             "condition": self.condition.to_dict(),
             "selection_catalog_sha256": self.selection_catalog_sha256,
+            "matched_control_receipt_sha256": (
+                self.matched_control_receipt_sha256
+            ),
             "available_route_count": self.available_route_count,
             "selected_route_count": self.selected_route_count,
             "active_head_query_count": self.active_head_query_count,
@@ -1126,6 +1302,7 @@ class AttentionEdgeFidelityMeasurement:
         expected = {
             "condition",
             "selection_catalog_sha256",
+            "matched_control_receipt_sha256",
             "available_route_count",
             "selected_route_count",
             "active_head_query_count",
@@ -1177,6 +1354,9 @@ class AttentionEdgeFidelityMeasurement:
         return cls(
             condition=AttentionEdgeFidelityCondition.from_dict(condition),
             selection_catalog_sha256=str(value["selection_catalog_sha256"]),
+            matched_control_receipt_sha256=str(
+                value["matched_control_receipt_sha256"]
+            ),
             available_route_count=_integer(
                 value["available_route_count"], label="available_route_count"
             ),
@@ -1282,12 +1462,63 @@ class AttentionEdgeFidelityMeasurement:
                 label="valid_logit_dot_product",
             ),
             metrics=AttentionEdgeFidelityMetricLedger.from_dict(metrics),
-            baseline_nll=_finite(value["baseline_nll"], label="baseline_nll"),
-            sparse_nll=_finite(value["sparse_nll"], label="sparse_nll"),
+            baseline_nll=_nonnegative(
+                value["baseline_nll"], label="baseline_nll"
+            ),
+            sparse_nll=_nonnegative(value["sparse_nll"], label="sparse_nll"),
             top1_retained=value["top1_retained"],
             baseline_target_correct=value["baseline_target_correct"],
             sparse_target_correct=value["sparse_target_correct"],
         )
+
+
+def _validate_matched_control_diagnostic_ledger(
+    diagnostics: tuple[AttentionEdgeFidelityMatchedControlDiagnostic, ...],
+    measurements: tuple[AttentionEdgeFidelityMeasurement, ...],
+    *,
+    catalog_sha256: str,
+    native_baseline_nll: float,
+) -> tuple[float, float, float, float, bool]:
+    if (
+        type(diagnostics) is not tuple
+        or any(
+            not isinstance(
+                item, AttentionEdgeFidelityMatchedControlDiagnostic
+            )
+            for item in diagnostics
+        )
+    ):
+        raise ValueError("matched control diagnostic inventory drifted")
+    if tuple(item.condition for item in diagnostics) != _conditions():
+        raise ValueError("matched control diagnostic inventory drifted")
+    if len(measurements) != len(diagnostics):
+        raise ValueError("matched control diagnostic/measurement count drifted")
+    for diagnostic, measurement in zip(diagnostics, measurements, strict=True):
+        if (
+            diagnostic.condition != measurement.condition
+            or diagnostic.matched_control_receipt_sha256
+            != measurement.matched_control_receipt_sha256
+        ):
+            raise ValueError(
+                "matched control diagnostic does not bind its measurement"
+            )
+        if diagnostic.absolute_nll_delta != abs(
+            measurement.baseline_nll - native_baseline_nll
+        ):
+            raise ValueError("matched control diagnostic NLL delta drifted")
+    expected_catalog = _matched_control_diagnostic_catalog_sha256(diagnostics)
+    if catalog_sha256 != expected_catalog:
+        raise ValueError("matched control diagnostic catalog drifted")
+    return (
+        max(
+            item.native_to_matched_valid_logit_max_abs_error
+            for item in diagnostics
+        ),
+        max(item.absolute_nll_delta for item in diagnostics),
+        max(item.centered_logit_nrmse for item in diagnostics),
+        max(item.final_carrier_nrmse for item in diagnostics),
+        all(item.native_top1_parity_passed for item in diagnostics),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1299,6 +1530,21 @@ class AttentionEdgeFidelityRowCapture:
     layer_extraction_sha256s: tuple[str, ...]
     dense_replay_valid_logits_sha256: str
     baseline_valid_logits_sha256: str
+    matched_batch_size: int
+    matched_control_catalog_sha256: str
+    matched_control_diagnostics: tuple[
+        AttentionEdgeFidelityMatchedControlDiagnostic, ...
+    ]
+    matched_control_diagnostic_catalog_sha256: str
+    native_baseline_nll: float
+    matched_controls_native_top1_parity_passed: bool
+    native_to_matched_valid_logit_max_abs_error: float
+    native_to_matched_nll_max_abs_delta: float
+    native_to_matched_centered_logit_max_nrmse: float
+    native_to_matched_final_carrier_max_nrmse: float
+    matched_control_nll_max_abs_delta_bound: float
+    matched_control_centered_logit_nrmse_bound: float
+    matched_control_final_carrier_nrmse_bound: float
     attention_operator_catalog_sha256: str
     attention_delta_catalog_sha256: str
     mutation_delta_catalog_sha256: str
@@ -1337,6 +1583,51 @@ class AttentionEdgeFidelityRowCapture:
         _require_sha256(
             self.baseline_valid_logits_sha256,
             label="baseline_valid_logits_sha256",
+        )
+        if self.matched_batch_size != _matched_batch_size():
+            raise ValueError("matched fidelity batch size drifted")
+        _require_sha256(
+            self.matched_control_catalog_sha256,
+            label="matched_control_catalog_sha256",
+        )
+        _require_sha256(
+            self.matched_control_diagnostic_catalog_sha256,
+            label="matched_control_diagnostic_catalog_sha256",
+        )
+        if self.matched_controls_native_top1_parity_passed is not True:
+            raise ValueError("matched all-routes controls changed native top1")
+        native_nll = _nonnegative(
+            self.native_baseline_nll, label="native_baseline_nll"
+        )
+        _nonnegative(
+            self.native_to_matched_valid_logit_max_abs_error,
+            label="native_to_matched_valid_logit_max_abs_error",
+        )
+        maximum_nll_delta = _nonnegative(
+            self.native_to_matched_nll_max_abs_delta,
+            label="native_to_matched_nll_max_abs_delta",
+        )
+        maximum_centered_logit_nrmse = _nonnegative(
+            self.native_to_matched_centered_logit_max_nrmse,
+            label="native_to_matched_centered_logit_max_nrmse",
+        )
+        maximum_final_carrier_nrmse = _nonnegative(
+            self.native_to_matched_final_carrier_max_nrmse,
+            label="native_to_matched_final_carrier_max_nrmse",
+        )
+        if (
+            self.matched_control_nll_max_abs_delta_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA
+            or self.matched_control_centered_logit_nrmse_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+            or self.matched_control_final_carrier_nrmse_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+        ):
+            raise ValueError("matched control validity bounds drifted")
+        _validate_matched_control_bounds(
+            maximum_absolute_nll_delta=maximum_nll_delta,
+            maximum_centered_logit_nrmse=maximum_centered_logit_nrmse,
+            maximum_final_carrier_nrmse=maximum_final_carrier_nrmse,
         )
         for label, digest in (
             ("attention operator catalog", self.attention_operator_catalog_sha256),
@@ -1411,6 +1702,48 @@ class AttentionEdgeFidelityRowCapture:
             or tuple(item.condition for item in self.measurements) != _conditions()
         ):
             raise ValueError("fidelity row condition inventory drifted")
+        expected_catalog = _json_sha256(
+            [item.matched_control_receipt_sha256 for item in self.measurements],
+            domain=_MATCHED_SURFACE_DOMAIN,
+        )
+        if self.matched_control_catalog_sha256 != expected_catalog:
+            raise ValueError("matched control receipt catalog drifted")
+        (
+            observed_maximum_valid_logit_error,
+            observed_maximum_nll_delta,
+            observed_maximum_centered_logit_nrmse,
+            observed_maximum_final_carrier_nrmse,
+            observed_all_top1_parity,
+        ) = _validate_matched_control_diagnostic_ledger(
+            self.matched_control_diagnostics,
+            self.measurements,
+            catalog_sha256=self.matched_control_diagnostic_catalog_sha256,
+            native_baseline_nll=native_nll,
+        )
+        if (
+            self.native_to_matched_valid_logit_max_abs_error
+            != observed_maximum_valid_logit_error
+        ):
+            raise ValueError(
+                "native-to-matched valid-logit maximum drifted"
+            )
+        if maximum_nll_delta != observed_maximum_nll_delta:
+            raise ValueError("native-to-matched NLL diagnostic drifted")
+        if (
+            maximum_centered_logit_nrmse
+            != observed_maximum_centered_logit_nrmse
+        ):
+            raise ValueError("native-to-matched centered-logit maximum drifted")
+        if (
+            maximum_final_carrier_nrmse
+            != observed_maximum_final_carrier_nrmse
+        ):
+            raise ValueError("native-to-matched final-carrier maximum drifted")
+        if (
+            self.matched_controls_native_top1_parity_passed
+            != observed_all_top1_parity
+        ):
+            raise ValueError("matched-control all-top1 summary drifted")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1422,6 +1755,21 @@ class AttentionEdgeFidelityRowReceipt:
     layer_extraction_sha256s: tuple[str, ...]
     dense_replay_valid_logits_sha256: str
     baseline_valid_logits_sha256: str
+    matched_batch_size: int
+    matched_control_catalog_sha256: str
+    matched_control_diagnostics: tuple[
+        AttentionEdgeFidelityMatchedControlDiagnostic, ...
+    ]
+    matched_control_diagnostic_catalog_sha256: str
+    native_baseline_nll: float
+    matched_controls_native_top1_parity_passed: bool
+    native_to_matched_valid_logit_max_abs_error: float
+    native_to_matched_nll_max_abs_delta: float
+    native_to_matched_centered_logit_max_nrmse: float
+    native_to_matched_final_carrier_max_nrmse: float
+    matched_control_nll_max_abs_delta_bound: float
+    matched_control_centered_logit_nrmse_bound: float
+    matched_control_final_carrier_nrmse_bound: float
     attention_operator_catalog_sha256: str
     attention_delta_catalog_sha256: str
     mutation_delta_catalog_sha256: str
@@ -1457,6 +1805,11 @@ class AttentionEdgeFidelityRowReceipt:
         for label, digest in (
             ("dense replay logits", self.dense_replay_valid_logits_sha256),
             ("baseline logits", self.baseline_valid_logits_sha256),
+            ("matched control catalog", self.matched_control_catalog_sha256),
+            (
+                "matched control diagnostic catalog",
+                self.matched_control_diagnostic_catalog_sha256,
+            ),
             ("attention operator catalog", self.attention_operator_catalog_sha256),
             ("attention delta catalog", self.attention_delta_catalog_sha256),
             ("mutation delta catalog", self.mutation_delta_catalog_sha256),
@@ -1466,6 +1819,43 @@ class AttentionEdgeFidelityRowReceipt:
             ("measurement catalog", self.measurement_catalog_sha256),
         ):
             _require_sha256(digest, label=label)
+        if self.matched_batch_size != _matched_batch_size():
+            raise ValueError("row receipt matched batch size drifted")
+        if self.matched_controls_native_top1_parity_passed is not True:
+            raise ValueError("row receipt matched controls changed native top1")
+        native_nll = _nonnegative(
+            self.native_baseline_nll, label="native_baseline_nll"
+        )
+        _nonnegative(
+            self.native_to_matched_valid_logit_max_abs_error,
+            label="native_to_matched_valid_logit_max_abs_error",
+        )
+        maximum_nll_delta = _nonnegative(
+            self.native_to_matched_nll_max_abs_delta,
+            label="native_to_matched_nll_max_abs_delta",
+        )
+        maximum_centered_logit_nrmse = _nonnegative(
+            self.native_to_matched_centered_logit_max_nrmse,
+            label="native_to_matched_centered_logit_max_nrmse",
+        )
+        maximum_final_carrier_nrmse = _nonnegative(
+            self.native_to_matched_final_carrier_max_nrmse,
+            label="native_to_matched_final_carrier_max_nrmse",
+        )
+        if (
+            self.matched_control_nll_max_abs_delta_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA
+            or self.matched_control_centered_logit_nrmse_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+            or self.matched_control_final_carrier_nrmse_bound
+            != ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+        ):
+            raise ValueError("row receipt matched control validity bounds drifted")
+        _validate_matched_control_bounds(
+            maximum_absolute_nll_delta=maximum_nll_delta,
+            maximum_centered_logit_nrmse=maximum_centered_logit_nrmse,
+            maximum_final_carrier_nrmse=maximum_final_carrier_nrmse,
+        )
         hash_ledgers = (
             (
                 "attention_operator",
@@ -1523,6 +1913,52 @@ class AttentionEdgeFidelityRowReceipt:
             or tuple(item.condition for item in self.measurements) != _conditions()
         ):
             raise ValueError("row receipt measurement inventory drifted")
+        expected_control_catalog = _json_sha256(
+            [item.matched_control_receipt_sha256 for item in self.measurements],
+            domain=_MATCHED_SURFACE_DOMAIN,
+        )
+        if self.matched_control_catalog_sha256 != expected_control_catalog:
+            raise ValueError("row receipt matched control catalog drifted")
+        (
+            observed_maximum_valid_logit_error,
+            observed_maximum_nll_delta,
+            observed_maximum_centered_logit_nrmse,
+            observed_maximum_final_carrier_nrmse,
+            observed_all_top1_parity,
+        ) = _validate_matched_control_diagnostic_ledger(
+            self.matched_control_diagnostics,
+            self.measurements,
+            catalog_sha256=self.matched_control_diagnostic_catalog_sha256,
+            native_baseline_nll=native_nll,
+        )
+        if (
+            self.native_to_matched_valid_logit_max_abs_error
+            != observed_maximum_valid_logit_error
+        ):
+            raise ValueError(
+                "row receipt native-to-matched valid-logit maximum drifted"
+            )
+        if maximum_nll_delta != observed_maximum_nll_delta:
+            raise ValueError("row receipt native-to-matched NLL diagnostic drifted")
+        if (
+            maximum_centered_logit_nrmse
+            != observed_maximum_centered_logit_nrmse
+        ):
+            raise ValueError(
+                "row receipt native-to-matched centered-logit maximum drifted"
+            )
+        if (
+            maximum_final_carrier_nrmse
+            != observed_maximum_final_carrier_nrmse
+        ):
+            raise ValueError(
+                "row receipt native-to-matched final-carrier maximum drifted"
+            )
+        if (
+            self.matched_controls_native_top1_parity_passed
+            != observed_all_top1_parity
+        ):
+            raise ValueError("row receipt matched-control all-top1 summary drifted")
         computed_measurement_catalog = _json_sha256(
             [item.to_dict() for item in self.measurements],
             domain=_SELECTION_DOMAIN,
@@ -1546,6 +1982,41 @@ class AttentionEdgeFidelityRowReceipt:
                 self.dense_replay_valid_logits_sha256
             ),
             "baseline_valid_logits_sha256": self.baseline_valid_logits_sha256,
+            "matched_batch_size": self.matched_batch_size,
+            "matched_control_catalog_sha256": (
+                self.matched_control_catalog_sha256
+            ),
+            "matched_control_diagnostics": [
+                item.to_dict() for item in self.matched_control_diagnostics
+            ],
+            "matched_control_diagnostic_catalog_sha256": (
+                self.matched_control_diagnostic_catalog_sha256
+            ),
+            "native_baseline_nll": self.native_baseline_nll,
+            "matched_controls_native_top1_parity_passed": (
+                self.matched_controls_native_top1_parity_passed
+            ),
+            "native_to_matched_valid_logit_max_abs_error": (
+                self.native_to_matched_valid_logit_max_abs_error
+            ),
+            "native_to_matched_nll_max_abs_delta": (
+                self.native_to_matched_nll_max_abs_delta
+            ),
+            "native_to_matched_centered_logit_max_nrmse": (
+                self.native_to_matched_centered_logit_max_nrmse
+            ),
+            "native_to_matched_final_carrier_max_nrmse": (
+                self.native_to_matched_final_carrier_max_nrmse
+            ),
+            "matched_control_nll_max_abs_delta_bound": (
+                self.matched_control_nll_max_abs_delta_bound
+            ),
+            "matched_control_centered_logit_nrmse_bound": (
+                self.matched_control_centered_logit_nrmse_bound
+            ),
+            "matched_control_final_carrier_nrmse_bound": (
+                self.matched_control_final_carrier_nrmse_bound
+            ),
             "attention_operator_catalog_sha256": (
                 self.attention_operator_catalog_sha256
             ),
@@ -1600,6 +2071,19 @@ class AttentionEdgeFidelityRowReceipt:
             "layer_extraction_sha256s",
             "dense_replay_valid_logits_sha256",
             "baseline_valid_logits_sha256",
+            "matched_batch_size",
+            "matched_control_catalog_sha256",
+            "matched_control_diagnostics",
+            "matched_control_diagnostic_catalog_sha256",
+            "native_baseline_nll",
+            "matched_controls_native_top1_parity_passed",
+            "native_to_matched_valid_logit_max_abs_error",
+            "native_to_matched_nll_max_abs_delta",
+            "native_to_matched_centered_logit_max_nrmse",
+            "native_to_matched_final_carrier_max_nrmse",
+            "matched_control_nll_max_abs_delta_bound",
+            "matched_control_centered_logit_nrmse_bound",
+            "matched_control_final_carrier_nrmse_bound",
             "attention_operator_catalog_sha256",
             "attention_delta_catalog_sha256",
             "mutation_delta_catalog_sha256",
@@ -1622,16 +2106,28 @@ class AttentionEdgeFidelityRowReceipt:
         _exact_keys(value, expected, label="attention fidelity row receipt")
         extraction_hashes = value["layer_extraction_sha256s"]
         measurements = value["measurements"]
+        diagnostics = value["matched_control_diagnostics"]
         if not isinstance(extraction_hashes, list):
             raise ValueError("layer extraction hashes must be an array")
         if not isinstance(measurements, list):
             raise ValueError("row measurements must be an array")
+        if not isinstance(diagnostics, list):
+            raise ValueError("matched control diagnostics must be an array")
         parsed_measurements: list[AttentionEdgeFidelityMeasurement] = []
         for item in measurements:
             if not isinstance(item, Mapping):
                 raise ValueError("row measurement must be an object")
             parsed_measurements.append(
                 AttentionEdgeFidelityMeasurement.from_dict(item)
+            )
+        parsed_diagnostics: list[
+            AttentionEdgeFidelityMatchedControlDiagnostic
+        ] = []
+        for item in diagnostics:
+            if not isinstance(item, Mapping):
+                raise ValueError("matched control diagnostic must be an object")
+            parsed_diagnostics.append(
+                AttentionEdgeFidelityMatchedControlDiagnostic.from_dict(item)
             )
         parsed_hash_ledgers: dict[str, tuple[str, ...]] = {}
         for label in (
@@ -1650,6 +2146,7 @@ class AttentionEdgeFidelityRowReceipt:
             "dense_replay_top1_parity_passed",
             "all_routes_operator_delta_controls_passed",
             "selection_prefix_nesting_passed",
+            "matched_controls_native_top1_parity_passed",
         ):
             if type(value[flag]) is not bool:
                 raise TypeError(f"{flag} must be bool")
@@ -1666,6 +2163,52 @@ class AttentionEdgeFidelityRowReceipt:
             ),
             baseline_valid_logits_sha256=str(
                 value["baseline_valid_logits_sha256"]
+            ),
+            matched_batch_size=_integer(
+                value["matched_batch_size"],
+                label="matched_batch_size",
+                minimum=1,
+            ),
+            matched_control_catalog_sha256=str(
+                value["matched_control_catalog_sha256"]
+            ),
+            matched_control_diagnostics=tuple(parsed_diagnostics),
+            matched_control_diagnostic_catalog_sha256=str(
+                value["matched_control_diagnostic_catalog_sha256"]
+            ),
+            native_baseline_nll=_nonnegative(
+                value["native_baseline_nll"], label="native_baseline_nll"
+            ),
+            matched_controls_native_top1_parity_passed=value[
+                "matched_controls_native_top1_parity_passed"
+            ],
+            native_to_matched_valid_logit_max_abs_error=_nonnegative(
+                value["native_to_matched_valid_logit_max_abs_error"],
+                label="native_to_matched_valid_logit_max_abs_error",
+            ),
+            native_to_matched_nll_max_abs_delta=_nonnegative(
+                value["native_to_matched_nll_max_abs_delta"],
+                label="native_to_matched_nll_max_abs_delta",
+            ),
+            native_to_matched_centered_logit_max_nrmse=_nonnegative(
+                value["native_to_matched_centered_logit_max_nrmse"],
+                label="native_to_matched_centered_logit_max_nrmse",
+            ),
+            native_to_matched_final_carrier_max_nrmse=_nonnegative(
+                value["native_to_matched_final_carrier_max_nrmse"],
+                label="native_to_matched_final_carrier_max_nrmse",
+            ),
+            matched_control_nll_max_abs_delta_bound=_finite(
+                value["matched_control_nll_max_abs_delta_bound"],
+                label="matched_control_nll_max_abs_delta_bound",
+            ),
+            matched_control_centered_logit_nrmse_bound=_finite(
+                value["matched_control_centered_logit_nrmse_bound"],
+                label="matched_control_centered_logit_nrmse_bound",
+            ),
+            matched_control_final_carrier_nrmse_bound=_finite(
+                value["matched_control_final_carrier_nrmse_bound"],
+                label="matched_control_final_carrier_nrmse_bound",
             ),
             attention_operator_catalog_sha256=str(
                 value["attention_operator_catalog_sha256"]
@@ -2263,10 +2806,10 @@ class AttentionEdgeFidelityCell:
                 label="valid_logit_dot_product",
             ),
             metrics=AttentionEdgeFidelityMetricLedger.from_dict(metrics),
-            baseline_nll_sum=_finite(
+            baseline_nll_sum=_nonnegative(
                 value["baseline_nll_sum"], label="baseline_nll_sum"
             ),
-            sparse_nll_sum=_finite(
+            sparse_nll_sum=_nonnegative(
                 value["sparse_nll_sum"], label="sparse_nll_sum"
             ),
             top1_retained_count=_integer(
@@ -2523,25 +3066,24 @@ def _validate_measurement_baseline_ledger(
             item.total_head_query_count,
             item.native_probability_mass,
             item.full_fisher_energy,
-            item.baseline_nll,
             item.baseline_target_correct,
             _reference_signature(metrics.local_operator),
             _reference_signature(metrics.local_postnorm_delta),
             tuple(
-                _reference_signature(surface)
+                surface.element_count
                 for surface in metrics.propagated_mutations
             ),
-            _reference_signature(metrics.final_valid_carrier),
-            _reference_signature(metrics.supervised_carrier),
-            _reference_signature(metrics.terminal_valid),
-            _reference_signature(metrics.supervised_terminal),
-            _reference_signature(metrics.valid_logits),
-            _reference_signature(metrics.centered_valid_logits),
+            metrics.final_valid_carrier.element_count,
+            metrics.supervised_carrier.element_count,
+            metrics.terminal_valid.element_count,
+            metrics.supervised_terminal.element_count,
+            metrics.valid_logits.element_count,
+            metrics.centered_valid_logits.element_count,
         )
 
     expected = signature(materialized[0])
     if any(signature(item) != expected for item in materialized[1:]):
-        raise ValueError("row-invariant fidelity baselines drifted")
+        raise ValueError("row-invariant native teacher baselines drifted")
 
 
 def _validate_cell_selection_ledger(
@@ -3336,15 +3878,8 @@ def compile_attention_edge_fidelity(
                 != first_measurement.full_fisher_energy
                 or measurement.operator_reference_sum_squares
                 != first_measurement.operator_reference_sum_squares
-                or measurement.final_carrier_reference_sum_squares
-                != first_measurement.final_carrier_reference_sum_squares
-                or measurement.terminal_reference_sum_squares
-                != first_measurement.terminal_reference_sum_squares
-                or measurement.baseline_valid_logit_sum_squares
-                != first_measurement.baseline_valid_logit_sum_squares
-                or measurement.baseline_nll != first_measurement.baseline_nll
             ):
-                raise ValueError("row-invariant fidelity baselines drifted")
+                raise ValueError("row-invariant native teacher baselines drifted")
         selector_groups: dict[
             tuple[str, int, str], list[AttentionEdgeFidelityMeasurement]
         ] = {}
@@ -3397,6 +3932,39 @@ def compile_attention_edge_fidelity(
                 ),
                 baseline_valid_logits_sha256=(
                     capture.baseline_valid_logits_sha256
+                ),
+                matched_batch_size=capture.matched_batch_size,
+                matched_control_catalog_sha256=(
+                    capture.matched_control_catalog_sha256
+                ),
+                matched_control_diagnostics=capture.matched_control_diagnostics,
+                matched_control_diagnostic_catalog_sha256=(
+                    capture.matched_control_diagnostic_catalog_sha256
+                ),
+                native_baseline_nll=capture.native_baseline_nll,
+                matched_controls_native_top1_parity_passed=(
+                    capture.matched_controls_native_top1_parity_passed
+                ),
+                native_to_matched_valid_logit_max_abs_error=(
+                    capture.native_to_matched_valid_logit_max_abs_error
+                ),
+                native_to_matched_nll_max_abs_delta=(
+                    capture.native_to_matched_nll_max_abs_delta
+                ),
+                native_to_matched_centered_logit_max_nrmse=(
+                    capture.native_to_matched_centered_logit_max_nrmse
+                ),
+                native_to_matched_final_carrier_max_nrmse=(
+                    capture.native_to_matched_final_carrier_max_nrmse
+                ),
+                matched_control_nll_max_abs_delta_bound=(
+                    capture.matched_control_nll_max_abs_delta_bound
+                ),
+                matched_control_centered_logit_nrmse_bound=(
+                    capture.matched_control_centered_logit_nrmse_bound
+                ),
+                matched_control_final_carrier_nrmse_bound=(
+                    capture.matched_control_final_carrier_nrmse_bound
                 ),
                 attention_operator_catalog_sha256=(
                     capture.attention_operator_catalog_sha256
@@ -3919,6 +4487,152 @@ def _mask_coordinates(mask: Tensor) -> frozenset[tuple[int, int, int]]:
     return frozenset((int(head), int(query), int(key)) for head, query, key in indexes)
 
 
+def _run_batch1_all_routes_dense_replay(
+    *,
+    executor: object,
+    input_ids: Tensor,
+    sequence: SequenceContext,
+    all_route_masks: tuple[Tensor, ...],
+) -> fidelity_kernel.SparseWholeModelExecution:
+    """Run the literal dense control with the baseline egress matrix shape."""
+
+    if (
+        input_ids.ndim != 2
+        or input_ids.shape[0] != 1
+        or sequence.batch_size != 1
+        or len(all_route_masks) != GEMMA3_LAYER_COUNT
+        or any(mask.shape[0] != 1 for mask in all_route_masks)
+    ):
+        raise ValueError("dense attention fidelity control must use batch size one")
+    return fidelity_kernel.replay_exact_with_attention_masks(
+        executor,
+        input_ids,
+        sequence,
+        all_route_masks,
+        renormalize_rows=torch.zeros(1, dtype=torch.bool),
+    )
+
+
+def _matched_batch_size() -> int:
+    return len(_conditions())
+
+
+def _run_batch53_attention_replay(
+    *,
+    executor: object,
+    input_ids: Tensor,
+    sequence: SequenceContext,
+    condition_masks: Sequence[tuple[Tensor, ...]],
+    condition_renormalize_rows: Tensor,
+    supervised_query: int,
+) -> fidelity_kernel.SparseWholeModelExecution:
+    """Replay one row for every condition in the frozen ordinal order."""
+
+    expected_conditions = len(_conditions())
+    if (
+        input_ids.ndim != 2
+        or input_ids.shape[0] != 1
+        or sequence.batch_size != 1
+        or len(condition_masks) != expected_conditions
+        or any(
+            len(masks) != GEMMA3_LAYER_COUNT
+            or any(mask.shape[0] != 1 for mask in masks)
+            for masks in condition_masks
+        )
+        or condition_renormalize_rows.dtype is not torch.bool
+        or condition_renormalize_rows.device.type != "cpu"
+        or tuple(condition_renormalize_rows.shape) != (expected_conditions,)
+    ):
+        raise ValueError("matched attention fidelity replay geometry drifted")
+    batched_masks = tuple(
+        torch.cat(
+            [masks[layer] for masks in condition_masks],
+            dim=0,
+        )
+        for layer in range(GEMMA3_LAYER_COUNT)
+    )
+    batch_size = _matched_batch_size()
+    return fidelity_kernel.replay_exact_with_attention_masks(
+        executor,
+        input_ids.repeat(batch_size, 1),
+        sequence,
+        batched_masks,
+        renormalize_rows=condition_renormalize_rows,
+        egress_query_ordinal=supervised_query,
+    )
+
+
+def _matched_surface_tensors(
+    execution: fidelity_kernel.SparseWholeModelExecution,
+) -> tuple[tuple[str, tuple[Tensor, ...]], ...]:
+    return (
+        ("attention_operator", execution.attention_operator_outputs),
+        ("attention_delta", execution.attention_residual_deltas),
+        ("mutation_delta", execution.mutation_residual_deltas),
+        ("mutation_carrier", execution.mutation_carriers),
+        ("final_carrier", (execution.output,)),
+        ("terminal_normalized_output", (execution.normalized_output,)),
+        ("supervised_logits", (execution.logits,)),
+    )
+
+
+def _matched_surface_sha256(
+    execution: fidelity_kernel.SparseWholeModelExecution,
+    batch_ordinal: int,
+) -> str:
+    batch_size = _matched_batch_size()
+    if type(batch_ordinal) is not int or not 0 <= batch_ordinal < batch_size:
+        raise ValueError("matched replay batch ordinal is invalid")
+    payload: list[dict[str, object]] = []
+    for label, tensors in _matched_surface_tensors(execution):
+        if any(tensor.shape[0] != batch_size for tensor in tensors):
+            raise ValueError("matched replay surface batch geometry drifted")
+        payload.append(
+            {
+                "label": label,
+                "tensor_sha256s": [
+                    _tensor_sha256(tensor[batch_ordinal : batch_ordinal + 1])
+                    for tensor in tensors
+                ],
+            }
+        )
+    return _json_sha256(payload, domain=_MATCHED_SURFACE_DOMAIN)
+
+
+def _matched_surface_rows_literal_equal(
+    left: fidelity_kernel.SparseWholeModelExecution,
+    left_ordinal: int,
+    right: fidelity_kernel.SparseWholeModelExecution,
+    right_ordinal: int,
+) -> bool:
+    batch_size = _matched_batch_size()
+    if not all(
+        type(ordinal) is int and 0 <= ordinal < batch_size
+        for ordinal in (left_ordinal, right_ordinal)
+    ):
+        raise ValueError("matched replay comparison ordinal is invalid")
+    left_surfaces = _matched_surface_tensors(left)
+    right_surfaces = _matched_surface_tensors(right)
+    for (left_label, left_tensors), (right_label, right_tensors) in zip(
+        left_surfaces, right_surfaces, strict=True
+    ):
+        if left_label != right_label or len(left_tensors) != len(right_tensors):
+            return False
+        if any(
+            left_tensor.shape[0] != batch_size
+            or right_tensor.shape[0] != batch_size
+            or not torch.equal(
+                left_tensor[left_ordinal : left_ordinal + 1],
+                right_tensor[right_ordinal : right_ordinal + 1],
+            )
+            for left_tensor, right_tensor in zip(
+                left_tensors, right_tensors, strict=True
+            )
+        ):
+            return False
+    return True
+
+
 @dataclass(slots=True)
 class AttentionEdgeFidelityRuntime:
     atlas: AttentionEdgeAtlasReport
@@ -4091,13 +4805,11 @@ class AttentionEdgeFidelityRuntime:
             factors.allowed_mask[:, None, :, :].expand_as(factors.probabilities)
             for factors in route_tensors
         )
-        dense = fidelity_kernel.replay_exact_with_attention_masks(
-            executor,
-            row.batch.model_inputs["input_ids"],
-            row.sequence,
-            all_route_masks,
-            renormalize_rows=torch.zeros(1, dtype=torch.bool),
-            egress_query_ordinal=supervised_query,
+        dense = _run_batch1_all_routes_dense_replay(
+            executor=executor,
+            input_ids=row.batch.model_inputs["input_ids"],
+            sequence=row.sequence,
+            all_route_masks=all_route_masks,
         )
         operator_parity = all(
             torch.equal(actual, expected.reference_operator_output)
@@ -4129,7 +4841,10 @@ class AttentionEdgeFidelityRuntime:
                 strict=True,
             )
         )
-        dense_valid = dense.logits[:, 0, :]
+        # Literal parity requires the same full-sequence tied egress shape as
+        # the baseline executor.  Projecting only the supervised row selects
+        # a different CPU GEMM kernel and changes otherwise-identical logits.
+        dense_valid = dense.logits[:, supervised_query, :]
         dense_nll = float(
             F.cross_entropy(
                 dense_valid,
@@ -4180,35 +4895,161 @@ class AttentionEdgeFidelityRuntime:
             ATTENTION_EDGE_FIDELITY_RANDOM_SALTS
         ):
             raise RuntimeError("deterministic random replicate catalogs collided")
-        batched_masks = tuple(
-            torch.cat(
-                [condition_masks[index][layer] for index in range(len(conditions))],
-                dim=0,
-            )
-            for layer in range(GEMMA3_LAYER_COUNT)
-        )
-        renormalize = torch.tensor(
+        condition_renormalize = torch.tensor(
             [
                 condition.variant == "renormalized_sparse_attention"
                 for condition in conditions
             ],
             dtype=torch.bool,
         )
-        sparse = fidelity_kernel.replay_exact_with_attention_masks(
-            executor,
-            row.batch.model_inputs["input_ids"].repeat(len(conditions), 1),
-            row.sequence,
-            batched_masks,
-            renormalize_rows=renormalize,
-            egress_query_ordinal=supervised_query,
+        control_replay = _run_batch53_attention_replay(
+            executor=executor,
+            input_ids=row.batch.model_inputs["input_ids"],
+            sequence=row.sequence,
+            condition_masks=tuple(all_route_masks for _ in conditions),
+            condition_renormalize_rows=torch.zeros(
+                len(conditions), dtype=torch.bool
+            ),
+            supervised_query=supervised_query,
         )
-        sparse_valid = sparse.logits[:, 0, :].detach()
-        sparse_nlls = F.cross_entropy(
-            sparse_valid,
-            torch.full((len(conditions),), target, dtype=torch.int64),
+        sparse_replay = _run_batch53_attention_replay(
+            executor=executor,
+            input_ids=row.batch.model_inputs["input_ids"],
+            sequence=row.sequence,
+            condition_masks=condition_masks,
+            condition_renormalize_rows=condition_renormalize,
+            supervised_query=supervised_query,
+        )
+        matched_control_receipts = tuple(
+            _matched_surface_sha256(control_replay, index)
+            for index in range(len(conditions))
+        )
+        matched_control_catalog_sha256 = _json_sha256(
+            list(matched_control_receipts),
+            domain=_MATCHED_SURFACE_DOMAIN,
+        )
+        control_valid = control_replay.logits[:, 0, :].detach()
+        sparse_valid = sparse_replay.logits[:, 0, :].detach()
+        if control_valid.shape != sparse_valid.shape or (
+            control_valid.shape[0] != len(conditions)
+        ):
+            raise RuntimeError("paired batch53 replay omitted a condition")
+        repeated_targets = torch.full(
+            (len(conditions),), target, dtype=torch.int64
+        )
+        control_nlls = F.cross_entropy(
+            control_valid,
+            repeated_targets,
             reduction="none",
         ).to(torch.float64)
-        baseline_top1 = int(baseline_valid.argmax(dim=-1).item())
+        sparse_nlls = F.cross_entropy(
+            sparse_valid,
+            repeated_targets,
+            reduction="none",
+        ).to(torch.float64)
+        native_top1 = int(baseline_valid.argmax(dim=-1).item())
+        control_top1s = control_valid.argmax(dim=-1)
+        control_nll_values = tuple(
+            float(control_nlls[index].item())
+            for index in range(len(conditions))
+        )
+        sparse_nll_values = tuple(
+            float(sparse_nlls[index].item())
+            for index in range(len(conditions))
+        )
+        native_to_matched_absolute_nll_deltas = tuple(
+            abs(value - baseline_nll) for value in control_nll_values
+        )
+        native_to_matched_valid_logit_max_abs_errors = tuple(
+            float(
+                (control_valid[index] - baseline_valid[0])
+                .abs()
+                .max()
+                .item()
+            )
+            for index in range(len(conditions))
+        )
+        native_centered_logits = baseline_valid[0].to(torch.float64)
+        native_centered_logits = (
+            native_centered_logits - native_centered_logits.mean()
+        )
+        control_centered_logits = control_valid.to(torch.float64)
+        control_centered_logits = control_centered_logits - (
+            control_centered_logits.mean(dim=-1, keepdim=True)
+        )
+        native_to_matched_centered_logit_nrmses = tuple(
+            _stats(native_centered_logits, control_centered_logits[index]).nrmse
+            for index in range(len(conditions))
+        )
+        valid_hidden_mask = row.sequence.query_valid_mask[0].unsqueeze(-1)
+        valid_hidden_mask = valid_hidden_mask.expand_as(
+            observed.execution.output[0]
+        )
+        native_valid_carrier = observed.execution.output[0].masked_select(
+            valid_hidden_mask
+        )
+        native_to_matched_final_carrier_nrmses = tuple(
+            _stats(
+                native_valid_carrier,
+                control_replay.output[index].masked_select(valid_hidden_mask),
+            ).nrmse
+            for index in range(len(conditions))
+        )
+        matched_control_diagnostics = tuple(
+            AttentionEdgeFidelityMatchedControlDiagnostic(
+                condition=condition,
+                matched_control_receipt_sha256=matched_control_receipts[index],
+                native_to_matched_valid_logit_max_abs_error=(
+                    native_to_matched_valid_logit_max_abs_errors[index]
+                ),
+                absolute_nll_delta=(
+                    native_to_matched_absolute_nll_deltas[index]
+                ),
+                centered_logit_nrmse=(
+                    native_to_matched_centered_logit_nrmses[index]
+                ),
+                final_carrier_nrmse=(
+                    native_to_matched_final_carrier_nrmses[index]
+                ),
+                native_top1_parity_passed=(
+                    int(control_top1s[index].item()) == native_top1
+                ),
+            )
+            for index, condition in enumerate(conditions)
+        )
+        matched_control_diagnostic_catalog_sha256 = (
+            _matched_control_diagnostic_catalog_sha256(
+                matched_control_diagnostics
+            )
+        )
+        native_to_matched_valid_logit_max_abs_error = max(
+            item.native_to_matched_valid_logit_max_abs_error
+            for item in matched_control_diagnostics
+        )
+        native_to_matched_nll_max_abs_delta = max(
+            item.absolute_nll_delta for item in matched_control_diagnostics
+        )
+        native_to_matched_centered_logit_max_nrmse = max(
+            item.centered_logit_nrmse for item in matched_control_diagnostics
+        )
+        native_to_matched_final_carrier_max_nrmse = max(
+            item.final_carrier_nrmse for item in matched_control_diagnostics
+        )
+        matched_controls_native_top1_parity = all(
+            item.native_top1_parity_passed
+            for item in matched_control_diagnostics
+        )
+        if not matched_controls_native_top1_parity:
+            raise RuntimeError("matched all-routes controls changed native top1")
+        _validate_matched_control_bounds(
+            maximum_absolute_nll_delta=native_to_matched_nll_max_abs_delta,
+            maximum_centered_logit_nrmse=(
+                native_to_matched_centered_logit_max_nrmse
+            ),
+            maximum_final_carrier_nrmse=(
+                native_to_matched_final_carrier_max_nrmse
+            ),
+        )
 
         measurements: list[AttentionEdgeFidelityMeasurement] = []
         valid_operator = row.sequence.query_valid_mask.unsqueeze(-1)
@@ -4278,9 +5119,9 @@ class AttentionEdgeFidelityRuntime:
                 local_operator_stats.append(local_stats)
                 local_delta_stats.append(delta_stats)
             logits_stats = _stats(
-                baseline_valid[0], sparse_valid[condition_index]
+                control_valid[condition_index], sparse_valid[condition_index]
             )
-            baseline_centered = baseline_valid[0].to(torch.float64)
+            baseline_centered = control_valid[condition_index].to(torch.float64)
             baseline_centered = baseline_centered - baseline_centered.mean(
                 dim=-1, keepdim=True
             )
@@ -4292,36 +5133,40 @@ class AttentionEdgeFidelityRuntime:
                 baseline_centered,
                 sparse_centered,
             )
-            valid_hidden_mask = row.sequence.query_valid_mask[0].unsqueeze(-1)
-            valid_hidden_mask = valid_hidden_mask.expand_as(
-                observed.execution.output[0]
-            )
             carrier_stats = _stats(
-                observed.execution.output[0].masked_select(valid_hidden_mask),
-                sparse.output[condition_index].masked_select(valid_hidden_mask),
-            )
-            supervised_carrier_stats = _stats(
-                observed.execution.output[0, supervised_query],
-                sparse.output[condition_index, supervised_query],
-            )
-            terminal_stats = _stats(
-                observed.execution.normalized_output[0].masked_select(
+                control_replay.output[condition_index].masked_select(
                     valid_hidden_mask
                 ),
-                sparse.normalized_output[condition_index].masked_select(
+                sparse_replay.output[condition_index].masked_select(
+                    valid_hidden_mask
+                ),
+            )
+            supervised_carrier_stats = _stats(
+                control_replay.output[condition_index, supervised_query],
+                sparse_replay.output[condition_index, supervised_query],
+            )
+            terminal_stats = _stats(
+                control_replay.normalized_output[condition_index].masked_select(
+                    valid_hidden_mask
+                ),
+                sparse_replay.normalized_output[condition_index].masked_select(
                     valid_hidden_mask
                 ),
             )
             supervised_terminal_stats = _stats(
-                observed.execution.normalized_output[0, supervised_query],
-                sparse.normalized_output[condition_index, supervised_query],
+                control_replay.normalized_output[
+                    condition_index, supervised_query
+                ],
+                sparse_replay.normalized_output[
+                    condition_index, supervised_query
+                ],
             )
             propagated_stats = tuple(
                 _stats(
-                    baseline_mutation_carriers[boundary][0].masked_select(
-                        valid_hidden_mask
-                    ),
-                    sparse.mutation_carriers[boundary][
+                    control_replay.mutation_carriers[boundary][
+                        condition_index
+                    ].masked_select(valid_hidden_mask),
+                    sparse_replay.mutation_carriers[boundary][
                         condition_index
                     ].masked_select(valid_hidden_mask),
                 )
@@ -4345,6 +5190,9 @@ class AttentionEdgeFidelityRuntime:
                     condition=condition,
                     selection_catalog_sha256=_selection_catalog_sha256(
                         condition_masks[condition_index], condition
+                    ),
+                    matched_control_receipt_sha256=(
+                        matched_control_receipts[condition_index]
                     ),
                     available_route_count=available_count,
                     selected_route_count=selected_count,
@@ -4396,13 +5244,15 @@ class AttentionEdgeFidelityRuntime:
                     ),
                     valid_logit_dot_product=logits_stats.dot_product,
                     metrics=metric_ledger,
-                    baseline_nll=baseline_nll,
-                    sparse_nll=float(sparse_nlls[condition_index].item()),
+                    baseline_nll=control_nll_values[condition_index],
+                    sparse_nll=sparse_nll_values[condition_index],
                     top1_retained=(
                         int(sparse_valid[condition_index].argmax().item())
-                        == baseline_top1
+                        == int(control_top1s[condition_index].item())
                     ),
-                    baseline_target_correct=(baseline_top1 == target),
+                    baseline_target_correct=(
+                        int(control_top1s[condition_index].item()) == target
+                    ),
                     sparse_target_correct=(
                         int(sparse_valid[condition_index].argmax().item())
                         == target
@@ -4429,6 +5279,37 @@ class AttentionEdgeFidelityRuntime:
             layer_extraction_sha256s=tuple(item.sha256 for item in extractions),
             dense_replay_valid_logits_sha256=_tensor_sha256(dense_valid),
             baseline_valid_logits_sha256=_tensor_sha256(baseline_valid),
+            matched_batch_size=_matched_batch_size(),
+            matched_control_catalog_sha256=matched_control_catalog_sha256,
+            matched_control_diagnostics=matched_control_diagnostics,
+            matched_control_diagnostic_catalog_sha256=(
+                matched_control_diagnostic_catalog_sha256
+            ),
+            native_baseline_nll=baseline_nll,
+            matched_controls_native_top1_parity_passed=(
+                matched_controls_native_top1_parity
+            ),
+            native_to_matched_valid_logit_max_abs_error=(
+                native_to_matched_valid_logit_max_abs_error
+            ),
+            native_to_matched_nll_max_abs_delta=(
+                native_to_matched_nll_max_abs_delta
+            ),
+            native_to_matched_centered_logit_max_nrmse=(
+                native_to_matched_centered_logit_max_nrmse
+            ),
+            native_to_matched_final_carrier_max_nrmse=(
+                native_to_matched_final_carrier_max_nrmse
+            ),
+            matched_control_nll_max_abs_delta_bound=(
+                ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA
+            ),
+            matched_control_centered_logit_nrmse_bound=(
+                ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+            ),
+            matched_control_final_carrier_nrmse_bound=(
+                ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+            ),
             attention_operator_catalog_sha256=operator_catalog,
             attention_delta_catalog_sha256=delta_catalog,
             mutation_delta_catalog_sha256=mutation_delta_catalog,
@@ -4541,8 +5422,12 @@ class AttentionEdgeFidelityRuntime:
 def build_deterministic_attention_edge_fidelity_fixture() -> AttentionEdgeFidelityReport:
     """Build a model-free, fully serializable schema/algebra fixture."""
 
+    native_fixture_nll = 2.0
     measurements: list[AttentionEdgeFidelityMeasurement] = []
-    for condition in _conditions():
+    for condition_index, condition in enumerate(_conditions()):
+        matched_fixture_nll = native_fixture_nll + 1e-7 * (
+            condition_index + 1
+        )
         fraction = condition.k / max(ATTENTION_EDGE_FIDELITY_K_VALUES)
         variant_penalty = (
             0.8
@@ -4575,6 +5460,13 @@ def build_deterministic_attention_edge_fidelity_fixture() -> AttentionEdgeFideli
                 condition=condition,
                 selection_catalog_sha256=_json_sha256(
                     selector, domain=_SELECTION_DOMAIN
+                ),
+                matched_control_receipt_sha256=_json_sha256(
+                    {
+                        "fixture_matched_control_ordinal": condition_index,
+                        "condition": condition.to_dict(),
+                    },
+                    domain=_MATCHED_SURFACE_DOMAIN,
                 ),
                 available_route_count=1800,
                 selected_route_count=18 * condition.k,
@@ -4620,13 +5512,38 @@ def build_deterministic_attention_edge_fidelity_fixture() -> AttentionEdgeFideli
                 ),
                 valid_logit_dot_product=vector_stats.dot_product,
                 metrics=metrics,
-                baseline_nll=2.0,
-                sparse_nll=2.0 + (0.5 / condition.k) * variant_penalty,
+                baseline_nll=matched_fixture_nll,
+                sparse_nll=(
+                    matched_fixture_nll
+                    + (0.5 / condition.k) * variant_penalty
+                ),
                 top1_retained=condition.k >= 4,
                 baseline_target_correct=True,
                 sparse_target_correct=condition.k >= 4,
             )
         )
+    matched_control_diagnostics = tuple(
+        AttentionEdgeFidelityMatchedControlDiagnostic(
+            condition=measurement.condition,
+            matched_control_receipt_sha256=(
+                measurement.matched_control_receipt_sha256
+            ),
+            native_to_matched_valid_logit_max_abs_error=(
+                0.001 * (condition_index + 1) / len(measurements)
+            ),
+            absolute_nll_delta=abs(
+                measurement.baseline_nll - native_fixture_nll
+            ),
+            centered_logit_nrmse=(
+                2e-6 * (condition_index + 1) / len(measurements)
+            ),
+            final_carrier_nrmse=(
+                4e-8 * (condition_index + 1) / len(measurements)
+            ),
+            native_top1_parity_passed=True,
+        )
+        for condition_index, measurement in enumerate(measurements)
+    )
     digest = "1" * 64
     fixture_attention_operator_sha256s = tuple(
         hashlib.sha256(f"fixture-attention-operator-{index}".encode()).hexdigest()
@@ -4652,6 +5569,41 @@ def build_deterministic_attention_edge_fidelity_fixture() -> AttentionEdgeFideli
         ),
         dense_replay_valid_logits_sha256="3" * 64,
         baseline_valid_logits_sha256="3" * 64,
+        matched_batch_size=_matched_batch_size(),
+        matched_control_catalog_sha256=_json_sha256(
+            [item.matched_control_receipt_sha256 for item in measurements],
+            domain=_MATCHED_SURFACE_DOMAIN,
+        ),
+        matched_control_diagnostics=matched_control_diagnostics,
+        matched_control_diagnostic_catalog_sha256=(
+            _matched_control_diagnostic_catalog_sha256(
+                matched_control_diagnostics
+            )
+        ),
+        native_baseline_nll=native_fixture_nll,
+        matched_controls_native_top1_parity_passed=True,
+        native_to_matched_valid_logit_max_abs_error=max(
+            item.native_to_matched_valid_logit_max_abs_error
+            for item in matched_control_diagnostics
+        ),
+        native_to_matched_nll_max_abs_delta=max(
+            item.absolute_nll_delta for item in matched_control_diagnostics
+        ),
+        native_to_matched_centered_logit_max_nrmse=max(
+            item.centered_logit_nrmse for item in matched_control_diagnostics
+        ),
+        native_to_matched_final_carrier_max_nrmse=max(
+            item.final_carrier_nrmse for item in matched_control_diagnostics
+        ),
+        matched_control_nll_max_abs_delta_bound=(
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA
+        ),
+        matched_control_centered_logit_nrmse_bound=(
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+        ),
+        matched_control_final_carrier_nrmse_bound=(
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+        ),
         attention_operator_catalog_sha256=_json_sha256(
             {
                 "label": "attention_operator",
@@ -4973,6 +5925,21 @@ def build_attention_edge_fidelity_preflight(
         "random_salts": list(ATTENTION_EDGE_FIDELITY_RANDOM_SALTS),
         "random_seed_id": ATTENTION_EDGE_FIDELITY_RANDOM_SEED_ID,
         "condition_count": len(_conditions()),
+        "matched_batch_size": _matched_batch_size(),
+        "paired_batch53_all_routes_control_required": True,
+        "ordinal_matched_control_metric_reference": (
+            "propagated_and_endpoint_surfaces"
+        ),
+        "native_teacher_metric_reference": "local_operator_and_postnorm_delta",
+        "matched_control_nll_max_abs_delta_bound": (
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA
+        ),
+        "matched_control_centered_logit_nrmse_bound": (
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+        ),
+        "matched_control_final_carrier_nrmse_bound": (
+            ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+        ),
         "global_k_across_heads_and_keys": True,
         "fisher_ranker_is_same_row_target_gradient_oracle": True,
         "selection_masks_frozen_before_intervention": True,
@@ -5026,6 +5993,25 @@ def _compact_summary(report: AttentionEdgeFidelityReport) -> dict[str, object]:
         "report_sha256": report.report_sha256,
         "row_count": report.row_count,
         "condition_count": len(report.cells),
+        "matched_batch_control": {
+            "batch_size": _matched_batch_size(),
+            "maximum_native_to_matched_valid_logit_error": max(
+                receipt.native_to_matched_valid_logit_max_abs_error
+                for receipt in report.row_receipts
+            ),
+            "maximum_native_to_matched_nll_delta": max(
+                receipt.native_to_matched_nll_max_abs_delta
+                for receipt in report.row_receipts
+            ),
+            "maximum_native_to_matched_centered_logit_nrmse": max(
+                receipt.native_to_matched_centered_logit_max_nrmse
+                for receipt in report.row_receipts
+            ),
+            "maximum_native_to_matched_final_carrier_nrmse": max(
+                receipt.native_to_matched_final_carrier_max_nrmse
+                for receipt in report.row_receipts
+            ),
+        },
         "fisher_k8_unnormalized": {
             "operator_nrmse": fisher_k8.operator_nrmse,
             "operator_cosine": fisher_k8.operator_cosine,

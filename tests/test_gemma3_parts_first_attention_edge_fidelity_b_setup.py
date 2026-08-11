@@ -318,6 +318,16 @@ def test_primary_policy_is_gradient_free_global_k8_zero_fill() -> None:
     assert primary["selected_route_count_formula"] == (
         "min(8,allowed_global_head_key_route_count)"
     )
+    assert primary["sequence_length_domain"] == (
+        "integer_1_through_128_inclusive"
+    )
+    assert primary["row_available_route_count_formula"] == (
+        "18*4*sum_q_0_to_L_minus_1(q+1)=36*L*(L+1)"
+    )
+    assert primary["row_selected_route_count_formula"] == (
+        "18*sum_q_0_to_L_minus_1(min(8,4*(q+1)))=18*(8*L-4)"
+    )
+    assert primary["row_route_count_formula_domain"] == "1<=L<=128"
     assert primary["query_ordinal_zero_allowed_route_count"] == 4
     assert primary["query_ordinal_zero_selected_route_count"] == 4
     assert setup.primary_selected_route_count(4) == 4
@@ -410,6 +420,51 @@ def test_all_six_primary_B_gates_are_exact() -> None:
         "with_zero_fill_without_renormalization"
     )
     assert metrics["teacher_operator_NRMSE_uses_dynamic_sparse_state"] is False
+    assert metrics["delta_NLL"] == (
+        "sparse_target_only_correct_target_full_vocab_NLL_minus_"
+        "matched_dense_target_only_correct_target_full_vocab_NLL"
+    )
+    assert metrics["top1_agreement"] == (
+        "sparse_target_only_full_vocab_argmax_equals_matched_dense_"
+        "target_only_full_vocab_argmax"
+    )
+    assert metrics["native_full_sequence_egress_role"] == (
+        "literal_native_all_route_control_only"
+    )
+    assert metrics["gated_logit_metric_reference"] == (
+        "matched_dense_target_only_tied_egress"
+    )
+    assert metrics["matched_target_only_egress_control"] == {
+        "dense_input": "literal_dense_normalized_output_supervised_row",
+        "sparse_input": "dynamic_sparse_normalized_output_supervised_row",
+        "batch_size": 1,
+        "query_length": 1,
+        "dtype": "float32",
+        "device": "cpu",
+        "identical_tied_weights_and_final_softcap": True,
+        "sparse_independent_reprojection_must_match": True,
+        "all_row_validity_bounds": {
+            "maximum_absolute_native_to_matched_target_only_delta_NLL_max": (
+                0.0001
+            ),
+            "maximum_native_to_matched_target_only_centered_logit_NRMSE_max": (
+                0.0001
+            ),
+        },
+        "equality_at_validity_bound_passes": True,
+        "validity_failure_semantics": (
+            "abort_before_interpreting_the_six_sparse_fidelity_gates"
+        ),
+    }
+    assert metrics["native_to_matched_target_only_drift_diagnostics"] == [
+        "correct_target_delta_NLL",
+        "centered_logit_NRMSE",
+        "full_vocab_top1_agreement",
+    ]
+    assert metrics["native_to_matched_target_only_argmax_mismatch_aborts"]
+    assert metrics[
+        "native_to_matched_target_only_quantitative_bound_failure_aborts"
+    ]
     assert metrics["dynamic_sparse_propagation_is_measured_separately_by"] == [
         "terminal_supervised_vector_cosine",
         "centered_logit_NRMSE",
@@ -418,6 +473,9 @@ def test_all_six_primary_B_gates_are_exact() -> None:
     ]
     assert aggregation["all_six_gates_are_conjunctive"]
     assert aggregation["equality_at_threshold_passes"]
+    assert aggregation["Wilson_top1_lower_bound"]["success"] == (
+        "sparse_and_matched_dense_target_only_argmax_token_ordinals_are_equal"
+    )
 
 
 def test_bootstrap_counter_modulo_indices_are_frozen() -> None:

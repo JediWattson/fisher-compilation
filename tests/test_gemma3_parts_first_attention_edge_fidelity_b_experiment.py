@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import hashlib
 import inspect
 import json
+import math
 import os
 from pathlib import Path
 import runpy
@@ -256,8 +258,120 @@ def test_hand_calculated_vector_metrics_and_zero_denominators_abort() -> None:
         b._strict_cosine(torch.zeros(4), torch.ones(4))
 
 
+def test_matched_reference_validity_bounds_pass_at_equality_and_fail_above() -> None:
+    fixture = b.build_deterministic_attention_edge_fidelity_b_fixture()
+    base = b.AttentionEdgeFidelityBRowCapture.from_dict(
+        fixture["row_metrics"][0]
+    )
+    at_bounds = replace(
+        base,
+        native_full_sequence_correct_target_nll=0.0,
+        matched_dense_target_only_correct_target_nll=(
+            b.MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+        ),
+        sparse_target_only_correct_target_nll=0.01,
+        native_to_matched_target_only_centered_logit_nrmse=(
+            b.MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+        ),
+    )
+    assert at_bounds.native_to_matched_target_only_absolute_delta_nll == (
+        b.MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+    )
+
+    above_nll = math.nextafter(
+        b.MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL, math.inf
+    )
+    with pytest.raises(ValueError, match="absolute delta NLL exceeds"):
+        replace(
+            at_bounds,
+            matched_dense_target_only_correct_target_nll=above_nll,
+        )
+    above_nrmse = math.nextafter(
+        b.MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE, math.inf
+    )
+    with pytest.raises(ValueError, match="centered logit NRMSE exceeds"):
+        replace(
+            at_bounds,
+            native_to_matched_target_only_centered_logit_nrmse=above_nrmse,
+        )
+
+    at_aggregate_bounds = {
+        "maximum_absolute_native_to_matched_target_only_delta_NLL": (
+            b.MATCHED_TARGET_ONLY_MAX_ABSOLUTE_DELTA_NLL
+        ),
+        "maximum_native_to_matched_target_only_centered_logit_NRMSE": (
+            b.MATCHED_TARGET_ONLY_MAX_CENTERED_LOGIT_NRMSE
+        ),
+    }
+    assert all(
+        outcome["passed"]
+        for outcome in b._matched_target_only_reference_control_outcomes(
+            at_aggregate_bounds
+        )
+    )
+    over_aggregate_bounds = dict(at_aggregate_bounds)
+    over_aggregate_bounds[
+        "maximum_native_to_matched_target_only_centered_logit_NRMSE"
+    ] = above_nrmse
+    assert not all(
+        outcome["passed"]
+        for outcome in b._matched_target_only_reference_control_outcomes(
+            over_aggregate_bounds
+        )
+    )
+
+
+def test_row_route_counts_are_exactly_derived_from_sequence_length() -> None:
+    assert b._expected_row_route_counts(1) == (72, 72)
+    assert b._expected_row_route_counts(8) == (2_592, 1_080)
+    assert b._expected_row_route_counts(128) == (
+        36 * 128 * 129,
+        18 * (8 * 128 - 4),
+    )
+    with pytest.raises(ValueError, match="integer >= 1"):
+        b._expected_row_route_counts(0)
+    with pytest.raises(ValueError, match="128-token limit"):
+        b._expected_row_route_counts(129)
+
+    fixture = b.build_deterministic_attention_edge_fidelity_b_fixture()
+    base = b.AttentionEdgeFidelityBRowCapture.from_dict(
+        fixture["row_metrics"][0]
+    )
+    with pytest.raises(ValueError, match="available B route count"):
+        replace(base, available_route_count=base.available_route_count + 1)
+    with pytest.raises(ValueError, match="selected B route count"):
+        replace(base, selected_route_count=1)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "native_full_sequence_correct_target_nll",
+        "matched_dense_target_only_correct_target_nll",
+        "sparse_target_only_correct_target_nll",
+    ),
+)
+def test_row_rejects_negative_full_vocabulary_nll(field: str) -> None:
+    fixture = b.build_deterministic_attention_edge_fidelity_b_fixture()
+    base = b.AttentionEdgeFidelityBRowCapture.from_dict(
+        fixture["row_metrics"][0]
+    )
+    with pytest.raises(ValueError, match="must be nonnegative"):
+        replace(base, **{field: -0.001})
+
+
 def test_teacher_operator_gate_is_local_teacher_forced_not_dynamic() -> None:
     protocol = b._protocol_receipt()
+    assert protocol["sequence_length_domain"] == (
+        "integer_1_through_128_inclusive"
+    )
+    assert protocol["row_available_route_count_formula"] == (
+        "18*4*sum_q_0_to_L_minus_1(q+1)=36*L*(L+1)"
+    )
+    assert protocol["row_selected_route_count_formula"] == (
+        "18*sum_q_0_to_L_minus_1(min(8,4*(q+1)))=18*(8*L-4)"
+    )
+    assert protocol["row_route_count_formula_domain"] == "1<=L<=128"
     assert protocol["dense_teacher_operator_NRMSE_semantics"] == (
         "teacher_forced_local_dense_baseline_input_P_V_apply_frozen_mask_"
         "zero_fill_compare_operator_over_valid_queries"
@@ -270,13 +384,43 @@ def test_teacher_operator_gate_is_local_teacher_forced_not_dynamic() -> None:
         "full_vocab_top1_agreement",
     ]
     assert protocol["centered_logit_NRMSE_semantics"] == (
-        "norm((sparse-mean_sparse)-(native-mean_native))_divided_by_"
-        "norm(native-mean_native)_at_supervised_query"
+        "norm((sparse_target_only-mean_sparse)-(matched_dense_target_only-"
+        "mean_matched_dense))_divided_by_norm(matched_dense_target_only-"
+        "mean_matched_dense)_at_supervised_query"
     )
     assert protocol["dense_control_and_sparse_replay_use_separate_calls"] is True
     assert protocol["dense_control_execution_batch_size"] == 1
     assert protocol["sparse_execution_batch_size"] == 1
     assert protocol["cross_batch_literal_parity_assumed"] is False
+    assert protocol["native_full_sequence_egress_role"] == (
+        "literal_native_all_route_control_only"
+    )
+    assert protocol["gated_logit_metric_reference"] == (
+        "matched_dense_target_only_tied_egress"
+    )
+    assert protocol["matched_target_only_egress_batch_size"] == 1
+    assert protocol["matched_target_only_egress_query_length"] == 1
+    assert protocol["matched_target_only_tied_weights_and_softcap_identical"]
+    assert protocol[
+        "sparse_target_only_egress_independent_reprojection_must_match"
+    ]
+    assert protocol[
+        "native_to_matched_target_only_argmax_agreement_required"
+    ]
+    assert protocol[
+        "native_to_matched_target_only_all_row_validity_bounds"
+    ] == {
+        "maximum_absolute_native_to_matched_target_only_delta_NLL_max": 0.0001,
+        "maximum_native_to_matched_target_only_centered_logit_NRMSE_max": (
+            0.0001
+        ),
+    }
+    assert protocol[
+        "native_to_matched_target_only_equality_at_validity_bound_passes"
+    ]
+    assert protocol[
+        "native_to_matched_target_only_validity_failure_semantics"
+    ] == "abort_before_interpreting_the_six_sparse_fidelity_gates"
 
 
 def test_identical_masks_prove_batch2_drift_but_separate_batch1_is_literal() -> None:
@@ -309,6 +453,26 @@ def test_identical_masks_prove_batch2_drift_but_separate_batch1_is_literal() -> 
     )
     assert torch.equal(dense.output, baseline.output)
     assert torch.equal(sparse.output, baseline.output)
+    assert dense.logits.shape == baseline.logits.shape == (1, 3, 9)
+    assert sparse.logits.shape == (1, 1, 9)
+    assert torch.equal(dense.logits, baseline.logits)
+    assert torch.equal(sparse.logits[:, 0], baseline.logits[:, 2])
+    dense_target_only = b._target_only_egress_from_normalized(
+        executor, dense.normalized_output, 2
+    )
+    sparse_target_only = b._target_only_egress_from_normalized(
+        executor, sparse.normalized_output, 2
+    )
+    expected_dense_target_only = executor.lexical.egress(
+        dense.normalized_output[:, 2:3]
+    )
+    expected_dense_target_only = (
+        torch.tanh(expected_dense_target_only / 9.0) * 9.0
+    )
+    assert dense_target_only.shape == sparse_target_only.shape == (1, 1, 9)
+    assert torch.equal(dense_target_only, expected_dense_target_only)
+    assert torch.equal(sparse_target_only, sparse.logits)
+    assert torch.equal(dense_target_only, sparse_target_only)
 
     batch_two = b.fidelity_kernel.replay_exact_with_attention_masks(
         executor,
@@ -322,6 +486,34 @@ def test_identical_masks_prove_batch2_drift_but_separate_batch1_is_literal() -> 
     assert float(
         (batch_two.output[0] - baseline.output[0]).abs().max().item()
     ) == 0.03125
+
+
+def test_target_only_control_catches_shape_sensitive_linear_drift() -> None:
+    class _Lexical:
+        def __init__(self, weight: torch.Tensor) -> None:
+            self.weight = weight
+
+        def egress(self, values: torch.Tensor) -> torch.Tensor:
+            return torch.nn.functional.linear(values, self.weight)
+
+    class _Executor:
+        def __init__(self, weight: torch.Tensor) -> None:
+            self.lexical = _Lexical(weight)
+            self.final_logit_softcap = None
+
+    generator = torch.Generator().manual_seed(260_811)
+    normalized = torch.randn(1, 7, 640, generator=generator)
+    weight = torch.randn(2_048, 640, generator=generator)
+    executor = _Executor(weight)
+    full_sequence = executor.lexical.egress(normalized)
+    target_only = b._target_only_egress_from_normalized(
+        executor, normalized, 5
+    )
+    direct_target_only = executor.lexical.egress(normalized[:, 5:6])
+
+    assert torch.equal(target_only, direct_target_only)
+    assert not torch.equal(full_sequence[:, 5:6], target_only)
+    assert int((full_sequence[:, 5:6] != target_only).sum().item()) > 0
 
 
 def test_dense_residual_carriers_are_rebuilt_from_lexical_plus_deltas() -> None:
@@ -356,19 +548,56 @@ def test_fixture_is_full_balanced_and_all_gates_pass(
     assert fixture_report["panel_binding"]["row_family_sequence_sha256"] == (
         b._row_family_sequence_sha256(b.EXPECTED_B_ROW_FAMILIES)
     )
+    matched_row = fixture_report["row_metrics"][1]
+    assert matched_row["delta_nll"] == (
+        matched_row["sparse_target_only_correct_target_nll"]
+        - matched_row["matched_dense_target_only_correct_target_nll"]
+    )
+    assert matched_row["delta_nll"] != (
+        matched_row["sparse_target_only_correct_target_nll"]
+        - matched_row["native_full_sequence_correct_target_nll"]
+    )
     exact = fixture_report["exact_control_receipt"]
     assert exact["separate_batch1_all_route_replay_count"] == 60
     assert exact["separate_batch1_sparse_replay_count"] == 60
     assert exact["dense_and_sparse_logically_paired_row_count"] == 60
+    assert exact["matched_dense_target_only_egress_projection_count"] == 60
+    assert exact["matched_sparse_target_only_egress_projection_count"] == 60
+    assert exact[
+        "sparse_target_only_egress_reprojection_literal_parity_count"
+    ] == 60
+    assert exact[
+        "native_to_matched_target_only_argmax_agreement_count"
+    ] == 60
+    aggregates = fixture_report["aggregate_statistics"]
+    assert aggregates[
+        "native_to_matched_target_only_top1_agreement_count"
+    ] == 60
+    assert aggregates[
+        "maximum_absolute_native_to_matched_target_only_delta_NLL"
+    ] >= 0.0
+    assert aggregates[
+        "maximum_native_to_matched_target_only_centered_logit_NRMSE"
+    ] >= 0.0
+    reference_controls = fixture_report[
+        "matched_target_only_reference_control_outcomes"
+    ]
+    assert len(reference_controls) == 2
+    assert all(control["passed"] for control in reference_controls)
+    assert fixture_report[
+        "all_matched_target_only_reference_controls_passed"
+    ]
     assert len(fixture_report["gate_outcomes"]) == 6
     assert fixture_report["all_six_preregistered_gates_passed"]
     assert all(gate["passed"] for gate in fixture_report["gate_outcomes"])
     assert fixture_report["claim_boundary"] == {
         "passing_supports": (
             "the_frozen_gradient_free_A_motif_global_K8_cap_zero_fill_procedure_"
-            "preserved_behavior_on_this_B_panel"
+            "preserved_measured_behavior_under_the_matched_target_only_egress_"
+            "control_on_this_B_panel"
         ),
         "bounded_to_this_B_panel": True,
+        "matched_target_only_reference_validity_required": True,
         "semantic_interpretation_claimed": False,
         "selection_optimality_claimed": False,
         "compression_qualified": False,
@@ -438,11 +667,29 @@ def test_strict_roundtrip_rebuilds_every_derived_ledger(
         ),
         (
             (
+                "row_metrics",
+                0,
+                "native_to_matched_target_only_absolute_delta_nll",
+            ),
+            4.0,
+            "native-to-matched target-only absolute delta NLL algebra",
+        ),
+        (
+            (
                 "aggregate_statistics",
                 "empirical_absolute_delta_NLL_p90",
             ),
             4.0,
             "aggregate statistics",
+        ),
+        (
+            (
+                "matched_target_only_reference_control_outcomes",
+                0,
+                "passed",
+            ),
+            False,
+            "reference controls",
         ),
         (("gate_outcomes", 0, "passed"), False, "gate outcomes"),
         (("claim_boundary", "compression_qualified"), True, "claim boundary"),
@@ -477,6 +724,67 @@ def test_report_contains_no_prompt_choice_target_or_tensor_values(
     assert '"probabilities"' not in encoded
     assert '"gradients"' not in encoded
     assert fixture_report["panel_binding"]["correct_target_ordinal_persisted"] is False
+
+
+def test_native_to_matched_target_only_argmax_disagreement_rejects(
+    fixture_report: dict[str, object],
+) -> None:
+    row = copy.deepcopy(fixture_report["row_metrics"][0])
+    row["native_to_matched_target_only_top1_agreement"] = False
+    payload = dict(row)
+    payload.pop("row_sha256")
+    row["row_sha256"] = b._digest(b._ROW_DOMAIN, payload)
+    with pytest.raises(
+        ValueError, match="native and matched target-only dense argmax"
+    ):
+        b.AttentionEdgeFidelityBRowCapture.from_dict(row)
+
+
+def test_full_report_coordinated_rehash_cannot_hide_negative_nll(
+    fixture_report: dict[str, object],
+) -> None:
+    changed = copy.deepcopy(fixture_report)
+    row = changed["row_metrics"][0]
+    row["native_full_sequence_correct_target_nll"] -= 3.0
+    row["matched_dense_target_only_correct_target_nll"] -= 3.0
+    row["sparse_target_only_correct_target_nll"] -= 3.0
+    row_payload = dict(row)
+    row_payload.pop("row_sha256")
+    row["row_sha256"] = b._digest(b._ROW_DOMAIN, row_payload)
+    report_payload = dict(changed)
+    report_payload.pop("report_sha256")
+    changed["report_sha256"] = b._digest(b._REPORT_DOMAIN, report_payload)
+
+    with pytest.raises(ValueError, match="must be nonnegative"):
+        b.validate_attention_edge_fidelity_b_content(changed)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "match"),
+    (
+        ("selected_route_count", 1, "selected B route count"),
+        ("available_route_count", 2_593, "available B route count"),
+    ),
+)
+def test_full_report_coordinated_rehash_cannot_hide_route_geometry_drift(
+    fixture_report: dict[str, object],
+    field: str,
+    replacement: int,
+    match: str,
+) -> None:
+    changed = copy.deepcopy(fixture_report)
+    row = changed["row_metrics"][0]
+    assert row["sequence_length"] == 8
+    row[field] = replacement
+    row_payload = dict(row)
+    row_payload.pop("row_sha256")
+    row["row_sha256"] = b._digest(b._ROW_DOMAIN, row_payload)
+    report_payload = dict(changed)
+    report_payload.pop("report_sha256")
+    changed["report_sha256"] = b._digest(b._REPORT_DOMAIN, report_payload)
+
+    with pytest.raises(ValueError, match=match):
+        b.validate_attention_edge_fidelity_b_content(changed)
 
 
 def test_writer_is_0600_nlink1_strict_reload_and_no_clobber(

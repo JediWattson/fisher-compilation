@@ -4,11 +4,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import runpy
 import stat
 import subprocess
 import sys
 
 import pytest
+import torch
 
 from fisher_graph import gemma3_parts_first_attention_edge_fidelity_experiment as fidelity
 from fisher_graph.gemma3_parts_first_attention_edge_experiment import (
@@ -47,6 +49,9 @@ REPORT_DOMAIN = b"fisher_graph:parts-first-attention-edge-fidelity:v1\0"
 ROW_DOMAIN = b"fisher_graph:parts-first-attention-edge-fidelity-row:v1\0"
 SELECTION_DOMAIN = b"fisher_graph:parts-first-attention-edge-selection:v1\0"
 TENSOR_DOMAIN = b"fisher_graph:parts-first-attention-edge-fidelity-tensor:v1\0"
+MATCHED_DIAGNOSTIC_DOMAIN = (
+    b"fisher_graph:parts-first-attention-edge-fidelity-matched-diagnostic:v1\0"
+)
 
 
 def _canonical(value: object) -> bytes:
@@ -78,6 +83,120 @@ def _rehash_row(value: dict[str, object]) -> None:
     value["row_sha256"] = hashlib.sha256(
         ROW_DOMAIN + _canonical(payload)
     ).hexdigest()
+
+
+def _rehash_matched_control_diagnostic(value: dict[str, object]) -> None:
+    payload = dict(value)
+    payload.pop("diagnostic_sha256")
+    value["diagnostic_sha256"] = hashlib.sha256(
+        MATCHED_DIAGNOSTIC_DOMAIN + _canonical(payload)
+    ).hexdigest()
+
+
+def _rehash_matched_control_diagnostic_catalog(
+    row: dict[str, object],
+) -> None:
+    diagnostics = row["matched_control_diagnostics"]
+    assert isinstance(diagnostics, list)
+    row["matched_control_diagnostic_catalog_sha256"] = hashlib.sha256(
+        MATCHED_DIAGNOSTIC_DOMAIN
+        + _canonical({"diagnostics": diagnostics})
+    ).hexdigest()
+
+
+def test_live_dense_control_preserves_full_sequence_egress_shape() -> None:
+    helpers = runpy.run_path(
+        str(
+            Path(__file__).with_name(
+                "test_gemma3_parts_first_attention_edge_fidelity.py"
+            )
+        )
+    )
+    executor = helpers["_executor"]()
+    sequence = helpers["_sequence"](3)
+    head_count = helpers["HEADS"]
+    input_ids = torch.tensor([[1, 2, 3]], dtype=torch.int64)
+    baseline = executor.forward_components(input_ids, sequence)
+    allowed = torch.tril(torch.ones(3, 3, dtype=torch.bool)).reshape(
+        1, 1, 3, 3
+    )
+    all_routes = tuple(
+        allowed.expand(1, head_count, 3, 3).clone() for _ in range(18)
+    )
+
+    dense = fidelity._run_batch1_all_routes_dense_replay(
+        executor=executor,
+        input_ids=input_ids,
+        sequence=sequence,
+        all_route_masks=all_routes,
+    )
+
+    assert dense.logits.shape == baseline.logits.shape == (1, 3, 9)
+    assert torch.equal(dense.logits, baseline.logits)
+
+
+def test_paired_batch53_controls_remove_row_ordinal_kernel_drift() -> None:
+    helpers = runpy.run_path(
+        str(
+            Path(__file__).with_name(
+                "test_gemma3_parts_first_attention_edge_fidelity.py"
+            )
+        )
+    )
+    executor = helpers["_executor"]()
+    sequence = helpers["_sequence"](3)
+    head_count = helpers["HEADS"]
+    input_ids = torch.tensor([[1, 2, 3]], dtype=torch.int64)
+    allowed = torch.tril(torch.ones(3, 3, dtype=torch.bool)).reshape(
+        1, 1, 3, 3
+    )
+    all_routes = tuple(
+        allowed.expand(1, head_count, 3, 3).clone() for _ in range(18)
+    )
+    sparse_mask = allowed.expand(1, head_count, 3, 3).clone()
+    sparse_mask[:, :, :, 1:] = False
+    sparse_routes = tuple(sparse_mask.clone() for _ in range(18))
+    mixed_masks = [all_routes, *(sparse_routes for _ in range(51)), all_routes]
+    control_masks = [all_routes for _ in range(53)]
+
+    mixed = fidelity._run_batch53_attention_replay(
+        executor=executor,
+        input_ids=input_ids,
+        sequence=sequence,
+        condition_masks=mixed_masks,
+        condition_renormalize_rows=torch.zeros(53, dtype=torch.bool),
+        supervised_query=2,
+    )
+    paired_left = fidelity._run_batch53_attention_replay(
+        executor=executor,
+        input_ids=input_ids,
+        sequence=sequence,
+        condition_masks=control_masks,
+        condition_renormalize_rows=torch.zeros(53, dtype=torch.bool),
+        supervised_query=2,
+    )
+    paired_right = fidelity._run_batch53_attention_replay(
+        executor=executor,
+        input_ids=input_ids,
+        sequence=sequence,
+        condition_masks=control_masks,
+        condition_renormalize_rows=torch.zeros(53, dtype=torch.bool),
+        supervised_query=2,
+    )
+
+    assert mixed.output.shape[0] == 53
+    assert not fidelity._matched_surface_rows_literal_equal(mixed, 0, mixed, 52)
+    assert all(
+        fidelity._matched_surface_rows_literal_equal(
+            paired_left, ordinal, paired_right, ordinal
+        )
+        for ordinal in range(53)
+    )
+    assert all(
+        fidelity._matched_surface_sha256(paired_left, ordinal)
+        == fidelity._matched_surface_sha256(paired_right, ordinal)
+        for ordinal in range(53)
+    )
 
 
 def test_frozen_condition_inventory_and_claim_boundary() -> None:
@@ -142,6 +261,55 @@ def test_fixture_strict_json_round_trip_and_derived_metrics() -> None:
     ) == 36
     assert len(parsed.row_receipts[0].mutation_delta_sha256s) == 36
     assert len(parsed.row_receipts[0].mutation_carrier_sha256s) == 36
+    assert parsed.row_receipts[0].matched_batch_size == 53
+    assert len(parsed.row_receipts[0].matched_control_catalog_sha256) == 64
+    assert all(
+        len(measurement.matched_control_receipt_sha256) == 64
+        for measurement in parsed.row_receipts[0].measurements
+    )
+    assert len(parsed.row_receipts[0].matched_control_diagnostics) == 53
+    assert len(
+        parsed.row_receipts[0].matched_control_diagnostic_catalog_sha256
+    ) == 64
+    assert tuple(
+        diagnostic.condition
+        for diagnostic in parsed.row_receipts[0].matched_control_diagnostics
+    ) == tuple(
+        measurement.condition
+        for measurement in parsed.row_receipts[0].measurements
+    )
+    assert all(
+        diagnostic.matched_control_receipt_sha256
+        == measurement.matched_control_receipt_sha256
+        for diagnostic, measurement in zip(
+            parsed.row_receipts[0].matched_control_diagnostics,
+            parsed.row_receipts[0].measurements,
+            strict=True,
+        )
+    )
+    assert parsed.row_receipts[0].matched_controls_native_top1_parity_passed
+    assert parsed.row_receipts[0].native_to_matched_valid_logit_max_abs_error > 0
+    assert (
+        parsed.row_receipts[0].native_to_matched_valid_logit_max_abs_error
+        == max(
+            diagnostic.native_to_matched_valid_logit_max_abs_error
+            for diagnostic in parsed.row_receipts[0].matched_control_diagnostics
+        )
+    )
+    assert parsed.row_receipts[0].native_to_matched_nll_max_abs_delta == pytest.approx(
+        5.3e-6
+    )
+    assert (
+        parsed.row_receipts[0].native_to_matched_centered_logit_max_nrmse
+        <= fidelity.ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE
+    )
+    assert (
+        parsed.row_receipts[0].native_to_matched_final_carrier_max_nrmse
+        <= fidelity.ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE
+    )
+    assert len(
+        {measurement.baseline_nll for measurement in parsed.row_receipts[0].measurements}
+    ) == 53
     assert parsed.cells[0].metrics.valid_logits.maximum_abs_error >= 0
     assert parsed.cells[0].metrics.centered_valid_logits.element_count > 0
     assert 0 <= parsed.cells[0].baseline_target_accuracy <= 1
@@ -162,6 +330,33 @@ def test_parser_rejects_duplicate_nonfinite_and_unknown_fields() -> None:
     value = report.to_dict()
     value["unknown"] = True
     with pytest.raises(ValueError, match="field inventory"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("native_baseline_nll", "baseline_nll", "sparse_nll"),
+)
+def test_parser_rejects_negative_native_matched_and_sparse_nll(
+    field: str,
+) -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    if field == "native_baseline_nll":
+        row[field] = -1.0
+    else:
+        measurements = row["measurements"]
+        assert isinstance(measurements, list)
+        measurement = measurements[0]
+        assert isinstance(measurement, dict)
+        measurement[field] = -1.0
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match=rf"{field} must be nonnegative"):
         parse_attention_edge_fidelity_json(json.dumps(value))
 
 
@@ -296,7 +491,7 @@ def test_baseline_drift_fails_after_algebra_preserving_rehash() -> None:
     _rehash_row(row)
     _rehash_report(value)
 
-    with pytest.raises(ValueError, match="row-invariant fidelity baselines"):
+    with pytest.raises(ValueError, match="row-invariant native teacher baselines"):
         parse_attention_edge_fidelity_json(json.dumps(value))
 
 
@@ -345,6 +540,211 @@ def test_final_carrier_must_bind_mutation_36_after_coordinated_rehash() -> None:
     _rehash_report(value)
 
     with pytest.raises(ValueError, match="final carrier.*mutation 36"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_control_catalog_mismatch_fails_after_coordinated_rehash() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    measurements = row["measurements"]
+    assert isinstance(measurements, list)
+    measurement = measurements[0]
+    assert isinstance(measurement, dict)
+    measurement["matched_control_receipt_sha256"] = "f" * 64
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="matched control catalog"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_nll_diagnostic_must_close_after_coordinated_rehash() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    row["native_to_matched_nll_max_abs_delta"] = 5e-5
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="native-to-matched NLL diagnostic"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_valid_logit_maximum_cannot_be_understated_after_rehash() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    row["native_to_matched_valid_logit_max_abs_error"] = (
+        float(row["native_to_matched_valid_logit_max_abs_error"]) / 2.0
+    )
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="valid-logit maximum drifted"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_valid_logit_diagnostic_tamper_must_close_catalog() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    diagnostics = row["matched_control_diagnostics"]
+    assert isinstance(diagnostics, list)
+    diagnostic = diagnostics[-1]
+    assert isinstance(diagnostic, dict)
+    diagnostic["native_to_matched_valid_logit_max_abs_error"] = 0.0
+    _rehash_matched_control_diagnostic(diagnostic)
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="diagnostic catalog drifted"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    (
+        (
+            "native_to_matched_centered_logit_max_nrmse",
+            "centered-logit maximum drifted",
+        ),
+        (
+            "native_to_matched_final_carrier_max_nrmse",
+            "final-carrier maximum drifted",
+        ),
+    ),
+)
+def test_matched_control_maxima_cannot_be_understated_after_row_report_rehash(
+    field: str,
+    message: str,
+) -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    row[field] = float(row[field]) / 2.0
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match=message):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_control_top1_summary_is_rebuilt_from_authenticated_inventory(
+) -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    diagnostics = row["matched_control_diagnostics"]
+    assert isinstance(diagnostics, list)
+    diagnostic = diagnostics[0]
+    assert isinstance(diagnostic, dict)
+    diagnostic["native_top1_parity_passed"] = False
+    _rehash_matched_control_diagnostic(diagnostic)
+    _rehash_matched_control_diagnostic_catalog(row)
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="all-top1 summary drifted"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_control_diagnostics_must_follow_condition_order() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    diagnostics = row["matched_control_diagnostics"]
+    assert isinstance(diagnostics, list)
+    diagnostics[0], diagnostics[1] = diagnostics[1], diagnostics[0]
+    _rehash_matched_control_diagnostic_catalog(row)
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="diagnostic inventory drifted"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+def test_matched_control_diagnostic_tamper_fails_after_outer_rehash() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    diagnostics = row["matched_control_diagnostics"]
+    assert isinstance(diagnostics, list)
+    diagnostic = diagnostics[-1]
+    assert isinstance(diagnostic, dict)
+    diagnostic["centered_logit_nrmse"] = 0.0
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="diagnostic hash mismatch"):
+        parse_attention_edge_fidelity_json(json.dumps(value))
+
+
+@pytest.mark.parametrize(
+    ("field", "bound", "message"),
+    (
+        (
+            "maximum_absolute_nll_delta",
+            fidelity.ATTENTION_EDGE_FIDELITY_MATCHED_MAX_ABS_NLL_DELTA,
+            "NLL drift",
+        ),
+        (
+            "maximum_centered_logit_nrmse",
+            fidelity.ATTENTION_EDGE_FIDELITY_MATCHED_MAX_CENTERED_LOGIT_NRMSE,
+            "centered-logit NRMSE",
+        ),
+        (
+            "maximum_final_carrier_nrmse",
+            fidelity.ATTENTION_EDGE_FIDELITY_MATCHED_MAX_FINAL_CARRIER_NRMSE,
+            "final-carrier NRMSE",
+        ),
+    ),
+)
+def test_matched_control_validity_bounds_are_inclusive_and_fail_closed(
+    field: str,
+    bound: float,
+    message: str,
+) -> None:
+    values = {
+        "maximum_absolute_nll_delta": 0.0,
+        "maximum_centered_logit_nrmse": 0.0,
+        "maximum_final_carrier_nrmse": 0.0,
+    }
+    values[field] = bound
+    fidelity._validate_matched_control_bounds(**values)
+
+    values[field] = bound * 1.000001
+    with pytest.raises(ValueError, match=message):
+        fidelity._validate_matched_control_bounds(**values)
+
+
+def test_matched_control_bound_tamper_fails_after_coordinated_rehash() -> None:
+    value = build_deterministic_attention_edge_fidelity_fixture().to_dict()
+    rows = value["row_receipts"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    row["matched_control_final_carrier_nrmse_bound"] = 1e-3
+    _rehash_row(row)
+    _rehash_report(value)
+
+    with pytest.raises(ValueError, match="validity bounds drifted"):
         parse_attention_edge_fidelity_json(json.dumps(value))
 
 
@@ -404,6 +804,19 @@ def test_preflight_is_model_inert_and_binds_source_inventory() -> None:
     assert preflight["role"] == ATTENTION_EDGE_FIDELITY_ROLE
     assert preflight["panel_path"] == str(PINNED_PANEL_PATH)
     assert preflight["condition_count"] == 53
+    assert preflight["matched_batch_size"] == 53
+    assert preflight["paired_batch53_all_routes_control_required"] is True
+    assert (
+        preflight["ordinal_matched_control_metric_reference"]
+        == "propagated_and_endpoint_surfaces"
+    )
+    assert (
+        preflight["native_teacher_metric_reference"]
+        == "local_operator_and_postnorm_delta"
+    )
+    assert preflight["matched_control_nll_max_abs_delta_bound"] == 1e-4
+    assert preflight["matched_control_centered_logit_nrmse_bound"] == 1e-4
+    assert preflight["matched_control_final_carrier_nrmse_bound"] == 1e-5
     assert preflight["model_loaded"] is False
     assert preflight["atlas_opened"] is False
     assert preflight["panel_opened"] is False
