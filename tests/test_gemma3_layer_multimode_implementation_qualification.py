@@ -60,6 +60,11 @@ def _prepared_root(
         _copy_regular(_ROOT / relative, root / relative)
     for relative in (setup.PREDECESSOR_V2_SETUP, setup.PREDECESSOR_V2_REPORT):
         _copy_regular(_ROOT / relative, root / relative)
+    for relative in (
+        setup.SUPERSEDED_V1_SETUP,
+        qualification.SUPERSEDED_V1_OUTPUT,
+    ):
+        _copy_regular(_ROOT / relative, root / relative)
     setup_path = root / setup.DEFAULT_OUTPUT
     setup_path.parent.mkdir(parents=True, exist_ok=True)
     setup_path.write_bytes(setup.render_setup_bytes())
@@ -97,6 +102,22 @@ def test_build_is_result_independent_and_has_acyclic_identity_boundary(
 ) -> None:
     root = _prepared_root(tmp_path, panel_bundle)
     state = qualification.build_qualification(repository_root=root)
+    assert state["schema"] == (
+        "fisher_graph.gemma3_layer_multimode.implementation_qualification.v2"
+    )
+    assert state["format_version"] == 2
+    assert state["qualification_id"] == (
+        "gemma3-layer-multimode-implementation-v2"
+    )
+    assert state["supersedes_qualification"] == {
+        "path": str(qualification.SUPERSEDED_V1_OUTPUT),
+        "qualification_sha256": qualification.SUPERSEDED_V1_SHA256,
+        "file_sha256": qualification.SUPERSEDED_V1_FILE_SHA256,
+        "reason": (
+            "typed_preoptimizer_support_rejections_and_v2_experiment_"
+            "receipt_schemas"
+        ),
+    }
     assert state["trust_anchor"][
         "coordinated_source_and_artifact_rehash_tamper_proof_claimed"
     ] is False
@@ -106,9 +127,25 @@ def test_build_is_result_independent_and_has_acyclic_identity_boundary(
     assert boundary["coefficient_bundle_bytes_excluded"] is True
     assert boundary["summary_sidecar_bytes_excluded"] is True
     assert boundary["measured_result_values_excluded"] is True
+    policy = state["qualification_policy"]
+    assert policy["scope"] == "exact_local_checkout_source_and_test_closure"
+    assert policy[
+        "git_commit_is_self_contained_for_every_transitive_dependency_claimed"
+    ] is False
     encoded = qualification.canonical_json_bytes(state)
     assert b"B3_evaluation" not in encoded
     assert b"D3_passed" not in encoded
+
+
+def test_build_rejects_superseded_v1_qualification_drift(
+    tmp_path: Path,
+    panel_bundle: panels.AuthoredFreshPanelBundle,
+) -> None:
+    root = _prepared_root(tmp_path, panel_bundle)
+    superseded = root / qualification.SUPERSEDED_V1_OUTPUT
+    superseded.write_bytes(b"not the frozen qualification\n")
+    with pytest.raises(ValueError, match="v1 qualification file binding drifted"):
+        qualification.build_qualification(repository_root=root)
 
 
 def test_cycle_guard_rejects_setup_pin_and_panel_result_binding(

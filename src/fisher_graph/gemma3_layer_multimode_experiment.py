@@ -74,6 +74,7 @@ __all__ = [
     "LayerMultimodeNoAdmissibleSelectionReceipt",
     "LayerMultimodeFreshPanelExecutionReceipt",
     "LayerMultimodePostTerminalCleanupReceipt",
+    "LayerMultimodePreoptimizerAttempt",
     "LayerMultimodePredecessorARuntimeReceipt",
     "LayerMultimodeResourcePreflightReceipt",
     "LayerMultimodeRuntimeExecutionReceipt",
@@ -120,10 +121,10 @@ PREFLIGHT_SCHEMA: Final = (
     "fisher_graph.gemma3_layer_multimode.execution_preflight.v1"
 )
 NO_SELECTION_SCHEMA: Final = (
-    "fisher_graph.gemma3_layer_multimode.no_admissible_selection.v1"
+    "fisher_graph.gemma3_layer_multimode.no_admissible_selection.v2"
 )
 COUNTERS_SCHEMA: Final = (
-    "fisher_graph.gemma3_layer_multimode.experiment_counters.v1"
+    "fisher_graph.gemma3_layer_multimode.experiment_counters.v2"
 )
 TEARDOWN_SCHEMA: Final = (
     "fisher_graph.gemma3_layer_multimode.development_teardown.v1"
@@ -155,8 +156,8 @@ PRODUCTION_RUNTIME_IMPLEMENTATION_READY: Final = True
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PREFLIGHT_DOMAIN = b"fisher_graph:layer-multimode:preflight:v1\0"
-_NO_SELECTION_DOMAIN = b"fisher_graph:layer-multimode:no-selection:v1\0"
-_COUNTERS_DOMAIN = b"fisher_graph:layer-multimode:counters:v1\0"
+_NO_SELECTION_DOMAIN = b"fisher_graph:layer-multimode:no-selection:v2\0"
+_COUNTERS_DOMAIN = b"fisher_graph:layer-multimode:counters:v2\0"
 _TEARDOWN_DOMAIN = b"fisher_graph:layer-multimode:teardown:v1\0"
 _RESOURCE_PREFLIGHT_DOMAIN = (
     b"fisher_graph:layer-multimode:resource-preflight:v1\0"
@@ -585,7 +586,7 @@ def _test_resource_preflight() -> LayerMultimodeResourcePreflightReceipt:
     return LayerMultimodeResourcePreflightReceipt(
         workspace_parent_path="/TEST_ONLY/workspace-parent",
         workspace_path=(
-            "/TEST_ONLY/workspace-parent/layer-multimode-experiment-v1.work"
+            "/TEST_ONLY/workspace-parent/layer-multimode-experiment-v2.work"
         ),
         report_path="/TEST_ONLY/report.json",
         bundle_path="/TEST_ONLY/candidate.bundle",
@@ -624,7 +625,7 @@ def preflight_layer_multimode_resources(
     if not parent_input.is_dir() or parent_input.is_symlink():
         raise ValueError("workspace_parent must be a non-symlink directory")
     parent = parent_input.resolve(strict=True)
-    workspace = parent / "layer-multimode-experiment-v1.work"
+    workspace = parent / "layer-multimode-experiment-v2.work"
     if os.path.lexists(workspace):
         raise FileExistsError(workspace)
     destinations = tuple(
@@ -720,7 +721,7 @@ def revalidate_layer_multimode_resources(
     observed_paths = (str(parent), *(str(value) for value in destinations))
     if observed_paths != expected_paths:
         raise RuntimeError("runtime paths differ from resource preflight")
-    workspace = parent / "layer-multimode-experiment-v1.work"
+    workspace = parent / "layer-multimode-experiment-v2.work"
     if str(workspace) != receipt.workspace_path:
         raise RuntimeError("workspace name differs from resource preflight")
     if workspace_must_exist:
@@ -1526,6 +1527,35 @@ class LayerMaterialization:
             raise ValueError("materialized layer ordinal is invalid")
         if self.rows is None or self.receipt is None:
             raise ValueError("materialization rows/receipt are required")
+
+
+@dataclass(frozen=True, slots=True)
+class LayerMultimodePreoptimizerAttempt:
+    """Ephemeral result of one support-aware preoptimizer operation.
+
+    Production runtimes may place only the exact structured atlas-support
+    exception in ``support_error``.  The envelope keeps the orchestrator from
+    catching a broad exception class while making an expected support failure
+    an explicit branch of the runtime protocol.
+    """
+
+    result: object | None
+    support_error: BaseException | None
+
+    def __post_init__(self) -> None:
+        if (self.result is None) is (self.support_error is None):
+            raise ValueError(
+                "preoptimizer attempt requires exactly one result or support error"
+            )
+        if self.support_error is not None and not isinstance(
+            self.support_error,
+            BaseException,
+        ):
+            raise TypeError("preoptimizer support_error must be an exception")
+
+    @property
+    def support_rejected(self) -> bool:
+        return self.support_error is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2681,7 +2711,7 @@ class LayerMultimodeV3Runtime(ABC):
         *,
         chart_count: int,
         tangent_rank: int,
-    ) -> object:
+    ) -> LayerMultimodePreoptimizerAttempt:
         raise NotImplementedError
 
     @abstractmethod
@@ -2704,6 +2734,20 @@ class LayerMultimodeV3Runtime(ABC):
         chart_count: int,
         mode_count: int,
         tangent_rank: int,
+    ) -> LayerMultimodePreoptimizerAttempt:
+        raise NotImplementedError
+
+    @abstractmethod
+    def lower_candidate_support_rejection(
+        self,
+        *,
+        materialization: LayerMaterialization,
+        chart_count: int,
+        mode_count: int,
+        tangent_rank: int,
+        candidate_fit: object | None,
+        support_error: BaseException,
+        recapture: ADevelopmentRecapture,
     ) -> object:
         raise NotImplementedError
 
@@ -2759,7 +2803,7 @@ class LayerMultimodeV3Runtime(ABC):
         recapture: ADevelopmentRecapture,
         materializations: tuple[LayerMaterialization, ...],
         atlases: tuple[object, ...],
-        candidate_fits: tuple[object, ...],
+        candidate_fits: tuple[object | None, ...],
         split_refits: tuple[object | None, ...],
         compiled: object | None,
     ) -> object:
@@ -2873,13 +2917,13 @@ class LayerMultimodeNoAdmissibleSelectionReceipt:
     first_failed_layer_ordinal: int
     receipt_sha256: str = ""
     schema: str = NO_SELECTION_SCHEMA
-    format_version: int = 1
+    format_version: int = 2
     candidate_count: int = TOTAL_CANDIDATE_COUNT
     fresh_roles_opened: tuple[str, ...] = ()
     reserve_opened: bool = False
 
     def __post_init__(self) -> None:
-        if self.schema != NO_SELECTION_SCHEMA or self.format_version != 1:
+        if self.schema != NO_SELECTION_SCHEMA or self.format_version != 2:
             raise ValueError("no-selection receipt header is invalid")
         for name in (
             "source_model_sha256",
@@ -2949,10 +2993,16 @@ class LayerMultimodeNoAdmissibleSelectionReceipt:
 @dataclass(frozen=True, slots=True)
 class _MutableCounterSnapshot:
     materialization_count: int
-    atlas_fit_count: int
+    atlas_fit_attempt_count: int
+    atlas_fit_success_count: int
+    atlas_support_rejection_count: int
     candidate_fit_count: int
+    split_refit_attempt_count: int
     split_refit_count: int
-    candidate_evaluation_count: int
+    split_refit_support_rejection_count: int
+    candidate_evaluation_receipt_count: int
+    candidate_support_rejection_count: int
+    candidate_inventory_count: int
     selection_attempt_count: int
     compilation_count: int
     candidate_freeze_count: int
@@ -2971,10 +3021,16 @@ class LayerMultimodeExperimentCountersReceipt:
     execution_preflight_receipt_sha256: str
     selection_receipt_sha256: str
     materialization_count: int
-    atlas_fit_count: int
+    atlas_fit_attempt_count: int
+    atlas_fit_success_count: int
+    atlas_support_rejection_count: int
     candidate_fit_count: int
+    split_refit_attempt_count: int
     split_refit_count: int
-    candidate_evaluation_count: int
+    split_refit_support_rejection_count: int
+    candidate_evaluation_receipt_count: int
+    candidate_support_rejection_count: int
+    candidate_inventory_count: int
     selection_attempt_count: int
     compilation_count: int
     candidate_freeze_count: int
@@ -2987,7 +3043,7 @@ class LayerMultimodeExperimentCountersReceipt:
     D3_evaluation_count: int
     receipt_sha256: str = ""
     schema: str = COUNTERS_SCHEMA
-    format_version: int = 1
+    format_version: int = 2
     strict_preflight_count: int = 1
     runtime_factory_count: int = 1
     exposed_predecessor_A_recapture_count: int = 1
@@ -3000,7 +3056,7 @@ class LayerMultimodeExperimentCountersReceipt:
     compiled_candidate_native_mlp_module_count: int = 0
 
     def __post_init__(self) -> None:
-        if self.schema != COUNTERS_SCHEMA or self.format_version != 1:
+        if self.schema != COUNTERS_SCHEMA or self.format_version != 2:
             raise ValueError("experiment counters header is invalid")
         _require_sha256(
             self.execution_preflight_receipt_sha256,
@@ -3024,10 +3080,8 @@ class LayerMultimodeExperimentCountersReceipt:
             "exposed_predecessor_A_recapture_count": 1,
             "fresh_v3_A_capture_count": 0,
             "materialization_count": LAYER_COUNT,
-            "atlas_fit_count": ATLAS_FIT_COUNT,
-            "candidate_fit_count": TOTAL_CANDIDATE_COUNT,
-            "split_refit_count": SPLIT_REFIT_COUNT,
-            "candidate_evaluation_count": TOTAL_CANDIDATE_COUNT,
+            "atlas_fit_attempt_count": ATLAS_FIT_COUNT,
+            "candidate_inventory_count": TOTAL_CANDIDATE_COUNT,
             "selection_attempt_count": 1,
             "reserve_open_count": 0,
             "native_baseline_evaluator_count": 1,
@@ -3039,6 +3093,48 @@ class LayerMultimodeExperimentCountersReceipt:
             value = getattr(self, name)
             if type(value) is not int or value != expected:
                 raise ValueError(f"{name} must equal {expected}")
+        for name in (
+            "atlas_fit_success_count",
+            "atlas_support_rejection_count",
+            "candidate_fit_count",
+            "split_refit_attempt_count",
+            "split_refit_count",
+            "split_refit_support_rejection_count",
+            "candidate_evaluation_receipt_count",
+            "candidate_support_rejection_count",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a nonnegative exact integer")
+        if (
+            self.atlas_fit_success_count + self.atlas_support_rejection_count
+            != self.atlas_fit_attempt_count
+        ):
+            raise ValueError("atlas fit attempts do not close")
+        if self.candidate_fit_count != 3 * self.atlas_fit_success_count:
+            raise ValueError("candidate fits do not close against supported atlases")
+        if self.split_refit_attempt_count != 2 * self.atlas_fit_success_count:
+            raise ValueError("split-refit attempts do not close against atlases")
+        if (
+            self.split_refit_count + self.split_refit_support_rejection_count
+            != self.split_refit_attempt_count
+        ):
+            raise ValueError("split-refit attempts do not close")
+        if self.candidate_support_rejection_count != (
+            3 * self.atlas_support_rejection_count
+            + self.split_refit_support_rejection_count
+        ):
+            raise ValueError("candidate support rejections do not close")
+        if self.candidate_evaluation_receipt_count != (
+            self.candidate_fit_count - self.split_refit_support_rejection_count
+        ):
+            raise ValueError("candidate evaluation receipts do not close")
+        if (
+            self.candidate_evaluation_receipt_count
+            + self.candidate_support_rejection_count
+            != self.candidate_inventory_count
+        ):
+            raise ValueError("candidate inventory does not close")
         if _require_exact_bool(
             self.native_baseline_eval_mode,
             label="native_baseline_eval_mode",
@@ -3080,10 +3176,16 @@ class LayerMultimodeExperimentCountersReceipt:
                 "exposed_predecessor_A_recapture_count",
                 "fresh_v3_A_capture_count",
                 "materialization_count",
-                "atlas_fit_count",
+                "atlas_fit_attempt_count",
+                "atlas_fit_success_count",
+                "atlas_support_rejection_count",
                 "candidate_fit_count",
+                "split_refit_attempt_count",
                 "split_refit_count",
-                "candidate_evaluation_count",
+                "split_refit_support_rejection_count",
+                "candidate_evaluation_receipt_count",
+                "candidate_support_rejection_count",
+                "candidate_inventory_count",
                 "selection_attempt_count",
                 "compilation_count",
                 "candidate_freeze_count",
@@ -3161,10 +3263,16 @@ class LayerMultimodeExperimentRunResult:
 @dataclass(slots=True)
 class _Counters:
     materialization_count: int = 0
-    atlas_fit_count: int = 0
+    atlas_fit_attempt_count: int = 0
+    atlas_fit_success_count: int = 0
+    atlas_support_rejection_count: int = 0
     candidate_fit_count: int = 0
+    split_refit_attempt_count: int = 0
     split_refit_count: int = 0
-    candidate_evaluation_count: int = 0
+    split_refit_support_rejection_count: int = 0
+    candidate_evaluation_receipt_count: int = 0
+    candidate_support_rejection_count: int = 0
+    candidate_inventory_count: int = 0
     selection_attempt_count: int = 0
     compilation_count: int = 0
     candidate_freeze_count: int = 0
@@ -3290,7 +3398,7 @@ def _build_no_selection_receipt(
 def _selected_objects(
     selection: object,
     evaluations: tuple[object, ...],
-    fits: tuple[object, ...],
+    fits: tuple[object | None, ...],
     splits: tuple[object | None, ...],
 ) -> tuple[tuple[object, ...], tuple[object | None, ...]]:
     layers = getattr(selection, "layers", None)
@@ -3307,10 +3415,17 @@ def _selected_objects(
         if selected_hash not in by_hash:
             raise ValueError("selected candidate is absent from the full grid")
         index = by_hash[selected_hash]
-        if _candidate_key(evaluations[index])[0] != layer_ordinal:
+        candidate_key = _candidate_key(evaluations[index])
+        if candidate_key[0] != layer_ordinal:
             raise ValueError("selected layer/candidate order drifted")
-        selected_fits.append(fits[index])
-        selected_splits.append(splits[index])
+        selected_fit = fits[index]
+        selected_split = splits[index]
+        if selected_fit is None or (
+            candidate_key[2] > 1 and selected_split is None
+        ):
+            raise ValueError("selector chose a support-rejected candidate")
+        selected_fits.append(selected_fit)
+        selected_splits.append(selected_split)
     return tuple(selected_fits), tuple(selected_splits)
 
 
@@ -3647,7 +3762,7 @@ def run_layer_multimode_experiment(
             workspace_must_exist=False,
         )
 
-    workspace = parent / "layer-multimode-experiment-v1.work"
+    workspace = parent / "layer-multimode-experiment-v2.work"
     workspace.mkdir(mode=0o700, parents=False, exist_ok=False)
     runtime: LayerMultimodeV3Runtime | None = None
     publication: object | None = None
@@ -3726,8 +3841,10 @@ def run_layer_multimode_experiment(
             materialization_tuple,
         )
 
-        atlases_by_key: dict[tuple[int, int, int], object] = {}
-        fits: list[object] = []
+        atlas_attempts_by_key: dict[
+            tuple[int, int, int], LayerMultimodePreoptimizerAttempt
+        ] = {}
+        fits: list[object | None] = []
         splits: list[object | None] = []
         evaluations: list[object] = []
         for materialized in materialization_tuple:
@@ -3739,37 +3856,107 @@ def run_layer_multimode_experiment(
                             chart_count,
                             tangent_rank,
                         )
-                        atlas = atlases_by_key.get(atlas_key)
-                        if atlas is None:
-                            atlas = runtime.fit_chart_atlas(
+                        atlas_attempt = atlas_attempts_by_key.get(atlas_key)
+                        if atlas_attempt is None:
+                            atlas_attempt = runtime.fit_chart_atlas(
                                 materialized,
                                 chart_count=chart_count,
                                 tangent_rank=tangent_rank,
                             )
-                            atlases_by_key[atlas_key] = atlas
-                            counters.atlas_fit_count += 1
-                        fit = runtime.fit_candidate(
-                            materialized,
-                            chart_count=chart_count,
-                            mode_count=mode_count,
-                            tangent_rank=tangent_rank,
-                            atlas=atlas,
-                        )
-                        counters.candidate_fit_count += 1
+                            if type(atlas_attempt) is not (
+                                LayerMultimodePreoptimizerAttempt
+                            ):
+                                raise TypeError(
+                                    "runtime returned the wrong atlas-attempt type"
+                                )
+                            atlas_attempts_by_key[atlas_key] = atlas_attempt
+                            counters.atlas_fit_attempt_count += 1
+                            if atlas_attempt.support_rejected:
+                                counters.atlas_support_rejection_count += 1
+                            else:
+                                counters.atlas_fit_success_count += 1
+
+                        fit: object | None = None
                         split: object | None = None
-                        if mode_count > 1:
-                            split = runtime.evaluate_split_refit(
+                        split_attempt: LayerMultimodePreoptimizerAttempt | None = None
+                        if atlas_attempt.support_rejected:
+                            support_error = atlas_attempt.support_error
+                            if support_error is None:
+                                raise AssertionError(
+                                    "rejected atlas attempt lacks support error"
+                                )
+                            evaluation = runtime.lower_candidate_support_rejection(
+                                materialization=materialized,
+                                chart_count=chart_count,
+                                mode_count=mode_count,
+                                tangent_rank=tangent_rank,
+                                candidate_fit=None,
+                                support_error=support_error,
+                                recapture=recapture,
+                            )
+                            counters.candidate_support_rejection_count += 1
+                        else:
+                            if atlas_attempt.result is None:
+                                raise AssertionError(
+                                    "successful atlas attempt lacks an atlas"
+                                )
+                            fit = runtime.fit_candidate(
                                 materialized,
                                 chart_count=chart_count,
                                 mode_count=mode_count,
                                 tangent_rank=tangent_rank,
+                                atlas=atlas_attempt.result,
                             )
-                            counters.split_refit_count += 1
-                        evaluation = runtime.lower_candidate_evaluation(
-                            candidate_fit=fit,
-                            split_refit=split,
-                            recapture=recapture,
-                        )
+                            counters.candidate_fit_count += 1
+                            split_rejected = False
+                            if mode_count > 1:
+                                split_attempt = runtime.evaluate_split_refit(
+                                    materialized,
+                                    chart_count=chart_count,
+                                    mode_count=mode_count,
+                                    tangent_rank=tangent_rank,
+                                )
+                                if type(split_attempt) is not (
+                                    LayerMultimodePreoptimizerAttempt
+                                ):
+                                    raise TypeError(
+                                        "runtime returned the wrong split-attempt type"
+                                    )
+                                counters.split_refit_attempt_count += 1
+                                if split_attempt.support_rejected:
+                                    support_error = split_attempt.support_error
+                                    if support_error is None:
+                                        raise AssertionError(
+                                            "rejected split attempt lacks support error"
+                                        )
+                                    evaluation = (
+                                        runtime.lower_candidate_support_rejection(
+                                            materialization=materialized,
+                                            chart_count=chart_count,
+                                            mode_count=mode_count,
+                                            tangent_rank=tangent_rank,
+                                            candidate_fit=fit,
+                                            support_error=support_error,
+                                            recapture=recapture,
+                                        )
+                                    )
+                                    counters.split_refit_support_rejection_count += 1
+                                    counters.candidate_support_rejection_count += 1
+                                    split_rejected = True
+                                else:
+                                    split = split_attempt.result
+                                    if split is None:
+                                        raise AssertionError(
+                                            "successful split attempt lacks evidence"
+                                        )
+                                    counters.split_refit_count += 1
+                            if not split_rejected:
+                                evaluation = runtime.lower_candidate_evaluation(
+                                    candidate_fit=fit,
+                                    split_refit=split,
+                                    recapture=recapture,
+                                )
+                                counters.candidate_evaluation_receipt_count += 1
                         expected_key = (
                             materialized.layer_ordinal,
                             chart_count,
@@ -3783,9 +3970,9 @@ def run_layer_multimode_experiment(
                         fits.append(fit)
                         splits.append(split)
                         evaluations.append(evaluation)
-                        counters.candidate_evaluation_count += 1
+                        counters.candidate_inventory_count += 1
         if (
-            len(atlases_by_key) != ATLAS_FIT_COUNT
+            len(atlas_attempts_by_key) != ATLAS_FIT_COUNT
             or len(evaluations) != TOTAL_CANDIDATE_COUNT
         ):
             raise RuntimeError("A fit did not cover the exact cached full grid")
@@ -3814,13 +4001,17 @@ def run_layer_multimode_experiment(
             prepared_release = runtime.release_development_state(
                 recapture=recapture,
                 materializations=materialization_tuple,
-                atlases=tuple(atlases_by_key.values()),
+                atlases=tuple(
+                    attempt.result
+                    for attempt in atlas_attempts_by_key.values()
+                    if attempt.result is not None
+                ),
                 candidate_fits=tuple(fits),
                 split_refits=tuple(splits),
                 compiled=None,
             )
             materializations.clear()
-            atlases_by_key.clear()
+            atlas_attempts_by_key.clear()
             fits.clear()
             splits.clear()
             evaluations.clear()
@@ -3830,9 +4021,10 @@ def run_layer_multimode_experiment(
                 materialization_inventory,
                 evaluation_tuple,
                 materialized,
-                atlas,
+                atlas_attempt,
                 fit,
                 split,
+                split_attempt,
                 evaluation,
             )
             gc.collect()
@@ -3897,13 +4089,17 @@ def run_layer_multimode_experiment(
             prepared_release = runtime.release_development_state(
                 recapture=recapture,
                 materializations=materialization_tuple,
-                atlases=tuple(atlases_by_key.values()),
+                atlases=tuple(
+                    attempt.result
+                    for attempt in atlas_attempts_by_key.values()
+                    if attempt.result is not None
+                ),
                 candidate_fits=tuple(fits),
                 split_refits=tuple(splits),
                 compiled=compiled,
             )
             materializations.clear()
-            atlases_by_key.clear()
+            atlas_attempts_by_key.clear()
             fits.clear()
             splits.clear()
             evaluations.clear()
@@ -3912,9 +4108,10 @@ def run_layer_multimode_experiment(
                 materialization_tuple,
                 evaluation_tuple,
                 materialized,
-                atlas,
+                atlas_attempt,
                 fit,
                 split,
+                split_attempt,
                 evaluation,
                 selected_fits,
                 selected_splits,

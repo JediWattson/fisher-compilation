@@ -24,22 +24,31 @@ import stat
 from typing import Mapping, Sequence
 
 
-SCHEMA = "fisher_graph.gemma3_layer_multimode.setup.v1"
-FORMAT_VERSION = 1
-SETUP_ID = "gemma3-layer-local-flow-multimode-v3"
+SCHEMA = "fisher_graph.gemma3_layer_multimode.setup.v2"
+FORMAT_VERSION = 2
+SETUP_ID = "gemma3-layer-local-flow-multimode-v3-amendment-v2"
 
 DEFAULT_OUTPUT = Path(
-    "artifacts/research/gemma3-layer-multimode-setup-v1.json"
+    "artifacts/research/gemma3-layer-multimode-setup-v2.json"
 )
 DEFAULT_REPORT_OUTPUT = Path(
-    ".local-runs/google--gemma-3-270m/layer-multimode-experiment-v1.json"
+    ".local-runs/google--gemma-3-270m/layer-multimode-experiment-v2.json"
 )
 DEFAULT_BUNDLE_OUTPUT = Path(
-    ".local-runs/google--gemma-3-270m/layer-multimode-experiment-v1.bundle"
+    ".local-runs/google--gemma-3-270m/layer-multimode-experiment-v2.bundle"
 )
 DEFAULT_SUMMARY_OUTPUT = Path(
     ".local-runs/google--gemma-3-270m/"
-    "layer-multimode-experiment-v1.summary.json"
+    "layer-multimode-experiment-v2.summary.json"
+)
+SUPERSEDED_V1_SETUP = Path(
+    "artifacts/research/gemma3-layer-multimode-setup-v1.json"
+)
+SUPERSEDED_V1_SETUP_SHA256 = (
+    "ef4a32919ede03352531f5c45e6dc84ae49228540a64b3227f4b16534c12819a"
+)
+SUPERSEDED_V1_SETUP_FILE_SHA256 = (
+    "6d2574e0f899aa8591ef55416247ebc24685e13c887fb4f587c6001e14a9f45c"
 )
 FUTURE_PANEL_RECEIPT = Path(
     "artifacts/research/gemma3-layer-multimode-fresh-panels-v1.json"
@@ -121,6 +130,9 @@ ROLE_ORDER = (FIT_ROLE, DISCOVERY_ROLE, CONFIRMATION_ROLE, FINAL_ROLE, RESERVE_R
 PRODUCTION_FIT_POLICY_SHA256 = (
     "be4908d50da4a0924484b192baac82e453e39ed316854e749e9a867252eae636"
 )
+PRODUCTION_SELECTION_POLICY_SHA256 = (
+    "cfc85a2342a85c8b2fe33bd8108f02a2ad4830746378e9deeea196f0c8c76156"
+)
 PRODUCTION_FULL_A_CAPTURE_SCOPE = (
     "production_full_A_RoleCaptureReceipt_spools"
 )
@@ -131,7 +143,10 @@ GRADIENT_CLIP_GROUPING_ID = (
     "non_tau_global_l2_and_chart_temperature_scalar_independent.v1"
 )
 
-_SETUP_DOMAIN = b"fisher_graph:gemma3-layer-local-flow-multimode-setup:v1\0"
+_SETUP_DOMAIN = b"fisher_graph:gemma3-layer-local-flow-multimode-setup:v2\0"
+_SUPERSEDED_V1_SETUP_DOMAIN = (
+    b"fisher_graph:gemma3-layer-local-flow-multimode-setup:v1\0"
+)
 _MAX_SETUP_BYTES = 8 * 1024 * 1024
 _MAX_PREDECESSOR_BYTES = 512 * 1024 * 1024
 
@@ -267,6 +282,36 @@ def _build_state() -> dict[str, object]:
         "setup_id": SETUP_ID,
         "methodology_provenance": {
             "protocol_generation": "v3_local_flow_multimode",
+            "amendment_revision": 2,
+            "supersedes_setup_path": str(SUPERSEDED_V1_SETUP),
+            "supersedes_setup_sha256": SUPERSEDED_V1_SETUP_SHA256,
+            "supersedes_setup_file_sha256": (
+                SUPERSEDED_V1_SETUP_FILE_SHA256
+            ),
+            "amendment_reason": (
+                "expected_preoptimizer_atlas_or_split_support_failure_must_"
+                "produce_a_typed_candidate_rejection_instead_of_aborting_"
+                "the_complete_A_grid"
+            ),
+            "superseded_attempt_exposure": {
+                "highest_semantically_opened_role": FIT_ROLE,
+                "B3_semantically_opened": False,
+                "C3_semantically_opened": False,
+                "D3_semantically_opened": False,
+                "reserve_semantically_opened": False,
+                "scientific_outputs_published": False,
+                "observed_support_failure_code": (
+                    "hard_chart_count_below_r_plus_1"
+                ),
+                "observed_layer_ordinal": 0,
+                "observed_chart_count": 2,
+                "observed_tangent_rank": 64,
+                "observed_chart_ordinal": 0,
+                "observed_hard_chart_count": 2,
+                "required_hard_chart_count": 65,
+            },
+            "amendment_uses_only_disclosed_A_development_evidence": True,
+            "heldout_thresholds_and_panels_are_unchanged": True,
             "predecessor_v2_setup_path": str(PREDECESSOR_V2_SETUP),
             "predecessor_v2_setup_sha256": PREDECESSOR_V2_SETUP_SHA256,
             "predecessor_v2_setup_file_sha256": (
@@ -407,7 +452,10 @@ def _build_state() -> dict[str, object]:
             ),
             "complete_C_times_M_times_R_grid_required_per_layer": True,
             "candidate_count_per_layer": CANDIDATE_COUNT_PER_LAYER,
-            "all_18_candidates_fit_before_layer_selection": True,
+            "all_18_candidate_coordinates_resolve_to_typed_outcomes_before_"
+            "layer_selection": True,
+            "optimizer_fit_occurs_only_after_preoptimizer_support_gates_"
+            "pass": True,
             "parameter_formula": (
                 "H+C*H+C*H*R+1+C*M*(R+1)+C*M*(R*R+R)"
             ),
@@ -471,7 +519,11 @@ def _build_state() -> dict[str, object]:
                 "within_example"
             ),
             "fit_is_independent_per_physical_layer": True,
-            "all_grid_candidates_use_identical_A_fit_and_validation_rows": True,
+            "all_grid_coordinates_share_identical_A_fit_and_validation_"
+            "partition_axes": True,
+            "shared_atlas_support_rejections_do_not_open_validation_tensors": (
+                True
+            ),
             "all_M_candidates_at_fixed_layer_C_R_share_one_exact_state_atlas": (
                 True
             ),
@@ -479,14 +531,31 @@ def _build_state() -> dict[str, object]:
                 True
             ),
             "production_selector_requires_all_324_original_live_adapter_"
-            "candidate_evaluations": True,
+            "candidate_outcomes": True,
             "production_compile_requires_original_selector_result_over_all_"
-            "324_live_candidates": True,
+            "324_live_candidate_outcomes": True,
             "coordinated_306_failure_relabels_around_18_live_winners_are_"
             "rejected": True,
-            "candidate_evaluation_and_selection_direct_construction_copy_"
+            "candidate_outcome_and_selection_direct_construction_copy_"
             "deepcopy_replace_or_parser_replay_cannot_recover_live_"
             "authority": True,
+            "candidate_outcome_inventory": {
+                "exact_entry_count": 324,
+                "entry_types": [
+                    "live_fitted_candidate_evaluation",
+                    "live_preoptimizer_support_rejection",
+                ],
+                "support_rejection_contains_no_fabricated_fit_validation_or_"
+                "resource_metrics": True,
+                "shared_atlas_support_failure_rejects_all_M_at_fixed_layer_"
+                "C_R": True,
+                "split_refit_support_failure_rejects_only_the_affected_M": (
+                    True
+                ),
+                "expected_support_failure_codes_are_frozen_and_typed": True,
+                "unexpected_linalg_optimizer_and_engineering_errors_"
+                "propagate": True,
+            },
             "production_capture_and_partition": {
                 "capture_source": (
                     "one_new_replay_of_the_complete_predecessor_A_role_using_"
@@ -560,7 +629,8 @@ def _build_state() -> dict[str, object]:
                 ),
                 "supplied_atlas_requires_original_live_atlas_fitter_"
                 "authority": True,
-                "one_original_live_atlas_is_reusable_across_M_1_2_4": True,
+                "one_original_live_support_admissible_atlas_is_reusable_"
+                "across_M_1_2_4": True,
                 "C1_center": "family_example_row_weighted_state_mean",
                 "C2_center_initialization": (
                     "center0_weighted_mean_then_center1_first_argmax_of_"
@@ -578,6 +648,9 @@ def _build_state() -> dict[str, object]:
                     "every_hard_chart_count_at_least_R_plus_1",
                     "every_weighted_chart_covariance_numerical_rank_at_least_R",
                 ],
+                "support_gate_failure_outcome": (
+                    "authenticated_candidate_rejection_not_experiment_abort"
+                ),
                 "C1_tau": "serialized_1.0_frozen",
                 "C2_tau_initialization": (
                     "weighted_median_positive_absolute_difference_of_the_two_"
@@ -710,6 +783,7 @@ def _build_state() -> dict[str, object]:
             "selection_rule_per_layer": (
                 "among_all_passing_candidates_minimize_the_frozen_tie_key"
             ),
+            "selection_policy_sha256": PRODUCTION_SELECTION_POLICY_SHA256,
             "selection_tie_key": [
                 "serialized_parameter_count",
                 "validation_velocity_NRMSE",
@@ -933,7 +1007,8 @@ def _build_state() -> dict[str, object]:
             "report": str(DEFAULT_REPORT_OUTPUT),
             "coefficient_bundle": str(DEFAULT_BUNDLE_OUTPUT),
             "deterministic_summary": str(DEFAULT_SUMMARY_OUTPUT),
-            "outputs_are_distinct_from_v1_and_v2": True,
+            "outputs_are_distinct_from_chart_neighbor_v1_v2_and_multimode_"
+            "v1": True,
             "bundle_and_summary_are_durable_before_report": True,
             "report_is_published_last_as_commit_marker": True,
             "publication_is_no_clobber_all_or_none": True,
@@ -1582,6 +1657,32 @@ def check_setup(
         raise ValueError("canonical setup must have mode 0600")
     root = _repository_root(repository_root)
     provenance = value["methodology_provenance"]
+    superseded_setup = root / _safe_relative(
+        provenance["supersedes_setup_path"],  # type: ignore[index]
+        label="superseded multimode v1 setup",
+    )
+    superseded_raw = _read_regular(superseded_setup)
+    if hashlib.sha256(superseded_raw).hexdigest() != provenance[
+        "supersedes_setup_file_sha256"  # type: ignore[index]
+    ]:
+        raise ValueError("superseded multimode v1 setup file binding drifted")
+    superseded_value = _strict_json_loads(superseded_raw)
+    if not isinstance(superseded_value, Mapping):
+        raise ValueError("superseded multimode v1 setup must be an object")
+    superseded_unsigned = dict(superseded_value)
+    superseded_semantic = superseded_unsigned.pop("setup_sha256", None)
+    recomputed_superseded = hashlib.sha256(
+        _SUPERSEDED_V1_SETUP_DOMAIN
+        + canonical_json_bytes(superseded_unsigned)
+    ).hexdigest()
+    if (
+        superseded_semantic
+        != provenance["supersedes_setup_sha256"]  # type: ignore[index]
+        or recomputed_superseded != superseded_semantic
+    ):
+        raise ValueError(
+            "superseded multimode v1 setup semantic binding drifted"
+        )
     predecessor_setup = root / _safe_relative(
         provenance["predecessor_v2_setup_path"],  # type: ignore[index]
         label="predecessor v2 setup",
@@ -1743,8 +1844,12 @@ __all__ = [
     "PREDECESSOR_V2_RUNTIME_SESSION_BINDING_SHA256",
     "PREDECESSOR_V2_SOURCE_EXECUTION_FINGERPRINT_SHA256",
     "PREDECESSOR_V2_SOURCE_MODEL_FINGERPRINT_SHA256",
+    "PRODUCTION_SELECTION_POLICY_SHA256",
     "SCHEMA",
     "SETUP_ID",
+    "SUPERSEDED_V1_SETUP",
+    "SUPERSEDED_V1_SETUP_FILE_SHA256",
+    "SUPERSEDED_V1_SETUP_SHA256",
     "TANGENT_RANK_CANDIDATES",
     "authorize_run",
     "build_setup",

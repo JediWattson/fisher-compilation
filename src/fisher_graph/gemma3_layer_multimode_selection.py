@@ -1,12 +1,13 @@
 """A-only architecture selection for Gemma-3 layer-local multimode flows.
 
-The selector consumes authenticated *scalar* candidate-evaluation receipts.  It
-does not fit candidates and has no API for discovery/confirmation panels,
-graphs, or transports.  Every one of the 18 token-local MLP residual maps is
-selected independently from the frozen chart x dynamic-mode x tangent-rank
-grid.  Selection is compression first: choose the smallest serialized
-candidate that passes the A-validation gates, then break ties by validation
-NRMSE and the numeric ``(C, M, R)`` tuple.
+The selector consumes authenticated scalar candidate outcomes: either a full
+evaluation or a typed pre-optimizer support rejection with no invented fit
+metrics.  It does not fit candidates and has no API for discovery/confirmation
+panels, graphs, or transports.  Every one of the 18 token-local MLP residual
+maps is selected independently from the frozen chart x dynamic-mode x
+tangent-rank grid.  Selection is compression first: choose the smallest
+serialized candidate that passes the A-validation gates, then break ties by
+validation NRMSE and the numeric ``(C, M, R)`` tuple.
 
 ``M=1`` is an ordinary (non-mixture) candidate.  ``M>1`` must additionally
 beat its exact same-layer, same-chart, same-rank ``M=1`` control and pass the
@@ -42,6 +43,8 @@ __all__ = [
     "PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256",
     "NoAdmissibleLayerMultimodeCandidateError",
     "LayerMultimodeCandidateEvaluationReceipt",
+    "LayerMultimodeCandidateOutcomeReceipt",
+    "LayerMultimodeCandidateSupportRejectionReceipt",
     "LayerMultimodeCandidateGateDecision",
     "LayerMultimodeFamilyFidelityReceipt",
     "LayerMultimodeLayerSelectionReceipt",
@@ -103,23 +106,37 @@ _DEVELOPMENT_SINGLE_BATCH_CAPTURE_SCOPE = (
 )
 
 _FORMAT_VERSION = 1
+_SELECTION_FORMAT_VERSION = 2
 _FAMILY_KIND = "fisher_graph.gemma3_layer_multimode_family_fidelity"
 _CANDIDATE_KIND = "fisher_graph.gemma3_layer_multimode_candidate_evaluation"
-_DECISION_KIND = "fisher_graph.gemma3_layer_multimode_candidate_gate_decision"
-_LAYER_KIND = "fisher_graph.gemma3_layer_multimode_layer_selection"
-_SELECTION_KIND = "fisher_graph.gemma3_layer_multimode_selection"
+_SUPPORT_REJECTION_KIND = (
+    "fisher_graph.gemma3_layer_multimode_candidate_support_rejection_v2"
+)
+_DECISION_KIND = "fisher_graph.gemma3_layer_multimode_candidate_gate_decision_v2"
+_LAYER_KIND = "fisher_graph.gemma3_layer_multimode_layer_selection_v2"
+_SELECTION_KIND = "fisher_graph.gemma3_layer_multimode_selection_v2"
 _FAMILY_DOMAIN = b"fisher_graph.gemma3_layer_multimode_family_fidelity.v1\0"
 _CANDIDATE_DOMAIN = b"fisher_graph.gemma3_layer_multimode_candidate.v1\0"
-_DECISION_DOMAIN = b"fisher_graph.gemma3_layer_multimode_decision.v1\0"
-_LAYER_DOMAIN = b"fisher_graph.gemma3_layer_multimode_layer_selection.v1\0"
-_SELECTION_DOMAIN = b"fisher_graph.gemma3_layer_multimode_selection.v1\0"
-_POLICY_DOMAIN = b"fisher_graph.gemma3_layer_multimode_policy.v1\0"
+_SUPPORT_REJECTION_DOMAIN = (
+    b"fisher_graph.gemma3_layer_multimode_support_rejection.v2\0"
+)
+_SUPPORT_FAILURE_EVIDENCE_DOMAIN = (
+    b"fisher_graph.gemma3_layer_multimode_support_failure_evidence.v2\0"
+)
+_DECISION_DOMAIN = b"fisher_graph.gemma3_layer_multimode_decision.v2\0"
+_LAYER_DOMAIN = b"fisher_graph.gemma3_layer_multimode_layer_selection.v2\0"
+_SELECTION_DOMAIN = b"fisher_graph.gemma3_layer_multimode_selection.v2\0"
+_POLICY_DOMAIN = b"fisher_graph.gemma3_layer_multimode_policy.v2\0"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FLOAT_REL_TOL = 1e-12
 _FLOAT_ABS_TOL = 1e-12
 _LIVE_CANDIDATE_EVALUATION_AUTHORITY = object()
+_LIVE_CANDIDATE_SUPPORT_REJECTION_AUTHORITY = object()
 _LIVE_SELECTOR_AUTHORITY = object()
 _LIVE_CANDIDATE_EVALUATIONS: WeakValueDictionary[int, object] = (
+    WeakValueDictionary()
+)
+_LIVE_CANDIDATE_SUPPORT_REJECTIONS: WeakValueDictionary[int, object] = (
     WeakValueDictionary()
 )
 _LIVE_SELECTION_RECEIPTS: WeakValueDictionary[int, object] = (
@@ -137,6 +154,7 @@ _SAFETY_METADATA: dict[str, bool] = {
 }
 
 _GATE_ORDER = (
+    "atlas_support_rejected",
     "resource_receipt_failed",
     "not_smaller_than_native_mlp_matrices",
     "validation_velocity_nrmse",
@@ -149,6 +167,22 @@ _GATE_ORDER = (
     "mode_velocity_separation",
     "split_refit_prediction_cosine",
     "split_refit_hard_route_ari",
+)
+
+_SUPPORT_FAILURE_CODES = frozenset(
+    {
+        "deterministic_lloyd_empty_chart",
+        "hard_chart_count_below_r_plus_1",
+        "weighted_chart_covariance_numerical_rank_below_r",
+        "selected_chart_covariance_support_not_above_tolerance",
+    }
+)
+_SUPPORT_FAILURE_STAGES = frozenset(
+    {
+        "shared_atlas_fit",
+        "split_refit_partition_1",
+        "split_refit_partition_2",
+    }
 )
 
 
@@ -298,7 +332,7 @@ def layer_multimode_selection_policy() -> dict[str, object]:
     """Return the JSON-safe frozen production selection contract."""
 
     return {
-        "format_version": _FORMAT_VERSION,
+        "format_version": _SELECTION_FORMAT_VERSION,
         "scope": "replace_token_local_mlp_residual_only_attention_remains_native",
         "data_boundary": "fit_and_validate_on_A_only_before_fresh_B",
         "required_fit_policy_sha256": (
@@ -314,8 +348,16 @@ def layer_multimode_selection_policy() -> dict[str, object]:
         "candidate_count_per_layer": CANDIDATES_PER_LAYER,
         "candidate_grid_complete": True,
         "production_candidate_authority": (
-            "all_324_original_live_fit_adapter_evaluations"
+            "all_324_original_live_fit_adapter_outcomes"
         ),
+        "preoptimizer_atlas_support_rejection_codes": sorted(
+            _SUPPORT_FAILURE_CODES
+        ),
+        "atlas_support_rejection_stages": sorted(_SUPPORT_FAILURE_STAGES),
+        "support_rejection_grid_rule": (
+            "shared_atlas_failure_rejects_all_M_split_refit_failure_rejects_one_M"
+        ),
+        "support_rejection_metrics": "absent_not_fabricated",
         "production_selection_authority": (
             "original_live_selector_receipt_over_the_full_grid"
         ),
@@ -1178,6 +1220,421 @@ class LayerMultimodeCandidateEvaluationReceipt:
         return cls(**arguments)  # type: ignore[arg-type]
 
 
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class LayerMultimodeCandidateSupportRejectionReceipt:
+    """Authenticated A-only pre-optimizer rejection for one grid coordinate.
+
+    This is deliberately a different receipt type from a candidate evaluation:
+    no validation metrics or resource receipt are invented.  A shared-atlas
+    failure fans out across its three ``M`` slots with one evidence digest; a
+    split-refit failure rejects only the affected ``M>1`` coordinate and binds
+    its already-successful candidate-fit and atlas lineage.
+    """
+
+    layer_ordinal: int
+    chart_count: int
+    dynamic_mode_count: int
+    tangent_rank: int
+    source_model_sha256: str
+    source_rows_receipt_sha256: str
+    fit_policy_sha256: str
+    fit_policy_test_only: bool
+    source_capture_scope: str
+    production_fit_authorized: bool
+    fit_source_sha256: str
+    support_subset_sha256: str
+    validation_source_sha256: str | None
+    fit_a_sha256: str
+    validation_a_sha256: str
+    evaluation_protocol_sha256: str
+    support_failure_stage: str
+    fit_partition_ordinal: int
+    candidate_fit_receipt_sha256: str | None
+    atlas_sha256: str | None
+    support_failure_code: str
+    chart_ordinal: int
+    observed_support: int | None
+    required_support: int | None
+    selected_covariance_value: float | None
+    covariance_tolerance: float | None
+    support_failure_evidence_sha256: str = ""
+    artifact_sha256: str = ""
+    artifact_kind: str = _SUPPORT_REJECTION_KIND
+    format_version: int = _SELECTION_FORMAT_VERSION
+    contains_raw_tensors: bool = False
+    contains_model_weights: bool = False
+    contains_prompt_text: bool = False
+    contains_activation_rows: bool = False
+    contains_gradient_rows: bool = False
+    uses_fit_a_only: bool = True
+    uses_b_c_d_or_graph_inputs: bool = False
+    _construction_authority: object = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        _require_int(self.layer_ordinal, label="layer_ordinal")
+        if self.layer_ordinal >= LAYER_COUNT:
+            raise ValueError("layer_ordinal is outside the 18-layer model")
+        for label, value, allowed in (
+            ("chart_count", self.chart_count, CHART_COUNT_LADDER),
+            (
+                "dynamic_mode_count",
+                self.dynamic_mode_count,
+                DYNAMIC_MODE_COUNT_LADDER,
+            ),
+            ("tangent_rank", self.tangent_rank, TANGENT_RANK_LADDER),
+        ):
+            if type(value) is not int or value not in allowed:
+                raise ValueError(f"{label} is outside the frozen ladder")
+        for name in (
+            "source_model_sha256",
+            "source_rows_receipt_sha256",
+            "fit_policy_sha256",
+            "fit_source_sha256",
+            "support_subset_sha256",
+            "fit_a_sha256",
+            "validation_a_sha256",
+            "evaluation_protocol_sha256",
+        ):
+            _require_sha256(getattr(self, name), label=name)
+        if type(self.fit_policy_test_only) is not bool:
+            raise TypeError("fit_policy_test_only must be a bool")
+        if self.source_capture_scope not in (
+            PRODUCTION_FULL_A_CAPTURE_SCOPE,
+            _DEVELOPMENT_SINGLE_BATCH_CAPTURE_SCOPE,
+        ) or type(self.source_capture_scope) is not str:
+            raise ValueError("source_capture_scope is outside the frozen boundary")
+        if type(self.production_fit_authorized) is not bool:
+            raise TypeError("production_fit_authorized must be a bool")
+        if self.fit_policy_test_only is (
+            self.fit_policy_sha256
+            == PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256
+        ):
+            raise ValueError(
+                "fit policy test-only status conflicts with the frozen production hash"
+            )
+        expected_production_authority = (
+            not self.fit_policy_test_only
+            and self.fit_policy_sha256
+            == PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256
+            and self.source_capture_scope == PRODUCTION_FULL_A_CAPTURE_SCOPE
+        )
+        if self.production_fit_authorized is not expected_production_authority:
+            raise ValueError(
+                "production_fit_authorized does not recompute from policy/scope"
+            )
+        if self.fit_a_sha256 == self.validation_a_sha256:
+            raise ValueError("A fit and validation partitions must be distinct")
+        if self.source_rows_receipt_sha256 == self.fit_source_sha256:
+            raise ValueError(
+                "full A rows and layer fit subset digests must be distinct"
+            )
+        if (
+            type(self.support_failure_stage) is not str
+            or self.support_failure_stage not in _SUPPORT_FAILURE_STAGES
+        ):
+            raise ValueError("support_failure_stage is outside the frozen inventory")
+        if self.support_failure_stage == "shared_atlas_fit":
+            if self.support_subset_sha256 != self.fit_source_sha256:
+                raise ValueError(
+                    "shared-atlas support subset must equal the base fit source"
+                )
+        elif self.support_subset_sha256 == self.fit_source_sha256:
+            raise ValueError(
+                "split-refit support subset must differ from the base fit source"
+            )
+        _require_int(self.fit_partition_ordinal, label="fit_partition_ordinal")
+        expected_stage = (
+            "shared_atlas_fit"
+            if self.fit_partition_ordinal == 0
+            else f"split_refit_partition_{self.fit_partition_ordinal}"
+        )
+        if (
+            self.fit_partition_ordinal not in (0, 1, 2)
+            or self.support_failure_stage != expected_stage
+        ):
+            raise ValueError(
+                "support_failure_stage does not match fit_partition_ordinal"
+            )
+        if self.support_failure_stage == "shared_atlas_fit":
+            if (
+                self.candidate_fit_receipt_sha256 is not None
+                or self.atlas_sha256 is not None
+                or self.validation_source_sha256 is not None
+            ):
+                raise ValueError(
+                    "shared-atlas rejection cannot claim validation, fit, "
+                    "or atlas lineage"
+                )
+        else:
+            if self.dynamic_mode_count == 1:
+                raise ValueError("M=1 cannot carry a split-refit rejection")
+            _require_sha256(
+                self.candidate_fit_receipt_sha256,
+                label="candidate_fit_receipt_sha256",
+            )
+            _require_sha256(self.atlas_sha256, label="atlas_sha256")
+            _require_sha256(
+                self.validation_source_sha256,
+                label="validation_source_sha256",
+            )
+            if len(
+                {
+                    self.source_rows_receipt_sha256,
+                    self.fit_source_sha256,
+                    self.validation_source_sha256,
+                }
+            ) != 3:
+                raise ValueError(
+                    "full A rows and layer fit/validation subset digests "
+                    "must be distinct"
+                )
+        if (
+            type(self.support_failure_code) is not str
+            or self.support_failure_code not in _SUPPORT_FAILURE_CODES
+        ):
+            raise ValueError("support_failure_code is outside the frozen inventory")
+        _require_int(self.chart_ordinal, label="chart_ordinal")
+        if self.chart_ordinal >= self.chart_count:
+            raise ValueError("chart_ordinal is outside chart_count")
+        self._validate_support_failure()
+        for name, expected in _SAFETY_METADATA.items():
+            if getattr(self, name) is not expected:
+                raise ValueError("support rejection safety metadata is invalid")
+        if (
+            self.artifact_kind != _SUPPORT_REJECTION_KIND
+            or type(self.format_version) is not int
+            or self.format_version != _SELECTION_FORMAT_VERSION
+        ):
+            raise ValueError("candidate support rejection header is invalid")
+        computed_evidence = _json_sha256(
+            self._support_failure_evidence_payload(),
+            domain=_SUPPORT_FAILURE_EVIDENCE_DOMAIN,
+        )
+        if self.support_failure_evidence_sha256 == "":
+            object.__setattr__(
+                self,
+                "support_failure_evidence_sha256",
+                computed_evidence,
+            )
+        elif _require_sha256(
+            self.support_failure_evidence_sha256,
+            label="support_failure_evidence_sha256",
+        ) != computed_evidence:
+            raise ValueError("support failure evidence hash mismatch")
+        computed = _json_sha256(self._payload(), domain=_SUPPORT_REJECTION_DOMAIN)
+        if self.artifact_sha256 == "":
+            object.__setattr__(self, "artifact_sha256", computed)
+        elif _require_sha256(
+            self.artifact_sha256,
+            label="artifact_sha256",
+        ) != computed:
+            raise ValueError("candidate support rejection hash mismatch")
+
+    def _validate_support_failure(self) -> None:
+        count_failure = self.support_failure_code in {
+            "deterministic_lloyd_empty_chart",
+            "hard_chart_count_below_r_plus_1",
+            "weighted_chart_covariance_numerical_rank_below_r",
+        }
+        if count_failure:
+            _require_int(self.observed_support, label="observed_support")
+            _require_int(self.required_support, label="required_support", minimum=1)
+            if self.observed_support >= self.required_support:
+                raise ValueError("observed_support must be below required_support")
+            if (
+                self.selected_covariance_value is not None
+                or self.covariance_tolerance is not None
+            ):
+                raise ValueError(
+                    "count support failures cannot claim covariance evidence"
+                )
+            if self.support_failure_code == "deterministic_lloyd_empty_chart":
+                if self.chart_count != 2 or self.observed_support != 0:
+                    raise ValueError("empty-chart support evidence is invalid")
+                expected_required = self.tangent_rank + 1
+            elif self.support_failure_code == "hard_chart_count_below_r_plus_1":
+                expected_required = self.tangent_rank + 1
+            else:
+                expected_required = self.tangent_rank
+            if self.required_support != expected_required:
+                raise ValueError(
+                    "required_support does not match the support failure code"
+                )
+            return
+
+        if self.observed_support is not None or self.required_support is not None:
+            raise ValueError("covariance support failures cannot claim integer support")
+        _require_float(
+            self.selected_covariance_value,
+            label="selected_covariance_value",
+        )
+        _require_float(
+            self.covariance_tolerance,
+            label="covariance_tolerance",
+            minimum=0.0,
+        )
+        if self.selected_covariance_value > self.covariance_tolerance:
+            raise ValueError(
+                "selected covariance value must not exceed its tolerance"
+            )
+
+    @property
+    def candidate_key(self) -> tuple[int, int, int, int]:
+        return (
+            self.layer_ordinal,
+            self.chart_count,
+            self.dynamic_mode_count,
+            self.tangent_rank,
+        )
+
+    def _support_failure_evidence_payload(self) -> dict[str, object]:
+        return {
+            "layer_ordinal": self.layer_ordinal,
+            "chart_count": self.chart_count,
+            "tangent_rank": self.tangent_rank,
+            "source_model_sha256": self.source_model_sha256,
+            "source_rows_receipt_sha256": self.source_rows_receipt_sha256,
+            "fit_policy_sha256": self.fit_policy_sha256,
+            "fit_policy_test_only": self.fit_policy_test_only,
+            "source_capture_scope": self.source_capture_scope,
+            "production_fit_authorized": self.production_fit_authorized,
+            "fit_source_sha256": self.fit_source_sha256,
+            "support_subset_sha256": self.support_subset_sha256,
+            "validation_source_sha256": self.validation_source_sha256,
+            "fit_a_sha256": self.fit_a_sha256,
+            "validation_a_sha256": self.validation_a_sha256,
+            "evaluation_protocol_sha256": self.evaluation_protocol_sha256,
+            "support_failure_stage": self.support_failure_stage,
+            "fit_partition_ordinal": self.fit_partition_ordinal,
+            "dynamic_mode_count": (
+                None
+                if self.support_failure_stage == "shared_atlas_fit"
+                else self.dynamic_mode_count
+            ),
+            "candidate_fit_receipt_sha256": self.candidate_fit_receipt_sha256,
+            "atlas_sha256": self.atlas_sha256,
+            "support_failure_code": self.support_failure_code,
+            "chart_ordinal": self.chart_ordinal,
+            "observed_support": self.observed_support,
+            "required_support": self.required_support,
+            "selected_covariance_value": self.selected_covariance_value,
+            "covariance_tolerance": self.covariance_tolerance,
+        }
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifact_kind": self.artifact_kind,
+            "format_version": self.format_version,
+            "layer_ordinal": self.layer_ordinal,
+            "chart_count": self.chart_count,
+            "dynamic_mode_count": self.dynamic_mode_count,
+            "tangent_rank": self.tangent_rank,
+            "source_model_sha256": self.source_model_sha256,
+            "source_rows_receipt_sha256": self.source_rows_receipt_sha256,
+            "fit_policy_sha256": self.fit_policy_sha256,
+            "fit_policy_test_only": self.fit_policy_test_only,
+            "source_capture_scope": self.source_capture_scope,
+            "production_fit_authorized": self.production_fit_authorized,
+            "fit_source_sha256": self.fit_source_sha256,
+            "support_subset_sha256": self.support_subset_sha256,
+            "validation_source_sha256": self.validation_source_sha256,
+            "fit_a_sha256": self.fit_a_sha256,
+            "validation_a_sha256": self.validation_a_sha256,
+            "evaluation_protocol_sha256": self.evaluation_protocol_sha256,
+            "support_failure_stage": self.support_failure_stage,
+            "fit_partition_ordinal": self.fit_partition_ordinal,
+            "candidate_fit_receipt_sha256": self.candidate_fit_receipt_sha256,
+            "atlas_sha256": self.atlas_sha256,
+            "support_failure_code": self.support_failure_code,
+            "chart_ordinal": self.chart_ordinal,
+            "observed_support": self.observed_support,
+            "required_support": self.required_support,
+            "selected_covariance_value": self.selected_covariance_value,
+            "covariance_tolerance": self.covariance_tolerance,
+            "support_failure_evidence_sha256": (
+                self.support_failure_evidence_sha256
+            ),
+            **_SAFETY_METADATA,
+        }
+
+    def validate_integrity(self) -> None:
+        if _json_sha256(
+            self._support_failure_evidence_payload(),
+            domain=_SUPPORT_FAILURE_EVIDENCE_DOMAIN,
+        ) != self.support_failure_evidence_sha256:
+            raise ValueError("support failure evidence hash mismatch")
+        if (
+            _json_sha256(self._payload(), domain=_SUPPORT_REJECTION_DOMAIN)
+            != self.artifact_sha256
+        ):
+            raise ValueError("candidate support rejection hash mismatch")
+
+    @property
+    def live_candidate_support_rejection_authorized(self) -> bool:
+        """True only for the original rejection returned by the adapter."""
+
+        return (
+            self._construction_authority
+            is _LIVE_CANDIDATE_SUPPORT_REJECTION_AUTHORITY
+            and _LIVE_CANDIDATE_SUPPORT_REJECTIONS.get(id(self)) is self
+        )
+
+    def state_dict(self) -> dict[str, object]:
+        return _json_safe_state(
+            {**self._payload(), "artifact_sha256": self.artifact_sha256}
+        )  # type: ignore[return-value]
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        state: Mapping[str, object],
+    ) -> LayerMultimodeCandidateSupportRejectionReceipt:
+        expected = {
+            "artifact_kind",
+            "format_version",
+            "layer_ordinal",
+            "chart_count",
+            "dynamic_mode_count",
+            "tangent_rank",
+            "source_model_sha256",
+            "source_rows_receipt_sha256",
+            "fit_policy_sha256",
+            "fit_policy_test_only",
+            "source_capture_scope",
+            "production_fit_authorized",
+            "fit_source_sha256",
+            "support_subset_sha256",
+            "validation_source_sha256",
+            "fit_a_sha256",
+            "validation_a_sha256",
+            "evaluation_protocol_sha256",
+            "support_failure_stage",
+            "fit_partition_ordinal",
+            "candidate_fit_receipt_sha256",
+            "atlas_sha256",
+            "support_failure_code",
+            "chart_ordinal",
+            "observed_support",
+            "required_support",
+            "selected_covariance_value",
+            "covariance_tolerance",
+            "support_failure_evidence_sha256",
+            *_SAFETY_METADATA,
+            "artifact_sha256",
+        }
+        _strict_fields(
+            state,
+            expected=expected,
+            label="candidate support rejection receipt",
+        )
+        return cls(**state)  # type: ignore[arg-type]
+
+
 def _grant_live_candidate_evaluation_authority(
     candidate: LayerMultimodeCandidateEvaluationReceipt,
 ) -> LayerMultimodeCandidateEvaluationReceipt:
@@ -1193,6 +1650,59 @@ def _grant_live_candidate_evaluation_authority(
     return candidate
 
 
+def _grant_live_candidate_support_rejection_authority(
+    candidate: LayerMultimodeCandidateSupportRejectionReceipt,
+) -> LayerMultimodeCandidateSupportRejectionReceipt:
+    if type(candidate) is not LayerMultimodeCandidateSupportRejectionReceipt:
+        raise TypeError("live support rejection grant requires the exact receipt type")
+    candidate.validate_integrity()
+    object.__setattr__(
+        candidate,
+        "_construction_authority",
+        _LIVE_CANDIDATE_SUPPORT_REJECTION_AUTHORITY,
+    )
+    _LIVE_CANDIDATE_SUPPORT_REJECTIONS[id(candidate)] = candidate
+    return candidate
+
+
+LayerMultimodeCandidateOutcomeReceipt = (
+    LayerMultimodeCandidateEvaluationReceipt
+    | LayerMultimodeCandidateSupportRejectionReceipt
+)
+
+
+def _is_exact_candidate_outcome(value: object) -> bool:
+    return type(value) in (
+        LayerMultimodeCandidateEvaluationReceipt,
+        LayerMultimodeCandidateSupportRejectionReceipt,
+    )
+
+
+def _candidate_outcome_is_live(
+    candidate: LayerMultimodeCandidateOutcomeReceipt,
+) -> bool:
+    if type(candidate) is LayerMultimodeCandidateEvaluationReceipt:
+        return candidate.live_candidate_evaluation_authorized
+    if type(candidate) is LayerMultimodeCandidateSupportRejectionReceipt:
+        return candidate.live_candidate_support_rejection_authorized
+    return False
+
+
+def _candidate_outcome_from_state(
+    state: Mapping[str, object],
+) -> LayerMultimodeCandidateOutcomeReceipt:
+    if not isinstance(state, Mapping):
+        raise ValueError("candidate outcome state must be a mapping")
+    artifact_kind = state.get("artifact_kind")
+    if artifact_kind == _CANDIDATE_KIND:
+        return LayerMultimodeCandidateEvaluationReceipt.from_state_dict(state)
+    if artifact_kind == _SUPPORT_REJECTION_KIND:
+        return LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            state
+        )
+    raise ValueError("candidate outcome artifact_kind is invalid")
+
+
 @dataclass(frozen=True, slots=True)
 class LayerMultimodeCandidateGateDecision:
     candidate_sha256: str
@@ -1201,12 +1711,12 @@ class LayerMultimodeCandidateGateDecision:
     dynamic_mode_count: int
     tangent_rank: int
     matched_m1_candidate_sha256: str
-    relative_sse_improvement_over_matched_m1: float
+    relative_sse_improvement_over_matched_m1: float | None
     failed_gates: tuple[str, ...]
     passed: bool
     artifact_sha256: str = ""
     artifact_kind: str = _DECISION_KIND
-    format_version: int = _FORMAT_VERSION
+    format_version: int = _SELECTION_FORMAT_VERSION
 
     def __post_init__(self) -> None:
         _require_sha256(self.candidate_sha256, label="candidate_sha256")
@@ -1226,10 +1736,6 @@ class LayerMultimodeCandidateGateDecision:
         ):
             if type(value) is not int or value not in allowed:
                 raise ValueError(f"{label} is outside the frozen ladder")
-        _require_float(
-            self.relative_sse_improvement_over_matched_m1,
-            label="relative_sse_improvement_over_matched_m1",
-        )
         if (
             type(self.failed_gates) is not tuple
             or any(type(value) is not str for value in self.failed_gates)
@@ -1240,12 +1746,23 @@ class LayerMultimodeCandidateGateDecision:
             raise ValueError("failed_gates is not a canonical gate inventory")
         if any(value not in _GATE_ORDER for value in self.failed_gates):
             raise ValueError("failed_gates contains an unknown gate")
+        support_rejected = "atlas_support_rejected" in self.failed_gates
+        if support_rejected:
+            if self.failed_gates != ("atlas_support_rejected",):
+                raise ValueError("atlas support rejection must be the only failed gate")
+            if self.relative_sse_improvement_over_matched_m1 is not None:
+                raise ValueError("support rejection cannot claim an SSE improvement")
+        else:
+            _require_float(
+                self.relative_sse_improvement_over_matched_m1,
+                label="relative_sse_improvement_over_matched_m1",
+            )
         if type(self.passed) is not bool or self.passed is not (not self.failed_gates):
             raise ValueError("passed does not match failed_gates")
         if (
             self.artifact_kind != _DECISION_KIND
             or type(self.format_version) is not int
-            or self.format_version != _FORMAT_VERSION
+            or self.format_version != _SELECTION_FORMAT_VERSION
         ):
             raise ValueError("candidate decision header is invalid")
         computed = _json_sha256(self._payload(), domain=_DECISION_DOMAIN)
@@ -1334,7 +1851,7 @@ class LayerMultimodeLayerSelectionReceipt:
     selected_validation_velocity_nrmse: float
     artifact_sha256: str = ""
     artifact_kind: str = _LAYER_KIND
-    format_version: int = _FORMAT_VERSION
+    format_version: int = _SELECTION_FORMAT_VERSION
 
     def __post_init__(self) -> None:
         _require_int(self.layer_ordinal, label="layer_ordinal")
@@ -1406,7 +1923,7 @@ class LayerMultimodeLayerSelectionReceipt:
         if (
             self.artifact_kind != _LAYER_KIND
             or type(self.format_version) is not int
-            or self.format_version != _FORMAT_VERSION
+            or self.format_version != _SELECTION_FORMAT_VERSION
         ):
             raise ValueError("layer selection receipt header is invalid")
         computed = _json_sha256(self._payload(), domain=_LAYER_DOMAIN)
@@ -1508,7 +2025,7 @@ class LayerMultimodeSelectionReceipt:
     validation_a_sha256: str
     evaluation_protocol_sha256: str
     family_ids: tuple[str, ...]
-    candidates: tuple[LayerMultimodeCandidateEvaluationReceipt, ...]
+    candidates: tuple[LayerMultimodeCandidateOutcomeReceipt, ...]
     layers: tuple[LayerMultimodeLayerSelectionReceipt, ...]
     selected_serialized_parameter_count: int
     selected_matrix_macs_per_token: int
@@ -1520,7 +2037,7 @@ class LayerMultimodeSelectionReceipt:
     latency_claimed: bool = False
     artifact_sha256: str = ""
     artifact_kind: str = _SELECTION_KIND
-    format_version: int = _FORMAT_VERSION
+    format_version: int = _SELECTION_FORMAT_VERSION
     contains_raw_tensors: bool = False
     contains_model_weights: bool = False
     contains_prompt_text: bool = False
@@ -1576,10 +2093,7 @@ class LayerMultimodeSelectionReceipt:
         if (
             type(self.candidates) is not tuple
             or len(self.candidates) != LAYER_COUNT * CANDIDATES_PER_LAYER
-            or any(
-                type(value) is not LayerMultimodeCandidateEvaluationReceipt
-                for value in self.candidates
-            )
+            or any(not _is_exact_candidate_outcome(value) for value in self.candidates)
         ):
             raise ValueError("candidates must contain the complete 18-layer grid")
         candidate_keys = tuple(value.candidate_key for value in self.candidates)
@@ -1587,6 +2101,13 @@ class LayerMultimodeSelectionReceipt:
             set(candidate_keys)
         ) != len(candidate_keys):
             raise ValueError("candidate inventory is not canonical and unique")
+        expected_keys = {
+            (layer, chart_count, mode_count, rank)
+            for layer in range(LAYER_COUNT)
+            for chart_count, mode_count, rank in _candidate_grid()
+        }
+        if set(candidate_keys) != expected_keys:
+            raise ValueError("candidate inventory does not cover the frozen grid")
         for candidate in self.candidates:
             candidate.validate_integrity()
             if (
@@ -1600,10 +2121,16 @@ class LayerMultimodeSelectionReceipt:
                 or candidate.validation_a_sha256 != self.validation_a_sha256
                 or candidate.evaluation_protocol_sha256
                 != self.evaluation_protocol_sha256
-                or tuple(value.family_id for value in candidate.family_fidelity)
-                != self.family_ids
             ):
                 raise ValueError("candidate provenance does not match selection")
+            if (
+                type(candidate) is LayerMultimodeCandidateEvaluationReceipt
+                and tuple(
+                    value.family_id for value in candidate.family_fidelity
+                )
+                != self.family_ids
+            ):
+                raise ValueError("candidate family catalog does not match selection")
         if (
             type(self.layers) is not tuple
             or len(self.layers) != LAYER_COUNT
@@ -1624,6 +2151,51 @@ class LayerMultimodeSelectionReceipt:
                 for value in self.candidates
                 if value.layer_ordinal == layer.layer_ordinal
             )
+            layer_fit_source_lineage = {
+                (value.source_rows_receipt_sha256, value.fit_source_sha256)
+                for value in layer_candidates
+            }
+            layer_validation_sources = {
+                value.validation_source_sha256
+                for value in layer_candidates
+                if value.validation_source_sha256 is not None
+            }
+            if (
+                len(layer_fit_source_lineage) != 1
+                or len(layer_validation_sources) != 1
+            ):
+                raise ValueError(
+                    "layer candidates do not share one A row/source lineage"
+                )
+            for chart_count in CHART_COUNT_LADDER:
+                for tangent_rank in TANGENT_RANK_LADDER:
+                    _validate_atlas_outcome_group(
+                        tuple(
+                            value
+                            for value in layer_candidates
+                            if value.chart_count == chart_count
+                            and value.tangent_rank == tangent_rank
+                        ),
+                        layer_ordinal=layer.layer_ordinal,
+                        chart_count=chart_count,
+                        tangent_rank=tangent_rank,
+                    )
+            reference_targets = {
+                (
+                    value.validation_scalar_count,
+                    value.validation_teacher_energy,
+                    tuple(
+                        (family.scalar_count, family.teacher_energy)
+                        for family in value.family_fidelity
+                    ),
+                )
+                for value in layer_candidates
+                if type(value) is LayerMultimodeCandidateEvaluationReceipt
+            }
+            if len(reference_targets) != 1:
+                raise ValueError(
+                    "layer candidates do not share one A-validation target"
+                )
             expected_decisions = tuple(
                 _decision_for_candidate(
                     candidate,
@@ -1647,6 +2219,11 @@ class LayerMultimodeSelectionReceipt:
                 for value in layer.decisions
                 if value.passed
             )
+            if any(
+                type(value) is not LayerMultimodeCandidateEvaluationReceipt
+                for value in passing_candidates
+            ):
+                raise ValueError("support rejection cannot be a passing candidate")
             expected_selected = min(
                 passing_candidates,
                 key=lambda value: (
@@ -1695,7 +2272,7 @@ class LayerMultimodeSelectionReceipt:
         if (
             self.artifact_kind != _SELECTION_KIND
             or type(self.format_version) is not int
-            or self.format_version != _FORMAT_VERSION
+            or self.format_version != _SELECTION_FORMAT_VERSION
         ):
             raise ValueError("selection receipt header is invalid")
         computed = _json_sha256(self._payload(), domain=_SELECTION_DOMAIN)
@@ -1764,7 +2341,7 @@ class LayerMultimodeSelectionReceipt:
         """True only for an original selection over 324 original evaluations."""
 
         return self.live_selector_authorized and all(
-            candidate.live_candidate_evaluation_authorized
+            _candidate_outcome_is_live(candidate)
             for candidate in self.candidates
         )
 
@@ -1828,7 +2405,7 @@ class LayerMultimodeSelectionReceipt:
             label="layer_selection_sha256s",
         )
         candidates = tuple(
-            LayerMultimodeCandidateEvaluationReceipt.from_state_dict(value)
+            _candidate_outcome_from_state(value)
             for value in candidate_states
         )
         layers = tuple(
@@ -1863,10 +2440,92 @@ def _candidate_grid() -> set[tuple[int, int, int]]:
     }
 
 
+def _validate_atlas_outcome_group(
+    atlas_outcomes: tuple[LayerMultimodeCandidateOutcomeReceipt, ...],
+    *,
+    layer_ordinal: int,
+    chart_count: int,
+    tangent_rank: int,
+) -> None:
+    shared_rejections = tuple(
+        value
+        for value in atlas_outcomes
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+        and value.support_failure_stage == "shared_atlas_fit"
+    )
+    if shared_rejections:
+        if (
+            len(shared_rejections) != len(DYNAMIC_MODE_COUNT_LADDER)
+            or len(shared_rejections) != len(atlas_outcomes)
+            or len(
+                {
+                    value.support_failure_evidence_sha256
+                    for value in shared_rejections
+                }
+            )
+            != 1
+        ):
+            raise ValueError(
+                f"layer {layer_ordinal} C={chart_count} R={tangent_rank} "
+                "candidates do not share one exact shared-atlas rejection across M"
+            )
+        return
+
+    successful_atlas_sha256s = {
+        value.atlas_sha256
+        for value in atlas_outcomes
+        if type(value) is LayerMultimodeCandidateEvaluationReceipt
+    }
+    split_atlas_sha256s = {
+        value.atlas_sha256
+        for value in atlas_outcomes
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+    }
+    if len(successful_atlas_sha256s | split_atlas_sha256s) != 1:
+        raise ValueError(
+            f"layer {layer_ordinal} C={chart_count} R={tangent_rank} "
+            "candidates do not share one successful state atlas across M"
+        )
+
+
 def _decision_for_candidate(
-    candidate: LayerMultimodeCandidateEvaluationReceipt,
-    matched_m1: LayerMultimodeCandidateEvaluationReceipt,
+    candidate: LayerMultimodeCandidateOutcomeReceipt,
+    matched_m1: LayerMultimodeCandidateOutcomeReceipt,
 ) -> LayerMultimodeCandidateGateDecision:
+    if type(candidate) is LayerMultimodeCandidateSupportRejectionReceipt:
+        if candidate.support_failure_stage == "shared_atlas_fit":
+            if (
+                type(matched_m1)
+                is not LayerMultimodeCandidateSupportRejectionReceipt
+                or matched_m1.support_failure_stage != "shared_atlas_fit"
+                or matched_m1.support_failure_evidence_sha256
+                != candidate.support_failure_evidence_sha256
+            ):
+                raise ValueError(
+                    "shared-atlas rejection does not match its M=1 control"
+                )
+        elif (
+            type(matched_m1) is not LayerMultimodeCandidateEvaluationReceipt
+            or matched_m1.atlas_sha256 != candidate.atlas_sha256
+        ):
+            raise ValueError(
+                "split-refit rejection does not match its evaluated M=1 atlas"
+            )
+        return LayerMultimodeCandidateGateDecision(
+            candidate_sha256=candidate.artifact_sha256,
+            layer_ordinal=candidate.layer_ordinal,
+            chart_count=candidate.chart_count,
+            dynamic_mode_count=candidate.dynamic_mode_count,
+            tangent_rank=candidate.tangent_rank,
+            matched_m1_candidate_sha256=matched_m1.artifact_sha256,
+            relative_sse_improvement_over_matched_m1=None,
+            failed_gates=("atlas_support_rejected",),
+            passed=False,
+        )
+    if type(candidate) is not LayerMultimodeCandidateEvaluationReceipt:
+        raise TypeError("candidate decision requires an exact candidate outcome")
+    if type(matched_m1) is not LayerMultimodeCandidateEvaluationReceipt:
+        raise ValueError("evaluated atlas has a support-rejected M=1 control")
     failed: list[str] = []
     if not candidate.resource_pass:
         failed.append("resource_receipt_failed")
@@ -1942,7 +2601,7 @@ def _decision_for_candidate(
 
 
 def select_layer_multimode_candidates(
-    candidates: tuple[LayerMultimodeCandidateEvaluationReceipt, ...],
+    candidates: tuple[LayerMultimodeCandidateOutcomeReceipt, ...],
     *,
     allow_test_only_nonproduction: bool = False,
     allow_test_only_nonlive_authority: bool = False,
@@ -1962,11 +2621,8 @@ def select_layer_multimode_candidates(
         raise TypeError("allow_test_only_nonlive_authority must be a bool")
     if len(candidates) != LAYER_COUNT * CANDIDATES_PER_LAYER:
         raise ValueError("candidate inventory must contain exactly 18 x 18 receipts")
-    if any(
-        type(value) is not LayerMultimodeCandidateEvaluationReceipt
-        for value in candidates
-    ):
-        raise TypeError("candidate inventory contains a non-receipt value")
+    if any(not _is_exact_candidate_outcome(value) for value in candidates):
+        raise TypeError("candidate inventory contains a non-outcome value")
     for candidate in candidates:
         candidate.validate_integrity()
     canonical = tuple(sorted(candidates, key=lambda value: value.candidate_key))
@@ -1992,7 +2648,14 @@ def select_layer_multimode_candidates(
         first.validation_a_sha256,
         first.evaluation_protocol_sha256,
     )
-    family_ids = tuple(value.family_id for value in first.family_fidelity)
+    family_catalogs = {
+        tuple(value.family_id for value in candidate.family_fidelity)
+        for candidate in canonical
+        if type(candidate) is LayerMultimodeCandidateEvaluationReceipt
+    }
+    if len(family_catalogs) > 1:
+        raise ValueError("candidate grid provenance or family catalog drifted")
+    family_ids = next(iter(family_catalogs), ())
     for candidate in canonical:
         if (
             (
@@ -2006,8 +2669,6 @@ def select_layer_multimode_candidates(
                 candidate.evaluation_protocol_sha256,
             )
             != provenance
-            or tuple(value.family_id for value in candidate.family_fidelity)
-            != family_ids
         ):
             raise ValueError("candidate grid provenance or family catalog drifted")
     if not first.production_fit_authorized and not allow_test_only_nonproduction:
@@ -2031,7 +2692,7 @@ def select_layer_multimode_candidates(
             "nonproduction provenance"
         )
     all_candidate_evaluations_live = all(
-        candidate.live_candidate_evaluation_authorized
+        _candidate_outcome_is_live(candidate)
         for candidate in canonical
     )
     if (
@@ -2039,7 +2700,7 @@ def select_layer_multimode_candidates(
         and not allow_test_only_nonlive_authority
     ):
         raise ValueError(
-            "selection requires all 324 original live adapter evaluations; "
+            "selection requires all 324 original live adapter outcomes; "
             "the nonlive path requires explicit test-only opt-in"
         )
 
@@ -2048,31 +2709,34 @@ def select_layer_multimode_candidates(
         layer_candidates = tuple(
             value for value in canonical if value.layer_ordinal == layer_ordinal
         )
-        layer_source_lineage = {
-            (
-                value.source_rows_receipt_sha256,
-                value.fit_source_sha256,
-                value.validation_source_sha256,
-            )
+        layer_fit_source_lineage = {
+            (value.source_rows_receipt_sha256, value.fit_source_sha256)
             for value in layer_candidates
         }
-        if len(layer_source_lineage) != 1:
+        layer_validation_sources = {
+            value.validation_source_sha256
+            for value in layer_candidates
+            if value.validation_source_sha256 is not None
+        }
+        if len(layer_fit_source_lineage) != 1 or len(layer_validation_sources) > 1:
             raise ValueError(
-                f"layer {layer_ordinal} candidates do not share one A row/source lineage"
+                f"layer {layer_ordinal} candidates do not share one A "
+                "row/source lineage"
             )
         for chart_count in CHART_COUNT_LADDER:
             for tangent_rank in TANGENT_RANK_LADDER:
-                atlases = {
-                    value.atlas_sha256
+                atlas_outcomes = tuple(
+                    value
                     for value in layer_candidates
                     if value.chart_count == chart_count
                     and value.tangent_rank == tangent_rank
-                }
-                if len(atlases) != 1:
-                    raise ValueError(
-                        f"layer {layer_ordinal} C={chart_count} R={tangent_rank} "
-                        "candidates do not share one state atlas across M"
-                    )
+                )
+                _validate_atlas_outcome_group(
+                    atlas_outcomes,
+                    layer_ordinal=layer_ordinal,
+                    chart_count=chart_count,
+                    tangent_rank=tangent_rank,
+                )
         reference_targets = {
             (
                 value.validation_scalar_count,
@@ -2083,8 +2747,9 @@ def select_layer_multimode_candidates(
                 ),
             )
             for value in layer_candidates
+            if type(value) is LayerMultimodeCandidateEvaluationReceipt
         }
-        if len(reference_targets) != 1:
+        if len(reference_targets) > 1:
             raise ValueError(
                 f"layer {layer_ordinal} candidates do not share one A-validation target"
             )
@@ -2099,10 +2764,17 @@ def select_layer_multimode_candidates(
             )
             for candidate in layer_candidates
         )
-        passing = tuple(
+        passing: tuple[
+            tuple[
+                LayerMultimodeCandidateEvaluationReceipt,
+                LayerMultimodeCandidateGateDecision,
+            ],
+            ...,
+        ] = tuple(
             (candidate, decision)
             for candidate, decision in zip(layer_candidates, decisions, strict=True)
             if decision.passed
+            and type(candidate) is LayerMultimodeCandidateEvaluationReceipt
         )
         if not passing:
             raise NoAdmissibleLayerMultimodeCandidateError(

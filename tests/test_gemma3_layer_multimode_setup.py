@@ -11,6 +11,23 @@ from fisher_graph import gemma3_layer_multimode_setup as setup
 
 def test_setup_freezes_exact_local_flow_math_and_replacement_boundary() -> None:
     state = setup.build_setup()
+    assert state["schema"] == "fisher_graph.gemma3_layer_multimode.setup.v2"
+    assert state["format_version"] == 2
+    assert state["setup_id"] == (
+        "gemma3-layer-local-flow-multimode-v3-amendment-v2"
+    )
+    provenance = state["methodology_provenance"]
+    assert provenance["supersedes_setup_path"] == str(
+        setup.SUPERSEDED_V1_SETUP
+    )
+    assert provenance["supersedes_setup_sha256"] == (
+        setup.SUPERSEDED_V1_SETUP_SHA256
+    )
+    assert provenance["supersedes_setup_file_sha256"] == (
+        setup.SUPERSEDED_V1_SETUP_FILE_SHA256
+    )
+    assert provenance["amendment_uses_only_disclosed_A_development_evidence"]
+    assert provenance["heldout_thresholds_and_panels_are_unchanged"]
     boundary = state["replacement_boundary"]
     assert boundary["layer_count"] == 18
     assert boundary["only_token_local_MLP_residual_maps_are_replaced"]
@@ -69,6 +86,13 @@ def test_setup_freezes_complete_18_candidate_grid_per_layer() -> None:
     assert contract["tangent_rank_candidates_in_declared_order"] == [64, 32, 16]
     assert contract["candidate_count_per_layer"] == 18
     assert contract["complete_C_times_M_times_R_grid_required_per_layer"]
+    assert contract[
+        "all_18_candidate_coordinates_resolve_to_typed_outcomes_before_"
+        "layer_selection"
+    ]
+    assert contract[
+        "optimizer_fit_occurs_only_after_preoptimizer_support_gates_pass"
+    ]
     table = contract["candidate_table"]
     assert len(table) == 18
     assert len(
@@ -224,7 +248,9 @@ def test_A_selection_freezes_fidelity_distinctness_and_minimum_size_rule() -> No
         "A_full_fit_atlas_and_optimizer"
     )
     assert fit["supplied_atlas_requires_original_live_atlas_fitter_authority"]
-    assert fit["one_original_live_atlas_is_reusable_across_M_1_2_4"]
+    assert fit[
+        "one_original_live_support_admissible_atlas_is_reusable_across_M_1_2_4"
+    ]
     assert fit["C2_lloyd_pass_count"] == 12
     assert fit["optimizer_steps"] == 256
     assert fit["minibatch_size"] == 512
@@ -259,19 +285,42 @@ def test_A_selection_freezes_fidelity_distinctness_and_minimum_size_rule() -> No
     ]
     assert selection[
         "production_selector_requires_all_324_original_live_adapter_"
-        "candidate_evaluations"
+        "candidate_outcomes"
     ]
     assert selection[
         "production_compile_requires_original_selector_result_over_all_"
-        "324_live_candidates"
+        "324_live_candidate_outcomes"
     ]
     assert selection[
         "coordinated_306_failure_relabels_around_18_live_winners_are_rejected"
     ]
     assert selection[
-        "candidate_evaluation_and_selection_direct_construction_copy_deepcopy_"
+        "candidate_outcome_and_selection_direct_construction_copy_deepcopy_"
         "replace_or_parser_replay_cannot_recover_live_authority"
     ]
+    outcomes = selection["candidate_outcome_inventory"]
+    assert outcomes["exact_entry_count"] == 324
+    assert outcomes["entry_types"] == [
+        "live_fitted_candidate_evaluation",
+        "live_preoptimizer_support_rejection",
+    ]
+    assert outcomes[
+        "support_rejection_contains_no_fabricated_fit_validation_or_resource_"
+        "metrics"
+    ]
+    assert outcomes[
+        "shared_atlas_support_failure_rejects_all_M_at_fixed_layer_C_R"
+    ]
+    assert outcomes[
+        "split_refit_support_failure_rejects_only_the_affected_M"
+    ]
+    assert outcomes["expected_support_failure_codes_are_frozen_and_typed"]
+    assert outcomes[
+        "unexpected_linalg_optimizer_and_engineering_errors_propagate"
+    ]
+    assert fit["support_gate_failure_outcome"] == (
+        "authenticated_candidate_rejection_not_experiment_abort"
+    )
     assert selection["selection_tie_key"] == [
         "serialized_parameter_count",
         "validation_velocity_NRMSE",
@@ -393,6 +442,15 @@ def test_heldout_policy_pin_equals_live_evaluation_policy() -> None:
         assert state[stage]["heldout_evaluation_policy_sha256"] == live_policy
 
 
+def test_selection_policy_pin_equals_live_v2_selection_policy() -> None:
+    from fisher_graph import gemma3_layer_multimode_selection as selection
+
+    live_policy = selection.layer_multimode_selection_policy_sha256()
+    state = setup.build_setup()["A_development_selection"]
+    assert setup.PRODUCTION_SELECTION_POLICY_SHA256 == live_policy
+    assert state["selection_policy_sha256"] == live_policy
+
+
 def test_v2_negative_result_is_bound_but_non_authorizing() -> None:
     provenance = setup.build_setup()["methodology_provenance"]
     assert provenance["predecessor_v2_setup_sha256"] == (
@@ -465,6 +523,22 @@ def test_setup_component_preflight_uses_panel_receipt_only(tmp_path) -> None:
     assert b"implementation_qualification_file_sha256" not in canonical
     assert setup.preflight_setup(output, verify_predecessor=False) == expected
     assert setup.authorize_run(output, verify_predecessor=False) == expected
+
+
+def test_check_setup_authenticates_superseded_v1_before_predecessor(
+    tmp_path,
+) -> None:
+    output = tmp_path / "setup-v2.json"
+    setup.write_setup(output)
+    root = tmp_path / "repository"
+    with pytest.raises(FileNotFoundError):
+        setup.check_setup(output, repository_root=root)
+
+    superseded = root / setup.SUPERSEDED_V1_SETUP
+    superseded.parent.mkdir(parents=True)
+    superseded.write_bytes(b"not the frozen v1 setup\n")
+    with pytest.raises(ValueError, match="v1 setup file binding drifted"):
+        setup.check_setup(output, repository_root=root)
 
 
 def test_output_contract_freezes_transaction_and_summary_paths() -> None:

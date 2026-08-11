@@ -77,6 +77,31 @@ def _digest(domain: bytes, value: object) -> str:
     return hashlib.sha256(domain + _canonical_json(value)).hexdigest()
 
 
+def _detached_atlas_support_error(error: BaseException) -> BaseException:
+    """Rebuild a scalar support error without retaining fitter frames."""
+
+    state_method = getattr(error, "state_dict", None)
+    if not callable(state_method):
+        raise TypeError("atlas support error lacks structured scalar state")
+    state = state_method()
+    if type(state) is not dict or "support_failure_stage" not in state:
+        raise TypeError("atlas support error state is malformed")
+    expected_stage = state.pop("support_failure_stage")
+    detached = type(error)(**state)
+    if getattr(detached, "support_failure_stage", None) != expected_stage:
+        raise RuntimeError("detached atlas support stage drifted")
+    if any(
+        value is not None
+        for value in (
+            detached.__traceback__,
+            detached.__context__,
+            detached.__cause__,
+        )
+    ):
+        raise RuntimeError("detached atlas support error retained exception frames")
+    return detached
+
+
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -1872,12 +1897,27 @@ class Gemma3LayerMultimodeRuntime(experiment.LayerMultimodeV3Runtime):
         )
 
     def fit_chart_atlas(self, materialization, *, chart_count, tangent_rank):
-        from .gemma3_layer_multimode_fit import fit_layer_chart_atlas
+        from .gemma3_layer_multimode_fit import (
+            AtlasSupportError,
+            fit_layer_chart_atlas,
+        )
 
-        return fit_layer_chart_atlas(
-            rows=materialization.rows,
-            chart_count=chart_count,
-            tangent_rank=tangent_rank,
+        try:
+            fitted = fit_layer_chart_atlas(
+                rows=materialization.rows,
+                chart_count=chart_count,
+                tangent_rank=tangent_rank,
+            )
+        except AtlasSupportError as error:
+            if type(error) is not AtlasSupportError:
+                raise
+            return experiment.LayerMultimodePreoptimizerAttempt(
+                result=None,
+                support_error=_detached_atlas_support_error(error),
+            )
+        return experiment.LayerMultimodePreoptimizerAttempt(
+            result=fitted,
+            support_error=None,
         )
 
     def fit_candidate(
@@ -1907,13 +1947,57 @@ class Gemma3LayerMultimodeRuntime(experiment.LayerMultimodeV3Runtime):
         mode_count,
         tangent_rank,
     ):
-        from .gemma3_layer_multimode_fit import evaluate_layer_multimode_split_refit
+        from .gemma3_layer_multimode_fit import (
+            AtlasSupportError,
+            evaluate_layer_multimode_split_refit,
+        )
 
-        return evaluate_layer_multimode_split_refit(
+        try:
+            evidence = evaluate_layer_multimode_split_refit(
+                rows=materialization.rows,
+                chart_count=chart_count,
+                modes_per_chart=mode_count,
+                tangent_rank=tangent_rank,
+            )
+        except AtlasSupportError as error:
+            if type(error) is not AtlasSupportError:
+                raise
+            return experiment.LayerMultimodePreoptimizerAttempt(
+                result=None,
+                support_error=_detached_atlas_support_error(error),
+            )
+        return experiment.LayerMultimodePreoptimizerAttempt(
+            result=evidence,
+            support_error=None,
+        )
+
+    def lower_candidate_support_rejection(
+        self,
+        *,
+        materialization,
+        chart_count,
+        mode_count,
+        tangent_rank,
+        candidate_fit,
+        support_error,
+        recapture,
+    ):
+        from .gemma3_layer_multimode_fit import (
+            layer_multimode_candidate_support_rejection_from_error,
+        )
+
+        partition = recapture.partition_receipt
+        return layer_multimode_candidate_support_rejection_from_error(
             rows=materialization.rows,
             chart_count=chart_count,
             modes_per_chart=mode_count,
             tangent_rank=tangent_rank,
+            candidate_fit=candidate_fit,
+            source_model_sha256=recapture.source_model_sha256,
+            fit_a_partition_sha256=partition.fit_partition_sha256,
+            validation_a_partition_sha256=partition.validation_partition_sha256,
+            evaluation_protocol_sha256=self.preflight.evaluation_protocol_sha256,
+            support_error=support_error,
         )
 
     def lower_candidate_evaluation(self, *, candidate_fit, split_refit, recapture):

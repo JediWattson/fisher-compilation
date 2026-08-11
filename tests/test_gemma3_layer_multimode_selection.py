@@ -19,6 +19,8 @@ from fisher_graph.gemma3_layer_multimode_selection import (
     PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256,
     NoAdmissibleLayerMultimodeCandidateError,
     LayerMultimodeCandidateEvaluationReceipt,
+    LayerMultimodeCandidateOutcomeReceipt,
+    LayerMultimodeCandidateSupportRejectionReceipt,
     LayerMultimodeFamilyFidelityReceipt,
     LayerMultimodeSelectionReceipt,
     TANGENT_RANK_LADDER,
@@ -28,6 +30,7 @@ from fisher_graph.gemma3_layer_multimode_selection import (
     layer_multimode_selection_policy_sha256,
     select_layer_multimode_candidates as _select_layer_multimode_candidates,
     _grant_live_candidate_evaluation_authority,
+    _grant_live_candidate_support_rejection_authority,
 )
 
 
@@ -232,6 +235,98 @@ def _grid(
                         )
                     )
     return tuple(values)
+
+
+def _support_rejection(
+    candidate: LayerMultimodeCandidateEvaluationReceipt,
+    *,
+    stage: str = "shared_atlas_fit",
+    failure_code: str = "hard_chart_count_below_r_plus_1",
+    chart_ordinal: int = 0,
+    observed_support: int | None = 2,
+    required_support: int | None = None,
+    selected_covariance_value: float | None = None,
+    covariance_tolerance: float | None = None,
+) -> LayerMultimodeCandidateSupportRejectionReceipt:
+    shared = stage == "shared_atlas_fit"
+    partition_ordinal = {
+        "shared_atlas_fit": 0,
+        "split_refit_partition_1": 1,
+        "split_refit_partition_2": 2,
+    }[stage]
+    if required_support is None and failure_code in {
+        "deterministic_lloyd_empty_chart",
+        "hard_chart_count_below_r_plus_1",
+    }:
+        required_support = candidate.tangent_rank + 1
+    elif (
+        required_support is None
+        and failure_code
+        == "weighted_chart_covariance_numerical_rank_below_r"
+    ):
+        required_support = candidate.tangent_rank
+    return LayerMultimodeCandidateSupportRejectionReceipt(
+        layer_ordinal=candidate.layer_ordinal,
+        chart_count=candidate.chart_count,
+        dynamic_mode_count=candidate.dynamic_mode_count,
+        tangent_rank=candidate.tangent_rank,
+        source_model_sha256=candidate.source_model_sha256,
+        source_rows_receipt_sha256=candidate.source_rows_receipt_sha256,
+        fit_policy_sha256=candidate.fit_policy_sha256,
+        fit_policy_test_only=candidate.fit_policy_test_only,
+        source_capture_scope=candidate.source_capture_scope,
+        production_fit_authorized=candidate.production_fit_authorized,
+        fit_source_sha256=candidate.fit_source_sha256,
+        support_subset_sha256=(
+            candidate.fit_source_sha256
+            if shared
+            else _digest(
+                f"support-subset-{candidate.candidate_key}-{partition_ordinal}"
+            )
+        ),
+        validation_source_sha256=(
+            None if shared else candidate.validation_source_sha256
+        ),
+        fit_a_sha256=candidate.fit_a_sha256,
+        validation_a_sha256=candidate.validation_a_sha256,
+        evaluation_protocol_sha256=candidate.evaluation_protocol_sha256,
+        support_failure_stage=stage,
+        fit_partition_ordinal=partition_ordinal,
+        candidate_fit_receipt_sha256=(
+            None
+            if shared
+            else _digest(f"candidate-fit-{candidate.candidate_key}")
+        ),
+        atlas_sha256=None if shared else candidate.atlas_sha256,
+        support_failure_code=failure_code,
+        chart_ordinal=chart_ordinal,
+        observed_support=observed_support,
+        required_support=required_support,
+        selected_covariance_value=selected_covariance_value,
+        covariance_tolerance=covariance_tolerance,
+    )
+
+
+def _replace_atlas_with_shared_rejections(
+    grid: tuple[LayerMultimodeCandidateOutcomeReceipt, ...],
+    *,
+    layer: int,
+    chart_count: int,
+    rank: int,
+) -> tuple[LayerMultimodeCandidateOutcomeReceipt, ...]:
+    outcomes: list[LayerMultimodeCandidateOutcomeReceipt] = []
+    for candidate in grid:
+        if (
+            candidate.layer_ordinal == layer
+            and candidate.chart_count == chart_count
+            and candidate.tangent_rank == rank
+        ):
+            if type(candidate) is not LayerMultimodeCandidateEvaluationReceipt:
+                raise ValueError("target atlas already contains a rejection")
+            outcomes.append(_support_rejection(candidate))
+        else:
+            outcomes.append(candidate)
+    return tuple(outcomes)
 
 
 def select_layer_multimode_candidates(
@@ -460,6 +555,276 @@ def test_no_admissible_layer_is_terminal() -> None:
     assert captured.value.layer_ordinal == 0
     assert len(captured.value.decisions) == CANDIDATES_PER_LAYER
     assert all(not value.passed for value in captured.value.decisions)
+
+
+def test_shared_atlas_support_rejection_keeps_complete_grid_without_metrics() -> None:
+    grid = _replace_atlas_with_shared_rejections(
+        _grid(),
+        layer=0,
+        chart_count=2,
+        rank=64,
+    )
+    assert len(grid) == LAYER_COUNT * CANDIDATES_PER_LAYER
+    rejections = tuple(
+        value
+        for value in grid
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+    )
+    assert len(rejections) == len(DYNAMIC_MODE_COUNT_LADDER)
+    assert len(
+        {value.support_failure_evidence_sha256 for value in rejections}
+    ) == 1
+    assert len({value.artifact_sha256 for value in rejections}) == 3
+    for rejection in rejections:
+        state = rejection.state_dict()
+        assert rejection.validation_source_sha256 is None
+        assert rejection.atlas_sha256 is None
+        assert rejection.candidate_fit_receipt_sha256 is None
+        assert rejection.support_subset_sha256 == rejection.fit_source_sha256
+        for fabricated in (
+            "chart_temperature",
+            "training_receipt_sha256",
+            "resource_receipt_sha256",
+            "validation_velocity_nrmse",
+            "family_fidelity",
+        ):
+            assert fabricated not in state
+
+    selection = select_layer_multimode_candidates(grid)
+    decisions = tuple(
+        _decision(selection, 0, 2, mode_count, 64)
+        for mode_count in DYNAMIC_MODE_COUNT_LADDER
+    )
+    assert all(value.failed_gates == ("atlas_support_rejected",) for value in decisions)
+    assert all(
+        value.relative_sse_improvement_over_matched_m1 is None
+        for value in decisions
+    )
+    assert all(value.passed is False for value in decisions)
+    assert len(selection.candidates) == LAYER_COUNT * CANDIDATES_PER_LAYER
+
+    restored = LayerMultimodeSelectionReceipt.from_state_dict(
+        json.loads(json.dumps(selection.state_dict()))
+    )
+    assert restored.artifact_sha256 == selection.artifact_sha256
+    restored_rejection = next(
+        value
+        for value in restored.candidates
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+    )
+    assert restored_rejection.live_candidate_support_rejection_authorized is False
+
+
+def test_split_refit_support_rejection_only_rejects_affected_mode() -> None:
+    grid: list[LayerMultimodeCandidateOutcomeReceipt] = list(_grid())
+    target = next(
+        index
+        for index, value in enumerate(grid)
+        if value.candidate_key == (0, 2, 2, 64)
+    )
+    candidate = grid[target]
+    assert type(candidate) is LayerMultimodeCandidateEvaluationReceipt
+    grid[target] = _support_rejection(
+        candidate,
+        stage="split_refit_partition_2",
+    )
+
+    selection = select_layer_multimode_candidates(tuple(grid))
+    rejected = _decision(selection, 0, 2, 2, 64)
+    m1 = _decision(selection, 0, 2, 1, 64)
+    m4 = _decision(selection, 0, 2, 4, 64)
+    assert rejected.failed_gates == ("atlas_support_rejected",)
+    assert rejected.relative_sse_improvement_over_matched_m1 is None
+    assert rejected.matched_m1_candidate_sha256 == m1.candidate_sha256
+    assert m1.passed is True
+    assert m4.passed is False
+    rejection = grid[target]
+    assert type(rejection) is LayerMultimodeCandidateSupportRejectionReceipt
+    assert rejection.fit_partition_ordinal == 2
+    assert rejection.validation_source_sha256 == candidate.validation_source_sha256
+    assert rejection.atlas_sha256 == candidate.atlas_sha256
+    assert rejection.candidate_fit_receipt_sha256 is not None
+    assert rejection.support_subset_sha256 != rejection.fit_source_sha256
+
+
+def test_support_rejection_group_and_stage_lineage_fail_closed() -> None:
+    base = _grid()
+    mixed_shared: list[LayerMultimodeCandidateOutcomeReceipt] = list(base)
+    target = next(
+        index
+        for index, value in enumerate(mixed_shared)
+        if value.candidate_key == (0, 2, 4, 64)
+    )
+    candidate = mixed_shared[target]
+    assert type(candidate) is LayerMultimodeCandidateEvaluationReceipt
+    mixed_shared[target] = _support_rejection(candidate)
+    with pytest.raises(ValueError, match="shared-atlas rejection across M"):
+        select_layer_multimode_candidates(tuple(mixed_shared))
+
+    split_state = _support_rejection(
+        _candidate(0, 2, 2, 64),
+        stage="split_refit_partition_1",
+    ).state_dict()
+    split_state["atlas_sha256"] = _digest("foreign-atlas")
+    split_state["support_failure_evidence_sha256"] = ""
+    split_state["artifact_sha256"] = ""
+    split_rejection = (
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            split_state
+        )
+    )
+    split_grid: list[LayerMultimodeCandidateOutcomeReceipt] = list(base)
+    target = next(
+        index
+        for index, value in enumerate(split_grid)
+        if value.candidate_key == split_rejection.candidate_key
+    )
+    split_grid[target] = split_rejection
+    with pytest.raises(ValueError, match="successful state atlas across M"):
+        select_layer_multimode_candidates(tuple(split_grid))
+
+    m1 = _candidate(0, 2, 1, 64)
+    with pytest.raises(ValueError, match="M=1"):
+        _support_rejection(m1, stage="split_refit_partition_1")
+
+
+def test_support_rejection_strict_parser_and_live_authority_are_fail_closed() -> None:
+    candidate = _candidate(0, 2, 4, 64, production=True)
+    rejection = _support_rejection(candidate)
+    live = _grant_live_candidate_support_rejection_authority(rejection)
+    assert live.live_candidate_support_rejection_authorized is True
+    for nonlive in (
+        copy.copy(live),
+        copy.deepcopy(live),
+        replace(live),
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            json.loads(json.dumps(live.state_dict()))
+        ),
+    ):
+        assert nonlive.live_candidate_support_rejection_authorized is False
+
+    unknown = live.state_dict()
+    unknown["validation_velocity_nrmse"] = 0.0
+    with pytest.raises(ValueError, match="fields"):
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(unknown)
+
+    mismatched = live.state_dict()
+    mismatched["required_support"] = 64
+    mismatched["support_failure_evidence_sha256"] = ""
+    mismatched["artifact_sha256"] = ""
+    with pytest.raises(ValueError, match="required_support"):
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            mismatched
+        )
+
+    evidence_attack = live.state_dict()
+    evidence_attack["observed_support"] = 1
+    evidence_attack["artifact_sha256"] = ""
+    with pytest.raises(ValueError, match="evidence hash"):
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            evidence_attack
+        )
+
+    legacy_version = live.state_dict()
+    legacy_version["format_version"] = 1
+    legacy_version["support_failure_evidence_sha256"] = ""
+    legacy_version["artifact_sha256"] = ""
+    with pytest.raises(ValueError, match="header"):
+        LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+            legacy_version
+        )
+
+
+@pytest.mark.parametrize(
+    (
+        "failure_code",
+        "observed_support",
+        "required_support",
+        "selected_covariance_value",
+        "covariance_tolerance",
+    ),
+    (
+        ("deterministic_lloyd_empty_chart", 0, 65, None, None),
+        (
+            "weighted_chart_covariance_numerical_rank_below_r",
+            12,
+            64,
+            None,
+            None,
+        ),
+        (
+            "selected_chart_covariance_support_not_above_tolerance",
+            None,
+            None,
+            1.0e-13,
+            1.0e-12,
+        ),
+    ),
+)
+def test_all_structured_atlas_support_categories_are_serializable(
+    failure_code: str,
+    observed_support: int | None,
+    required_support: int | None,
+    selected_covariance_value: float | None,
+    covariance_tolerance: float | None,
+) -> None:
+    rejection = _support_rejection(
+        _candidate(0, 2, 4, 64),
+        failure_code=failure_code,
+        observed_support=observed_support,
+        required_support=required_support,
+        selected_covariance_value=selected_covariance_value,
+        covariance_tolerance=covariance_tolerance,
+    )
+    restored = LayerMultimodeCandidateSupportRejectionReceipt.from_state_dict(
+        json.loads(json.dumps(rejection.state_dict()))
+    )
+    assert restored.artifact_sha256 == rejection.artifact_sha256
+
+
+def test_original_live_full_grid_can_include_authenticated_support_rejections() -> None:
+    outcomes = _replace_atlas_with_shared_rejections(
+        _grid(production=True),
+        layer=0,
+        chart_count=2,
+        rank=64,
+    )
+    live_outcomes = tuple(
+        _grant_live_candidate_evaluation_authority(value)
+        if type(value) is LayerMultimodeCandidateEvaluationReceipt
+        else _grant_live_candidate_support_rejection_authority(value)
+        for value in outcomes
+    )
+    selection = _select_layer_multimode_candidates(live_outcomes)
+    assert selection.live_full_grid_selection_authorized is True
+
+    copied = tuple(
+        copy.copy(value) if index == 0 else value
+        for index, value in enumerate(live_outcomes)
+    )
+    with pytest.raises(ValueError, match="324 original live adapter outcomes"):
+        _select_layer_multimode_candidates(copied)
+
+
+def test_layer_with_only_support_rejections_is_terminal_without_fake_scores() -> None:
+    grid: tuple[LayerMultimodeCandidateOutcomeReceipt, ...] = _grid()
+    for chart_count in CHART_COUNT_LADDER:
+        for rank in TANGENT_RANK_LADDER:
+            grid = _replace_atlas_with_shared_rejections(
+                grid,
+                layer=0,
+                chart_count=chart_count,
+                rank=rank,
+            )
+    with pytest.raises(NoAdmissibleLayerMultimodeCandidateError) as captured:
+        select_layer_multimode_candidates(grid)
+    assert captured.value.layer_ordinal == 0
+    assert len(captured.value.decisions) == CANDIDATES_PER_LAYER
+    assert all(
+        value.failed_gates == ("atlas_support_rejected",)
+        and value.relative_sse_improvement_over_matched_m1 is None
+        for value in captured.value.decisions
+    )
 
 
 def test_grid_is_complete_unique_and_a_provenance_locked() -> None:

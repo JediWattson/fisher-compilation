@@ -26,12 +26,12 @@ from typing import Mapping, Sequence
 from . import gemma3_layer_multimode_setup as setup
 
 
-REPORT_SCHEMA = "fisher_graph.gemma3_layer_multimode.experiment_report.v1"
-REPORT_FORMAT_VERSION = 1
+REPORT_SCHEMA = "fisher_graph.gemma3_layer_multimode.experiment_report.v2"
+REPORT_FORMAT_VERSION = 2
 PUBLICATION_SCHEMA = (
-    "fisher_graph.gemma3_layer_multimode.publication_receipt.v1"
+    "fisher_graph.gemma3_layer_multimode.publication_receipt.v2"
 )
-PUBLICATION_FORMAT_VERSION = 1
+PUBLICATION_FORMAT_VERSION = 2
 
 DEFAULT_REPORT_OUTPUT = setup.DEFAULT_REPORT_OUTPUT
 DEFAULT_BUNDLE_OUTPUT = setup.DEFAULT_BUNDLE_OUTPUT
@@ -46,9 +46,9 @@ TERMINAL_STATUSES = (
     TERMINAL_D3_COMPLETED,
 )
 
-_REPORT_DOMAIN = b"fisher_graph:layer-multimode:report:v1\0"
-_SUMMARY_DOMAIN = b"fisher_graph:layer-multimode:summary:v1\0"
-_PUBLICATION_DOMAIN = b"fisher_graph:layer-multimode:publication:v1\0"
+_REPORT_DOMAIN = b"fisher_graph:layer-multimode:report:v2\0"
+_SUMMARY_DOMAIN = b"fisher_graph:layer-multimode:summary:v2\0"
+_PUBLICATION_DOMAIN = b"fisher_graph:layer-multimode:publication:v2\0"
 _MAX_REPORT_BYTES = 512 * 1024 * 1024
 _MAX_SUMMARY_BYTES = 2 * 1024 * 1024
 _MAX_BUNDLE_BYTES = 8 * 1024 * 1024 * 1024
@@ -730,10 +730,16 @@ def _parse_experiment_counters(
         "exposed_predecessor_A_recapture_count",
         "fresh_v3_A_capture_count",
         "materialization_count",
-        "atlas_fit_count",
+        "atlas_fit_attempt_count",
+        "atlas_fit_success_count",
+        "atlas_support_rejection_count",
         "candidate_fit_count",
+        "split_refit_attempt_count",
         "split_refit_count",
-        "candidate_evaluation_count",
+        "split_refit_support_rejection_count",
+        "candidate_evaluation_receipt_count",
+        "candidate_support_rejection_count",
+        "candidate_inventory_count",
         "selection_attempt_count",
         "compilation_count",
         "candidate_freeze_count",
@@ -755,9 +761,9 @@ def _parse_experiment_counters(
     row = _exact_dict(value, fields, label="experiment counters")
     if (
         row["schema"]
-        != "fisher_graph.gemma3_layer_multimode.experiment_counters.v1"
+        != "fisher_graph.gemma3_layer_multimode.experiment_counters.v2"
         or type(row["format_version"]) is not int
-        or row["format_version"] != 1
+        or row["format_version"] != 2
         or row["terminal_status"] != terminal
     ):
         raise ValueError("experiment counters header/status drifted")
@@ -775,11 +781,8 @@ def _parse_experiment_counters(
         "exposed_predecessor_A_recapture_count": 1,
         "fresh_v3_A_capture_count": 0,
         "materialization_count": setup.LAYER_COUNT,
-        "atlas_fit_count": 108,
-        "candidate_fit_count": setup.LAYER_COUNT
-        * setup.CANDIDATE_COUNT_PER_LAYER,
-        "split_refit_count": 216,
-        "candidate_evaluation_count": setup.LAYER_COUNT
+        "atlas_fit_attempt_count": 108,
+        "candidate_inventory_count": setup.LAYER_COUNT
         * setup.CANDIDATE_COUNT_PER_LAYER,
         "selection_attempt_count": 1,
         "compilation_count": 1,
@@ -802,9 +805,43 @@ def _parse_experiment_counters(
             raise ValueError(f"experiment counter {name} drifted")
     if row["native_baseline_eval_mode"] is not True:
         raise ValueError("experiment baseline must remain in eval mode")
+    for name in (
+        "atlas_fit_success_count",
+        "atlas_support_rejection_count",
+        "candidate_fit_count",
+        "split_refit_attempt_count",
+        "split_refit_count",
+        "split_refit_support_rejection_count",
+        "candidate_evaluation_receipt_count",
+        "candidate_support_rejection_count",
+    ):
+        if type(row[name]) is not int or row[name] < 0:
+            raise ValueError(f"experiment counter {name} is invalid")
+    if (
+        row["atlas_fit_success_count"]
+        + row["atlas_support_rejection_count"]
+        != row["atlas_fit_attempt_count"]
+        or row["candidate_fit_count"]
+        != 3 * row["atlas_fit_success_count"]
+        or row["split_refit_attempt_count"]
+        != 2 * row["atlas_fit_success_count"]
+        or row["split_refit_count"]
+        + row["split_refit_support_rejection_count"]
+        != row["split_refit_attempt_count"]
+        or row["candidate_support_rejection_count"]
+        != 3 * row["atlas_support_rejection_count"]
+        + row["split_refit_support_rejection_count"]
+        or row["candidate_evaluation_receipt_count"]
+        != row["candidate_fit_count"]
+        - row["split_refit_support_rejection_count"]
+        or row["candidate_evaluation_receipt_count"]
+        + row["candidate_support_rejection_count"]
+        != row["candidate_inventory_count"]
+    ):
+        raise ValueError("experiment support-attempt counters do not close")
     _validate_worker_receipt_digest(
         row,
-        domain=b"fisher_graph:layer-multimode:counters:v1\0",
+        domain=b"fisher_graph:layer-multimode:counters:v2\0",
         label="experiment counters",
     )
     return row
@@ -1168,7 +1205,10 @@ def _parse_predecessor_A_runtime(value: object) -> dict[str, object]:
         "auxiliary_gradient_targets_per_vjp": 19,
         "gradient_targets_per_vjp": 92,
     }
-    if any(type(row[name]) is not type(expected) or row[name] != expected for name, expected in fixed.items()):
+    if any(
+        type(row[name]) is not type(expected) or row[name] != expected
+        for name, expected in fixed.items()
+    ):
         raise ValueError("predecessor A runtime exact ledger drifted")
     if (
         row["source_model_fingerprint_before_sha256"]
@@ -1620,6 +1660,139 @@ class _Replay:
     B3: object
     C3: object | None
     D3: object | None
+    support_rejection_histogram: tuple[dict[str, object], ...]
+
+
+def _selection_outcome_counts(
+    selection: object,
+    *,
+    evaluation_type: type,
+    support_rejection_type: type,
+) -> tuple[
+    dict[str, int],
+    dict[str, object],
+    tuple[dict[str, object], ...],
+]:
+    candidates = getattr(selection, "candidates", None)
+    layers = getattr(selection, "layers", None)
+    if type(candidates) is not tuple or type(layers) is not tuple:
+        raise TypeError("selection candidate/layer inventories must be tuples")
+    evaluations = tuple(
+        value for value in candidates if type(value) is evaluation_type
+    )
+    support_rejections = tuple(
+        value for value in candidates if type(value) is support_rejection_type
+    )
+    if len(evaluations) + len(support_rejections) != len(candidates):
+        raise TypeError("selection contains an unknown candidate outcome type")
+
+    atlas_groups: dict[tuple[int, int, int], list[object]] = {}
+    for candidate in candidates:
+        key = (
+            candidate.layer_ordinal,
+            candidate.chart_count,
+            candidate.tangent_rank,
+        )
+        atlas_groups.setdefault(key, []).append(candidate)
+    shared_rejection_groups: dict[tuple[int, int, int], tuple[object, ...]] = {}
+    successful_atlas_groups: dict[tuple[int, int, int], tuple[object, ...]] = {}
+    for key, values in atlas_groups.items():
+        group = tuple(values)
+        shared = tuple(
+            value
+            for value in group
+            if type(value) is support_rejection_type
+            and value.support_failure_stage == "shared_atlas_fit"
+        )
+        if shared:
+            if (
+                len(shared) != len(setup.MODE_COUNT_CANDIDATES)
+                or len(shared) != len(group)
+                or {value.dynamic_mode_count for value in shared}
+                != set(setup.MODE_COUNT_CANDIDATES)
+                or len(
+                    {
+                        value.support_failure_evidence_sha256
+                        for value in shared
+                    }
+                )
+                != 1
+            ):
+                raise ValueError(
+                    "shared-atlas support rejection is not one exact M fanout"
+                )
+            shared_rejection_groups[key] = shared
+        else:
+            successful_atlas_groups[key] = group
+
+    split_rejections = tuple(
+        value
+        for value in support_rejections
+        if value.support_failure_stage != "shared_atlas_fit"
+    )
+    split_refit_attempts = tuple(
+        value
+        for group in successful_atlas_groups.values()
+        for value in group
+        if value.dynamic_mode_count > 1
+    )
+    split_refit_successes = tuple(
+        value
+        for value in split_refit_attempts
+        if type(value) is evaluation_type
+    )
+    evaluation_by_sha = {
+        value.artifact_sha256: value for value in evaluations
+    }
+    if len(evaluation_by_sha) != len(evaluations):
+        raise ValueError("candidate evaluation hashes are not unique")
+    for layer in layers:
+        if layer.selected_candidate_sha256 not in evaluation_by_sha:
+            raise ValueError(
+                "selected candidate does not resolve to a successful "
+                "evaluation receipt"
+            )
+
+    histogram_groups: dict[tuple[str, str], list[object]] = {}
+    for rejection in support_rejections:
+        key = (
+            rejection.support_failure_stage,
+            rejection.support_failure_code,
+        )
+        histogram_groups.setdefault(key, []).append(rejection)
+    support_rejection_histogram = tuple(
+        {
+            "support_failure_stage": stage,
+            "support_failure_code": code,
+            "unique_failed_support_attempt_count": len(
+                {
+                    value.support_failure_evidence_sha256
+                    for value in histogram_groups[(stage, code)]
+                }
+            ),
+            "candidate_outcome_count": len(histogram_groups[(stage, code)]),
+        }
+        for stage, code in sorted(histogram_groups)
+    )
+
+    return (
+        {
+            "atlas_fit_attempt_count": len(atlas_groups),
+            "atlas_fit_success_count": len(successful_atlas_groups),
+            "atlas_support_rejection_count": len(shared_rejection_groups),
+            "candidate_fit_count": sum(
+                len(group) for group in successful_atlas_groups.values()
+            ),
+            "split_refit_attempt_count": len(split_refit_attempts),
+            "split_refit_count": len(split_refit_successes),
+            "split_refit_support_rejection_count": len(split_rejections),
+            "candidate_evaluation_receipt_count": len(evaluations),
+            "candidate_support_rejection_count": len(support_rejections),
+            "candidate_inventory_count": len(candidates),
+        },
+        evaluation_by_sha,
+        support_rejection_histogram,
+    )
 
 
 def _replay_payload(payload: Mapping[str, object]) -> _Replay:
@@ -1659,6 +1832,8 @@ def _replay_payload(payload: Mapping[str, object]) -> _Replay:
         LayerMLPFlowMaterializationInventoryReceipt,
     )
     from .gemma3_layer_multimode_selection import (
+        LayerMultimodeCandidateEvaluationReceipt,
+        LayerMultimodeCandidateSupportRejectionReceipt,
         LayerMultimodeSelectionReceipt,
     )
     from .gemma3_layer_multimode_compiler import (
@@ -1699,6 +1874,22 @@ def _replay_payload(payload: Mapping[str, object]) -> _Replay:
         or selection.latency_claimed is not False
     ):
         raise ValueError("selection is not the complete production A grid")
+    (
+        expected_support_counters,
+        selected_by_sha,
+        support_rejection_histogram,
+    ) = _selection_outcome_counts(
+        selection,
+        evaluation_type=LayerMultimodeCandidateEvaluationReceipt,
+        support_rejection_type=(
+            LayerMultimodeCandidateSupportRejectionReceipt
+        ),
+    )
+    for name, expected in expected_support_counters.items():
+        if counters[name] != expected:
+            raise ValueError(
+                f"experiment counter {name} differs from selection outcomes"
+            )
 
     compilation_state = payload["compilation_receipt"]
     if type(compilation_state) is not dict:
@@ -1904,11 +2095,13 @@ def _replay_payload(payload: Mapping[str, object]) -> _Replay:
         or preflight["evaluation_protocol_sha256"] != policy_sha
     ):
         raise ValueError("B3 panel/evaluation policy differs from preflight")
-    selected_by_sha = {
-        value.artifact_sha256: value for value in selection.candidates
-    }
     for layer, evidence in zip(selection.layers, B3.layer_evidence, strict=True):
-        selected = selected_by_sha[layer.selected_candidate_sha256]
+        selected = selected_by_sha.get(layer.selected_candidate_sha256)
+        if selected is None:
+            raise ValueError(
+                "B3 selected hash does not resolve to a successful "
+                "evaluation receipt"
+            )
         if (
             evidence.selected_candidate_sha256 != selected.artifact_sha256
             or evidence.chart_count != selected.chart_count
@@ -2127,12 +2320,14 @@ def _replay_payload(payload: Mapping[str, object]) -> _Replay:
         B3=B3,
         C3=C3,
         D3=D3,
+        support_rejection_histogram=support_rejection_histogram,
     )
 
 
 def _claims(replay: _Replay, *, terminal_status: str) -> dict[str, object]:
     selection = replay.selection
     compilation = replay.compilation
+    counters = replay.counters
     d3 = replay.D3
     d3_passed = d3 is not None and d3.passed is True
     return {
@@ -2148,6 +2343,27 @@ def _claims(replay: _Replay, *, terminal_status: str) -> dict[str, object]:
         "matrix_MAC_formula_accounting_reported": True,
         "latency_improvement_claimed": False,
         "latency_measurement_receipt_sha256": None,
+        "atlas_fit_attempt_count": counters["atlas_fit_attempt_count"],
+        "atlas_fit_success_count": counters["atlas_fit_success_count"],
+        "atlas_support_rejection_count": counters[
+            "atlas_support_rejection_count"
+        ],
+        "candidate_fit_count": counters["candidate_fit_count"],
+        "split_refit_attempt_count": counters["split_refit_attempt_count"],
+        "split_refit_success_count": counters["split_refit_count"],
+        "split_refit_support_rejection_count": counters[
+            "split_refit_support_rejection_count"
+        ],
+        "candidate_evaluation_receipt_count": counters[
+            "candidate_evaluation_receipt_count"
+        ],
+        "candidate_support_rejection_count": counters[
+            "candidate_support_rejection_count"
+        ],
+        "candidate_inventory_count": counters["candidate_inventory_count"],
+        "support_rejection_histogram_by_stage_and_code": [
+            dict(value) for value in replay.support_rejection_histogram
+        ],
         "native_baseline_retained_immutable_during_heldout_evaluation": True,
         "native_baseline_evaluator_count_during_heldout": (
             replay.runtime["native_baseline_evaluator_count"]
@@ -2264,6 +2480,7 @@ def _summary_payload(report: Mapping[str, object]) -> dict[str, object]:
     fresh_panel = report["fresh_panel_execution_receipt"]
     runtime = report["runtime_execution_receipt"]
     cleanup = report["post_terminal_cleanup_receipt"]
+    claims = report["claims"]
     summary_sources = (
         selection,
         compilation,
@@ -2274,12 +2491,13 @@ def _summary_payload(report: Mapping[str, object]) -> dict[str, object]:
         runtime,
         cleanup,
         B3,
+        claims,
     )
     if not all(isinstance(value, Mapping) for value in summary_sources):
         raise TypeError("summary source receipts must be mappings")
     return {
-        "schema": "fisher_graph.gemma3_layer_multimode.summary.v1",
-        "format_version": 1,
+        "schema": "fisher_graph.gemma3_layer_multimode.summary.v2",
+        "format_version": 2,
         "report_sha256": report["report_sha256"],
         "terminal_status": report["terminal_status"],
         "selection_receipt_sha256": selection["artifact_sha256"],
@@ -2288,6 +2506,27 @@ def _summary_payload(report: Mapping[str, object]) -> dict[str, object]:
         "bundle_byte_count": bundle["byte_count"],
         "development_teardown_receipt_sha256": teardown["receipt_sha256"],
         "experiment_counters_receipt_sha256": counters["receipt_sha256"],
+        "atlas_fit_attempt_count": counters["atlas_fit_attempt_count"],
+        "atlas_fit_success_count": counters["atlas_fit_success_count"],
+        "atlas_support_rejection_count": counters[
+            "atlas_support_rejection_count"
+        ],
+        "candidate_fit_count": counters["candidate_fit_count"],
+        "split_refit_attempt_count": counters["split_refit_attempt_count"],
+        "split_refit_success_count": counters["split_refit_count"],
+        "split_refit_support_rejection_count": counters[
+            "split_refit_support_rejection_count"
+        ],
+        "candidate_evaluation_receipt_count": counters[
+            "candidate_evaluation_receipt_count"
+        ],
+        "candidate_support_rejection_count": counters[
+            "candidate_support_rejection_count"
+        ],
+        "candidate_inventory_count": counters["candidate_inventory_count"],
+        "support_rejection_histogram_by_stage_and_code": claims[
+            "support_rejection_histogram_by_stage_and_code"
+        ],
         "fresh_panel_execution_receipt_sha256": fresh_panel["receipt_sha256"],
         "runtime_execution_receipt_sha256": runtime["receipt_sha256"],
         "post_terminal_cleanup_receipt_sha256": cleanup["receipt_sha256"],

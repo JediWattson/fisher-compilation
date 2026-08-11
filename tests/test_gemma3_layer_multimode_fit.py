@@ -25,6 +25,7 @@ from fisher_graph.gemma3_layer_multimode_fit import (
     fit_layer_chart_atlas,
     fit_layer_multimode_candidate,
     layer_multimode_candidate_evaluation_from_fit,
+    layer_multimode_candidate_support_rejection_from_error,
     make_layer_multimode_test_policy,
 )
 from fisher_graph.gemma3_layer_multimode_fit import (
@@ -62,6 +63,7 @@ def _rows(
     collapsed: bool = False,
     family_count: int = 2,
     high_rank: bool = False,
+    high_rank_dimensions: int = 20,
 ) -> LayerMLPFlowRows:
     families: list[str] = []
     examples: list[str] = []
@@ -98,7 +100,7 @@ def _rows(
                 state[0] = cluster
                 if high_rank:
                     global_row = cursor + query + 1
-                    for dimension in range(1, 21):
+                    for dimension in range(1, high_rank_dimensions + 1):
                         state[dimension] = (
                             torch.sin(
                                 torch.tensor(
@@ -532,7 +534,7 @@ def test_receipt_roundtrip_is_json_safe_strict_and_rehashed() -> None:
 
 
 def test_rank_and_chart_collapse_are_rejected_before_optimizer() -> None:
-    with pytest.raises(AtlasSupportError, match="covariance rank"):
+    with pytest.raises(AtlasSupportError, match="covariance rank") as rank_error:
         fit_layer_chart_atlas(
             rows=_rows(collapsed=True),
             chart_count=1,
@@ -540,7 +542,19 @@ def test_rank_and_chart_collapse_are_rejected_before_optimizer() -> None:
             policy=_policy(steps=1),
             allow_test_policy=True,
         )
-    with pytest.raises(AtlasSupportError, match=r"R\+1"):
+    rank_state = rank_error.value.state_dict()
+    assert rank_state["support_failure_code"] == (
+        "weighted_chart_covariance_numerical_rank_below_r"
+    )
+    assert rank_state["support_failure_stage"] == "shared_atlas_fit"
+    assert rank_state["fit_partition_ordinal"] == 0
+    assert len(rank_state["support_subset_sha256"]) == 64
+    assert rank_state["chart_ordinal"] == 0
+    assert rank_state["observed_support"] < rank_state["required_support"]
+    assert rank_state["required_support"] == 3
+    assert rank_state["selected_covariance_value"] is None
+    assert rank_state["covariance_tolerance"] is None
+    with pytest.raises(AtlasSupportError, match=r"R\+1") as count_error:
         fit_layer_chart_atlas(
             rows=_rows(),
             chart_count=2,
@@ -548,6 +562,125 @@ def test_rank_and_chart_collapse_are_rejected_before_optimizer() -> None:
             policy=_policy(steps=1),
             allow_test_policy=True,
         )
+    count_state = count_error.value.state_dict()
+    assert count_state["support_failure_code"] in {
+        "deterministic_lloyd_empty_chart",
+        "hard_chart_count_below_r_plus_1",
+    }
+    assert count_state["observed_support"] < count_state["required_support"]
+
+    with pytest.raises(AtlasSupportError) as split_error:
+        evaluate_layer_multimode_split_refit(
+            rows=_rows(),
+            chart_count=2,
+            modes_per_chart=2,
+            tangent_rank=8,
+            policy=_policy(steps=1),
+            allow_test_policy=True,
+        )
+    assert split_error.value.fit_partition_ordinal in (1, 2)
+    assert split_error.value.support_failure_stage in (
+        "split_refit_partition_1",
+        "split_refit_partition_2",
+    )
+
+
+def test_atlas_support_error_rejects_malformed_or_nonfinite_evidence() -> None:
+    with pytest.raises(ValueError, match="below required"):
+        AtlasSupportError(
+            support_failure_code="hard_chart_count_below_r_plus_1",
+            fit_partition_ordinal=0,
+            support_subset_sha256="a" * 64,
+            chart_ordinal=0,
+            observed_support=4,
+            required_support=4,
+        )
+    with pytest.raises(TypeError, match="finite float"):
+        AtlasSupportError(
+            support_failure_code=(
+                "selected_chart_covariance_support_not_above_tolerance"
+            ),
+            fit_partition_ordinal=0,
+            support_subset_sha256="a" * 64,
+            chart_ordinal=0,
+            observed_support=None,
+            required_support=None,
+            selected_covariance_value=float("nan"),
+            covariance_tolerance=1.0e-12,
+        )
+
+
+def test_support_failures_lower_without_fabricated_candidate_metrics() -> None:
+    rows = _rows(
+        family_count=6,
+        high_rank=True,
+        high_rank_dimensions=48,
+    )
+    policy = _policy(steps=1)
+    with pytest.raises(AtlasSupportError) as shared_failure:
+        fit_layer_chart_atlas(
+            rows=rows,
+            chart_count=2,
+            tangent_rank=64,
+            policy=policy,
+            allow_test_policy=True,
+        )
+    shared = tuple(
+        layer_multimode_candidate_support_rejection_from_error(
+            rows=rows,
+            chart_count=2,
+            modes_per_chart=modes,
+            tangent_rank=64,
+            support_error=shared_failure.value,
+            source_model_sha256=_sha(701),
+            fit_a_partition_sha256=_FIT_A_PARTITION_SHA256,
+            validation_a_partition_sha256=_VALIDATION_A_PARTITION_SHA256,
+            evaluation_protocol_sha256=_sha(702),
+            policy=policy,
+            allow_test_policy=True,
+        )
+        for modes in (1, 2, 4)
+    )
+    assert all(value.live_candidate_support_rejection_authorized for value in shared)
+    assert len({value.support_failure_evidence_sha256 for value in shared}) == 1
+    assert all(value.validation_source_sha256 is None for value in shared)
+    assert len({value.artifact_sha256 for value in shared}) == 3
+
+    fitted = fit_layer_multimode_candidate(
+        rows=rows,
+        chart_count=1,
+        modes_per_chart=2,
+        tangent_rank=32,
+        policy=policy,
+        allow_test_policy=True,
+    )
+    with pytest.raises(AtlasSupportError) as split_failure:
+        evaluate_layer_multimode_split_refit(
+            rows=rows,
+            chart_count=1,
+            modes_per_chart=2,
+            tangent_rank=32,
+            policy=policy,
+            allow_test_policy=True,
+        )
+    split = layer_multimode_candidate_support_rejection_from_error(
+        rows=rows,
+        chart_count=1,
+        modes_per_chart=2,
+        tangent_rank=32,
+        support_error=split_failure.value,
+        source_model_sha256=_sha(701),
+        fit_a_partition_sha256=_FIT_A_PARTITION_SHA256,
+        validation_a_partition_sha256=_VALIDATION_A_PARTITION_SHA256,
+        evaluation_protocol_sha256=_sha(702),
+        candidate_fit=fitted,
+        policy=policy,
+        allow_test_policy=True,
+    )
+    assert split.live_candidate_support_rejection_authorized
+    assert split.validation_source_sha256 == fitted.receipt.validation_source_sha256
+    assert split.candidate_fit_receipt_sha256 == fitted.receipt.receipt_sha256
+    assert split.atlas_sha256 == fitted.receipt.atlas_fit.atlas_sha256
 
 
 def test_split_refit_checkerboard_is_bound_and_label_invariant() -> None:

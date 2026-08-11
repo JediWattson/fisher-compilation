@@ -43,6 +43,19 @@ def _qualification() -> runtime.LayerMultimodeRuntimeQualificationReceipt:
     )
 
 
+def _atlas_support_error():
+    from fisher_graph.gemma3_layer_multimode_fit import AtlasSupportError
+
+    return AtlasSupportError(
+        support_failure_code="hard_chart_count_below_r_plus_1",
+        fit_partition_ordinal=0,
+        support_subset_sha256=_sha("fit-subset"),
+        chart_ordinal=0,
+        observed_support=2,
+        required_support=65,
+    )
+
+
 def test_import_is_model_and_tensor_runtime_inert(tmp_path: Path) -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
     script = (
@@ -92,6 +105,165 @@ def test_import_is_model_and_tensor_runtime_inert(tmp_path: Path) -> None:
         if isinstance(node, ast.ImportFrom) and node.module is not None
     )
     assert "torch" not in imported_roots
+
+
+def test_support_aware_runtime_methods_catch_only_exact_atlas_support_error(
+    monkeypatch,
+) -> None:
+    from fisher_graph import gemma3_layer_multimode_fit as fit_module
+
+    value = object.__new__(runtime.Gemma3LayerMultimodeRuntime)
+    materialization = SimpleNamespace(rows=object())
+    atlas_error = _atlas_support_error()
+
+    def reject_atlas(**kwargs):
+        raise atlas_error
+
+    monkeypatch.setattr(fit_module, "fit_layer_chart_atlas", reject_atlas)
+    atlas_attempt = value.fit_chart_atlas(
+        materialization,
+        chart_count=2,
+        tangent_rank=64,
+    )
+    assert type(atlas_attempt) is runtime.experiment.LayerMultimodePreoptimizerAttempt
+    assert atlas_attempt.result is None
+    assert atlas_error.__traceback__ is not None
+    assert atlas_attempt.support_error is not atlas_error
+    assert atlas_attempt.support_error.state_dict() == atlas_error.state_dict()
+    assert atlas_attempt.support_error.__traceback__ is None
+    assert atlas_attempt.support_error.__context__ is None
+    assert atlas_attempt.support_error.__cause__ is None
+
+    split_error = fit_module.AtlasSupportError(
+        support_failure_code=(
+            "weighted_chart_covariance_numerical_rank_below_r"
+        ),
+        fit_partition_ordinal=1,
+        support_subset_sha256=_sha("split-subset"),
+        chart_ordinal=1,
+        observed_support=12,
+        required_support=16,
+    )
+
+    def reject_split(**kwargs):
+        raise split_error
+
+    monkeypatch.setattr(
+        fit_module,
+        "evaluate_layer_multimode_split_refit",
+        reject_split,
+    )
+    split_attempt = value.evaluate_split_refit(
+        materialization,
+        chart_count=2,
+        mode_count=4,
+        tangent_rank=16,
+    )
+    assert split_attempt.result is None
+    assert split_error.__traceback__ is not None
+    assert split_attempt.support_error is not split_error
+    assert split_attempt.support_error.state_dict() == split_error.state_dict()
+    assert split_attempt.support_error.__traceback__ is None
+    assert split_attempt.support_error.__context__ is None
+    assert split_attempt.support_error.__cause__ is None
+
+    class ForeignSupportError(fit_module.AtlasSupportError):
+        pass
+
+    foreign = ForeignSupportError(
+        support_failure_code="hard_chart_count_below_r_plus_1",
+        fit_partition_ordinal=0,
+        support_subset_sha256=_sha("foreign-subset"),
+        chart_ordinal=0,
+        observed_support=2,
+        required_support=65,
+    )
+
+    def reject_with_foreign_subclass(**kwargs):
+        raise foreign
+
+    monkeypatch.setattr(
+        fit_module,
+        "fit_layer_chart_atlas",
+        reject_with_foreign_subclass,
+    )
+    with pytest.raises(ForeignSupportError) as raised:
+        value.fit_chart_atlas(
+            materialization,
+            chart_count=2,
+            tangent_rank=64,
+        )
+    assert raised.value is foreign
+
+    unexpected = RuntimeError("optimizer failure")
+
+    def reject_unexpected(**kwargs):
+        raise unexpected
+
+    monkeypatch.setattr(fit_module, "fit_layer_chart_atlas", reject_unexpected)
+    with pytest.raises(RuntimeError, match="optimizer failure") as raised_unexpected:
+        value.fit_chart_atlas(
+            materialization,
+            chart_count=2,
+            tangent_rank=64,
+        )
+    assert raised_unexpected.value is unexpected
+
+
+def test_runtime_support_rejection_lowering_preserves_stage_fit_lineage(
+    monkeypatch,
+) -> None:
+    from fisher_graph import gemma3_layer_multimode_fit as fit_module
+
+    value = object.__new__(runtime.Gemma3LayerMultimodeRuntime)
+    value.preflight = SimpleNamespace(evaluation_protocol_sha256=_sha("evaluation"))
+    materialization = SimpleNamespace(layer_ordinal=7, rows=object())
+    recapture = SimpleNamespace(
+        source_model_sha256=_sha("model"),
+        partition_receipt=SimpleNamespace(
+            fit_partition_sha256=_sha("fit-A"),
+            validation_partition_sha256=_sha("validation-A"),
+        ),
+    )
+    candidate_fit = object()
+    support_error = _atlas_support_error()
+    captured = {}
+    lowered = object()
+
+    def lower(**kwargs):
+        captured.update(kwargs)
+        return lowered
+
+    monkeypatch.setattr(
+        fit_module,
+        "layer_multimode_candidate_support_rejection_from_error",
+        lower,
+    )
+    result = value.lower_candidate_support_rejection(
+        materialization=materialization,
+        chart_count=2,
+        mode_count=4,
+        tangent_rank=64,
+        candidate_fit=candidate_fit,
+        support_error=support_error,
+        recapture=recapture,
+    )
+
+    assert result is lowered
+    assert captured == {
+        "rows": materialization.rows,
+        "chart_count": 2,
+        "modes_per_chart": 4,
+        "tangent_rank": 64,
+        "candidate_fit": candidate_fit,
+        "source_model_sha256": recapture.source_model_sha256,
+        "fit_a_partition_sha256": recapture.partition_receipt.fit_partition_sha256,
+        "validation_a_partition_sha256": (
+            recapture.partition_receipt.validation_partition_sha256
+        ),
+        "evaluation_protocol_sha256": value.preflight.evaluation_protocol_sha256,
+        "support_error": support_error,
+    }
 
 
 def test_runtime_qualification_is_self_hashed_and_immutable() -> None:

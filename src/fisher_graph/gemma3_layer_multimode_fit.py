@@ -50,8 +50,10 @@ from .gemma3_layer_multimode_selection import (
     PRODUCTION_FULL_A_CAPTURE_SCOPE as SELECTION_PRODUCTION_FULL_A_CAPTURE_SCOPE,
     PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256,
     LayerMultimodeCandidateEvaluationReceipt,
+    LayerMultimodeCandidateSupportRejectionReceipt,
     LayerMultimodeFamilyFidelityReceipt,
     _grant_live_candidate_evaluation_authority,
+    _grant_live_candidate_support_rejection_authority,
     candidate_matrix_macs_per_token,
     candidate_serialized_parameter_count,
 )
@@ -71,6 +73,7 @@ __all__ = [
     "fit_layer_chart_atlas",
     "fit_layer_multimode_candidate",
     "layer_multimode_candidate_evaluation_from_fit",
+    "layer_multimode_candidate_support_rejection_from_error",
     "make_layer_multimode_test_policy",
 ]
 
@@ -114,8 +117,142 @@ _LIVE_CANDIDATE_FITS: WeakValueDictionary[int, object] = WeakValueDictionary()
 _LIVE_SPLIT_EVIDENCE: WeakValueDictionary[int, object] = WeakValueDictionary()
 
 
+_ATLAS_SUPPORT_FAILURE_CODES: Final = frozenset(
+    {
+        "deterministic_lloyd_empty_chart",
+        "hard_chart_count_below_r_plus_1",
+        "weighted_chart_covariance_numerical_rank_below_r",
+        "selected_chart_covariance_support_not_above_tolerance",
+    }
+)
+
+
 class AtlasSupportError(RuntimeError):
-    """Raised before training when a requested chart/rank lacks support."""
+    """Typed expected rejection before candidate optimization begins."""
+
+    def __init__(
+        self,
+        *,
+        support_failure_code: str,
+        fit_partition_ordinal: int,
+        support_subset_sha256: str,
+        chart_ordinal: int,
+        observed_support: int | None,
+        required_support: int | None,
+        selected_covariance_value: float | None = None,
+        covariance_tolerance: float | None = None,
+    ) -> None:
+        if (
+            type(support_failure_code) is not str
+            or support_failure_code not in _ATLAS_SUPPORT_FAILURE_CODES
+        ):
+            raise ValueError("unknown atlas support failure code")
+        if type(chart_ordinal) is not int or chart_ordinal < 0:
+            raise TypeError("chart_ordinal must be an exact nonnegative integer")
+        _require_sha256(
+            support_subset_sha256,
+            label="support_subset_sha256",
+        )
+        if type(fit_partition_ordinal) is not int or fit_partition_ordinal not in (
+            0,
+            1,
+            2,
+        ):
+            raise ValueError("fit_partition_ordinal must be exactly 0, 1, or 2")
+        for label, value in (
+            ("observed_support", observed_support),
+            ("required_support", required_support),
+        ):
+            if value is not None and (type(value) is not int or value < 0):
+                raise TypeError(f"{label} must be None or a nonnegative integer")
+        for label, value in (
+            ("selected_covariance_value", selected_covariance_value),
+            ("covariance_tolerance", covariance_tolerance),
+        ):
+            if value is not None and (
+                type(value) is not float or not math.isfinite(value)
+            ):
+                raise TypeError(f"{label} must be None or a finite float")
+        if support_failure_code in {
+            "deterministic_lloyd_empty_chart",
+            "hard_chart_count_below_r_plus_1",
+            "weighted_chart_covariance_numerical_rank_below_r",
+        }:
+            if (
+                observed_support is None
+                or required_support is None
+                or selected_covariance_value is not None
+                or covariance_tolerance is not None
+            ):
+                raise ValueError("count/rank support evidence is malformed")
+            if observed_support >= required_support:
+                raise ValueError("observed support must be below required support")
+            if (
+                support_failure_code == "deterministic_lloyd_empty_chart"
+                and observed_support != 0
+            ):
+                raise ValueError("empty-chart support must equal zero")
+        elif (
+            observed_support is not None
+            or required_support is not None
+            or selected_covariance_value is None
+            or covariance_tolerance is None
+            or covariance_tolerance < 0.0
+            or selected_covariance_value > covariance_tolerance
+        ):
+            raise ValueError("covariance support evidence is malformed")
+
+        self.support_failure_code = support_failure_code
+        self.fit_partition_ordinal = fit_partition_ordinal
+        self.support_subset_sha256 = support_subset_sha256
+        self.support_failure_stage = (
+            "shared_atlas_fit"
+            if fit_partition_ordinal == 0
+            else f"split_refit_partition_{fit_partition_ordinal}"
+        )
+        self.chart_ordinal = chart_ordinal
+        self.observed_support = observed_support
+        self.required_support = required_support
+        self.selected_covariance_value = selected_covariance_value
+        self.covariance_tolerance = covariance_tolerance
+        if support_failure_code == "deterministic_lloyd_empty_chart":
+            message = (
+                f"deterministic C=2 Lloyd fit produced empty chart "
+                f"{chart_ordinal}; support 0 is below R+1={required_support}"
+            )
+        elif support_failure_code == "hard_chart_count_below_r_plus_1":
+            message = (
+                f"chart {chart_ordinal} has {observed_support} rows, "
+                f"below R+1={required_support}"
+            )
+        elif (
+            support_failure_code
+            == "weighted_chart_covariance_numerical_rank_below_r"
+        ):
+            message = (
+                f"chart {chart_ordinal} covariance rank {observed_support} "
+                f"is below R={required_support}"
+            )
+        else:
+            message = (
+                f"chart {chart_ordinal} selected covariance support "
+                f"{selected_covariance_value} is not above tolerance "
+                f"{covariance_tolerance}"
+            )
+        super().__init__(message)
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "support_failure_code": self.support_failure_code,
+            "support_failure_stage": self.support_failure_stage,
+            "fit_partition_ordinal": self.fit_partition_ordinal,
+            "support_subset_sha256": self.support_subset_sha256,
+            "chart_ordinal": self.chart_ordinal,
+            "observed_support": self.observed_support,
+            "required_support": self.required_support,
+            "selected_covariance_value": self.selected_covariance_value,
+            "covariance_tolerance": self.covariance_tolerance,
+        }
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -1979,6 +2116,7 @@ def _fit_atlas_from_subset(
     split_receipt_sha256: str,
     chart_count: int,
     tangent_rank: int,
+    fit_partition_ordinal: int,
     policy: LayerMultimodeFitPolicy,
 ) -> LayerMultimodeAtlasFit:
     hidden = int(fit_x.shape[1])
@@ -2000,7 +2138,14 @@ def _fit_atlas_from_subset(
                 selected = assignments == chart_ordinal
                 if not bool(selected.any()):
                     raise AtlasSupportError(
-                        "deterministic C=2 Lloyd fit produced an empty chart"
+                        support_failure_code=(
+                            "deterministic_lloyd_empty_chart"
+                        ),
+                        fit_partition_ordinal=fit_partition_ordinal,
+                        support_subset_sha256=fit_source_sha256,
+                        chart_ordinal=chart_ordinal,
+                        observed_support=0,
+                        required_support=tangent_rank + 1,
                     )
                 local_weights = fit_weights[selected]
                 updated.append(
@@ -2031,7 +2176,12 @@ def _fit_atlas_from_subset(
         hard_counts.append(count)
         if count < tangent_rank + 1:
             raise AtlasSupportError(
-                f"chart {chart_ordinal} has {count} rows, below R+1={tangent_rank + 1}"
+                support_failure_code="hard_chart_count_below_r_plus_1",
+                fit_partition_ordinal=fit_partition_ordinal,
+                support_subset_sha256=fit_source_sha256,
+                chart_ordinal=chart_ordinal,
+                observed_support=count,
+                required_support=tangent_rank + 1,
             )
         local_weights = fit_weights[selected]
         local_weights = local_weights / local_weights.sum()
@@ -2052,6 +2202,8 @@ def _fit_atlas_from_subset(
                 :, -tangent_rank:
             ].flip(dims=(1,))
         maximum = float(eigenvalues[-1])
+        if not math.isfinite(maximum):
+            raise RuntimeError("chart covariance eigenspectrum is nonfinite")
         tolerance = max(
             policy.covariance_absolute_floor,
             policy.covariance_relative_tolerance * max(maximum, 0.0),
@@ -2059,13 +2211,32 @@ def _fit_atlas_from_subset(
         numerical_rank = int((eigenvalues > tolerance).sum())
         if numerical_rank < tangent_rank:
             raise AtlasSupportError(
-                f"chart {chart_ordinal} covariance rank {numerical_rank} "
-                f"is below R={tangent_rank}"
+                support_failure_code=(
+                    "weighted_chart_covariance_numerical_rank_below_r"
+                ),
+                fit_partition_ordinal=fit_partition_ordinal,
+                support_subset_sha256=fit_source_sha256,
+                chart_ordinal=chart_ordinal,
+                observed_support=numerical_rank,
+                required_support=tangent_rank,
             )
         chosen_values = eigenvalues[-tangent_rank:]
         selected_minimum = float(chosen_values[0])
-        if not math.isfinite(selected_minimum) or selected_minimum <= tolerance:
-            raise AtlasSupportError("selected chart covariance support is nonpositive")
+        if not math.isfinite(selected_minimum):
+            raise RuntimeError("selected chart covariance support is nonfinite")
+        if selected_minimum <= tolerance:
+            raise AtlasSupportError(
+                support_failure_code=(
+                    "selected_chart_covariance_support_not_above_tolerance"
+                ),
+                fit_partition_ordinal=fit_partition_ordinal,
+                support_subset_sha256=fit_source_sha256,
+                chart_ordinal=chart_ordinal,
+                observed_support=None,
+                required_support=None,
+                selected_covariance_value=selected_minimum,
+                covariance_tolerance=float(tolerance),
+            )
         basis = eigenvectors_descending
         bases.append(_canonicalize_basis_signs(basis))
         numerical_ranks.append(numerical_rank)
@@ -2161,6 +2332,7 @@ def fit_layer_chart_atlas(
         split_receipt_sha256=split_receipt,
         chart_count=chart_count,
         tangent_rank=tangent_rank,
+        fit_partition_ordinal=0,
         policy=policy,
     )
 
@@ -2606,6 +2778,7 @@ def _fit_candidate_from_masks(
             split_receipt_sha256=training_split_receipt_sha256,
             chart_count=chart_count,
             tangent_rank=tangent_rank,
+            fit_partition_ordinal=partition_ordinal,
             policy=policy,
         )
     else:
@@ -3502,7 +3675,10 @@ def layer_multimode_candidate_evaluation_from_fit(
             raise ValueError(
                 "production evaluation requires original live fitter authority"
             )
-        if not allow_test_only_nonlive_authority or not fit_receipt.fit_policy_test_only:
+        if (
+            not allow_test_only_nonlive_authority
+            or not fit_receipt.fit_policy_test_only
+        ):
             raise ValueError(
                 "nonlive test fit requires explicit test-only authority opt-in"
             )
@@ -3696,3 +3872,157 @@ def layer_multimode_candidate_evaluation_from_fit(
         resource_pass=resource_pass,
     )
     return _grant_live_candidate_evaluation_authority(evaluation)
+
+
+def layer_multimode_candidate_support_rejection_from_error(
+    *,
+    rows: LayerMLPFlowRows,
+    chart_count: int,
+    modes_per_chart: int,
+    tangent_rank: int,
+    support_error: AtlasSupportError,
+    source_model_sha256: str,
+    fit_a_partition_sha256: str,
+    validation_a_partition_sha256: str,
+    evaluation_protocol_sha256: str,
+    candidate_fit: LayerMultimodeCandidateFit | None = None,
+    policy: LayerMultimodeFitPolicy = PRODUCTION_LAYER_MULTIMODE_FIT_POLICY,
+    allow_test_policy: bool = False,
+) -> LayerMultimodeCandidateSupportRejectionReceipt:
+    """Lower one expected preoptimizer support failure without fake metrics.
+
+    A shared-atlas failure is lowered once per M coordinate and carries no
+    validation, atlas, or fitted-candidate claim.  A split-refit failure is
+    candidate-specific and must bind the already completed original live fit.
+    The failing subset digest is regenerated from the exact A masks in both
+    cases before live rejection authority is granted.
+    """
+
+    if type(support_error) is not AtlasSupportError:
+        raise TypeError("support_error must be the exact AtlasSupportError type")
+    _validate_fit_request(
+        rows,
+        chart_count=chart_count,
+        modes_per_chart=modes_per_chart,
+        tangent_rank=tangent_rank,
+        policy=policy,
+        allow_test_policy=allow_test_policy,
+    )
+    for label, value in (
+        ("source_model_sha256", source_model_sha256),
+        ("fit_a_partition_sha256", fit_a_partition_sha256),
+        ("validation_a_partition_sha256", validation_a_partition_sha256),
+        ("evaluation_protocol_sha256", evaluation_protocol_sha256),
+    ):
+        _require_sha256(value, label=label)
+    if fit_a_partition_sha256 == validation_a_partition_sha256:
+        raise ValueError("fit and validation A partitions must be distinct")
+
+    fit_mask, _, base_split = _development_masks(rows, policy)
+    all_weights = family_example_balanced_row_weights(rows)
+    _, _, _, base_fit_source = _subset_rows(
+        rows,
+        fit_mask,
+        all_weights,
+        subset_role="A_full_fit_atlas_and_optimizer",
+        split_receipt_sha256=base_split,
+    )
+    if support_error.fit_partition_ordinal == 0:
+        if candidate_fit is not None:
+            raise ValueError("shared-atlas rejection cannot claim a candidate fit")
+        support_subset_sha256 = base_fit_source
+        validation_source_sha256: str | None = None
+        candidate_fit_receipt_sha256: str | None = None
+        atlas_sha256: str | None = None
+    else:
+        if modes_per_chart == 1:
+            raise ValueError("M=1 cannot carry split-refit support rejection")
+        if type(candidate_fit) is not LayerMultimodeCandidateFit:
+            raise TypeError("split support rejection requires a candidate fit")
+        candidate_fit.assert_integrity()
+        if not candidate_fit.live_fitter_authorized:
+            raise ValueError(
+                "split support rejection requires original live fitter authority"
+            )
+        fit_receipt = candidate_fit.receipt
+        if (
+            (
+                fit_receipt.layer_ordinal,
+                fit_receipt.chart_count,
+                fit_receipt.modes_per_chart,
+                fit_receipt.tangent_rank,
+            )
+            != (
+                rows.layer_ordinal,
+                chart_count,
+                modes_per_chart,
+                tangent_rank,
+            )
+            or fit_receipt.source_rows_receipt_sha256 != rows.receipt_sha256
+            or fit_receipt.policy_sha256 != policy.policy_sha256
+            or fit_receipt.split_receipt_sha256 != base_split
+            or fit_receipt.fit_source_sha256 != base_fit_source
+        ):
+            raise ValueError("candidate fit does not match split rejection lineage")
+        partitions = _checkerboard_fit_partitions(
+            rows,
+            fit_mask,
+            policy,
+            base_split,
+        )
+        partition_mask, partition_receipt, _ = partitions[
+            support_error.fit_partition_ordinal - 1
+        ]
+        _, _, _, support_subset_sha256 = _subset_rows(
+            rows,
+            partition_mask,
+            all_weights,
+            subset_role=(
+                f"A_split_refit_partition_"
+                f"{support_error.fit_partition_ordinal}"
+            ),
+            split_receipt_sha256=partition_receipt,
+        )
+        validation_source_sha256 = fit_receipt.validation_source_sha256
+        candidate_fit_receipt_sha256 = fit_receipt.receipt_sha256
+        atlas_sha256 = fit_receipt.atlas_fit.atlas_sha256
+
+    if support_error.support_subset_sha256 != support_subset_sha256:
+        raise ValueError("support failure subset does not replay from A rows")
+    production_fit_authorized = (
+        not policy.test_only
+        and policy.policy_sha256
+        == PRODUCTION_LAYER_MULTIMODE_FIT_POLICY_SHA256
+        and rows.source_capture_scope == PRODUCTION_FULL_A_CAPTURE_SCOPE
+    )
+    rejection = LayerMultimodeCandidateSupportRejectionReceipt(
+        layer_ordinal=rows.layer_ordinal,
+        chart_count=chart_count,
+        dynamic_mode_count=modes_per_chart,
+        tangent_rank=tangent_rank,
+        source_model_sha256=source_model_sha256,
+        source_rows_receipt_sha256=rows.receipt_sha256,
+        fit_policy_sha256=policy.policy_sha256,
+        fit_policy_test_only=policy.test_only,
+        source_capture_scope=rows.source_capture_scope,
+        production_fit_authorized=production_fit_authorized,
+        fit_source_sha256=base_fit_source,
+        support_subset_sha256=support_subset_sha256,
+        validation_source_sha256=validation_source_sha256,
+        fit_a_sha256=fit_a_partition_sha256,
+        validation_a_sha256=validation_a_partition_sha256,
+        evaluation_protocol_sha256=evaluation_protocol_sha256,
+        support_failure_stage=support_error.support_failure_stage,
+        fit_partition_ordinal=support_error.fit_partition_ordinal,
+        candidate_fit_receipt_sha256=candidate_fit_receipt_sha256,
+        atlas_sha256=atlas_sha256,
+        support_failure_code=support_error.support_failure_code,
+        chart_ordinal=support_error.chart_ordinal,
+        observed_support=support_error.observed_support,
+        required_support=support_error.required_support,
+        selected_covariance_value=(
+            support_error.selected_covariance_value
+        ),
+        covariance_tolerance=support_error.covariance_tolerance,
+    )
+    return _grant_live_candidate_support_rejection_authority(rejection)

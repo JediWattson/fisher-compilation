@@ -7,6 +7,7 @@ import math
 from dataclasses import replace
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
 import pytest
 
@@ -37,7 +38,10 @@ from fisher_graph.gemma3_layer_multimode_materialization import (
     LayerMLPFlowMaterializationReceipt,
 )
 from fisher_graph.gemma3_layer_multimode_selection import (
+    LayerMultimodeCandidateEvaluationReceipt,
+    LayerMultimodeCandidateSupportRejectionReceipt,
     _grant_live_candidate_evaluation_authority,
+    _grant_live_candidate_support_rejection_authority,
     select_layer_multimode_candidates,
 )
 
@@ -98,6 +102,8 @@ def _live_authorization_root(tmp_path: Path) -> tuple[Path, object]:
     for relative in qualified._TEST_PATHS:
         _copy_regular(_ROOT / relative, root / relative)
     for relative in (
+        multimode_setup.SUPERSEDED_V1_SETUP,
+        qualified.SUPERSEDED_V1_OUTPUT,
         multimode_setup.PREDECESSOR_V2_SETUP,
         multimode_setup.PREDECESSOR_V2_REPORT,
     ):
@@ -122,7 +128,11 @@ def _live_authorization_root(tmp_path: Path) -> tuple[Path, object]:
     return root, panel_bundle
 
 
-def _selection(source_model_sha256: str | None = None) -> object:
+def _selection(
+    source_model_sha256: str | None = None,
+    *,
+    with_support_rejections: bool = True,
+) -> object:
     helpers = _selection_helpers()
     grid = helpers._grid(production=True)
     if source_model_sha256 is not None:
@@ -134,10 +144,81 @@ def _selection(source_model_sha256: str | None = None) -> object:
             )
             for value in grid
         )
-    grid = tuple(
-        _grant_live_candidate_evaluation_authority(value) for value in grid
+    outcomes: tuple[object, ...] = grid
+    if with_support_rejections:
+        outcomes = helpers._replace_atlas_with_shared_rejections(
+            outcomes,
+            layer=0,
+            chart_count=2,
+            rank=64,
+        )
+        replaced: list[object] = []
+        for value in outcomes:
+            if (
+                type(value) is LayerMultimodeCandidateEvaluationReceipt
+                and value.layer_ordinal == 1
+                and value.chart_count == 2
+                and value.dynamic_mode_count == 4
+                and value.tangent_rank == 32
+            ):
+                replaced.append(
+                    helpers._support_rejection(
+                        value,
+                        stage="split_refit_partition_1",
+                    )
+                )
+            else:
+                replaced.append(value)
+        outcomes = tuple(replaced)
+    authorized = []
+    for value in outcomes:
+        if type(value) is LayerMultimodeCandidateEvaluationReceipt:
+            authorized.append(_grant_live_candidate_evaluation_authority(value))
+        elif type(value) is LayerMultimodeCandidateSupportRejectionReceipt:
+            authorized.append(
+                _grant_live_candidate_support_rejection_authority(value)
+            )
+        else:
+            raise TypeError("test selection contains an unknown outcome")
+    return select_layer_multimode_candidates(tuple(authorized))
+
+
+def _selection_counter_values(selection: object) -> dict[str, int]:
+    candidates = selection.candidates
+    evaluations = tuple(
+        value
+        for value in candidates
+        if type(value) is LayerMultimodeCandidateEvaluationReceipt
     )
-    return select_layer_multimode_candidates(grid)
+    rejections = tuple(
+        value
+        for value in candidates
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+    )
+    shared_groups = {
+        (value.layer_ordinal, value.chart_count, value.tangent_rank)
+        for value in rejections
+        if value.support_failure_stage == "shared_atlas_fit"
+    }
+    split_rejections = tuple(
+        value
+        for value in rejections
+        if value.support_failure_stage != "shared_atlas_fit"
+    )
+    atlas_attempts = 18 * 2 * 3
+    atlas_successes = atlas_attempts - len(shared_groups)
+    return {
+        "atlas_fit_attempt_count": atlas_attempts,
+        "atlas_fit_success_count": atlas_successes,
+        "atlas_support_rejection_count": len(shared_groups),
+        "candidate_fit_count": 3 * atlas_successes,
+        "split_refit_attempt_count": 2 * atlas_successes,
+        "split_refit_count": 2 * atlas_successes - len(split_rejections),
+        "split_refit_support_rejection_count": len(split_rejections),
+        "candidate_evaluation_receipt_count": len(evaluations),
+        "candidate_support_rejection_count": len(rejections),
+        "candidate_inventory_count": len(candidates),
+    }
 
 
 def _materialization(
@@ -1025,11 +1106,12 @@ def _terminal_payload(
             "native_baseline_instance_count": 1,
         },
     )
+    support_counts = _selection_counter_values(selection)
     counters = _worker_receipt(
-        b"fisher_graph:layer-multimode:counters:v1\0",
+        b"fisher_graph:layer-multimode:counters:v2\0",
         {
-            "schema": "fisher_graph.gemma3_layer_multimode.experiment_counters.v1",
-            "format_version": 1,
+            "schema": "fisher_graph.gemma3_layer_multimode.experiment_counters.v2",
+            "format_version": 2,
             "terminal_status": terminal,
             "execution_preflight_receipt_sha256": preflight_state[
                 "receipt_sha256"
@@ -1040,10 +1122,7 @@ def _terminal_payload(
             "exposed_predecessor_A_recapture_count": 1,
             "fresh_v3_A_capture_count": 0,
             "materialization_count": 18,
-            "atlas_fit_count": 108,
-            "candidate_fit_count": 324,
-            "split_refit_count": 216,
-            "candidate_evaluation_count": 324,
+            **support_counts,
             "selection_attempt_count": 1,
             "compilation_count": 1,
             "candidate_freeze_count": 1,
@@ -1250,10 +1329,130 @@ def test_seal_strict_replay_and_claim_boundary(
     assert report_io.strict_load_layer_multimode_experiment_report_bytes(raw) == report
     assert report["claims"]["scientific_result_is_negative"] is True
     assert report["claims"]["latency_improvement_claimed"] is False
+    assert report["schema"] == report_io.REPORT_SCHEMA
+    assert report["format_version"] == 2
+    assert report["claims"]["atlas_fit_attempt_count"] == 108
+    assert report["claims"]["atlas_fit_success_count"] == 107
+    assert report["claims"]["atlas_support_rejection_count"] == 1
+    assert report["claims"]["candidate_fit_count"] == 321
+    assert report["claims"]["split_refit_attempt_count"] == 214
+    assert report["claims"]["split_refit_success_count"] == 213
+    assert report["claims"]["split_refit_support_rejection_count"] == 1
+    assert report["claims"]["candidate_evaluation_receipt_count"] == 320
+    assert report["claims"]["candidate_support_rejection_count"] == 4
+    assert report["claims"]["candidate_inventory_count"] == 324
+    expected_histogram = [
+        {
+            "support_failure_stage": "shared_atlas_fit",
+            "support_failure_code": "hard_chart_count_below_r_plus_1",
+            "unique_failed_support_attempt_count": 1,
+            "candidate_outcome_count": 3,
+        },
+        {
+            "support_failure_stage": "split_refit_partition_1",
+            "support_failure_code": "hard_chart_count_below_r_plus_1",
+            "unique_failed_support_attempt_count": 1,
+            "candidate_outcome_count": 1,
+        },
+    ]
+    assert report["claims"][
+        "support_rejection_histogram_by_stage_and_code"
+    ] == expected_histogram
     assert report["privacy"]["contains_activation_rows"] is False
     summary = json.loads(report_io.render_layer_multimode_summary_bytes(report))
+    assert summary["schema"] == (
+        "fisher_graph.gemma3_layer_multimode.summary.v2"
+    )
+    assert summary["format_version"] == 2
     assert summary["report_sha256"] == report["report_sha256"]
     assert summary["summary_sha256"] == report["summary_sha256"]
+    for name in (
+        "atlas_fit_attempt_count",
+        "atlas_fit_success_count",
+        "atlas_support_rejection_count",
+        "candidate_fit_count",
+        "split_refit_attempt_count",
+        "split_refit_success_count",
+        "split_refit_support_rejection_count",
+        "candidate_evaluation_receipt_count",
+        "candidate_support_rejection_count",
+        "candidate_inventory_count",
+    ):
+        assert summary[name] == report["claims"][name]
+    assert summary[
+        "support_rejection_histogram_by_stage_and_code"
+    ] == expected_histogram
+
+
+@pytest.mark.parametrize(
+    "forged_counts",
+    (
+        {
+            "atlas_fit_success_count": 108,
+            "atlas_support_rejection_count": 0,
+            "candidate_fit_count": 324,
+            "split_refit_attempt_count": 216,
+            "split_refit_count": 216,
+            "split_refit_support_rejection_count": 0,
+            "candidate_evaluation_receipt_count": 324,
+            "candidate_support_rejection_count": 0,
+        },
+        {
+            "atlas_fit_success_count": 108,
+            "atlas_support_rejection_count": 0,
+            "candidate_fit_count": 324,
+            "split_refit_attempt_count": 216,
+            "split_refit_count": 212,
+            "split_refit_support_rejection_count": 4,
+            "candidate_evaluation_receipt_count": 320,
+            "candidate_support_rejection_count": 4,
+        },
+    ),
+)
+def test_counter_closure_is_crossbound_to_exact_typed_selection_outcomes(
+    base_evidence: tuple[object, object, object, bytes, dict[str, object]],
+    forged_counts: dict[str, int],
+) -> None:
+    payload = _terminal_payload(base_evidence, report_io.TERMINAL_B3_FAILED)
+    counters = dict(payload["experiment_counters_receipt"])
+    counters.update(forged_counts)
+    counters.pop("receipt_sha256")
+    counters["receipt_sha256"] = report_io._digest(
+        b"fisher_graph:layer-multimode:counters:v2\0",
+        counters,
+    )
+    payload["experiment_counters_receipt"] = counters
+    with pytest.raises(ValueError, match="differs from selection outcomes"):
+        report_io.seal_layer_multimode_experiment_report(payload)
+
+
+def test_selected_hash_must_resolve_only_to_metric_evaluation_receipt(
+    base_evidence: tuple[object, object, object, bytes, dict[str, object]],
+) -> None:
+    selection = base_evidence[0]
+    rejection = next(
+        value
+        for value in selection.candidates
+        if type(value) is LayerMultimodeCandidateSupportRejectionReceipt
+    )
+    forged_layers = (
+        SimpleNamespace(selected_candidate_sha256=rejection.artifact_sha256),
+        *selection.layers[1:],
+    )
+    with pytest.raises(
+        ValueError,
+        match="successful evaluation receipt",
+    ):
+        report_io._selection_outcome_counts(
+            SimpleNamespace(
+                candidates=selection.candidates,
+                layers=forged_layers,
+            ),
+            evaluation_type=LayerMultimodeCandidateEvaluationReceipt,
+            support_rejection_type=(
+                LayerMultimodeCandidateSupportRejectionReceipt
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -1360,7 +1559,7 @@ def test_strict_replay_rejects_nonfinite_bool_int_and_phase_shape_attacks(
         (
             "experiment_counters_receipt",
             "selection_receipt_sha256",
-            b"fisher_graph:layer-multimode:counters:v1\0",
+            b"fisher_graph:layer-multimode:counters:v2\0",
         ),
         (
             "fresh_panel_execution_receipt",
@@ -1476,6 +1675,8 @@ def test_publication_is_report_last_no_clobber_and_capability_rollback(
         summary_path=summary_path,
         verify_live_authorization=False,
     )
+    assert publication.state_dict()["schema"] == report_io.PUBLICATION_SCHEMA
+    assert publication.state_dict()["format_version"] == 2
     assert links[-1] == report_io.DEFAULT_REPORT_OUTPUT.name
     assert report_io.strict_load_layer_multimode_experiment_report(
         report_path,

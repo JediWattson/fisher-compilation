@@ -22,7 +22,7 @@ def _production_preflight(tmp_path: Path):
     resource = experiment.LayerMultimodeResourcePreflightReceipt(
         workspace_parent_path=str(tmp_path),
         workspace_path=str(
-            tmp_path / "layer-multimode-experiment-v1.work"
+            tmp_path / "layer-multimode-experiment-v2.work"
         ),
         report_path=str(tmp_path / "report.json"),
         bundle_path=str(tmp_path / "candidate.bundle"),
@@ -245,6 +245,56 @@ class _CandidateEvaluation:
 
 
 @dataclass(frozen=True)
+class _CandidateSupportRejection:
+    layer_ordinal: int
+    chart_count: int
+    dynamic_mode_count: int
+    tangent_rank: int
+    seed: str
+
+    @property
+    def artifact_sha256(self) -> str:
+        return _sha(
+            f"support-rejection:{self.layer_ordinal}:{self.chart_count}:"
+            f"{self.dynamic_mode_count}:{self.tangent_rank}"
+        )
+
+    @property
+    def source_model_sha256(self) -> str:
+        return self.seed
+
+    @property
+    def fit_policy_sha256(self) -> str:
+        return self.seed
+
+    @property
+    def fit_a_sha256(self) -> str:
+        return _sha("fit-A")
+
+    @property
+    def validation_a_sha256(self) -> str:
+        return _sha("validation-A")
+
+    @property
+    def evaluation_protocol_sha256(self) -> str:
+        return self.seed
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "layer_ordinal": self.layer_ordinal,
+            "chart_count": self.chart_count,
+            "dynamic_mode_count": self.dynamic_mode_count,
+            "tangent_rank": self.tangent_rank,
+            "artifact_sha256": self.artifact_sha256,
+            "support_rejected": True,
+        }
+
+
+class _ExpectedSupportError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
 class _SelectedLayer:
     selected_candidate_sha256: str
 
@@ -380,6 +430,8 @@ class _Runtime(experiment.LayerMultimodeV3Runtime):
         C3=True,
         D3=True,
         no_selection=False,
+        atlas_support_failures=(),
+        split_support_failures=(),
     ):
         self.preflight = preflight
         self.events = events
@@ -387,10 +439,13 @@ class _Runtime(experiment.LayerMultimodeV3Runtime):
         self.C3 = C3
         self.D3 = D3
         self.no_selection = no_selection
+        self.atlas_support_failures = frozenset(atlas_support_failures)
+        self.split_support_failures = frozenset(split_support_failures)
         self.atlas_calls = []
         self.fit_calls = []
         self.split_calls = []
         self.lower_calls = []
+        self.support_lower_calls = []
         self.release_compiled = "unset"
         self.closed = False
         self.fresh_role_captures = []
@@ -479,7 +534,15 @@ class _Runtime(experiment.LayerMultimodeV3Runtime):
     def fit_chart_atlas(self, materialization, *, chart_count, tangent_rank):
         key = (materialization.layer_ordinal, chart_count, tangent_rank)
         self.atlas_calls.append(key)
-        return _Artifact(f"atlas:{key}")
+        if key in self.atlas_support_failures:
+            return experiment.LayerMultimodePreoptimizerAttempt(
+                result=None,
+                support_error=_ExpectedSupportError(f"atlas:{key}"),
+            )
+        return experiment.LayerMultimodePreoptimizerAttempt(
+            result=_Artifact(f"atlas:{key}"),
+            support_error=None,
+        )
 
     def fit_candidate(
         self,
@@ -518,7 +581,43 @@ class _Runtime(experiment.LayerMultimodeV3Runtime):
             tangent_rank,
         )
         self.split_calls.append(key)
-        return _Artifact(f"split:{key}")
+        if key in self.split_support_failures:
+            return experiment.LayerMultimodePreoptimizerAttempt(
+                result=None,
+                support_error=_ExpectedSupportError(f"split:{key}"),
+            )
+        return experiment.LayerMultimodePreoptimizerAttempt(
+            result=_Artifact(f"split:{key}"),
+            support_error=None,
+        )
+
+    def lower_candidate_support_rejection(
+        self,
+        *,
+        materialization,
+        chart_count,
+        mode_count,
+        tangent_rank,
+        candidate_fit,
+        support_error,
+        recapture,
+    ):
+        assert type(support_error) is _ExpectedSupportError
+        key = (
+            materialization.layer_ordinal,
+            chart_count,
+            mode_count,
+            tangent_rank,
+        )
+        if key in self.split_support_failures:
+            assert candidate_fit is not None
+        else:
+            assert candidate_fit is None
+        self.support_lower_calls.append(key)
+        return _CandidateSupportRejection(
+            *key,
+            seed=self.preflight.source_model_sha256,
+        )
 
     def lower_candidate_evaluation(self, *, candidate_fit, split_refit, recapture):
         key = self.fit_calls[-1]
@@ -538,7 +637,10 @@ class _Runtime(experiment.LayerMultimodeV3Runtime):
         selected = []
         for layer in range(18):
             candidate = next(
-                value for value in evaluations if value.layer_ordinal == layer
+                value
+                for value in evaluations
+                if value.layer_ordinal == layer
+                and type(value) is _CandidateEvaluation
             )
             selected.append(_SelectedLayer(candidate.artifact_sha256))
         return _Selection(tuple(selected))
@@ -917,6 +1019,8 @@ def _run(
     C3=True,
     D3=True,
     no_selection=False,
+    atlas_support_failures=(),
+    split_support_failures=(),
     publisher=None,
 ):
     events = []
@@ -934,6 +1038,8 @@ def _run(
             C3=C3,
             D3=D3,
             no_selection=no_selection,
+            atlas_support_failures=atlas_support_failures,
+            split_support_failures=split_support_failures,
         )
         runtimes.append(runtime)
         return runtime
@@ -958,10 +1064,16 @@ def test_complete_grid_caches_atlas_and_runs_b3_c3_d3(tmp_path):
     assert isinstance(result.outcome, experiment.D3CompletedOutcome)
     counters = result.outcome.counters
     assert counters.materialization_count == 18
-    assert counters.atlas_fit_count == 108
+    assert counters.atlas_fit_attempt_count == 108
+    assert counters.atlas_fit_success_count == 108
+    assert counters.atlas_support_rejection_count == 0
     assert counters.candidate_fit_count == 324
+    assert counters.split_refit_attempt_count == 216
     assert counters.split_refit_count == 216
-    assert counters.candidate_evaluation_count == 324
+    assert counters.split_refit_support_rejection_count == 0
+    assert counters.candidate_evaluation_receipt_count == 324
+    assert counters.candidate_support_rejection_count == 0
+    assert counters.candidate_inventory_count == 324
     assert len(runtime.atlas_calls) == len(set(runtime.atlas_calls)) == 108
     assert len(runtime.fit_calls) == len(set(runtime.fit_calls)) == 324
     assert panels.opened_roles == (
@@ -987,7 +1099,70 @@ def test_complete_grid_caches_atlas_and_runs_b3_c3_d3(tmp_path):
     assert (tmp_path / "report.json").is_file()
     assert (tmp_path / "candidate.bundle").is_file()
     assert (tmp_path / "summary.json").is_file()
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
+
+
+def test_shared_atlas_support_rejection_fans_out_without_fake_fits(tmp_path):
+    failed_atlas = (0, 2, 64)
+    result, runtime, panels, publisher, _ = _run(
+        tmp_path,
+        atlas_support_failures=(failed_atlas,),
+    )
+
+    assert isinstance(result.outcome, experiment.D3CompletedOutcome)
+    counters = result.outcome.counters
+    assert counters.atlas_fit_attempt_count == 108
+    assert counters.atlas_fit_success_count == 107
+    assert counters.atlas_support_rejection_count == 1
+    assert counters.candidate_fit_count == 321
+    assert counters.split_refit_attempt_count == 214
+    assert counters.split_refit_count == 214
+    assert counters.split_refit_support_rejection_count == 0
+    assert counters.candidate_evaluation_receipt_count == 321
+    assert counters.candidate_support_rejection_count == 3
+    assert counters.candidate_inventory_count == 324
+    assert runtime.atlas_calls.count(failed_atlas) == 1
+    rejected_keys = {
+        (0, 2, mode_count, 64) for mode_count in (4, 2, 1)
+    }
+    assert set(runtime.support_lower_calls) == rejected_keys
+    assert rejected_keys.isdisjoint(runtime.fit_calls)
+    assert panels.opened_roles == (
+        experiment.B3_ROLE,
+        experiment.C3_ROLE,
+        experiment.D3_ROLE,
+    )
+    assert publisher.publish_calls == 1
+
+
+def test_split_support_rejection_rejects_only_its_candidate(tmp_path):
+    failed_split = (0, 2, 4, 32)
+    result, runtime, panels, publisher, _ = _run(
+        tmp_path,
+        split_support_failures=(failed_split,),
+    )
+
+    assert isinstance(result.outcome, experiment.D3CompletedOutcome)
+    counters = result.outcome.counters
+    assert counters.atlas_fit_attempt_count == 108
+    assert counters.atlas_fit_success_count == 108
+    assert counters.atlas_support_rejection_count == 0
+    assert counters.candidate_fit_count == 324
+    assert counters.split_refit_attempt_count == 216
+    assert counters.split_refit_count == 215
+    assert counters.split_refit_support_rejection_count == 1
+    assert counters.candidate_evaluation_receipt_count == 323
+    assert counters.candidate_support_rejection_count == 1
+    assert counters.candidate_inventory_count == 324
+    assert runtime.support_lower_calls == [failed_split]
+    assert failed_split in runtime.fit_calls
+    assert failed_split in runtime.split_calls
+    assert panels.opened_roles == (
+        experiment.B3_ROLE,
+        experiment.C3_ROLE,
+        experiment.D3_ROLE,
+    )
+    assert publisher.publish_calls == 1
 
 
 def test_scalar_publication_handoff_retains_no_compiled_model(tmp_path):
@@ -1065,6 +1240,60 @@ def test_A_no_candidate_returns_typed_outcome_with_zero_outputs(
         assert not (tmp_path / name).exists()
 
 
+def test_support_rejected_layer_returns_A_no_candidate_before_heldout(
+    tmp_path,
+    monkeypatch,
+):
+    candidate_hashes = tuple(_sha(f"support-grid:{index}") for index in range(324))
+    decision_hashes = tuple(_sha(f"support-decision:{index}") for index in range(324))
+    terminal = experiment.LayerMultimodeNoAdmissibleSelectionReceipt(
+        source_model_sha256=_sha("source"),
+        selection_policy_sha256=_sha("selection-policy"),
+        fit_policy_sha256=_sha("fit-policy"),
+        fit_a_sha256=_sha("fit-A"),
+        validation_a_sha256=_sha("validation-A"),
+        evaluation_protocol_sha256=_sha("evaluation-policy"),
+        candidate_sha256s=candidate_hashes,
+        decision_sha256s=decision_hashes,
+        failed_layer_ordinals=(0,),
+        first_failed_layer_ordinal=0,
+    )
+    monkeypatch.setattr(
+        experiment,
+        "_build_no_selection_receipt",
+        lambda evaluations, error: terminal,
+    )
+    failed_atlases = tuple(
+        (0, chart_count, tangent_rank)
+        for chart_count in experiment.CHART_COUNT_CANDIDATES
+        for tangent_rank in experiment.TANGENT_RANK_CANDIDATES
+    )
+
+    result, runtime, panels, publisher, _ = _run(
+        tmp_path,
+        no_selection=True,
+        atlas_support_failures=failed_atlases,
+    )
+
+    assert isinstance(result.outcome, experiment.NoAdmissibleCandidateOutcome)
+    counters = result.outcome.counters
+    assert counters.atlas_fit_attempt_count == 108
+    assert counters.atlas_fit_success_count == 102
+    assert counters.atlas_support_rejection_count == 6
+    assert counters.candidate_fit_count == 306
+    assert counters.split_refit_attempt_count == 204
+    assert counters.split_refit_count == 204
+    assert counters.candidate_evaluation_receipt_count == 306
+    assert counters.candidate_support_rejection_count == 18
+    assert counters.candidate_inventory_count == 324
+    assert len(runtime.support_lower_calls) == 18
+    assert panels.opened_roles == ()
+    assert publisher.publish_calls == 0
+    assert result.publication is None
+    for name in ("report.json", "candidate.bundle", "summary.json"):
+        assert not (tmp_path / name).exists()
+
+
 def test_preflight_failure_happens_before_runtime_or_workspace(tmp_path):
     events = []
     authority = _Authority(
@@ -1088,7 +1317,7 @@ def test_preflight_failure_happens_before_runtime_or_workspace(tmp_path):
         )
 
     assert events == ["strict_preflight"]
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
 
 
 def test_copied_preflight_loses_live_authority_before_runtime(tmp_path):
@@ -1138,7 +1367,7 @@ def test_production_receipt_forbids_every_injected_execution_seam(tmp_path):
         )
 
     assert events == ["strict_preflight", "revalidate"]
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
 
 
 def test_production_authority_revalidates_rebuilt_state_not_object_identity(
@@ -1206,7 +1435,7 @@ def test_finalize_failure_rolls_back_all_three_outputs(tmp_path):
     assert "report:rollback" in events
     for name in ("report.json", "candidate.bundle", "summary.json"):
         assert not (tmp_path / name).exists()
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
 
 
 def test_selection_engineering_error_propagates_without_terminal_rewrite(
@@ -1222,7 +1451,7 @@ def test_selection_engineering_error_propagates_without_terminal_rewrite(
 
     for name in ("report.json", "candidate.bundle", "summary.json"):
         assert not (tmp_path / name).exists()
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
 
 
 def test_static_preflight_rejects_noncanonical_setup_before_runtime_import(
@@ -1255,7 +1484,7 @@ def test_cli_requires_an_explicit_action_and_is_runtime_inert(tmp_path):
     assert completed.returncode == 2
     assert "--preflight-only" in completed.stderr
     assert "--run-v3" in completed.stderr
-    assert not (tmp_path / "layer-multimode-experiment-v1.work").exists()
+    assert not (tmp_path / "layer-multimode-experiment-v2.work").exists()
 
 
 def test_fresh_process_preflight_attempt_does_not_import_model_runtime(
@@ -1293,7 +1522,7 @@ def test_fresh_process_preflight_attempt_does_not_import_model_runtime(
     )
     state = json.loads(completed.stdout.splitlines()[-1])
     assert state["error"] == "FileNotFoundError"
-    assert "gemma3-layer-multimode-setup-v1.json" in state["message"]
+    assert "gemma3-layer-multimode-setup-v2.json" in state["message"]
     assert state["transformers"] is False
     assert state["model_loader"] is False
     assert state["v3_runtime"] is False
@@ -1307,7 +1536,7 @@ def test_fresh_process_preflight_reaches_only_missing_IQ_after_setup_gate(
     repository_root = tmp_path / "missing-IQ-root"
     setup_path = (
         repository_root
-        / "artifacts/research/gemma3-layer-multimode-setup-v1.json"
+        / "artifacts/research/gemma3-layer-multimode-setup-v2.json"
     )
     setup_path.parent.mkdir(parents=True)
     setup_path.write_bytes(b"setup-placeholder")

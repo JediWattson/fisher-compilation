@@ -32,20 +32,33 @@ from . import gemma3_layer_multimode_setup as setup
 
 
 SCHEMA = (
-    "fisher_graph.gemma3_layer_multimode.implementation_qualification.v1"
+    "fisher_graph.gemma3_layer_multimode.implementation_qualification.v2"
 )
-FORMAT_VERSION = 1
-QUALIFICATION_ID = "gemma3-layer-multimode-implementation-v1"
+FORMAT_VERSION = 2
+QUALIFICATION_ID = "gemma3-layer-multimode-implementation-v2"
 DEFAULT_OUTPUT = Path(
     "artifacts/research/"
+    "gemma3-layer-multimode-implementation-qualification-v2.json"
+)
+SUPERSEDED_V1_OUTPUT = Path(
+    "artifacts/research/"
     "gemma3-layer-multimode-implementation-qualification-v1.json"
+)
+SUPERSEDED_V1_SHA256 = (
+    "be03acfd6530c89b2552ee5a913551dabbc9c25d506339b7ee20d122393ef075"
+)
+SUPERSEDED_V1_FILE_SHA256 = (
+    "71c92e8739b6f968fb13a548dac515b19f023a10b04d5c1ef4b81c9b076e9855"
 )
 TRUST_ANCHOR_PATH = (
     "src/fisher_graph/"
     "gemma3_layer_multimode_implementation_qualification.py"
 )
 
-_DOMAIN = b"fisher_graph:layer-multimode:implementation-qualification:v1\0"
+_DOMAIN = b"fisher_graph:layer-multimode:implementation-qualification:v2\0"
+_SUPERSEDED_V1_DOMAIN = (
+    b"fisher_graph:layer-multimode:implementation-qualification:v1\0"
+)
 _MAX_SOURCE_BYTES = 256 * 1024 * 1024
 _MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
 _MAX_PREDECESSOR_BYTES = 512 * 1024 * 1024
@@ -623,6 +636,26 @@ def build_qualification(
     )
     if setup.render_setup_bytes(setup_state) != setup_raw:
         raise ValueError("frozen setup is not the live canonical setup")
+    superseded_path = root / SUPERSEDED_V1_OUTPUT
+    superseded_raw = _read_regular(
+        superseded_path,
+        maximum_bytes=_MAX_ARTIFACT_BYTES,
+    )
+    if hashlib.sha256(superseded_raw).hexdigest() != SUPERSEDED_V1_FILE_SHA256:
+        raise ValueError("superseded v1 qualification file binding drifted")
+    superseded_value = _strict_json_loads(superseded_raw)
+    if type(superseded_value) is not dict:
+        raise ValueError("superseded v1 qualification must be an exact object")
+    superseded_unsigned = dict(superseded_value)
+    superseded_semantic = superseded_unsigned.pop("qualification_sha256", None)
+    recomputed_superseded = hashlib.sha256(
+        _SUPERSEDED_V1_DOMAIN + canonical_json_bytes(superseded_unsigned)
+    ).hexdigest()
+    if (
+        superseded_semantic != SUPERSEDED_V1_SHA256
+        or recomputed_superseded != superseded_semantic
+    ):
+        raise ValueError("superseded v1 qualification semantic binding drifted")
     predecessor_setup_path = root / setup.PREDECESSOR_V2_SETUP
     predecessor_report_path = root / setup.PREDECESSOR_V2_REPORT
     predecessor_setup_raw = _read_regular(
@@ -713,6 +746,15 @@ def build_qualification(
         "schema": SCHEMA,
         "format_version": FORMAT_VERSION,
         "qualification_id": QUALIFICATION_ID,
+        "supersedes_qualification": {
+            "path": str(SUPERSEDED_V1_OUTPUT),
+            "qualification_sha256": SUPERSEDED_V1_SHA256,
+            "file_sha256": SUPERSEDED_V1_FILE_SHA256,
+            "reason": (
+                "typed_preoptimizer_support_rejections_and_v2_experiment_"
+                "receipt_schemas"
+            ),
+        },
         "trust_anchor": {
             "path": TRUST_ANCHOR_PATH,
             "explicitly_reviewed_bootstrap": True,
@@ -797,6 +839,9 @@ def build_qualification(
             "strict_live_rebuild_required_by_preflight": True,
             "no_setup_qualification_digest_cycle": True,
             "no_claim_of_external_signature_or_coordinated_tamper_resistance": True,
+            "scope": "exact_local_checkout_source_and_test_closure",
+            "git_commit_is_self_contained_for_every_transitive_dependency_"
+            "claimed": False,
         },
     }
     state["qualification_sha256"] = _digest(state)
@@ -1177,6 +1222,9 @@ __all__ = [
     "FORMAT_VERSION",
     "QUALIFICATION_ID",
     "SCHEMA",
+    "SUPERSEDED_V1_FILE_SHA256",
+    "SUPERSEDED_V1_OUTPUT",
+    "SUPERSEDED_V1_SHA256",
     "TRUST_ANCHOR_PATH",
     "build_qualification",
     "load_qualification",
