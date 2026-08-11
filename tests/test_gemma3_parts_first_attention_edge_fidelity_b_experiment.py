@@ -127,6 +127,41 @@ def test_import_is_model_loader_inert() -> None:
     )
 
 
+def test_frozen_panel_row_family_sequence_is_the_report_contract(
+    fixture_report: dict[str, object],
+) -> None:
+    panel = setup.load_fidelity_b_panel(
+        repository_root=Path(__file__).resolve().parents[1]
+    )
+    frozen_sequence = tuple(example.family_id for example in panel.examples)
+    expected_sequence = tuple(
+        family
+        for family in (
+            "integer_addition",
+            "integer_subtraction",
+            "integer_comparison",
+            "lexical_antonym",
+            "category_completion",
+            "world_capitals",
+        )
+        for _ in range(10)
+    )
+    expected_digest = (
+        "5492c46cb37d9ff8e4fb06fe3d337f8b3c69d8713069ab812b99392cdac2abc4"
+    )
+
+    assert frozen_sequence == expected_sequence
+    assert b.EXPECTED_B_ROW_FAMILIES == frozen_sequence
+    assert b._row_family_sequence_sha256(frozen_sequence) == expected_digest
+    assert tuple(
+        row["family_id"] for row in fixture_report["row_metrics"]
+    ) == frozen_sequence
+    assert (
+        fixture_report["panel_binding"]["row_family_sequence_sha256"]
+        == expected_digest
+    )
+
+
 def test_selector_api_has_no_B_score_or_metadata_channel() -> None:
     parameters = set(inspect.signature(b.select_frozen_a_motif_mask).parameters)
     assert parameters == {
@@ -1373,6 +1408,58 @@ def test_runtime_calls_setup_check_before_panel_or_model_access(
     with pytest.raises(ValueError, match="sentinel"):
         b.AttentionEdgeFidelityBRuntime.load(config)
     assert calls == ["check_setup"]
+
+
+def test_runtime_rejects_wrong_family_order_before_model_or_target_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    forbidden_accesses: list[str] = []
+
+    class MetadataOnlyExample:
+        def __init__(self, family_id: str) -> None:
+            self.family_id = family_id
+
+        @property
+        def prompt(self) -> str:
+            forbidden_accesses.append("prompt_tokenization")
+            raise AssertionError("prompt must not be tokenized")
+
+        @property
+        def correct_choice(self) -> int:
+            forbidden_accesses.append("correct_target")
+            raise AssertionError("correct target must not be read")
+
+        @property
+        def choices(self) -> tuple[str, ...]:
+            forbidden_accesses.append("choice_targets")
+            raise AssertionError("choice targets must not be read")
+
+    wrong_order = list(b.EXPECTED_B_ROW_FAMILIES)
+    wrong_order[0], wrong_order[10] = wrong_order[10], wrong_order[0]
+    panel = type(
+        "WrongOrderPanel",
+        (),
+        {"examples": tuple(MetadataOnlyExample(family) for family in wrong_order)},
+    )()
+
+    def forbidden_model_loader_resolution() -> object:
+        forbidden_accesses.append("model_loader_resolution")
+        raise AssertionError("model loader must not be resolved")
+
+    monkeypatch.setattr(
+        b,
+        "_checked_setup",
+        lambda config: ({}, "a" * 64),
+    )
+    monkeypatch.setattr(b, "load_fidelity_b_panel", lambda **kwargs: panel)
+    monkeypatch.setattr(b, "_default_model_loader", forbidden_model_loader_resolution)
+    config = b.AttentionEdgeFidelityBLiveConfig(
+        output=tmp_path / "must-not-be-written.json"
+    )
+
+    with pytest.raises(ValueError, match="row-to-family sequence drifted"):
+        b.AttentionEdgeFidelityBRuntime.load(config)
+    assert forbidden_accesses == []
 
 
 def test_checked_setup_binds_check_result_to_the_exact_file_bytes(

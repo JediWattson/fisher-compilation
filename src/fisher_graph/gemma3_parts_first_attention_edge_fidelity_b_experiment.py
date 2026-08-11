@@ -109,7 +109,16 @@ BOOTSTRAP_L95_INDEX: Final = _SETUP_BOOTSTRAP_L95_INDEX
 EMPIRICAL_P90_INDEX: Final = _SETUP_EMPIRICAL_P90_INDEX
 WILSON_Z_TWO_SIDED_95: Final = _SETUP_WILSON_Z95
 EXPECTED_B_ROW_FAMILIES: Final = tuple(
-    family for family in FAMILY_IDS for _ in range(10)
+    family
+    for family in (
+        "integer_addition",
+        "integer_subtraction",
+        "integer_comparison",
+        "lexical_antonym",
+        "category_completion",
+        "world_capitals",
+    )
+    for _ in range(10)
 )
 
 GATE_THRESHOLDS: Final = {
@@ -3127,6 +3136,9 @@ class AttentionEdgeFidelityBRuntime:
         examples = getattr(panel, "examples", None)
         if not isinstance(examples, tuple) or len(examples) != 60:
             raise ValueError("authenticated prospective B panel omitted rows")
+        family_ids = tuple(str(getattr(example, "family_id")) for example in examples)
+        if family_ids != EXPECTED_B_ROW_FAMILIES:
+            raise ValueError("prospective B live row-to-family sequence drifted")
         loader = _default_model_loader() if model_loader is None else model_loader
         compiler = (
             _default_exact_compiler() if exact_compiler is None else exact_compiler
@@ -3196,9 +3208,6 @@ class AttentionEdgeFidelityBRuntime:
             )
             for example, row in zip(examples, prepared, strict=True)
         )
-        family_ids = tuple(str(getattr(example, "family_id")) for example in examples)
-        if family_ids != EXPECTED_B_ROW_FAMILIES:
-            raise ValueError("prospective B live row-to-family sequence drifted")
 
         first_batch = batches[0]
         with torch.no_grad():
