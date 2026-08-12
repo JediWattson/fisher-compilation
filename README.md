@@ -35,6 +35,67 @@ The historical experiment chronology and command archive live in
 [`RESEARCH_LOG.md`](RESEARCH_LOG.md). This README focuses on the current
 framework and the strongest recent results.
 
+## Current attention-edge atlas and fidelity result
+
+The current parts-first rung separates **attention structure discovery** from
+**sparse execution fidelity**. Rather than treating an attention head as one
+scalar generator, it reconstructs every allowed `(layer, head, query, key)`
+route and records its probability, signed objective response, Fisher energy,
+tangent contribution, and causal distance. The resulting atlas is a structural
+map; it receives no compression, storage, latency, or semantic claim.
+
+The experiment then asked a stricter question: can a small set of those edges
+replace dense attention without changing model behavior? The retrospective A
+curve compared global route budgets `K = (1, 2, 4, 8, 16)`, five rankers, and
+zero-fill versus per-head renormalization. Its sparse replays used ordinal-
+matched dense controls so CPU batch-shape rounding could not masquerade as an
+edge effect. A separate prospective B panel froze the A-derived motif policy,
+used no B gradients or target information for selection, and evaluated global
+K8 zero-fill against six preregistered fidelity gates.
+
+| Evidence | Retrospective A | Prospective B |
+|---|---:|---:|
+| Sparse policy | Fisher K8 zero-fill | Frozen A-motif K8 zero-fill |
+| Selected-route share | `23.85%` | length-dependent, `15.1%`–`31.8%` |
+| Fisher energy retained | `92.81%` | not used as a B acceptance shortcut |
+| Dense/sparse top-1 agreement | `45/60` | `1/60` |
+| Mean target-NLL change | `+0.439` | positive on all `60/60` rows |
+| Valid-logit NRMSE | `0.508` | bootstrap U95 `0.920` |
+| Preregistered verdict | discovery diagnostic only | all six fidelity gates failed |
+
+The B controls passed cleanly: native and matched target-only references agreed
+on top-1 for `60/60` rows, with maximum numerical drift of only `1.10e-5` NLL
+and `7.63e-7` centered-logit NRMSE. The rejection therefore belongs to the
+sparse edge policy, not the replay machinery. The teacher-operator gate also
+failed before downstream propagation, showing that the frozen K8 motifs omit
+locally important routes; residual, terminal, and logit composition then
+amplify that loss.
+
+The result is **structure yes, compression no**. High retained Fisher energy
+does not by itself close the computation: a globally modest edge may be the
+only support for one head, or several individually weak edges may form a
+necessary coalition. K16 improved the A curve substantially, but B remains an
+untouched rejection panel and must not be reused to tune a replacement policy.
+
+The next edge representation should therefore be richer than
+`(layer, head, query, key) -> scalar score`. It should combine route
+probability, transported value direction, signed causal response, query/key
+context, distance, cross-example stability, and redundancy or coalition
+support. Selection should use per-head and per-layer minimums plus adaptive
+K16/K32 budgets so a global ranking cannot starve a head. That richer policy
+must be frozen on new discovery data and evaluated on another untouched panel
+before it can support any compression claim.
+
+The implementation is split across the exact
+[`edge extractor`](src/fisher_graph/gemma3_parts_first_attention_edges.py),
+[`atlas runner`](src/fisher_graph/gemma3_parts_first_attention_edge_experiment.py),
+[`A fidelity kernel`](src/fisher_graph/gemma3_parts_first_attention_edge_fidelity.py),
+[`A curve runner`](src/fisher_graph/gemma3_parts_first_attention_edge_fidelity_experiment.py),
+[`B setup`](src/fisher_graph/gemma3_parts_first_attention_edge_fidelity_b_setup.py),
+and [`B runner`](src/fisher_graph/gemma3_parts_first_attention_edge_fidelity_b_experiment.py).
+The frozen prospective panel is
+[`gemma3_attention_edge_fidelity_B_v1.json`](examples/gemma3_attention_edge_fidelity_B_v1.json).
+
 ## Framework architecture
 
 ```mermaid
