@@ -102,6 +102,21 @@ def _content_store_inventory_sha256(value: object) -> str:
     ).hexdigest()
 
 
+def _primary_generator_message_receipt(boundary: object) -> object:
+    receipts = tuple(getattr(boundary, "message_receipts", ()))
+    primary = tuple(
+        receipt
+        for receipt in receipts
+        if getattr(receipt, "message_kind", None)
+        in {"attention_transport", "mlp_mutation"}
+    )
+    if len(primary) != 1:
+        raise ValueError(
+            "carrier boundary must contain exactly one typed primary message"
+        )
+    return primary[0]
+
+
 def _is_sha256(value: object) -> bool:
     return (
         isinstance(value, str)
@@ -817,8 +832,8 @@ def _validate_report_semantics(report: Mapping[str, object]) -> None:
         or abs(anchor - member) < 2
         or pair.get("anchor_invocation_id") != f"mutation.{2 * anchor + 2}"
         or pair.get("member_invocation_id") != f"mutation.{2 * member + 2}"
-        or pair.get("anchor_atom_id") != f"mlp.block.{anchor}"
-        or pair.get("member_atom_id") != f"mlp.block.{member}"
+        or pair.get("anchor_atom_id") != f"atom.mlp.layer.{anchor}"
+        or pair.get("member_atom_id") != f"atom.mlp.layer.{member}"
         or pair.get("selected_on") != "A_fit"
         or pair.get("a_fit_role_manifest_sha256")
         != canonical_setup["data_firewall"]["roles"]["A_fit"]["role_manifest_sha256"]
@@ -1321,8 +1336,8 @@ def _validate_report_semantics_v2(report: Mapping[str, object]) -> None:
         ]
         or typed_pair.anchor_invocation_id != f"mutation.{2 * anchor + 2}"
         or typed_pair.member_invocation_id != f"mutation.{2 * member + 2}"
-        or typed_pair.anchor_atom_id != f"mlp.block.{anchor}"
-        or typed_pair.member_atom_id != f"mlp.block.{member}"
+        or typed_pair.anchor_atom_id != f"atom.mlp.layer.{anchor}"
+        or typed_pair.member_atom_id != f"atom.mlp.layer.{member}"
         or pair.get("family_id") != typed_pair.family_id
         or pair.get("anchor_invocation_id")
         != typed_pair.anchor_invocation_id
@@ -4068,15 +4083,11 @@ def _evaluate_one_arm(
                 exact_snapshots[index + 1][valid],
                 candidate_snapshots[index + 1][valid],
             )
-            exact_primary = next(
-                item
-                for item in exact_boundaries[index].message_receipts
-                if item.message_kind == "primary_generator"
+            exact_primary = _primary_generator_message_receipt(
+                exact_boundaries[index]
             )
-            candidate_primary = next(
-                item
-                for item in candidate_boundaries[index].message_receipts
-                if item.message_kind == "primary_generator"
+            candidate_primary = _primary_generator_message_receipt(
+                candidate_boundaries[index]
             )
             mutation_hash_catalog.append(
                 {
@@ -4211,16 +4222,8 @@ def _evaluate_one_arm(
                     )
                 ),
                 "all_mutation_delta_hashes_equal": all(
-                    next(
-                        item.value_sha256
-                        for item in left.message_receipts
-                        if item.message_kind == "primary_generator"
-                    )
-                    == next(
-                        item.value_sha256
-                        for item in right.message_receipts
-                        if item.message_kind == "primary_generator"
-                    )
+                    _primary_generator_message_receipt(left).value_sha256
+                    == _primary_generator_message_receipt(right).value_sha256
                     for left, right in zip(
                         candidate_boundaries, replay_boundaries, strict=True
                     )

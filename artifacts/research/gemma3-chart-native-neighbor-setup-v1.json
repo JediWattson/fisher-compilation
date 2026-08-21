@@ -1,0 +1,2606 @@
+{
+  "Fisher_chart_energy": {
+    "coordinate_only_energy_without_orthogonal_closure_forbidden": true,
+    "cross_inner_product_formula": "C_ij_r=sum_c sqrt(q_i_r_c q_j_r_c) times a_i_r^T M_c a_j_r",
+    "full_width_energy_closure": "weighted_chart_tangent_energy plus weighted_chart_orthogonal_energy equals weighted_fisher_energy",
+    "individual_authenticated_row_Fisher_energy_may_be_exactly_zero": true,
+    "minimum_row_Fisher_energy_is_finite_and_nonnegative": true,
+    "mismatch_formula": "Delta_ij_r=E_i_r+E_j_r-2C_ij_r",
+    "mismatch_nonnegative_up_to_frozen_float64_tolerance": true,
+    "negative_or_nonfinite_row_Fisher_energy_fails_closed": true,
+    "per_family_directed_target_energy_at_or_below_epsilon_fails_closed": true,
+    "primary_self_energy_field": "weighted_fisher_energy",
+    "raw_activation_norm_without_score_gradient_forbidden": true,
+    "raw_weight_similarity_is_diagnostic_only": true,
+    "self_energy_formula": "E_i_r=sum_c q_i_r_c times a_i_r^T M_c a_i_r",
+    "semantics": "membership_weighted_spd_self_cross_mismatch",
+    "sign_and_cross_terms_retained": true,
+    "weighted_activation_energy_formula": "sum_c q_i_r_c times comparison_value_i_r^T M_c comparison_value_i_r",
+    "weighted_activation_energy_is_diagnostic_only": true,
+    "weighted_chart_orthogonal_energy_formula": "sum_c q_i_r_c alpha_c times squared_norm((I minus B_c B_c_transpose) a_i_r)",
+    "weighted_chart_tangent_energy_formula": "sum_c q_i_r_c times squared_norm(diag(inverse_scale_c) B_c_transpose a_i_r)",
+    "zero_energy_rows_are_never_dropped": true
+  },
+  "artifact_role": "frozen_execution_setup_without_measurement",
+  "attention_cross_token_route_chart": {
+    "attention_mask_window_kind_and_position_catalog_sha256_required": true,
+    "causal_constraint": "source_token_position_le_prediction_query_position",
+    "factorized_route_catalog_and_energy_signature_sha256_required": true,
+    "global_constraint": "0_le_source_token_position_le_prediction_query_position",
+    "may_not_replace_h640_contribution_energy": true,
+    "no_top_k_or_energy_threshold_route_truncation": true,
+    "nonzero_operator_closure_remainder_invalidates_route_receipt": true,
+    "operator_output_to_common_postnorm_delta_bridge": {
+      "authenticated_exact_native_transform_receipt_required": true,
+      "bridge_is_provenance_not_neighbor_distance": true,
+      "native_transform_config_and_source_sha256s_required": true,
+      "reason": "post_attention_RMSNorm_is_nonlinear",
+      "required": true,
+      "source_and_target_tensor_catalog_sha256s_required": true,
+      "source_surface": "pre_postnorm_attention_operator_output_h640",
+      "source_target_row_catalogs_must_match": true,
+      "target_surface": "mutation_output_postnorm_residual_delta_h640"
+    },
+    "production_factorized_aggregation": {
+      "CPU_float64_reduction_required": true,
+      "authenticated_factor_hashes_required": [
+        "P_probability_tensor_sha256",
+        "repeated_V_tensor_sha256",
+        "O_head_slice_tensor_sha256",
+        "projected_U_tensor_sha256",
+        "operator_gradient_G_tensor_sha256",
+        "query_and_key_mask_position_catalog_sha256",
+        "context_and_objective_receipt_sha256",
+        "attention_config_snapshot_and_execution_sha256"
+      ],
+      "finite_probability_in_closed_unit_interval_required": true,
+      "fixed_q_and_k_chunk_schedule_required": true,
+      "float32_probability_sum_then_float64_cast_forbidden": true,
+      "frozen_kernel_receipt_sha256": "228433c4960c61660e9e0cb6e3f08d1a2a0fbf54f6bd1f9f6175d8beac23020e",
+      "head_coordinate_second_moment_sum_formula": "sum_q G_b_q_squared elementwise_mul sum_k(P_b_h_q_k_squared*U_b_h_k_squared)",
+      "head_coordinate_sum_formula": "sum_q G_b_q elementwise_mul sum_k(P_b_h_q_k*U_b_h_k)",
+      "head_output_projection_slice_W_shape": "H_by_640_by_64",
+      "intrinsic_route_energy_formula": "E_b_h_q_k=P_b_h_q_k_squared times sum_d(U_b_h_k_d_squared times G_b_q_d_squared)",
+      "kernel_id": "factorized_attention_route_energy.p_u_g.float64_chunked.v1",
+      "literal_full_route_coordinate_stream_hash_forbidden": true,
+      "masked_and_invalid_route_probabilities_exact_zero_required": true,
+      "materialized_h640_route_coordinate_scalar_count": 0,
+      "native_dense_support_equals_authenticated_logical_support_at_capture_required": true,
+      "native_probability_factor_P_shape": "B_by_H_by_Q_by_K",
+      "operator_intrinsic_and_common_postnorm_energy_zero_support_equivalence_not_required": true,
+      "operator_reconstruction_formula": "Y_b_q=sum_h_k(P_b_h_q_k times U_b_h_k)",
+      "operator_score_gradient_G_shape": "B_by_Q_by_640",
+      "per_example_receipt_required": true,
+      "per_snapshot_and_per_example_simplex_audit_receipt_required": true,
+      "prediction_query_chunk_size": 32,
+      "probability_simplex_audit_accumulation_dtype": "torch.float64",
+      "probability_simplex_bound_formula": "gamma32(k+2)+gamma64(k-1)*(1+gamma32(k+2))+k*2^-126",
+      "probability_simplex_fixed_tolerance_forbidden": true,
+      "probability_simplex_float32_FTZ_safety_power": -126,
+      "probability_simplex_float32_unit_roundoff_power": -24,
+      "probability_simplex_float64_unit_roundoff_power": -53,
+      "probability_simplex_forward_error_formula_id": "float32_softmax_simplex.gamma32_support_plus_2_gamma64_audit_plus_ftz.v1",
+      "probability_simplex_support_derivation_id": "query_key_valid_masks_logical_causal_optional_strict_window.v1",
+      "probability_simplex_support_maximum": 768,
+      "probability_simplex_support_minimum": 1,
+      "projected_value_factor_U_shape": "B_by_H_by_K_by_640",
+      "projected_value_factor_formula": "U_b_h_k=V_b_h_k times transpose(W_h)",
+      "repeated_native_value_factor_V_shape": "B_by_H_by_K_by_64",
+      "route_coordinate_formula": "a_b_h_q_k=R_b_h_q_k elementwise_mul G_b_q",
+      "route_value_formula": "R_b_h_q_k=P_b_h_q_k times U_b_h_k",
+      "small_exhaustive_factorized_parity_required": true,
+      "source_key_chunk_size": 128,
+      "source_softmax_device": "cpu",
+      "source_softmax_dtype": "torch.float32",
+      "stored_native_probability_bytes_preserved_without_renormalization": true,
+      "top64_and_distance_bins_are_exact_not_truncated_input": true,
+      "torch_version_build_and_kernel_receipt_required": true
+    },
+    "required_for_every_attention_mode": true,
+    "route_generalized_contribution": "route_value_elementwise_mul_pre_postnorm_operator_output_NLL_score_gradient",
+    "route_row_key": [
+      "example_id",
+      "context_fingerprint_sha256",
+      "prediction_query_position",
+      "query_head",
+      "source_token_position"
+    ],
+    "route_similarity_is_diagnostic_only_in_v1": true,
+    "route_sum_closure_target": "pre_postnorm_attention_operator_output_elementwise_mul_operator_output_NLL_score_gradient",
+    "route_sum_does_not_equal_common_postnorm_delta_contribution": true,
+    "route_sum_must_close_to_pre_postnorm_operator_contribution": true,
+    "route_value": "exact_native_attention_source_to_target_value_contribution_after_output_projection_before_post_attention_RMSNorm_in_h640",
+    "same_token_only_route_receipt_is_invalid": true,
+    "sliding_512_constraint": "max(0,prediction_query_position-511)_le_source_token_position_le_prediction_query_position",
+    "supplemental_to_common_axis_neighbor_distance": true
+  },
+  "carrier_observation_lineage": {
+    "all_sites_are_detached_observations_of_one_exact_execution": true,
+    "all_sites_share_example_position_rows_and_execution_fingerprint": true,
+    "ordered_site_count": 73,
+    "ordered_sites": [
+      {
+        "event_id": "lexical.ingress",
+        "event_index": 0,
+        "role": "output",
+        "site_id": "lexical.ingress.output",
+        "value_semantics": "lexical_hidden_state_h640"
+      },
+      {
+        "event_id": "mutation.1",
+        "event_index": 1,
+        "role": "input",
+        "site_id": "mutation.1.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.1",
+        "event_index": 1,
+        "role": "output",
+        "site_id": "mutation.1.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.2",
+        "event_index": 2,
+        "role": "input",
+        "site_id": "mutation.2.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.2",
+        "event_index": 2,
+        "role": "output",
+        "site_id": "mutation.2.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.3",
+        "event_index": 3,
+        "role": "input",
+        "site_id": "mutation.3.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.3",
+        "event_index": 3,
+        "role": "output",
+        "site_id": "mutation.3.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.4",
+        "event_index": 4,
+        "role": "input",
+        "site_id": "mutation.4.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.4",
+        "event_index": 4,
+        "role": "output",
+        "site_id": "mutation.4.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.5",
+        "event_index": 5,
+        "role": "input",
+        "site_id": "mutation.5.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.5",
+        "event_index": 5,
+        "role": "output",
+        "site_id": "mutation.5.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.6",
+        "event_index": 6,
+        "role": "input",
+        "site_id": "mutation.6.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.6",
+        "event_index": 6,
+        "role": "output",
+        "site_id": "mutation.6.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.7",
+        "event_index": 7,
+        "role": "input",
+        "site_id": "mutation.7.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.7",
+        "event_index": 7,
+        "role": "output",
+        "site_id": "mutation.7.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.8",
+        "event_index": 8,
+        "role": "input",
+        "site_id": "mutation.8.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.8",
+        "event_index": 8,
+        "role": "output",
+        "site_id": "mutation.8.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.9",
+        "event_index": 9,
+        "role": "input",
+        "site_id": "mutation.9.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.9",
+        "event_index": 9,
+        "role": "output",
+        "site_id": "mutation.9.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.10",
+        "event_index": 10,
+        "role": "input",
+        "site_id": "mutation.10.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.10",
+        "event_index": 10,
+        "role": "output",
+        "site_id": "mutation.10.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.11",
+        "event_index": 11,
+        "role": "input",
+        "site_id": "mutation.11.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.11",
+        "event_index": 11,
+        "role": "output",
+        "site_id": "mutation.11.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.12",
+        "event_index": 12,
+        "role": "input",
+        "site_id": "mutation.12.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.12",
+        "event_index": 12,
+        "role": "output",
+        "site_id": "mutation.12.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.13",
+        "event_index": 13,
+        "role": "input",
+        "site_id": "mutation.13.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.13",
+        "event_index": 13,
+        "role": "output",
+        "site_id": "mutation.13.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.14",
+        "event_index": 14,
+        "role": "input",
+        "site_id": "mutation.14.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.14",
+        "event_index": 14,
+        "role": "output",
+        "site_id": "mutation.14.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.15",
+        "event_index": 15,
+        "role": "input",
+        "site_id": "mutation.15.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.15",
+        "event_index": 15,
+        "role": "output",
+        "site_id": "mutation.15.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.16",
+        "event_index": 16,
+        "role": "input",
+        "site_id": "mutation.16.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.16",
+        "event_index": 16,
+        "role": "output",
+        "site_id": "mutation.16.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.17",
+        "event_index": 17,
+        "role": "input",
+        "site_id": "mutation.17.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.17",
+        "event_index": 17,
+        "role": "output",
+        "site_id": "mutation.17.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.18",
+        "event_index": 18,
+        "role": "input",
+        "site_id": "mutation.18.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.18",
+        "event_index": 18,
+        "role": "output",
+        "site_id": "mutation.18.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.19",
+        "event_index": 19,
+        "role": "input",
+        "site_id": "mutation.19.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.19",
+        "event_index": 19,
+        "role": "output",
+        "site_id": "mutation.19.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.20",
+        "event_index": 20,
+        "role": "input",
+        "site_id": "mutation.20.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.20",
+        "event_index": 20,
+        "role": "output",
+        "site_id": "mutation.20.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.21",
+        "event_index": 21,
+        "role": "input",
+        "site_id": "mutation.21.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.21",
+        "event_index": 21,
+        "role": "output",
+        "site_id": "mutation.21.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.22",
+        "event_index": 22,
+        "role": "input",
+        "site_id": "mutation.22.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.22",
+        "event_index": 22,
+        "role": "output",
+        "site_id": "mutation.22.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.23",
+        "event_index": 23,
+        "role": "input",
+        "site_id": "mutation.23.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.23",
+        "event_index": 23,
+        "role": "output",
+        "site_id": "mutation.23.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.24",
+        "event_index": 24,
+        "role": "input",
+        "site_id": "mutation.24.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.24",
+        "event_index": 24,
+        "role": "output",
+        "site_id": "mutation.24.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.25",
+        "event_index": 25,
+        "role": "input",
+        "site_id": "mutation.25.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.25",
+        "event_index": 25,
+        "role": "output",
+        "site_id": "mutation.25.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.26",
+        "event_index": 26,
+        "role": "input",
+        "site_id": "mutation.26.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.26",
+        "event_index": 26,
+        "role": "output",
+        "site_id": "mutation.26.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.27",
+        "event_index": 27,
+        "role": "input",
+        "site_id": "mutation.27.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.27",
+        "event_index": 27,
+        "role": "output",
+        "site_id": "mutation.27.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.28",
+        "event_index": 28,
+        "role": "input",
+        "site_id": "mutation.28.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.28",
+        "event_index": 28,
+        "role": "output",
+        "site_id": "mutation.28.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.29",
+        "event_index": 29,
+        "role": "input",
+        "site_id": "mutation.29.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.29",
+        "event_index": 29,
+        "role": "output",
+        "site_id": "mutation.29.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.30",
+        "event_index": 30,
+        "role": "input",
+        "site_id": "mutation.30.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.30",
+        "event_index": 30,
+        "role": "output",
+        "site_id": "mutation.30.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.31",
+        "event_index": 31,
+        "role": "input",
+        "site_id": "mutation.31.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.31",
+        "event_index": 31,
+        "role": "output",
+        "site_id": "mutation.31.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.32",
+        "event_index": 32,
+        "role": "input",
+        "site_id": "mutation.32.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.32",
+        "event_index": 32,
+        "role": "output",
+        "site_id": "mutation.32.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.33",
+        "event_index": 33,
+        "role": "input",
+        "site_id": "mutation.33.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.33",
+        "event_index": 33,
+        "role": "output",
+        "site_id": "mutation.33.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.34",
+        "event_index": 34,
+        "role": "input",
+        "site_id": "mutation.34.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.34",
+        "event_index": 34,
+        "role": "output",
+        "site_id": "mutation.34.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.35",
+        "event_index": 35,
+        "role": "input",
+        "site_id": "mutation.35.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.35",
+        "event_index": 35,
+        "role": "output",
+        "site_id": "mutation.35.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      },
+      {
+        "event_id": "mutation.36",
+        "event_index": 36,
+        "role": "input",
+        "site_id": "mutation.36.input",
+        "value_semantics": "normalized_mutation_input_h640"
+      },
+      {
+        "event_id": "mutation.36",
+        "event_index": 36,
+        "role": "output",
+        "site_id": "mutation.36.output",
+        "value_semantics": "mutation_residual_delta_h640"
+      }
+    ],
+    "site_catalog_sha256": "5ad9cdeb68a55cd4a1994bbf485b22394cae5c1f428fa56969c1c6c622095f17",
+    "site_count_formula": "1_lexical_ingress_output_plus_2_times_36_mutations",
+    "terminal_and_egress_are_not_silently_added_to_the_73_sites": true
+  },
+  "claim_boundary": {
+    "attention_cross_token_route_measured": false,
+    "chart_native_neighbor_measured": false,
+    "cluster_family_merge_or_compression_claimed": false,
+    "fresh_panels_are_frozen_and_byte_authenticated": true,
+    "fresh_panels_exist": true,
+    "lexical_egress_readout_chart_measured": false,
+    "neighbor_edge_claimed": false,
+    "response_validation_claimed": false,
+    "setup_artifact_contains_no_measurement": true
+  },
+  "claim_taxonomy": {
+    "allowed_only_after_C_all_gates": {
+      "chart_native_neighbor_edge": true,
+      "cross_native_ABI_chart_affinity": true,
+      "stable_shared_chart_geometry": true
+    },
+    "allowed_only_after_separate_D_support": {
+      "downstream_response_supported_chart_neighbor": true
+    },
+    "diagnostic_only": {
+      "attention_route_similarity": true,
+      "connected_component": true,
+      "maximal_clique": true,
+      "native_ABI_partition": true,
+      "new_C_neighbor": true,
+      "operator_kind_or_depth_enrichment": true,
+      "raw_weight_similarity": true
+    },
+    "never_authorized_by_this_protocol": {
+      "attention_route_causality_beyond_exact_decomposition": true,
+      "causal_interchangeability": true,
+      "cluster_or_generator_family": true,
+      "compression": true,
+      "deployment_or_latency_improvement": true,
+      "merge_or_deletion": true,
+      "native_ABI_interchangeability": true,
+      "parameter_sharing": true
+    }
+  },
+  "common_comparison_ABI": {
+    "abi_id": "carrier_chart_energy.h640.v1",
+    "abi_version": 1,
+    "all_mode_row_catalogs_must_match_exactly_within_each_role": true,
+    "finite_float64_accumulation_required": true,
+    "generalized_contribution": {
+      "absolute_value_or_squared_value_before_inner_product_forbidden": true,
+      "formula": "comparison_value_i_r elementwise_mul summed_next_token_NLL_score_gradient_i_r",
+      "full_width_vector_retained": true,
+      "output_shape": "h640",
+      "semantics": "value_hadamard_summed_next_token_nll_score_gradient",
+      "signed_values_retained": true,
+      "summed_objective": "sum_of_next_token_NLL_over_all_valid_prediction_rows",
+      "symbol": "a_i_r"
+    },
+    "hidden_width": 640,
+    "masked_or_invalid_rows_forbidden": true,
+    "mode_surface_rules": {
+      "attention": "mutation_output_residual_delta_and_output_NLL_score_gradient",
+      "lexical_egress": "terminal_normalized_carrier_value_and_exact_softcap_readout_pulled_NLL_score_gradient",
+      "lexical_ingress": "lexical_carrier_output_value_and_its_NLL_score_gradient",
+      "mlp": "mutation_output_residual_delta_and_output_NLL_score_gradient"
+    },
+    "padding_rows_forbidden": true,
+    "row_axis_contract": {
+      "context_value_and_contribution_carriers_are_captured_at": "q",
+      "exact_relation": "t=q+1",
+      "next_token_NLL_label_is_read_at": "t",
+      "off_by_one_or_position_omission_invalidates_run": true,
+      "ordered_role_family_example_q_t_catalog_sha256_required": true,
+      "prediction_query_positions": "q=0_through_L_minus_2",
+      "target_label_positions": "t=1_through_L_minus_1"
+    },
+    "row_key": [
+      "example_id",
+      "prediction_query_position",
+      "target_label_position"
+    ],
+    "row_order": "manifest_example_order_then_ascending_prediction_query_position_then_target_label_position",
+    "row_semantics": "aligned_example_prediction_query_and_target_label_positions"
+  },
+  "directed_chart_transport": {
+    "B_discovery_C_confirmation_D_response_rows_never_enter_fit": true,
+    "bias_is_represented_by_chart_membership_features": true,
+    "both_directed_receipts_required": true,
+    "canonical_WLS": {
+      "G": "X^T*W*X",
+      "W_normalization": "divide_all_diagonal_entries_by_their_sum",
+      "X": "concat_c(q_source_c*[1,z_source_c])_shape_N_by_136",
+      "Y": "target_signed_generalized_contribution_shape_N_by_640",
+      "absolute_ridge": "1e-3*max(ridge_scale,1e-12)",
+      "all_136_coefficients_penalized": true,
+      "base_row_weight": "1/(mode_count*family_count*examples_in_family*rows_in_example)",
+      "float64_CPU_required": true,
+      "ridge_scale": "trace(G)/136",
+      "separate_intercept": false,
+      "solve": "Beta=solve(G+absolute_ridge*I_136,X^T*W*Y)",
+      "unnormalized_W_diagonal": "base_row_weight*max(target_row_weighted_fisher_energy,1e-12)",
+      "zero_Fisher_rows_retained_with_floor": true
+    },
+    "directed_residual_energy": "sum_rows mismatch(transported_source_contribution_and_exact_target_contribution_under_shared_SPD_chart_metric)",
+    "directional_normalization": "source_to_target_residual_energy_divided_by_exact_target_Fisher_self_energy",
+    "exact_target_membership_for_residual": "target_membership_q",
+    "fit_all_ordered_distinct_mode_pairs": true,
+    "fit_and_evaluation_panel_catalog_sha256s_required": true,
+    "fit_role": "A_chart_transport_fit",
+    "fit_tie_and_SVD_orientation_rules_are_deterministic": true,
+    "frozen_transport_applied_without_refit_on_heldout_roles": true,
+    "global_sum_residual_over_sum_target_energy_is_diagnostic_only": true,
+    "ordered_pair_count": 1406,
+    "per_pair_fit_receipts_bind": [
+      "source_mode_id",
+      "target_mode_id",
+      "atlas_sha256",
+      "fit_panel_and_row_catalog_sha256",
+      "source_design_X_sha256",
+      "target_Y_sha256",
+      "effective_normalized_W_sha256",
+      "solver_id",
+      "relative_and_absolute_ridge",
+      "coefficient_sha256"
+    ],
+    "pooled_directional_distance": "equal_family_mean_of_within_family_directional_distances",
+    "production_streaming_execution": {
+      "A_fit_accumulates_XTWX_and_XTWY_in_fixed_row_chunks": true,
+      "B_C_evaluation_target_outer_source_inner_schedule": true,
+      "all_1406_coefficient_unique_float64_bytes": 979025920,
+      "compact_applied_mode_store_fields": [
+        "source_features_N_by_136",
+        "memberships_N_by_8",
+        "signed_generalized_contributions_N_by_640",
+        "weighted_activation_energy_N",
+        "weighted_chart_tangent_energy_N",
+        "weighted_chart_orthogonal_energy_N",
+        "weighted_fisher_energy_N"
+      ],
+      "compact_bytes_per_production_mode": 92596608,
+      "compact_bytes_per_production_role": 3518671104,
+      "compact_store_contains_prompt_text_or_token_ids": false,
+      "compact_store_field_dtypes": {
+        "memberships_N_by_8": "float64_little_endian",
+        "signed_generalized_contributions_N_by_640": "float32_little_endian",
+        "source_features_N_by_136": "float64_little_endian",
+        "weighted_activation_energy_N": "float64_little_endian",
+        "weighted_chart_orthogonal_energy_N": "float64_little_endian",
+        "weighted_chart_tangent_energy_N": "float64_little_endian",
+        "weighted_fisher_energy_N": "float64_little_endian"
+      },
+      "fit_target_outer_source_inner_schedule": true,
+      "one_python_matrix_vector_call_per_row_forbidden": true,
+      "one_target_contribution_and_membership_plus_one_source_feature_and_membership_store_resident": true,
+      "ordered_pair_checkpoint_and_progress_receipts_required": true,
+      "prediction_backend_torch_version_and_build_receipt_required": true,
+      "prediction_kernel_id": "torch_mm_cpu_float64_streamed_fixed_rows_v1",
+      "prediction_row_chunk_size": 256,
+      "raw_role_spool_transformed_once_then_deleted_only_after_strict_compact_store_reload": true,
+      "report_may_not_embed_coefficient_tensors": true
+    },
+    "real_gain_over_zero_formula": "1 minus weighted_transport_residual_energy divided_by weighted_zero_prediction_residual_energy",
+    "relative_ridge": 0.001,
+    "required_directed_evaluation_fields": [
+      "source_mode_id",
+      "target_mode_id",
+      "comparison_ABI",
+      "evaluation_panel_catalog_sha256",
+      "aligned_row_catalog_sha256",
+      "weighted_predicted_fisher_energy",
+      "weighted_target_fisher_energy",
+      "weighted_predicted_target_cross_inner_product",
+      "weighted_transport_residual_energy",
+      "weighted_zero_prediction_residual_energy",
+      "weighted_row_shuffled_transport_residual_energy",
+      "real_gain_over_zero",
+      "row_shuffle_gain_over_zero"
+    ],
+    "ridge_scale_floor": 1e-12,
+    "row_shuffle_control": {
+      "applies_to_roles": [
+        "B_neighbor_discovery",
+        "C_neighbor_confirmation"
+      ],
+      "catalog_digest_domain_hex": "6669736865725f67726170683a67656d6d61332d63686172742d6e61746976652d6e65696768626f722d726f772d73687566666c652d7065722d6578616d706c652d636174616c6f673a763200",
+      "catalog_digest_encoding": "sha256(catalog_domain||canonical_JSON_of_ordered_role_family_source_row_to_permuted_source_row_catalog)",
+      "cross_example_source_rows_forbidden": true,
+      "derangement_guaranteed_within_each_family_example": true,
+      "diagnostic_514_rows_cannot_enter_primary_control": true,
+      "digest_selection": "first_8_sha256_bytes_u64be_mod_(family_example_row_count_minus_1)",
+      "domain_hex": "6669736865725f67726170683a67656d6d61332d63686172742d6e61746976652d6e65696768626f722d726f772d73687566666c652d7065722d6578616d706c653a763200",
+      "minimum_family_example_row_count": 2,
+      "one_role_family_example_permutation_catalog_reused_for_all_directed_pairs_point_bootstrap_and_LOFO_replicates": true,
+      "permutation": "nonzero_cyclic_offset=1+digest_selection; permuted_source_at_target_row_r=source_row_((r+offset)_mod_family_example_row_count)",
+      "permutation_applied_before_example_resampling": true,
+      "permutation_catalog_sha256_required": true,
+      "preimage_encoding": "domain||seed_u64be||role_utf8_length_u32be||role_utf8||family_utf8_length_u32be||family_utf8||example_utf8_length_u32be||example_utf8",
+      "real_A_fitted_transport_reused_without_refit": true,
+      "seed": 6607,
+      "separately_fitted_shuffled_transport_forbidden": true,
+      "source_feature_rows_permuted_within_each_family_example": true,
+      "subset_stable_under_whole_example_selection": true,
+      "target_rows_unchanged": true
+    },
+    "row_shuffle_gain_over_zero_formula": "1 minus weighted_row_shuffled_transport_residual_energy divided_by weighted_zero_prediction_residual_energy",
+    "solver": "target_Fisher_weighted_ridge_float64",
+    "source_feature": "concat_c(q_source_c times [1,z_source_c])",
+    "source_feature_width": 136,
+    "source_to_target_semantics": "transport_source_chart_packet_to_predict_target_h640_generalized_contribution",
+    "symmetric_neighbor_distance": "0.5 times (distance_a_to_b plus distance_b_to_a)",
+    "target": "full_width_signed_generalized_contribution_a_target_h640",
+    "target_Fisher_energy_floor": 1e-12,
+    "transport_artifact_and_fit_row_catalog_sha256_required": true,
+    "transported_membership_for_residual": "source_membership_q",
+    "weighted_transport_residual_energy_formula": "weighted_predicted_fisher_energy plus weighted_target_fisher_energy minus 2 times weighted_predicted_target_cross_inner_product",
+    "weighted_zero_prediction_residual_energy_formula": "weighted_target_fisher_energy",
+    "within_example_source_row_shuffle_control_required_per_direction": true,
+    "within_family_directional_distance": "sum_family_row_residual_energy_divided_by_sum_family_row_exact_target_self_energy",
+    "zero_prediction_control_ratio": 1.0,
+    "zero_prediction_control_required_per_family_and_direction": true
+  },
+  "exact_execution_lineage": {
+    "attention_mutation_count": 18,
+    "event_catalog_sha256": "b013bd8cc8f775719922bfe6582741496e15dd7b0961929508d25ac8e555cefd",
+    "event_order_may_not_be_relabelled_or_permuted": true,
+    "mlp_mutation_count": 18,
+    "mutation_count": 36,
+    "ordered_event_count": 39,
+    "ordered_events": [
+      {
+        "attention_kind": null,
+        "block_ordinal": null,
+        "component_family": "lexical",
+        "event_id": "lexical.ingress",
+        "event_index": 0,
+        "event_kind": "lexical_ingress",
+        "token_dependency": "vocabulary_boundary"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 0,
+        "component_family": "attention",
+        "event_id": "mutation.1",
+        "event_index": 1,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 0,
+        "component_family": "mlp",
+        "event_id": "mutation.2",
+        "event_index": 2,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 1,
+        "component_family": "attention",
+        "event_id": "mutation.3",
+        "event_index": 3,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 1,
+        "component_family": "mlp",
+        "event_id": "mutation.4",
+        "event_index": 4,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 2,
+        "component_family": "attention",
+        "event_id": "mutation.5",
+        "event_index": 5,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 2,
+        "component_family": "mlp",
+        "event_id": "mutation.6",
+        "event_index": 6,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 3,
+        "component_family": "attention",
+        "event_id": "mutation.7",
+        "event_index": 7,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 3,
+        "component_family": "mlp",
+        "event_id": "mutation.8",
+        "event_index": 8,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 4,
+        "component_family": "attention",
+        "event_id": "mutation.9",
+        "event_index": 9,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 4,
+        "component_family": "mlp",
+        "event_id": "mutation.10",
+        "event_index": 10,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "global",
+        "block_ordinal": 5,
+        "component_family": "attention",
+        "event_id": "mutation.11",
+        "event_index": 11,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 5,
+        "component_family": "mlp",
+        "event_id": "mutation.12",
+        "event_index": 12,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 6,
+        "component_family": "attention",
+        "event_id": "mutation.13",
+        "event_index": 13,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 6,
+        "component_family": "mlp",
+        "event_id": "mutation.14",
+        "event_index": 14,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 7,
+        "component_family": "attention",
+        "event_id": "mutation.15",
+        "event_index": 15,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 7,
+        "component_family": "mlp",
+        "event_id": "mutation.16",
+        "event_index": 16,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 8,
+        "component_family": "attention",
+        "event_id": "mutation.17",
+        "event_index": 17,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 8,
+        "component_family": "mlp",
+        "event_id": "mutation.18",
+        "event_index": 18,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 9,
+        "component_family": "attention",
+        "event_id": "mutation.19",
+        "event_index": 19,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 9,
+        "component_family": "mlp",
+        "event_id": "mutation.20",
+        "event_index": 20,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 10,
+        "component_family": "attention",
+        "event_id": "mutation.21",
+        "event_index": 21,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 10,
+        "component_family": "mlp",
+        "event_id": "mutation.22",
+        "event_index": 22,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "global",
+        "block_ordinal": 11,
+        "component_family": "attention",
+        "event_id": "mutation.23",
+        "event_index": 23,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 11,
+        "component_family": "mlp",
+        "event_id": "mutation.24",
+        "event_index": 24,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 12,
+        "component_family": "attention",
+        "event_id": "mutation.25",
+        "event_index": 25,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 12,
+        "component_family": "mlp",
+        "event_id": "mutation.26",
+        "event_index": 26,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 13,
+        "component_family": "attention",
+        "event_id": "mutation.27",
+        "event_index": 27,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 13,
+        "component_family": "mlp",
+        "event_id": "mutation.28",
+        "event_index": 28,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 14,
+        "component_family": "attention",
+        "event_id": "mutation.29",
+        "event_index": 29,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 14,
+        "component_family": "mlp",
+        "event_id": "mutation.30",
+        "event_index": 30,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 15,
+        "component_family": "attention",
+        "event_id": "mutation.31",
+        "event_index": 31,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 15,
+        "component_family": "mlp",
+        "event_id": "mutation.32",
+        "event_index": 32,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "block_ordinal": 16,
+        "component_family": "attention",
+        "event_id": "mutation.33",
+        "event_index": 33,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 16,
+        "component_family": "mlp",
+        "event_id": "mutation.34",
+        "event_index": 34,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": "global",
+        "block_ordinal": 17,
+        "component_family": "attention",
+        "event_id": "mutation.35",
+        "event_index": 35,
+        "event_kind": "attention_mutation",
+        "token_dependency": "causal_prefix_mixer"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": 17,
+        "component_family": "mlp",
+        "event_id": "mutation.36",
+        "event_index": 36,
+        "event_kind": "mlp_mutation",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": null,
+        "component_family": "terminal",
+        "event_id": "terminal.rmsnorm",
+        "event_index": 37,
+        "event_kind": "terminal_rmsnorm",
+        "token_dependency": "token_local"
+      },
+      {
+        "attention_kind": null,
+        "block_ordinal": null,
+        "component_family": "lexical",
+        "event_id": "lexical.egress",
+        "event_index": 38,
+        "event_kind": "lexical_egress",
+        "token_dependency": "vocabulary_boundary"
+      }
+    ],
+    "terminal_event_is_not_a_logical_mode": true
+  },
+  "format_version": 1,
+  "fresh_confirmation_gates": {
+    "C_both_directional_residual_ratios_at_most_1": true,
+    "C_pooled_mutual_k2_required": true,
+    "C_real_transport_outperforms_zero_and_shuffle_both_directions": true,
+    "attention_endpoint_route_receipts_must_pass_if_applicable": true,
+    "candidate_must_be_in_frozen_B_catalog": true,
+    "every_gate_is_a_strict_conjunction": true,
+    "leave_one_family_out": {
+      "family_count": 6,
+      "minimum_mutual_count": 5,
+      "mutual_k2_recomputed_per_replicate": true,
+      "replicate_count": 6
+    },
+    "long_context_stratum_is_a_veto_and_cannot_nominate_edges": true,
+    "long_context_stratum_repeats_point_topology_and_error_gates": true,
+    "partial_gate_pass_never_confirms_an_edge": true,
+    "within_family_bootstrap": {
+      "all_eight_diagnostic_source_draws_per_family": 8,
+      "configured_family_example_catalog_contains_exactly_7_eligible_examples_per_family": true,
+      "draw_catalog_digest_domain_hex": "6669736865725f67726170682e63686172745f656e657267795f6e65696768626f725f67726170682e626f6f7473747261705f636174616c6f672e763100",
+      "draw_catalog_digest_encoding": "sha256(catalog_domain||canonical_config||repeated(resample_u64be,family_u32be,draw_u32be,example_u32be))",
+      "draw_catalog_iteration_order": "resample_then_configured_family_then_draw",
+      "draw_digest_selection": "first_8_sha256_bytes_u64be_mod_example_count",
+      "draw_preimage_encoding": "domain||seed_u64be||resample_u64be||family_u32be||draw_u32be",
+      "draw_protocol": "sha256_counter_modulo_example_count_v1",
+      "draw_protocol_domain_hex": "6669736865725f67726170683a63686172742d656e657267792d6e65696768626f722d626f6f7473747261702d647261773a763100",
+      "draws_per_family": 7,
+      "invalid_or_degenerate_resamples_fail_closed": true,
+      "maximum_degenerate_fraction": 0.01,
+      "minimum_mutual_frequency": 0.8,
+      "mutual_k2_recomputed_per_resample": true,
+      "one_draw_catalog_reused_for_every_pair_direction_control_and_topology_calculation": true,
+      "primary_authorizing_draws_per_family": 7,
+      "resample_count": 10000,
+      "resample_within_each_family_with_replacement": true,
+      "sampling_unit": "whole_example_with_all_its_target_token_rows",
+      "seed": 7901
+    }
+  },
+  "fresh_data_firewall": {
+    "A_only_may_fit_shared_atlas_or_transport_tensors": true,
+    "B_C_D_may_not_refit_or_select_atlas_transport_or_thresholds": true,
+    "B_C_primary_eligibility": {
+      "eligible_examples_per_family": 7,
+      "eligible_token_counts": [
+        96,
+        511,
+        512,
+        513,
+        576,
+        640,
+        768
+      ],
+      "pooled_point_topology_bootstrap_and_LOFO_use_only_eligible_examples": true,
+      "token_count_514_is_excluded_from_primary_point_topology_bootstrap_LOFO_and_hard_gates": true
+    },
+    "C_may_not_change_k_candidate_catalog_or_gate_thresholds": true,
+    "D_may_not_add_remove_or_rerank_chart_neighbor_edges": true,
+    "all_five_role_files_are_authenticated_and_present": true,
+    "context_stratum_metrics_reported_separately": true,
+    "equal_examples_per_family_within_each_executable_role": true,
+    "exact_examples_per_family": 8,
+    "exact_role_file_and_content_catalog_hashes_required_before_access": true,
+    "family_catalogs": {
+      "A_chart_transport_fit": "fit_only_never_evaluation",
+      "B_neighbor_discovery": "candidate_nomination_only_spent_after_use",
+      "C_neighbor_confirmation": "exactly_6_families_confirmation_only_spent_after_use",
+      "D_response_validation": "opened_only_after_C_chart_graph_and_receipt_are_frozen",
+      "reserve_unopened": "parse_and_hash_forbidden_until_new_protocol"
+    },
+    "hard_long_confirmation_veto": {
+      "C_non_authorizing_core_subset_receipt_required": true,
+      "frozen_B_and_C_confirmed_edge_must_pass_hard_long_subset": true,
+      "hard_long_subset_may_not_nominate_new_edges": true,
+      "same_point_distance_zero_and_shuffle_control_gates_as_core": true,
+      "token_counts": [
+        576,
+        640,
+        768
+      ]
+    },
+    "later_role_semantic_access_before_prior_freeze_invalidates_run": true,
+    "manifest_file_sha256": "5031f44454873a369ba7968c5bbfd6cf7e4a7340feaf0eddf6aee51398c948d7",
+    "manifest_semantic_sha256": "fe045222c8d4f7ec21b14d158da63878c3462a1c38c6b9f9dcecf2b4d1d5e57f",
+    "one_authoritative_frozen_fresh_manifest_and_receipt": true,
+    "ordered_roles": [
+      "A_chart_transport_fit",
+      "B_neighbor_discovery",
+      "C_neighbor_confirmation",
+      "D_response_validation",
+      "reserve_unopened"
+    ],
+    "ordered_target_token_counts": [
+      96,
+      511,
+      512,
+      513,
+      514,
+      576,
+      640,
+      768
+    ],
+    "prompt_example_template_instance_paraphrase_and_semantic_lineage_intersections_between_roles_must_be_zero": true,
+    "receipt_file_sha256": "65c5f6ea2e1241ad9bdd389da63304962d966fd988a2323ef6baf5dee56410d5",
+    "receipt_semantic_sha256": "a1586d6601323390573e750e9732bc7db4e415eefc0f15bf0a2fa8ef820cf1f0",
+    "reserve_JSON_decode_tokenizer_or_model_access_invalidates_run": true,
+    "reserve_opaque_byte_hash_access_allowed": true,
+    "role_file_sha256s": {
+      "A_chart_transport_fit": "112023d40793f1ff1c9952cc8b44e7d02b1f24a3473a72c941c4a494c2d6d0bf",
+      "B_neighbor_discovery": "f0c0b60e2e42b69703a4c81fc9a35c906a49d7a3e604b186c8d3fbc9c7755cc1",
+      "C_neighbor_confirmation": "ea8e533f6a4fe6c6461577211bd26d25ea0211a43b2847ab5afc75d90550ebc4",
+      "D_response_validation": "f16f4a3c04d04c403db8e50f9c2ed6db8c951b78065b5bb18f68956fb729a51a",
+      "reserve_unopened": "687824c48689a7a54698e3d1aa6d6d685e1bdfcddc703675b03ee5b68d429004"
+    },
+    "semantic_access_sequence": [
+      "parse_and_tokenize_A_only",
+      "freeze_shared_atlas_and_all_1406_A_transports",
+      "parse_and_tokenize_B_only",
+      "freeze_B_candidate_catalog",
+      "parse_and_tokenize_C_only",
+      "freeze_C_confirmed_chart_graph",
+      "optionally_parse_and_tokenize_D_only_after_C_freeze"
+    ],
+    "short_boundary_and_long_context_strata_required_in_B_C_and_D": true,
+    "static_preflight_may_not_JSON_decode_tokenize_or_semantically_inspect_any_role": true,
+    "static_preflight_may_read_raw_file_bytes_only_to_verify_pinned_SHA256_for_A_B_C_D_and_reserve": true,
+    "transition_514_reporting": {
+      "authorizes_or_vetoes_edges": false,
+      "diagnostic_only": true,
+      "non_authorizing_core_subset_receipt_required": true,
+      "stratum_id": "boundary_transition_514",
+      "token_count": 514
+    }
+  },
+  "frozen_fresh_panel_lineage": {
+    "all_five_role_files_are_authenticated_and_present": true,
+    "examples_per_family": 8,
+    "family_count": 6,
+    "hard_long_veto_token_counts": [
+      576,
+      640,
+      768
+    ],
+    "manifest": {
+      "file_sha256": "5031f44454873a369ba7968c5bbfd6cf7e4a7340feaf0eddf6aee51398c948d7",
+      "manifest_sha256": "fe045222c8d4f7ec21b14d158da63878c3462a1c38c6b9f9dcecf2b4d1d5e57f",
+      "path": "examples/gemma3_chart_native_neighbor_fresh_manifest_v1.json"
+    },
+    "one_authoritative_manifest_only": true,
+    "ordered_target_token_counts": [
+      96,
+      511,
+      512,
+      513,
+      514,
+      576,
+      640,
+      768
+    ],
+    "panel_source": {
+      "file_sha256": "c7951e12733842fe7a1abae29b0a2465da349ee40f83eebfb386be0fe366e852",
+      "path": "src/fisher_graph/gemma3_chart_native_neighbor_fresh_panels.py"
+    },
+    "primary_eligible_examples_per_family_B_C": 7,
+    "primary_eligible_token_counts_B_C": [
+      96,
+      511,
+      512,
+      513,
+      576,
+      640,
+      768
+    ],
+    "receipt": {
+      "file_sha256": "65c5f6ea2e1241ad9bdd389da63304962d966fd988a2323ef6baf5dee56410d5",
+      "path": "artifacts/research/gemma3-chart-native-neighbor-fresh-panels-v1.json",
+      "receipt_sha256": "a1586d6601323390573e750e9732bc7db4e415eefc0f15bf0a2fa8ef820cf1f0"
+    },
+    "role_files": {
+      "A_chart_transport_fit": {
+        "file_sha256": "112023d40793f1ff1c9952cc8b44e7d02b1f24a3473a72c941c4a494c2d6d0bf",
+        "path": "examples/gemma3_chart_native_neighbor_A_chart_transport_fit_corpus_v1.json"
+      },
+      "B_neighbor_discovery": {
+        "file_sha256": "f0c0b60e2e42b69703a4c81fc9a35c906a49d7a3e604b186c8d3fbc9c7755cc1",
+        "path": "examples/gemma3_chart_native_neighbor_B_neighbor_discovery_corpus_v1.json"
+      },
+      "C_neighbor_confirmation": {
+        "file_sha256": "ea8e533f6a4fe6c6461577211bd26d25ea0211a43b2847ab5afc75d90550ebc4",
+        "path": "examples/gemma3_chart_native_neighbor_C_neighbor_confirmation_corpus_v1.json"
+      },
+      "D_response_validation": {
+        "file_sha256": "f16f4a3c04d04c403db8e50f9c2ed6db8c951b78065b5bb18f68956fb729a51a",
+        "path": "examples/gemma3_chart_native_neighbor_D_response_validation_corpus_v1.json"
+      },
+      "reserve_unopened": {
+        "file_sha256": "687824c48689a7a54698e3d1aa6d6d685e1bdfcddc703675b03ee5b68d429004",
+        "path": "examples/gemma3_chart_native_neighbor_reserve_unopened_corpus_v1.json"
+      }
+    },
+    "transition_diagnostic_only_token_count": 514
+  },
+  "frozen_predecessor_lineage": {
+    "cross_layer_transport_protocol": {
+      "file_sha256": "d01c1803e9b5eed28efa732b252a271bd12bbe80434194f306c288aa8ccaf1cf",
+      "path": "artifacts/research/gemma3-cross-layer-chart-transport-protocol-v1.json",
+      "protocol_sha256": "b373f855076c73aceb9fea9adf404a60cf7406718e4b7a3c96dc295b8a64ab5b"
+    },
+    "event_executor_source": {
+      "file_sha256": "d7c397a694abb3d22b1f1289d7b79995cbf652bb824dc45a838b23ee4e847324",
+      "path": "src/fisher_graph/gemma3_joint_cross_block_chart_executor.py"
+    },
+    "exact_edge_protocol": {
+      "file_sha256": "f04662b3e24407799c9a87fde34ac97c91a6374500ee5eb97280abd23276e33c",
+      "path": "artifacts/research/gemma3-exact-edge-sidecar-protocol-v1.json"
+    },
+    "old_adjacent_same_token_edge_catalog_inherited": false,
+    "old_exact_edge_catalog_inherited": false,
+    "old_response_neighbor_catalog_inherited": false,
+    "predecessors_supply_lineage_and_negative_evidence_only": true,
+    "spent_development_result_receipts": [
+      {
+        "file_sha256": "27c6f2ea1a0079c136f6a5d0ecbdbb7319c86b2e603a7a9c3edd2048569529b6",
+        "inherited_as_neighbor_truth": false,
+        "outcome": "heldout_edge_gain_gate_failed",
+        "path": ".local-runs/google--gemma-3-270m/cross-layer-chart-transport-dev-v1.json"
+      },
+      {
+        "file_sha256": "21201e970c08a28ce3c69871f8d44d64847a1b0c1acae3184f345cdf4c34f463",
+        "inherited_as_neighbor_truth": false,
+        "outcome": "heldout_predictive_or_causal_edge_gate_failed",
+        "path": ".local-runs/google--gemma-3-270m/exact-edge-sidecar-v1.json"
+      }
+    ],
+    "unified_chart_sidecar_source": {
+      "file_sha256": "ac0438c992d8909a67877a20756ce87c7021283cceb5f6067802f51b8c6fc0b4",
+      "path": "src/fisher_graph/gemma3_unified_event_chart_sidecar.py"
+    }
+  },
+  "frozen_runtime_qualification": {
+    "authenticated_present": true,
+    "file_sha256": "3e3603eae4c6d0ba126e293152b213dcecdc343408faff8769b3e6755f1ff600",
+    "panel_corpus_bytes_authenticated_opaque": true,
+    "panel_semantic_access_performed": false,
+    "path": "artifacts/research/gemma3-chart-native-neighbor-runtime-qualification-v1.json",
+    "prompt_text_decoded_or_semantically_opened": false,
+    "qualification_receipt_sha256": "d430889be9f91fdbc76b8c59d4ced252c860b9fc3d7ea6c655f43b25c8f693ca",
+    "qualifies_compiled_runtime_before_A_access": true,
+    "tokenizer_and_model_loaded_only_after_static_preflight": true
+  },
+  "frozen_worker_implementation_sources": {
+    "activations": {
+      "file_sha256": "887114e91abf0287d64b2d32eeca9e8979f79c76424653ddc34691442a65dcc5",
+      "path": "src/fisher_graph/activations.py"
+    },
+    "attention_generator": {
+      "file_sha256": "ba36d1e48e262e8aeb3c97f2acf9051587ff10c1ab8bc89581a8dc83fb51fc19",
+      "path": "src/fisher_graph/gemma3_attention_generator.py"
+    },
+    "chart_energy_neighbor_graph": {
+      "file_sha256": "ae6fbf9235ec0bf2e69a0e83a28980bd30c2a447dc1900c5de64059b0058e1ee",
+      "path": "src/fisher_graph/chart_energy_neighbor_graph.py"
+    },
+    "chart_native_neighbor_runtime": {
+      "file_sha256": "42046db14cf4bf8d3ff872ed288b7c3804a11a4633bcec27ae53d13eb6ac1446",
+      "path": "src/fisher_graph/gemma3_chart_native_neighbor_runtime.py"
+    },
+    "chart_native_neighbor_worker": {
+      "file_sha256": "442139eae492752f1bc9d2014502b374cf7f4986a904b26a1075775478bfdd3a",
+      "path": "src/fisher_graph/gemma3_chart_native_neighbor_experiment.py"
+    },
+    "chunked_tied_lexical_nll": {
+      "file_sha256": "9ae44b700cee330c7b841d98b1d087343fab3cfa0a97d8f2e9ea756a03c587bf",
+      "path": "src/fisher_graph/chunked_tied_lexical_nll.py"
+    },
+    "codimension_projection": {
+      "file_sha256": "4af5306a7b35fe4639e3d6971b5617a18ae5216f24f8d792c1ed2dd182733c39",
+      "path": "src/fisher_graph/codimension_projection.py"
+    },
+    "compiler_calibration": {
+      "file_sha256": "2d9f510b4871834d8066b43e7ae32005a68695c6a960fec92ce44072b501dce8",
+      "path": "src/fisher_graph/compiler/calibration.py"
+    },
+    "compiler_capabilities": {
+      "file_sha256": "b74d6a683cf43b69250c8d5e969d84ab6e9e240031a3118caa42e3623a7e625e",
+      "path": "src/fisher_graph/compiler/capabilities.py"
+    },
+    "compiler_manifest": {
+      "file_sha256": "18e63013f654e455cd9915e72363646304c71f7bc39ca1a963c2ce6102d0a852",
+      "path": "src/fisher_graph/compiler/manifest.py"
+    },
+    "complete_block_generator_stack": {
+      "file_sha256": "3dc37cc26e1bcfb6feeeb9e43cc6798bddf19035c3b9cd9e00e7fcb1ffa3c582",
+      "path": "src/fisher_graph/complete_block_generator_stack.py"
+    },
+    "complete_block_residual_forms": {
+      "file_sha256": "ef7e59d6a9c474db26955d24748e4c044b27759e2dd550ee4b79e064025f17d8",
+      "path": "src/fisher_graph/complete_block_residual_forms.py"
+    },
+    "config": {
+      "file_sha256": "4b37faa008d2a32713e67549af80d25de705da4e4de97c269942bc5a34015ee0",
+      "path": "src/fisher_graph/config.py"
+    },
+    "event_executor": {
+      "file_sha256": "d7c397a694abb3d22b1f1289d7b79995cbf652bb824dc45a838b23ee4e847324",
+      "path": "src/fisher_graph/gemma3_joint_cross_block_chart_executor.py"
+    },
+    "external_models": {
+      "file_sha256": "0a0be1fd3ca84aa715eb8e4f337f72fb7cea0b3a6228528cb678018376fddbc0",
+      "path": "src/fisher_graph/external_models.py"
+    },
+    "full_width_single_layer_executor": {
+      "file_sha256": "c4d33bdd3154f08ad1c652d67164e669b263ddba0f27f34a6b30cafa0d4912a5",
+      "path": "src/fisher_graph/full_width_single_layer_executor.py"
+    },
+    "gated_executor": {
+      "file_sha256": "0aa12b701203f31c261208ea552e4d823b10bf6af5a4a72f872cdfc67c2319e5",
+      "path": "src/fisher_graph/gated_executor.py"
+    },
+    "gemma3_ablation_experiment": {
+      "file_sha256": "0d20be7b96f2918ca7bf3ca8344138c982c9ec38f480ac1668280e9abd5622c3",
+      "path": "src/fisher_graph/gemma3_ablation_experiment.py"
+    },
+    "gemma3_all_mode_generator_graph_executor": {
+      "file_sha256": "686122b422e41392896e9d1ccaf79745857528fbb42f6349db0b1e063ee72c96",
+      "path": "src/fisher_graph/gemma3_all_mode_generator_graph_executor.py"
+    },
+    "gemma3_chart_mode_surfaces": {
+      "file_sha256": "215d2ae925dadccc99c54ef29d11522f558a2fa8cd4d7d4579d2edff1ca9ead8",
+      "path": "src/fisher_graph/gemma3_chart_mode_surfaces.py"
+    },
+    "gemma3_chart_native_neighbor_fresh_panels": {
+      "file_sha256": "c7951e12733842fe7a1abae29b0a2465da349ee40f83eebfb386be0fe366e852",
+      "path": "src/fisher_graph/gemma3_chart_native_neighbor_fresh_panels.py"
+    },
+    "gemma3_codimension_rotation_experiment": {
+      "file_sha256": "538b1d0d353dcfa9354a3964b27f254ce6fc743d3fd8f5b77ee2c015f8f8e6ee",
+      "path": "src/fisher_graph/gemma3_codimension_rotation_experiment.py"
+    },
+    "gemma3_experiment": {
+      "file_sha256": "35b36855b232f83018313f14a9b6fd035e8d451a857be88a4948f290d3edf0ca",
+      "path": "src/fisher_graph/gemma3_experiment.py"
+    },
+    "gemma3_full_body_residual_carrier_experiment": {
+      "file_sha256": "33042626bb2d0c1caad41ec7d0127829f91f33ae57b22ad27848a6e247bdd8e5",
+      "path": "src/fisher_graph/gemma3_full_body_residual_carrier_experiment.py"
+    },
+    "gemma3_full_width_single_layer_experiment": {
+      "file_sha256": "2416ab7b9c0cdb381ff916feefe1a7425aef720fda02d7b6b1ccd2681b4b65ed",
+      "path": "src/fisher_graph/gemma3_full_width_single_layer_experiment.py"
+    },
+    "gemma3_gated_executor_experiment": {
+      "file_sha256": "a767986f894f49a6aaf4d0bba6ef4bda94f9546c1eb2535ebb0195935243f599",
+      "path": "src/fisher_graph/gemma3_gated_executor_experiment.py"
+    },
+    "gemma3_joint_cross_block_transport_fit": {
+      "file_sha256": "4909366ca27653099731a685f8e6389c194baf40336c72f38f6c0598b6a93256",
+      "path": "src/fisher_graph/gemma3_joint_cross_block_transport_fit.py"
+    },
+    "gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment": {
+      "file_sha256": "31d507c300283b4822b41c388b23eae8efe9a9caaf947cc5918973029363b6e3",
+      "path": "src/fisher_graph/gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment.py"
+    },
+    "gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_protocol": {
+      "file_sha256": "a2bebec1284fcdfc3a2aba16acacf96a1000c82fe15399c1f2e447ad48c4f1f9",
+      "path": "src/fisher_graph/gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_protocol.py"
+    },
+    "gemma3_layer_agnostic_whole_model_compression_protocol": {
+      "file_sha256": "6a14f878e11d55d7747d70636b0f4ee780a695c69d0e0d2640cb629d02e9e72f",
+      "path": "src/fisher_graph/gemma3_layer_agnostic_whole_model_compression_protocol.py"
+    },
+    "gemma3_layer_agnostic_whole_model_compression_worker": {
+      "file_sha256": "ed096118906df0f68dd30d71b5c70979a5a1ea725156174a6178ddd99dfa4ec8",
+      "path": "src/fisher_graph/gemma3_layer_agnostic_whole_model_compression_worker.py"
+    },
+    "gemma3_one_block_residual_form_experiment": {
+      "file_sha256": "57bfa029b7d4595ed22dc88d7ae70e0148753b3413a9ba601560781e5a87bebf",
+      "path": "src/fisher_graph/gemma3_one_block_residual_form_experiment.py"
+    },
+    "gemma3_projection_ladder_experiment": {
+      "file_sha256": "23e4212b43fcb624cbe64a7bdc50a6a8c0f8be5b783cf6ead1fb0dcbd6b895d9",
+      "path": "src/fisher_graph/gemma3_projection_ladder_experiment.py"
+    },
+    "gemma3_rotated_span_executor_experiment": {
+      "file_sha256": "f9e8e38d00cfc5a5f539be3202a9eefe97aaa906e1d7f9cac9713695c3d8555b",
+      "path": "src/fisher_graph/gemma3_rotated_span_executor_experiment.py"
+    },
+    "gemma3_stability_experiment": {
+      "file_sha256": "40fb038128e58769cf3acb7160f80ef784de317d6de9a15297303108e6d76ed2",
+      "path": "src/fisher_graph/gemma3_stability_experiment.py"
+    },
+    "gemma3_weighted_jacobian_experiment": {
+      "file_sha256": "3cf243e11081180408a74bf188122d21d3350e2ed872bfbfafc550582bc373b5",
+      "path": "src/fisher_graph/gemma3_weighted_jacobian_experiment.py"
+    },
+    "instrumentation": {
+      "file_sha256": "ed9f1373ed52b6275c83edb8359137850e00ba48fc330b9111bd01e0c4f7fa92",
+      "path": "src/fisher_graph/instrumentation.py"
+    },
+    "jacobian_probe": {
+      "file_sha256": "f4bd73883c19559872b54f6b5c17cac51171677dfa78eb46432ea1dc01185e50",
+      "path": "src/fisher_graph/jacobian_probe.py"
+    },
+    "joint_exact_compiler": {
+      "file_sha256": "142bb374e024cfcbabbd3855b15de49320ba3a0b4c57442c8933b4db8f339f47",
+      "path": "src/fisher_graph/gemma3_joint_cross_block_compiler.py"
+    },
+    "layers": {
+      "file_sha256": "7c6c0ce32c77619acd26e2b8c6015242f497b6ef65ac1e8df0cf2fd027913f25",
+      "path": "src/fisher_graph/layers.py"
+    },
+    "linear_codec": {
+      "file_sha256": "5277ca6b2f14966f7dbd65e69f55520a9755e1b57532764115a5f592751a036b",
+      "path": "src/fisher_graph/linear_codec.py"
+    },
+    "modal_ablation": {
+      "file_sha256": "9fbc22b52d9cef0eeeb8d327ed5c4c02d91413c7fa05718e21b2218f0b9bc3fb",
+      "path": "src/fisher_graph/modal_ablation.py"
+    },
+    "model": {
+      "file_sha256": "0d6aad9881267789055f531ca7de4b4dbba46c2a3b09b28eccdde9ace5a231d8",
+      "path": "src/fisher_graph/model.py"
+    },
+    "modes": {
+      "file_sha256": "aab97603973aee7a7596c41a4facb2d3cbc555e2d5172f08f26cf3afb383e7a1",
+      "path": "src/fisher_graph/modes.py"
+    },
+    "package_eager_import_boundary": {
+      "file_sha256": "dca582dde3ae6d5d09ea7a30c54f5aeff8fc33758b9cab6440a1e59834fbf672",
+      "path": "src/fisher_graph/__init__.py"
+    },
+    "residual_carrier": {
+      "file_sha256": "9b9dd18eb66189820624b11db531293f01c11dfd2e4433ddfcbe9ece98b5b869",
+      "path": "src/fisher_graph/residual_carrier.py"
+    },
+    "rotated_span_executor": {
+      "file_sha256": "076c9e98de1f5f15c4970649bffc8b115a3976ef6ddcf2a0f410747d3a650b2e",
+      "path": "src/fisher_graph/rotated_span_executor.py"
+    },
+    "runtime_adapter": {
+      "file_sha256": "9eba131a4086e884a9d099036bade50ee95760a5febe8f5bff9f1237ee6c378d",
+      "path": "src/fisher_graph/adapters/gemma3.py"
+    },
+    "runtime_adapter_base": {
+      "file_sha256": "6f8753da109d67a8adb825f54d500384899f713a2cd4e0c59bde2a980836c3b4",
+      "path": "src/fisher_graph/adapters/base.py"
+    },
+    "runtime_adapter_package": {
+      "file_sha256": "6cfa928e96a02abb1693437532959e2ef83eff894d6c1ed728f1a0cfafad5e1c",
+      "path": "src/fisher_graph/adapters/__init__.py"
+    },
+    "runtime_adapter_toy": {
+      "file_sha256": "2e64ba83225360273d5ab96f2037e86014ba093388b4d50b6430445762190387",
+      "path": "src/fisher_graph/adapters/toy.py"
+    },
+    "shared_chart_energy_transport": {
+      "file_sha256": "991e0f8de9597150e2d17e0cbec61f5a4ca473e7bf8dd8a54534024900c466f7",
+      "path": "src/fisher_graph/shared_chart_energy_transport.py"
+    },
+    "static_transformer_span_executor": {
+      "file_sha256": "4f4cd73f50dcc8fcceca38d3577055813bb05a25c0c36f4a1909115378480f57",
+      "path": "src/fisher_graph/static_transformer_span_executor.py"
+    },
+    "streaming_analysis": {
+      "file_sha256": "42d3917b2ff6813dda7bcbdbf950b83064ab0ba34eccc618adcad3078baefb2f",
+      "path": "src/fisher_graph/streaming_analysis.py"
+    },
+    "streaming_block_validation": {
+      "file_sha256": "fc97d16cbe59efad771aceb67e551f20c291fd7e93284fdeb737ffb10c03c340",
+      "path": "src/fisher_graph/streaming_block_validation.py"
+    },
+    "streaming_fisher": {
+      "file_sha256": "a345abbaefffd20dbd4d2dfeeb26d557310354c523272a429dcceae733637dde",
+      "path": "src/fisher_graph/streaming_fisher.py"
+    },
+    "streaming_shared_chart_energy_transport": {
+      "file_sha256": "fa9fcf05eb41cb5291eb57162a6c0160d96a319d494404731f888bf84e985b3f",
+      "path": "src/fisher_graph/streaming_shared_chart_energy_transport.py"
+    },
+    "streaming_validation": {
+      "file_sha256": "02f6c3387fda79236eb1a46fe4ac563ef678d236c71eb7362988a6070e855ce9",
+      "path": "src/fisher_graph/streaming_validation.py"
+    },
+    "structured_transformer_layer_executor": {
+      "file_sha256": "79352ed5b48871d9ab9a5e8e321cf60b517e2d5a37418ab6ed2e5af239092570",
+      "path": "src/fisher_graph/structured_transformer_layer_executor.py"
+    },
+    "weighted_jacobian": {
+      "file_sha256": "55e7b695774aac41feda7225a714da87bd83d4c9fbf890ec754fc545311af0e1",
+      "path": "src/fisher_graph/weighted_jacobian.py"
+    }
+  },
+  "implementation_status": {
+    "concrete_runtime_API_implemented_and_source_pinned": true,
+    "conservative_first_party_functional_closure_source_pinned": true,
+    "implemented_runtime_surfaces": [
+      "shared_global_full_rank_SPD_chart_atlas",
+      "per_mode_generalized_contribution_capture",
+      "attention_source_to_target_route_chart_receipts",
+      "attention_operator_output_to_postnorm_delta_bridge_receipts",
+      "lexical_egress_softcap_readout_pullback_chart",
+      "chart_native_bidirectional_transport_graph_worker"
+    ],
+    "package_eager_import_is_outside_preexecution_authentication_boundary": true,
+    "package_eager_import_occurs_before_static_preflight": true,
+    "setup_module_is_reviewed_non_self_hashed_trust_anchor": true,
+    "whole_process_or_every_executable_tamper_proof_claimed": false,
+    "worker_entrypoint_implemented_and_source_pinned": true
+  },
+  "lexical_egress_readout_chart": {
+    "chunked_full_vocabulary_NLL_VJP": {
+      "dense_reference_dtype": "torch.float64",
+      "first_A_dense_parity_selected_prediction_rows": 2,
+      "float32_dense_reference_forbidden": true,
+      "float64_reduction_required": true,
+      "kernel_id": "gemma3_full_vocab_softcap_shifted_nll_vjp.chunked.v1",
+      "kernel_receipt_sha256": "e79c953bd99483d87e8c09406388deecf2474a9dc20c468c0fd68c38d9deffdb",
+      "parity_absolute_tolerance": 2e-05,
+      "parity_relative_tolerance": 2e-05,
+      "prediction_position_chunk_size": 32,
+      "vocabulary_chunk_size": 4096
+    },
+    "comparison_contribution": "terminal_normalized_carrier_value_elementwise_mul_dNLL_dterminal_h",
+    "context_and_value_site_id": "terminal.rmsnorm.output",
+    "event_id": "lexical.egress",
+    "event_index": 38,
+    "exact_model_config_logit_softcap_authenticated": true,
+    "native_tied_embedding_projection_authenticated": true,
+    "pre_softcap_or_softcap_omitting_pullback_forbidden": true,
+    "pullback_formula": "dNLL_dterminal_h = J_exact_softcapped_tied_readout^T dNLL_dsoftcapped_logits",
+    "pullback_site_id": "lexical.egress.readout_pullback",
+    "raw_vocabulary_logits_as_chart_coordinates_forbidden": true,
+    "readout_config_tensor_and_pullback_catalog_sha256_required": true,
+    "required": true,
+    "separate_from_ordered_73_carrier_sites": true,
+    "softcap_derivative_included_in_pullback": true,
+    "summed_next_token_NLL_logit_score_is_pulled_back_to_h640": true,
+    "vocabulary_width_never_enters_common_comparison_ABI": true
+  },
+  "logical_mode_ontology": {
+    "all_modes_expose_exact_common_comparison_ABI": "carrier_chart_energy.h640.v1",
+    "all_modes_retain_distinct_native_ABI_provenance": true,
+    "context_and_contribution_site_bindings_are_exact": true,
+    "cross_attention_MLP_lexical_candidates_are_allowed": true,
+    "logical_mode_count": 38,
+    "mode_catalog_sha256": "0783041f6fb032e913fdaa9160c9620db5c2292c0e9636553966d3040b7626fe",
+    "native_ABI_equality_required_for_graph_comparison": false,
+    "native_ABI_partition_is_diagnostic_only": true,
+    "ordered_modes": [
+      {
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "lexical.ingress.output",
+        "contribution_rule": "carrier_value_elementwise_score_gradient",
+        "contribution_site_id": "lexical.ingress.output",
+        "event_id": "lexical.ingress",
+        "event_index": 0,
+        "mode_id": "mode.lexical.ingress",
+        "mode_index": 0,
+        "mode_kind": "lexical_ingress",
+        "native_ABI": "lexical_ingress.lookup_to_h640.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "lexical.ingress.output",
+        "value_site_id": "lexical.ingress.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.1.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.1.output",
+        "event_id": "mutation.1",
+        "event_index": 1,
+        "mode_id": "mode.mutation.1",
+        "mode_index": 1,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.1.output",
+        "value_site_id": "mutation.1.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.2.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.2.output",
+        "event_id": "mutation.2",
+        "event_index": 2,
+        "mode_id": "mode.mutation.2",
+        "mode_index": 2,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.2.output",
+        "value_site_id": "mutation.2.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.3.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.3.output",
+        "event_id": "mutation.3",
+        "event_index": 3,
+        "mode_id": "mode.mutation.3",
+        "mode_index": 3,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.3.output",
+        "value_site_id": "mutation.3.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.4.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.4.output",
+        "event_id": "mutation.4",
+        "event_index": 4,
+        "mode_id": "mode.mutation.4",
+        "mode_index": 4,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.4.output",
+        "value_site_id": "mutation.4.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.5.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.5.output",
+        "event_id": "mutation.5",
+        "event_index": 5,
+        "mode_id": "mode.mutation.5",
+        "mode_index": 5,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.5.output",
+        "value_site_id": "mutation.5.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.6.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.6.output",
+        "event_id": "mutation.6",
+        "event_index": 6,
+        "mode_id": "mode.mutation.6",
+        "mode_index": 6,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.6.output",
+        "value_site_id": "mutation.6.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.7.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.7.output",
+        "event_id": "mutation.7",
+        "event_index": 7,
+        "mode_id": "mode.mutation.7",
+        "mode_index": 7,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.7.output",
+        "value_site_id": "mutation.7.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.8.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.8.output",
+        "event_id": "mutation.8",
+        "event_index": 8,
+        "mode_id": "mode.mutation.8",
+        "mode_index": 8,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.8.output",
+        "value_site_id": "mutation.8.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.9.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.9.output",
+        "event_id": "mutation.9",
+        "event_index": 9,
+        "mode_id": "mode.mutation.9",
+        "mode_index": 9,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.9.output",
+        "value_site_id": "mutation.9.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.10.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.10.output",
+        "event_id": "mutation.10",
+        "event_index": 10,
+        "mode_id": "mode.mutation.10",
+        "mode_index": 10,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.10.output",
+        "value_site_id": "mutation.10.output"
+      },
+      {
+        "attention_kind": "global",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.11.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.11.output",
+        "event_id": "mutation.11",
+        "event_index": 11,
+        "mode_id": "mode.mutation.11",
+        "mode_index": 11,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.11.output",
+        "value_site_id": "mutation.11.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.12.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.12.output",
+        "event_id": "mutation.12",
+        "event_index": 12,
+        "mode_id": "mode.mutation.12",
+        "mode_index": 12,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.12.output",
+        "value_site_id": "mutation.12.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.13.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.13.output",
+        "event_id": "mutation.13",
+        "event_index": 13,
+        "mode_id": "mode.mutation.13",
+        "mode_index": 13,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.13.output",
+        "value_site_id": "mutation.13.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.14.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.14.output",
+        "event_id": "mutation.14",
+        "event_index": 14,
+        "mode_id": "mode.mutation.14",
+        "mode_index": 14,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.14.output",
+        "value_site_id": "mutation.14.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.15.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.15.output",
+        "event_id": "mutation.15",
+        "event_index": 15,
+        "mode_id": "mode.mutation.15",
+        "mode_index": 15,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.15.output",
+        "value_site_id": "mutation.15.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.16.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.16.output",
+        "event_id": "mutation.16",
+        "event_index": 16,
+        "mode_id": "mode.mutation.16",
+        "mode_index": 16,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.16.output",
+        "value_site_id": "mutation.16.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.17.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.17.output",
+        "event_id": "mutation.17",
+        "event_index": 17,
+        "mode_id": "mode.mutation.17",
+        "mode_index": 17,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.17.output",
+        "value_site_id": "mutation.17.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.18.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.18.output",
+        "event_id": "mutation.18",
+        "event_index": 18,
+        "mode_id": "mode.mutation.18",
+        "mode_index": 18,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.18.output",
+        "value_site_id": "mutation.18.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.19.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.19.output",
+        "event_id": "mutation.19",
+        "event_index": 19,
+        "mode_id": "mode.mutation.19",
+        "mode_index": 19,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.19.output",
+        "value_site_id": "mutation.19.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.20.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.20.output",
+        "event_id": "mutation.20",
+        "event_index": 20,
+        "mode_id": "mode.mutation.20",
+        "mode_index": 20,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.20.output",
+        "value_site_id": "mutation.20.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.21.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.21.output",
+        "event_id": "mutation.21",
+        "event_index": 21,
+        "mode_id": "mode.mutation.21",
+        "mode_index": 21,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.21.output",
+        "value_site_id": "mutation.21.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.22.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.22.output",
+        "event_id": "mutation.22",
+        "event_index": 22,
+        "mode_id": "mode.mutation.22",
+        "mode_index": 22,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.22.output",
+        "value_site_id": "mutation.22.output"
+      },
+      {
+        "attention_kind": "global",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.23.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.23.output",
+        "event_id": "mutation.23",
+        "event_index": 23,
+        "mode_id": "mode.mutation.23",
+        "mode_index": 23,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.23.output",
+        "value_site_id": "mutation.23.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.24.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.24.output",
+        "event_id": "mutation.24",
+        "event_index": 24,
+        "mode_id": "mode.mutation.24",
+        "mode_index": 24,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.24.output",
+        "value_site_id": "mutation.24.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.25.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.25.output",
+        "event_id": "mutation.25",
+        "event_index": 25,
+        "mode_id": "mode.mutation.25",
+        "mode_index": 25,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.25.output",
+        "value_site_id": "mutation.25.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.26.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.26.output",
+        "event_id": "mutation.26",
+        "event_index": 26,
+        "mode_id": "mode.mutation.26",
+        "mode_index": 26,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.26.output",
+        "value_site_id": "mutation.26.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.27.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.27.output",
+        "event_id": "mutation.27",
+        "event_index": 27,
+        "mode_id": "mode.mutation.27",
+        "mode_index": 27,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.27.output",
+        "value_site_id": "mutation.27.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.28.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.28.output",
+        "event_id": "mutation.28",
+        "event_index": 28,
+        "mode_id": "mode.mutation.28",
+        "mode_index": 28,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.28.output",
+        "value_site_id": "mutation.28.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.29.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.29.output",
+        "event_id": "mutation.29",
+        "event_index": 29,
+        "mode_id": "mode.mutation.29",
+        "mode_index": 29,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.29.output",
+        "value_site_id": "mutation.29.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.30.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.30.output",
+        "event_id": "mutation.30",
+        "event_index": 30,
+        "mode_id": "mode.mutation.30",
+        "mode_index": 30,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.30.output",
+        "value_site_id": "mutation.30.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.31.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.31.output",
+        "event_id": "mutation.31",
+        "event_index": 31,
+        "mode_id": "mode.mutation.31",
+        "mode_index": 31,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.31.output",
+        "value_site_id": "mutation.31.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.32.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.32.output",
+        "event_id": "mutation.32",
+        "event_index": 32,
+        "mode_id": "mode.mutation.32",
+        "mode_index": 32,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.32.output",
+        "value_site_id": "mutation.32.output"
+      },
+      {
+        "attention_kind": "sliding_512",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.33.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.33.output",
+        "event_id": "mutation.33",
+        "event_index": 33,
+        "mode_id": "mode.mutation.33",
+        "mode_index": 33,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.33.output",
+        "value_site_id": "mutation.33.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.34.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.34.output",
+        "event_id": "mutation.34",
+        "event_index": 34,
+        "mode_id": "mode.mutation.34",
+        "mode_index": 34,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.34.output",
+        "value_site_id": "mutation.34.output"
+      },
+      {
+        "attention_kind": "global",
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.35.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.35.output",
+        "event_id": "mutation.35",
+        "event_index": 35,
+        "mode_id": "mode.mutation.35",
+        "mode_index": 35,
+        "mode_kind": "attention",
+        "native_ABI": "attention.residual_h640.causal_sequence.v1",
+        "requires_cross_token_route_receipt": true,
+        "score_gradient_site_id": "mutation.35.output",
+        "value_site_id": "mutation.35.output"
+      },
+      {
+        "attention_kind": null,
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "mutation.36.input",
+        "contribution_rule": "residual_delta_elementwise_output_score_gradient",
+        "contribution_site_id": "mutation.36.output",
+        "event_id": "mutation.36",
+        "event_index": 36,
+        "mode_id": "mode.mutation.36",
+        "mode_index": 36,
+        "mode_kind": "mlp",
+        "native_ABI": "mlp.residual_h640.token_local.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "mutation.36.output",
+        "value_site_id": "mutation.36.output"
+      },
+      {
+        "comparison_ABI": "carrier_chart_energy.h640.v1",
+        "context_site_id": "terminal.rmsnorm.output",
+        "contribution_rule": "terminal_carrier_value_elementwise_exact_softcap_readout_pulled_NLL_score_gradient",
+        "contribution_site_id": "lexical.egress.readout_pullback",
+        "event_id": "lexical.egress",
+        "event_index": 38,
+        "mode_id": "mode.lexical.egress",
+        "mode_index": 37,
+        "mode_kind": "lexical_egress",
+        "native_ABI": "lexical_egress.tied_vocab_softcap_readout.v1",
+        "requires_cross_token_route_receipt": false,
+        "score_gradient_site_id": "lexical.egress.readout_pullback",
+        "value_site_id": "terminal.rmsnorm.output"
+      }
+    ],
+    "tied_lexical_weight_equality_is_not_chart_equivalence": true
+  },
+  "neighbor_graph_protocol": {
+    "B_discovery_nominates_only_mutual_k2_candidates": true,
+    "C_confirmation_may_test_only_frozen_B_candidates": true,
+    "complete_cross_kind_ranking_universe": true,
+    "connected_components_are_diagnostic_not_clusters": true,
+    "fisher_energy_epsilon": 1e-12,
+    "k": 2,
+    "maximal_cliques_may_overlap_and_are_diagnostic": true,
+    "maximum_each_directional_normalized_residual": 1.0,
+    "mode_kind_or_event_index_tie_break_forbidden": true,
+    "mutual_neighbor_required": true,
+    "new_C_edges_are_exploratory_only": true,
+    "node_count": 38,
+    "nonpositive_real_gain_over_zero_prediction_fails_edge": true,
+    "rank_boundary_tie_absolute_tolerance": 1e-10,
+    "rank_boundary_tie_policy": "fail_closed_undefined_node_neighbors",
+    "rank_metric": "symmetric_bidirectional_normalized_transport_residual",
+    "real_transport_must_outperform_row_shuffle_in_both_directions": true,
+    "self_neighbors_forbidden": true,
+    "unordered_pair_count": 703
+  },
+  "required_worker_receipts": {
+    "graph_receipts": [
+      "B_frozen_candidate_catalog_sha256",
+      "C_confirmed_edge_catalog_sha256",
+      "B_C_exact_7_per_family_primary_eligibility_catalog_sha256",
+      "short96_boundary511_513_transition514_and_hard_long_non_authorizing_subset_receipts",
+      "per_edge_both_directional_family_distances",
+      "bootstrap_draw_and_frequency_catalog_sha256",
+      "row_shuffle_permutation_catalog_sha256",
+      "LOFO_receipts",
+      "short_boundary_long_stratum_receipts",
+      "D_response_validation_labels_if_D_was_opened"
+    ],
+    "post_model_lineage": [
+      "source_model_and_execution_fingerprints",
+      "exact_event_and_site_runtime_catalog_sha256s",
+      "per_mode_context_value_gradient_and_contribution_site_receipts",
+      "shared_chart_atlas_artifact_sha256",
+      "common_coordinate_signature_sha256",
+      "per_role_panel_catalog_sha256",
+      "per_role_aligned_row_catalog_sha256",
+      "per_mode_finite_energy_catalog_sha256",
+      "attention_cross_token_route_catalog_sha256s",
+      "lexical_egress_readout_pullback_catalog_sha256",
+      "ordered_transport_artifact_catalog_sha256"
+    ],
+    "pre_model_static_preflight": [
+      "setup_sha256",
+      "all_predecessor_file_sha256s",
+      "event_catalog_sha256",
+      "carrier_site_catalog_sha256",
+      "mode_catalog_sha256",
+      "fresh_panel_source_manifest_and_receipt_file_sha256s",
+      "all_role_firewall_catalog_sha256s"
+    ],
+    "raw_prompts_token_ids_full_width_vectors_gradients_and_routes_must_not_be_embedded_in_summary_report": true
+  },
+  "response_ablation_validation_only": {
+    "compression_followup_requires_downstream_response_support": true,
+    "opened_after_chart_graph_freeze": true,
+    "response_measurements_may_label_chart_edges": [
+      "downstream_response_supported",
+      "downstream_response_mismatched",
+      "downstream_response_indeterminate"
+    ],
+    "response_measurements_may_nominate_edges": false,
+    "response_measurements_may_remove_chart_edges": false,
+    "response_measurements_may_rerank_chart_edges": false,
+    "response_only_neighbor_claim_forbidden": true,
+    "restricted_choice_or_terminal_response_ABI_may_be_used": true,
+    "role": "D_response_validation",
+    "whole_model_native_location_interventions_required": true
+  },
+  "schema": "fisher_graph.gemma3_chart_native_neighbor.setup.v1",
+  "setup_id": "gemma3-chart-native-neighbor-v1",
+  "setup_receipt": {
+    "activations_captured": false,
+    "charts_fitted": false,
+    "model_weights_loaded": false,
+    "neighbor_graph_built": false,
+    "predecessor_result_opened": false,
+    "prompt_data_opened": false,
+    "response_ablation_executed": false,
+    "scientific_result_present": false,
+    "score_gradients_computed": false,
+    "tensor_library_imported": false,
+    "tokenizer_loaded": false,
+    "transports_fitted": false
+  },
+  "setup_sha256": "5ebc02aa5800add5d16f9b3f506224029adcf1fa257ac80a7d46155ce0a1e484",
+  "shared_global_chart_atlas": {
+    "balanced_row_weight_formula": "w_i_f_e_r=1/(mode_count*family_count*examples_in_family_f*rows_in_example_f_e)",
+    "balanced_row_weights_sum_over_all_modes_and_rows": 1.0,
+    "center_fit": {
+      "algorithm": "balanced_weighted_kmeans_float64",
+      "argmax_tie_break": "earliest_row_in_canonical_fit_pool",
+      "assignment": "minimum_squared_Euclidean_distance_then_lower_chart_index_on_exact_tie",
+      "canonical_final_chart_order": "lexicographic_ascending_float64_center_coordinates",
+      "center_update": "balanced_weighted_mean_of_hard_assigned_rows",
+      "empty_chart_fails_closed": true,
+      "first_center": "pool_row_argmax_w_r_times_squared_distance_to_balanced_global_context_mean",
+      "initialization": "deterministic_weighted_farthest_point",
+      "later_center": "pool_row_argmax_w_r_times_minimum_squared_distance_to_previously_selected_centers",
+      "lloyd_iteration_count": 12,
+      "minimum_balanced_hard_occupancy_weight": 0.005,
+      "minimum_hard_rows_per_chart": 17
+    },
+    "center_tangent_metric_and_router_receipts_required": true,
+    "chart_artifact_sha256_required": true,
+    "chart_count": 8,
+    "determinism_source": "canonical_fit_pool_order_plus_weighted_farthest_point_initialization_and_fixed_Lloyd_iterations",
+    "fit_pool_balancing": "equal_mode_then_equal_family_then_equal_example_weight",
+    "fit_pool_canonical_order": "ascending_mode_id_then_manifest_example_order_then_ascending_prediction_query_position_then_target_label_position",
+    "fit_role": "A_chart_transport_fit",
+    "heldout_roles_apply_frozen_atlas_without_refit": true,
+    "hidden_width": 640,
+    "local_SPD_metric": {
+      "B_c_columns_orthonormal": true,
+      "B_c_shape": "640_by_16",
+      "all_tangent_scales_finite_positive": true,
+      "alpha_c_finite_strictly_positive": true,
+      "formula": "B_c diag(inverse_scale_c_squared) B_c_transpose plus alpha_c times (I minus B_c B_c_transpose)",
+      "isotropic_orthogonal_residual_may_not_be_zeroed": true,
+      "metric_is_full_rank_SPD": true,
+      "semantics": "shared_membership_spd_tangent_inverse_scale_plus_isotropic_orthogonal",
+      "symbol": "M_c"
+    },
+    "membership_contract": "finite_nonnegative_row_simplex",
+    "membership_formula": "q_r_c=softmax_c(-0.5*||x_r-center_c||^2/(radius_squared_c*temperature))",
+    "membership_shape": "rows_by_8",
+    "membership_symbol": "q_i_r_c",
+    "membership_temperature": 1.0,
+    "mode_specific_chart_axes_forbidden": true,
+    "one_atlas_shared_by_all_38_modes": true,
+    "per_row_required_fields": [
+      "family_id",
+      "example_id",
+      "prediction_query_position",
+      "target_label_position",
+      "mode_id",
+      "native_ABI",
+      "comparison_ABI",
+      "context_site_id",
+      "contribution_site_id",
+      "row_catalog_sha256",
+      "shared_chart_artifact_sha256",
+      "membership_q_8",
+      "tangent_coordinates_z_8_by_16",
+      "full_width_signed_contribution_a_h640",
+      "weighted_activation_energy_diagnostic_only",
+      "weighted_chart_tangent_energy",
+      "weighted_chart_orthogonal_energy",
+      "weighted_fisher_energy"
+    ],
+    "production_streaming_execution": {
+      "all_numeric_reductions_and_solvers_dtype": "float64_CPU",
+      "broadcast_N_by_8_by_640_distance_tensor_forbidden": true,
+      "chunk_distance_formula": "squared_distance=||x||^2+||center||^2-2*x*center^T",
+      "chunk_schedule_and_backend_build_receipt_sha256_required": true,
+      "default_streaming_kernel_receipt_sha256": "c87ca7f273bd224cc81eb49eb4e6cb22a98514ae85b293dcbe510bb004f6524e",
+      "estimated_peak_A_payload_plus_atomic_temp_bytes": 10829054592,
+      "fit_pool_row_count": 939816,
+      "fit_pool_row_count_formula": "38_modes_times_24732_A_rows",
+      "fixed_row_chunk_size": 256,
+      "full_context_pool_torch_cat_forbidden": true,
+      "in_memory_fit_shared_chart_atlas_is_fixture_reference_only": true,
+      "maximum_live_resident_set_bytes": 8589934592,
+      "production_resource_estimate_receipt_sha256": "476029903c44172d7e73e47cb83b751aad2558cd2a6e94a32d4b31016e17d1f0",
+      "raw_capture_storage_dtype": "float32_little_endian",
+      "raw_mode_spool_contains_prompt_text_or_token_ids": false,
+      "raw_mode_spool_fields": [
+        "context_values_h640",
+        "comparison_values_h640",
+        "signed_generalized_contributions_h640"
+      ],
+      "raw_mode_spool_is_strict_no_clobber_and_hash_sealed": true,
+      "raw_spool_bytes_per_production_mode": 189941760,
+      "raw_spool_bytes_per_production_role": 7217786880,
+      "required_for_live_h640_run": true,
+      "resident_set_cap_is_fail_closed_and_phase_logged": true,
+      "scan_order": "ascending_mode_id_then_canonical_row_order_in_fixed_256_row_chunks",
+      "streaming_and_fixture_reference_parity_required_on_preregistered_small_case": true,
+      "streaming_passes": [
+        "balanced_global_context_mean_and_reference",
+        "deterministic_weighted_farthest_point_scans",
+        "12_fixed_weighted_Lloyd_assignment_sum_count_scans",
+        "final_hard_occupancy_and_radius_scan",
+        "soft_membership_weighted_context_covariance_scan"
+      ],
+      "within_chunk_distance_backend": "torch_mm_CPU_float64"
+    },
+    "radius_squared": {
+      "context_reference": "max(sum_pool_w_r*||x_r||^2,1e-30)",
+      "floor": "1e-8*context_reference",
+      "per_chart": "max(balanced_weighted_mean_hard_assigned_||x_r-center_c||^2,floor)"
+    },
+    "random_seed_required": false,
+    "router_input": "authenticated_mode_context_site_h640",
+    "shared_coordinate_signature_required_for_every_mode": true,
+    "tangent_fit": {
+      "canonical_sign": "largest_absolute_loading_coordinate_positive; lowest_coordinate_index_breaks_absolute_tie",
+      "context_variance_reference": "max(sum_pool_w_r*||x_r-global_context_mean||^2/640,1e-30)",
+      "coordinate_formula": "z_r_c=(x_r-center_c)^T*B_c/sqrt(tangent_variance_c)",
+      "covariance": "sum_r(w_r*q_r_c*(x_r-center_c)(x_r-center_c)^T)/sum_r(w_r*q_r_c)",
+      "eigenvalue_tie_gate": "every_selected_eigenvalue_minus_following_eigenvalue_absolute_gap_gt_1e-12*max(1,abs(each))",
+      "generalized_contributions_do_not_fit_router_or_metric": true,
+      "input": "centered_context_x_r_minus_center_c",
+      "orthogonal_alpha": "1/max(orthogonal_variance,variance_floor)",
+      "orthogonal_variance": "sum_r(w_r*q_r_c*||(I-B_cB_c^T)(x_r-center_c)||^2)/(sum_r(w_r*q_r_c)*(640-16))",
+      "selected_rank": 16,
+      "soft_weight": "balanced_row_weight_w_r_times_membership_q_r_c",
+      "solver": "symmetric_eigh_float64_descending_eigenvalue",
+      "tangent_variance": "max(selected_eigenvalue,variance_floor)",
+      "variance_floor": "1e-8*context_variance_reference"
+    },
+    "tangent_rank": 16
+  },
+  "source_model": {
+    "hidden_width": 640,
+    "model_id": "google/gemma-3-270m",
+    "model_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "parameter_count": 268098176,
+    "source_execution_fingerprint_sha256": "b04085b6cd7c076596dd074e3693feb465e69a917c61a46cc0f7310afb444e60",
+    "source_model_fingerprint_sha256": "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9",
+    "tied_lexical_physical_storage_required": true,
+    "tied_storage_does_not_collapse_ingress_and_egress_modes": true,
+    "tokenizer_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1"
+  }
+}

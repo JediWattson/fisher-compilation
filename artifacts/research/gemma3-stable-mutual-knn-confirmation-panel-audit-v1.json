@@ -1,0 +1,145 @@
+{
+  "audit_code": "src/fisher_graph/gemma3_stable_mutual_knn_confirmation_panel.py",
+  "audit_code_sha256": "954f17eaac89977f3d4dca2b09b38c037352f5e52c65e85ddab3227f7e7ee739",
+  "blind_authoring": {
+    "atlas_result_inputs": "absent",
+    "authorship_timing": "completed_before_any_C_confirmation_model_result",
+    "candidate_edge_inputs": "absent",
+    "distance_metric_inputs": "absent",
+    "model_execution": "none",
+    "reserve_tokenizer_access": "none",
+    "tokenizer_access": "C_confirmation_exact_prompt_choice_and_evidence_authentication_only"
+  },
+  "checks": {
+    "domain_template_duplicate_count": 0,
+    "hard_long_evidence_clause_invalid_count": 0,
+    "hard_long_visible_suffix_mismatch_count": 0,
+    "instance_id_duplicate_count": 0,
+    "outside_window_clue_or_answer_leak_count": 0,
+    "panel_canonical_duplicate_count": 0,
+    "panel_exact_duplicate_count": 0,
+    "panel_paraphrase_overlap_count": 0,
+    "panel_prompt_count": 72,
+    "paraphrase_lineage_duplicate_count": 0,
+    "prompt_id_duplicate_count": 0,
+    "reference_canonical_overlap_count": 0,
+    "reference_domain_template_overlap_count": 0,
+    "reference_exact_overlap_count": 0,
+    "reference_paraphrase_overlap_count": 0,
+    "reference_prompt_count": 892,
+    "reserve_model_access_count": 0,
+    "reserve_tokenizer_access_count": 0,
+    "semantic_lineage_duplicate_count": 0,
+    "template_id_duplicate_count": 0,
+    "template_signature_duplicate_count": 0
+  },
+  "format_version": 1,
+  "panel_id": "gemma3_stable_mutual_knn_confirmation_v1",
+  "panel_manifest": "examples/gemma3_stable_mutual_knn_confirmation_panel.json",
+  "panel_manifest_sha256": "3eb68c651324efd6a4b3059750915371d1d4521bbe78ae464d8b0588dfbafd45",
+  "paraphrase_policy": {
+    "character_5gram_jaccard_minimum": 0.6,
+    "content_set_containment_minimum": 0.8,
+    "content_set_jaccard_minimum": 0.65,
+    "content_token_minimum": 6,
+    "word_bigram_jaccard_minimum": 0.4
+  },
+  "passed": true,
+  "payload_sha256": "2ad3e3d95743131a07a80814922ec9de3bb1cc52ef2c9d23866d482ffd358730",
+  "prompt_corpus": "examples/gemma3_stable_mutual_knn_confirmation_corpus.json",
+  "prompt_corpus_sha256": "c089e3a30b0488e944c40c60b517a8df6671919ac67d1f7f4715e29359d3ebba",
+  "schema": "fisher_graph.gemma3_stable_mutual_knn_confirmation_prompt_audit",
+  "source_family_inventory": [
+    {
+      "domain_template_count": 20,
+      "path": "examples/gemma3_merged_supermode_confirmation_prompt_families.json",
+      "sha256": "9b62c6ba3ec32a9f8d6ad39fb296850084106a95f5a4c3eb7c1882a713ea89af"
+    },
+    {
+      "domain_template_count": 0,
+      "path": "examples/gemma3_merged_supermode_oracle_prompt_families.json",
+      "sha256": "25880200ae1974a89a40b5d6c369d2707757b6336a5c8754a2ceafbeaa4a83d1"
+    }
+  ],
+  "source_family_inventory_sha256": "1fe6fb4934aa5e935a387bd1831dfef8c2f26c4549734daa1fe9b26c42782305",
+  "source_prompt_inventory": [
+    {
+      "ordered_canonical_prompt_sha256": "b8f51d86146a7b828b5da22a08db6dc836504b462ecc314e1ea3eb5c45e1ec3c",
+      "ordered_raw_prompt_sha256": "c0e5d6735ef5a333ba4bef400f3577f0d88980b8d54db8841e9a07be70d2f0f9",
+      "path": "examples/gemma3_codimension_rotation_expanded_a_prompts.json",
+      "prompt_count": 112,
+      "sha256": "5189d90dfdbffd1ac004a61d9f8358a0b23e393473e8f3b29b1fe85c8ef857a2"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "ff75038f7abf7fd39ba689310532250d09e78cc7820c10ec8bc9310e8d146923",
+      "ordered_raw_prompt_sha256": "fec00fe0fe1db2be0ce375714e939e9c2f10344b1e176985ef211165b2f5de89",
+      "path": "examples/gemma3_codimension_rotation_prompts.json",
+      "prompt_count": 64,
+      "sha256": "e348b28db927344327d8079f49ecc9e373d60eb7682d5e4ddf1a7e13791f7d43"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "73c8ad6a4a0d1c01852feea71835a59bc0c9d609186b7145818241f003e91240",
+      "ordered_raw_prompt_sha256": "c6edcfce942684e87481a712bef17428908affe5759ae43f726e81a03d4f0879",
+      "path": "examples/gemma3_downstream_qualification_v2.json",
+      "prompt_count": 120,
+      "sha256": "0c3e2eecbe14c969044b23c3e30a85cced2cc1f20274320c11d741ebedfd3199"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "de247e614f54d8537eac05fea0101dae9e3616228d3263108ff876d15463cc09",
+      "ordered_raw_prompt_sha256": "25ed988b345eeb6d738304f748ad798fb1a2209aa21e6fe39dfaaa873b966cf8",
+      "path": "examples/gemma3_downstream_retention_v1.json",
+      "prompt_count": 60,
+      "sha256": "47d91ae000b4036d7744509bbbfec67aa0bd48bb1e1162fd6efa53974c23e6ff"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "f01d3ee313b4c362bca395b852ec508de0bfbdc54cd6e1bd7e5ae6c95e9aa3f8",
+      "ordered_raw_prompt_sha256": "fa6c2667f6a3e702ebc611fa45b7303450db2289f21313a0b9b31b930b86ed89",
+      "path": "examples/gemma3_gated_executor_prompts.json",
+      "prompt_count": 64,
+      "sha256": "d48d0cc6a18982836b2906eeb10c7225b5f9b498a9f592df768b4defd1c0b2aa"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "2d5eb04f4e87a8b8ce4e2de8d74a243d9afc58c112db9e2b9fe4f19e2c0516ef",
+      "ordered_raw_prompt_sha256": "9d4d7bc6e7e36d9887bdba1d218be7385042fe91536ea64989b94f70f1602aa5",
+      "path": "examples/gemma3_merged_supermode_confirmation_prompts.json",
+      "prompt_count": 112,
+      "sha256": "1d292f970a951fd15f85bc024c3fab7bb231971e9850d9e0110c4aab90f08c57"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "6fa532af372423e1bf1b20397dcf76f3abfd63f831ad142bbc7efff42faa9a3f",
+      "ordered_raw_prompt_sha256": "c3578f84e0878583bea50e8405d80dc76deafee3ec9b77b5164ad981f377c79f",
+      "path": "examples/gemma3_merged_supermode_oracle_prompts.json",
+      "prompt_count": 112,
+      "sha256": "7076a630a286607f130e8060e62b1f8a17214a2ec8a80bcb1c36cd85e650d938"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "5fd46639c6a050886f21abbe504af061868ba5d6b026c55ee14ecae471cda801",
+      "ordered_raw_prompt_sha256": "58c16504171ec2c6843f5d8c919c9fe6c9e7b555eb51475053f538c53922c8d0",
+      "path": "examples/gemma3_projection_ladder_prompts.json",
+      "prompt_count": 64,
+      "sha256": "97d9f7fac01c91f44e874ea15bdf701d55b06a9b8543240651b45e0c2d5e5b9e"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "316615be246623219cf5b77f283b801139deb5dc78a2fc66f011de0ee56bc6ac",
+      "ordered_raw_prompt_sha256": "d466dd2e1ea3bcd9d5c41e105db5a8acee75d5176daefc01ef87c547c0ca0191",
+      "path": "examples/gemma3_prompts.txt",
+      "prompt_count": 8,
+      "sha256": "912a309bf46b7379f727086b80f5dda3750995f706d901ebcd7acabfd6931289"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "99c4882b93ecb3e0ceb4837732f8d110ded8222a5c7de0845ae5cbddcceb7cc9",
+      "ordered_raw_prompt_sha256": "c40f82a896de49ebe7c0ca21a8c746e5e5fc0fcce49f8a03b324bd632bb27212",
+      "path": "examples/gemma3_rotated_span_executor_prompts.json",
+      "prompt_count": 112,
+      "sha256": "7b39ce103cf85d2e51fe0cf977126e046fdfa51c5c8e2c1ddb0a819b6a66df03"
+    },
+    {
+      "ordered_canonical_prompt_sha256": "c9e3067845e5d5f7d9f760927ce9627865e70700a2e70a87cf05c897c6ebf984",
+      "ordered_raw_prompt_sha256": "9d2f0b3e80ff3d3f5b366be4bc14d973fd01a80636eb014d0f9c5a3139040840",
+      "path": "examples/gemma3_stability_prompts.json",
+      "prompt_count": 64,
+      "sha256": "8bce33116ebb949d591341156b0e88e174b957421a9db8c68a3458e812886696"
+    }
+  ],
+  "source_prompt_inventory_sha256": "e9026066fbf48a7d7232d43adc0cd564f5178da01036a4471d8c1b7b21a94248"
+}

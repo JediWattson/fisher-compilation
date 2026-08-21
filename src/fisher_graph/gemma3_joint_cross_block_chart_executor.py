@@ -284,6 +284,8 @@ class JointGraphMutationExecution:
     delta: Tensor
     emitted_generator_latents: Tensor
     runtime_receipt: JointGraphMutationRuntimeReceipt
+    attention_operator_output: Tensor | None = None
+    attention_route_factor_snapshot: object | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -318,6 +320,23 @@ class JointGraphMutationExecution:
             JointGraphMutationRuntimeReceipt,
         ):
             raise TypeError("mutation runtime receipt is invalid")
+        if self.attention_operator_output is not None and (
+            not isinstance(self.attention_operator_output, Tensor)
+            or self.attention_operator_output.shape != self.delta.shape
+            or self.attention_operator_output.dtype != self.delta.dtype
+            or self.attention_operator_output.device != self.delta.device
+            or not self.attention_operator_output.is_floating_point()
+        ):
+            raise ValueError(
+                "attention operator output must match the residual delta"
+            )
+        if (
+            self.attention_route_factor_snapshot is not None
+            and self.attention_operator_output is None
+        ):
+            raise ValueError(
+                "attention route factors require an operator output"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -929,7 +948,17 @@ class JointGraphGeneratorMutation(nn.Module):
         incoming_generator_latents: Tensor,
         *,
         chart_input_perturbation: Tensor | None = None,
+        capture_attention_route_factors: bool = False,
     ) -> JointGraphMutationExecution:
+        if type(capture_attention_route_factors) is not bool:
+            raise TypeError("capture_attention_route_factors must be bool")
+        if (
+            capture_attention_route_factors
+            and self.event_spec.event_kind != "attention_mutation"
+        ):
+            raise ValueError(
+                "route factors may be requested only from attention mutations"
+            )
         if (
             not isinstance(state, Tensor)
             or state.ndim != 3
@@ -963,11 +992,25 @@ class JointGraphGeneratorMutation(nn.Module):
             raise ValueError("chart input perturbation must match mutation state")
 
         if self.compiled_operator is not None:
+            route_kwargs: dict[str, object] = {}
+            if capture_attention_route_factors:
+                if not bool(
+                    getattr(
+                        self.compiled_operator,
+                        "supports_route_factor_capture",
+                        False,
+                    )
+                ):
+                    raise ValueError(
+                        "compiled attention does not support route-factor capture"
+                    )
+                route_kwargs["capture_route_factors"] = True
             if chart_input_perturbation is None:
                 compiled_execution = self.compiled_operator.execute_with_incoming(
                     state,
                     sequence,
                     incoming_generator_latents,
+                    **route_kwargs,
                 )
             else:
                 compiled_execution = self.compiled_operator.execute_with_incoming(
@@ -975,6 +1018,7 @@ class JointGraphGeneratorMutation(nn.Module):
                     sequence,
                     incoming_generator_latents,
                     normalized_input_perturbation=chart_input_perturbation,
+                    **route_kwargs,
                 )
             chart_input = getattr(
                 compiled_execution,
@@ -990,6 +1034,16 @@ class JointGraphGeneratorMutation(nn.Module):
             operator_receipt = getattr(
                 compiled_execution,
                 "receipt",
+                None,
+            )
+            attention_operator_output = getattr(
+                compiled_execution,
+                "operator_output",
+                None,
+            )
+            attention_route_factor_snapshot = getattr(
+                compiled_execution,
+                "route_factor_snapshot",
                 None,
             )
         else:
@@ -1036,6 +1090,16 @@ class JointGraphGeneratorMutation(nn.Module):
                     "chart generator output must preserve state shape"
                 )
             delta = self.output_norm(raw_delta)
+            attention_operator_output = (
+                raw_delta
+                if self.event_spec.event_kind == "attention_mutation"
+                else None
+            )
+            attention_route_factor_snapshot = None
+            if capture_attention_route_factors:
+                raise ValueError(
+                    "legacy split attention cannot export exact route factors"
+                )
         if (
             not isinstance(chart_input, Tensor)
             or chart_input.shape != state.shape
@@ -1118,6 +1182,10 @@ class JointGraphGeneratorMutation(nn.Module):
             delta=delta.masked_fill(~valid, 0),
             emitted_generator_latents=emitted,
             runtime_receipt=runtime_receipt,
+            attention_operator_output=attention_operator_output,
+            attention_route_factor_snapshot=(
+                attention_route_factor_snapshot
+            ),
         )
 
     def metadata(self) -> dict[str, object]:
@@ -1364,6 +1432,7 @@ class _JointGraphMessageSession:
 
 
 JointGraphEventObserver = Callable[..., object]
+JointGraphAttentionRouteFactorObserver = Callable[..., object]
 
 
 def _expected_observation_site_ids() -> tuple[str, ...]:
@@ -1380,6 +1449,124 @@ def _expected_observation_site_ids() -> tuple[str, ...]:
     )
 
 
+def _expected_auxiliary_gradient_site_ids() -> tuple[str, ...]:
+    return (
+        *(
+            f"mutation.{mutation_index}.operator_output"
+            for mutation_index in range(
+                1,
+                PINNED_GEMMA3_MUTATION_COUNT + 1,
+                2,
+            )
+        ),
+        "terminal.rmsnorm.output",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class JointGraphScoreGradientBundle:
+    """One exact VJP over the canonical 73 plus chart-only auxiliaries."""
+
+    site_gradients: dict[str, Tensor]
+    auxiliary_gradients: dict[str, Tensor]
+
+    def __post_init__(self) -> None:
+        if tuple(self.site_gradients) != _expected_observation_site_ids():
+            raise ValueError("canonical score-gradient inventory drifted")
+        if tuple(self.auxiliary_gradients) != (
+            _expected_auxiliary_gradient_site_ids()
+        ):
+            raise ValueError("auxiliary score-gradient inventory drifted")
+        for label, values in (
+            ("canonical", self.site_gradients),
+            ("auxiliary", self.auxiliary_gradients),
+        ):
+            if any(
+                not isinstance(value, Tensor)
+                or value.ndim != 3
+                or value.device.type != "cpu"
+                or value.dtype != torch.float32
+                or value.requires_grad
+                or not bool(torch.isfinite(value).all())
+                for value in values.values()
+            ):
+                raise ValueError(f"{label} score gradients are invalid")
+
+    @property
+    def terminal_normalized_output_gradient(self) -> Tensor:
+        return self.auxiliary_gradients["terminal.rmsnorm.output"]
+
+    @property
+    def attention_operator_output_gradients(self) -> dict[str, Tensor]:
+        return {
+            site_id: value
+            for site_id, value in self.auxiliary_gradients.items()
+            if site_id != "terminal.rmsnorm.output"
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class JointGraphAttentionOperatorOutputSnapshot:
+    """Authenticated detached value for one attention operator-output site."""
+
+    site_id: str
+    event_id: str
+    block_ordinal: int
+    values: Tensor
+
+    def __post_init__(self) -> None:
+        _require_id(self.site_id, label="site_id")
+        _require_id(self.event_id, label="event_id")
+        if type(self.block_ordinal) is not int or not 0 <= self.block_ordinal < 18:
+            raise ValueError("attention operator block_ordinal is invalid")
+        expected_event_id = f"mutation.{2 * self.block_ordinal + 1}"
+        if self.event_id != expected_event_id:
+            raise ValueError("attention operator event/block alignment drifted")
+        if self.site_id != f"{self.event_id}.operator_output":
+            raise ValueError("attention operator site_id drifted")
+        if (
+            not isinstance(self.values, Tensor)
+            or self.values.ndim != 3
+            or not self.values.is_floating_point()
+            or not bool(torch.isfinite(self.values).all())
+        ):
+            raise ValueError(
+                "attention operator output must be a finite floating rank-three tensor"
+            )
+        object.__setattr__(
+            self,
+            "values",
+            self.values.detach().to(
+                device="cpu",
+                copy=True,
+            ).contiguous(),
+        )
+
+    @property
+    def sha256(self) -> str:
+        digest = hashlib.sha256()
+        digest.update(b"fisher_graph:joint-attention-operator-output:v1\0")
+        digest.update(self.site_id.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(self.block_ordinal).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(_tensor_value_sha256(self.values).encode("ascii"))
+        return digest.hexdigest()
+
+    def metadata(self) -> dict[str, object]:
+        return {
+            "site_id": self.site_id,
+            "event_id": self.event_id,
+            "block_ordinal": self.block_ordinal,
+            "values_sha256": _tensor_value_sha256(self.values),
+            "snapshot_sha256": self.sha256,
+            "shape": list(self.values.shape),
+            "dtype": str(self.values.dtype),
+            "device": "cpu",
+            "requires_grad": False,
+        }
+
+
 class JointGraphEventGradientTape:
     """One-use exact suffix-gradient tape for the 73 chart sites.
 
@@ -1389,11 +1576,18 @@ class JointGraphEventGradientTape:
     scalar loss.  Calling :meth:`score_gradients` never mutates model state.
     """
 
-    __slots__ = ("_consumed", "_site_ids", "_tensors")
+    __slots__ = (
+        "_auxiliary_site_ids",
+        "_auxiliary_tensors",
+        "_consumed",
+        "_site_ids",
+        "_tensors",
+    )
 
     def __init__(
         self,
         observations: Sequence[tuple[str, Tensor]],
+        auxiliary_observations: Sequence[tuple[str, Tensor]],
     ) -> None:
         materialized = tuple(observations)
         expected = _expected_observation_site_ids()
@@ -1409,8 +1603,28 @@ class JointGraphEventGradientTape:
             raise ValueError("event gradient tape requires live rank-three tensors")
         if len({id(value) for value in tensors}) != len(tensors):
             raise ValueError("event gradient tape tensors must be distinct")
+        auxiliary = tuple(auxiliary_observations)
+        expected_auxiliary = _expected_auxiliary_gradient_site_ids()
+        if tuple(site_id for site_id, _ in auxiliary) != expected_auxiliary:
+            raise ValueError("auxiliary gradient tape site order drifted")
+        auxiliary_tensors = tuple(value for _, value in auxiliary)
+        if any(
+            not isinstance(value, Tensor)
+            or value.ndim != 3
+            or not value.requires_grad
+            for value in auxiliary_tensors
+        ):
+            raise ValueError(
+                "auxiliary gradient tape requires live rank-three tensors"
+            )
+        if len({id(value) for value in auxiliary_tensors}) != len(
+            auxiliary_tensors
+        ):
+            raise ValueError("auxiliary gradient tape tensors must be distinct")
         self._site_ids = expected
         self._tensors = tensors
+        self._auxiliary_site_ids = expected_auxiliary
+        self._auxiliary_tensors = auxiliary_tensors
         self._consumed = False
 
     @property
@@ -1421,9 +1635,12 @@ class JointGraphEventGradientTape:
     def consumed(self) -> bool:
         return self._consumed
 
-    def score_gradients(self, objective: Tensor) -> dict[str, Tensor]:
-        if self._consumed:
-            raise RuntimeError("event gradient tape was already consumed")
+    @property
+    def auxiliary_site_ids(self) -> tuple[str, ...]:
+        return self._auxiliary_site_ids
+
+    @staticmethod
+    def _validate_objective(objective: Tensor) -> None:
         if (
             not isinstance(objective, Tensor)
             or objective.numel() != 1
@@ -1431,6 +1648,20 @@ class JointGraphEventGradientTape:
             or not objective.requires_grad
         ):
             raise ValueError("score objective must be one differentiable scalar")
+
+    @staticmethod
+    def _cpu_gradient(value: Tensor) -> Tensor:
+        return (
+            value.detach()
+            .to(device="cpu", dtype=torch.float32)
+            .contiguous()
+            .clone()
+        )
+
+    def score_gradients(self, objective: Tensor) -> dict[str, Tensor]:
+        if self._consumed:
+            raise RuntimeError("event gradient tape was already consumed")
+        self._validate_objective(objective)
         gradients = torch.autograd.grad(
             objective,
             self._tensors,
@@ -1440,13 +1671,249 @@ class JointGraphEventGradientTape:
         )
         self._consumed = True
         self._tensors = ()
+        self._auxiliary_tensors = ()
         return {
-            site_id: gradient.detach()
-            .to(device="cpu", dtype=torch.float32)
-            .contiguous()
-            .clone()
+            site_id: self._cpu_gradient(gradient)
             for site_id, gradient in zip(self._site_ids, gradients, strict=True)
         }
+
+    def score_gradients_with_auxiliary(
+        self,
+        objective: Tensor,
+    ) -> JointGraphScoreGradientBundle:
+        """Consume the tape with one VJP over 73 canonical and 19 aux sites."""
+
+        if self._consumed:
+            raise RuntimeError("event gradient tape was already consumed")
+        self._validate_objective(objective)
+        all_tensors = (*self._tensors, *self._auxiliary_tensors)
+        gradients = torch.autograd.grad(
+            objective,
+            all_tensors,
+            allow_unused=False,
+            retain_graph=False,
+            create_graph=False,
+        )
+        canonical_count = len(self._site_ids)
+        canonical = gradients[:canonical_count]
+        auxiliary = gradients[canonical_count:]
+        self._consumed = True
+        self._tensors = ()
+        self._auxiliary_tensors = ()
+        return JointGraphScoreGradientBundle(
+            site_gradients={
+                site_id: self._cpu_gradient(gradient)
+                for site_id, gradient in zip(
+                    self._site_ids,
+                    canonical,
+                    strict=True,
+                )
+            },
+            auxiliary_gradients={
+                site_id: self._cpu_gradient(gradient)
+                for site_id, gradient in zip(
+                    self._auxiliary_site_ids,
+                    auxiliary,
+                    strict=True,
+                )
+            },
+        )
+
+    def score_gradients_from_terminal_normalized_output(
+        self,
+        terminal_gradient: Tensor,
+    ) -> JointGraphScoreGradientBundle:
+        """Consume the tape from an analytic terminal-output cotangent.
+
+        This is the logits-free route used when lexical egress loss and its
+        pullback are evaluated in bounded vocabulary chunks.  One VJP reaches
+        all 73 canonical sites and the 18 attention operator outputs; the
+        supplied terminal cotangent is returned as auxiliary site 19.
+        """
+
+        if self._consumed:
+            raise RuntimeError("event gradient tape was already consumed")
+        terminal_output = self._auxiliary_tensors[-1]
+        if (
+            not isinstance(terminal_gradient, Tensor)
+            or terminal_gradient.shape != terminal_output.shape
+            or not terminal_gradient.is_floating_point()
+            or not bool(torch.isfinite(terminal_gradient).all())
+        ):
+            raise ValueError(
+                "terminal gradient must be a finite floating tensor with "
+                "the normalized-output shape"
+            )
+        cotangent = terminal_gradient.detach().to(
+            device=terminal_output.device,
+            dtype=terminal_output.dtype,
+        )
+        if not bool(torch.isfinite(cotangent).all()):
+            raise ValueError(
+                "terminal gradient is not finite in the execution dtype"
+            )
+        operator_tensors = self._auxiliary_tensors[:-1]
+        all_inputs = (*self._tensors, *operator_tensors)
+        gradients = torch.autograd.grad(
+            terminal_output,
+            all_inputs,
+            grad_outputs=cotangent,
+            allow_unused=False,
+            retain_graph=False,
+            create_graph=False,
+        )
+        canonical_count = len(self._site_ids)
+        canonical = gradients[:canonical_count]
+        operator_gradients = gradients[canonical_count:]
+        self._consumed = True
+        self._tensors = ()
+        self._auxiliary_tensors = ()
+        auxiliary_gradients = {
+            site_id: self._cpu_gradient(gradient)
+            for site_id, gradient in zip(
+                self._auxiliary_site_ids[:-1],
+                operator_gradients,
+                strict=True,
+            )
+        }
+        auxiliary_gradients[self._auxiliary_site_ids[-1]] = (
+            self._cpu_gradient(cotangent)
+        )
+        return JointGraphScoreGradientBundle(
+            site_gradients={
+                site_id: self._cpu_gradient(gradient)
+                for site_id, gradient in zip(
+                    self._site_ids,
+                    canonical,
+                    strict=True,
+                )
+            },
+            auxiliary_gradients=auxiliary_gradients,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class JointGraphBackboneExecution:
+    """Inspectable 38-event execution stopped before lexical egress."""
+
+    output: Tensor
+    normalized_output: Tensor
+    attention_operator_output_snapshots: tuple[
+        JointGraphAttentionOperatorOutputSnapshot,
+        ...,
+    ]
+    event_ids: tuple[str, ...]
+    mutation_receipts: tuple[ResidualMutationReceipt, ...]
+    operator_receipts: tuple[JointGraphMutationRuntimeReceipt, ...]
+    mutation_chart_input_sha256s: tuple[str, ...]
+    mutation_delta_sha256s: tuple[str, ...]
+    carrier_version: int
+    transport_edge_count: int
+    peak_live_transport_packets: int
+    peak_live_transport_packet_bytes: int
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.output, Tensor)
+            or self.output.ndim != 3
+            or not isinstance(self.normalized_output, Tensor)
+            or self.normalized_output.shape != self.output.shape
+        ):
+            raise ValueError("joint graph backbone tensors are invalid")
+        if len(self.event_ids) != PINNED_GEMMA3_EVENT_COUNT - 1:
+            raise ValueError("joint graph backbone did not execute 38 events")
+        if self.event_ids[-1] != "terminal.rmsnorm":
+            raise ValueError("joint graph backbone event boundary drifted")
+        expected_operator_sites = _expected_auxiliary_gradient_site_ids()[:-1]
+        if (
+            not isinstance(self.attention_operator_output_snapshots, tuple)
+            or len(self.attention_operator_output_snapshots) != 18
+            or any(
+                not isinstance(
+                    snapshot,
+                    JointGraphAttentionOperatorOutputSnapshot,
+                )
+                for snapshot in self.attention_operator_output_snapshots
+            )
+            or tuple(
+                snapshot.site_id
+                for snapshot in self.attention_operator_output_snapshots
+            )
+            != expected_operator_sites
+            or tuple(
+                snapshot.block_ordinal
+                for snapshot in self.attention_operator_output_snapshots
+            )
+            != tuple(range(18))
+            or any(
+                snapshot.values.shape != self.normalized_output.shape
+                for snapshot in self.attention_operator_output_snapshots
+            )
+        ):
+            raise ValueError(
+                "attention operator output snapshot inventory drifted"
+            )
+        if self.carrier_version != PINNED_GEMMA3_MUTATION_COUNT:
+            raise ValueError("joint graph residual carrier did not close")
+        if len(self.mutation_receipts) != self.carrier_version:
+            raise ValueError("joint graph mutation receipts are incomplete")
+        if len(self.operator_receipts) != self.carrier_version:
+            raise ValueError("joint graph operator receipts are incomplete")
+        if tuple(item.event_id for item in self.operator_receipts) != tuple(
+            item.mutation_id for item in self.mutation_receipts
+        ):
+            raise ValueError("operator and carrier receipt order disagrees")
+        for label, values in (
+            ("chart input", self.mutation_chart_input_sha256s),
+            ("delta", self.mutation_delta_sha256s),
+        ):
+            if (
+                len(values) != self.carrier_version
+                or any(
+                    not isinstance(value, str)
+                    or len(value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in value
+                    )
+                    for value in values
+                )
+            ):
+                raise ValueError(f"mutation {label} SHA-256 inventory is invalid")
+
+    @property
+    def attention_operator_outputs(self) -> dict[str, Tensor]:
+        """Actual detached operator values keyed like their auxiliary VJPs."""
+
+        return {
+            snapshot.site_id: snapshot.values
+            for snapshot in self.attention_operator_output_snapshots
+        }
+
+    @property
+    def attention_operator_output_sha256s(self) -> dict[str, str]:
+        return {
+            snapshot.site_id: _tensor_value_sha256(snapshot.values)
+            for snapshot in self.attention_operator_output_snapshots
+        }
+
+    @property
+    def attention_operator_output_snapshot_sha256s(self) -> dict[str, str]:
+        return {
+            snapshot.site_id: snapshot.sha256
+            for snapshot in self.attention_operator_output_snapshots
+        }
+
+    @property
+    def attention_operator_output_catalog_sha256(self) -> str:
+        digest = hashlib.sha256()
+        digest.update(b"fisher_graph:joint-attention-operator-catalog:v1\0")
+        for snapshot in self.attention_operator_output_snapshots:
+            digest.update(snapshot.site_id.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(snapshot.sha256.encode("ascii"))
+            digest.update(b"\0")
+        return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1536,6 +2003,20 @@ class JointGraphObservedExecution:
                 != self.shadow_target_flow.shape
             ):
                 raise TypeError("shadow intervention receipt is incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class JointGraphObservedBackboneExecution:
+    """Logits-free backbone execution plus its required one-use VJP tape."""
+
+    execution: JointGraphBackboneExecution
+    gradient_tape: JointGraphEventGradientTape
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.execution, JointGraphBackboneExecution):
+            raise TypeError("observed backbone execution result is invalid")
+        if not isinstance(self.gradient_tape, JointGraphEventGradientTape):
+            raise TypeError("observed backbone gradient tape is invalid")
 
 
 class Gemma3JointCrossBlockChartExecutor(nn.Module):
@@ -1865,15 +2346,35 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
         sequence: SequenceContext,
         *,
         observer: JointGraphEventObserver | None,
+        attention_route_factor_observer: (
+            JointGraphAttentionRouteFactorObserver | None
+        ),
         retain_gradient_tape: bool,
+        materialize_logits: bool,
         shadow_source_site_id: str | None = None,
         shadow_target_event_id: str | None = None,
         shadow_perturbation: Tensor | None = None,
-    ) -> JointGraphObservedExecution:
+    ) -> JointGraphObservedExecution | JointGraphObservedBackboneExecution:
         if observer is not None and not callable(observer):
             raise TypeError("event observer must be callable")
+        if (
+            attention_route_factor_observer is not None
+            and not callable(attention_route_factor_observer)
+        ):
+            raise TypeError("attention route factor observer must be callable")
+        if (
+            attention_route_factor_observer is not None
+            and self.arm_id != JOINT_EXACT_CONTROL_ARM_ID
+        ):
+            raise ValueError(
+                "attention route factors require the exact control arm"
+            )
         if type(retain_gradient_tape) is not bool:
             raise TypeError("retain_gradient_tape must be bool")
+        if type(materialize_logits) is not bool:
+            raise TypeError("materialize_logits must be bool")
+        if not materialize_logits and not retain_gradient_tape:
+            raise ValueError("logits-free execution requires a gradient tape")
         if retain_gradient_tape and torch.is_inference_mode_enabled():
             raise RuntimeError(
                 "event score gradients cannot be captured in inference mode"
@@ -1975,6 +2476,10 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
         if retain_gradient_tape:
             initial = initial.detach().requires_grad_(True)
         live_observations: list[tuple[str, Tensor]] = []
+        live_auxiliary_observations: list[tuple[str, Tensor]] = []
+        detached_attention_operator_outputs: list[
+            JointGraphAttentionOperatorOutputSnapshot
+        ] = []
 
         def observe(event_id: str, role: str, value: Tensor) -> None:
             site_id = f"{event_id}.{role}"
@@ -2037,6 +2542,11 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
                     sequence,
                     incoming,
                     chart_input_perturbation=input_perturbation,
+                    capture_attention_route_factors=(
+                        attention_route_factor_observer is not None
+                        and mutation.event_spec.event_kind
+                        == "attention_mutation"
+                    ),
                 )
                 applied_delta = execution.delta
                 if (
@@ -2074,6 +2584,51 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
                     "output",
                     applied_delta,
                 )
+                if mutation.event_spec.event_kind == "attention_mutation":
+                    operator_output = execution.attention_operator_output
+                    if retain_gradient_tape:
+                        if not isinstance(operator_output, Tensor):
+                            raise RuntimeError(
+                                "attention mutation omitted its operator output"
+                            )
+                        if not operator_output.requires_grad:
+                            raise RuntimeError(
+                                "attention operator output is detached from the exact suffix"
+                            )
+                        live_auxiliary_observations.append(
+                            (
+                                f"{mutation.event_spec.event_id}.operator_output",
+                                operator_output,
+                            )
+                        )
+                    if not materialize_logits:
+                        if not isinstance(operator_output, Tensor):
+                            raise RuntimeError(
+                                "attention mutation omitted its operator output"
+                            )
+                        detached_attention_operator_outputs.append(
+                            JointGraphAttentionOperatorOutputSnapshot(
+                                site_id=(
+                                    f"{mutation.event_spec.event_id}.operator_output"
+                                ),
+                                event_id=mutation.event_spec.event_id,
+                                block_ordinal=(
+                                    mutation.event_spec.block_ordinal
+                                ),
+                                values=operator_output,
+                            )
+                        )
+                    if attention_route_factor_observer is not None:
+                        snapshot = execution.attention_route_factor_snapshot
+                        if snapshot is None:
+                            raise RuntimeError(
+                                "attention mutation omitted requested route factors"
+                            )
+                        attention_route_factor_observer(
+                            event_id=mutation.event_spec.event_id,
+                            block_ordinal=mutation.event_spec.block_ordinal,
+                            snapshot=snapshot,
+                        )
                 session.apply_mutation(
                     mutation.event_spec.event_id,
                     applied_delta,
@@ -2110,6 +2665,53 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
         normalized = self.terminal_norm(output)
         if not isinstance(normalized, Tensor) or normalized.shape != output.shape:
             raise ValueError("terminal normalization must preserve carrier shape")
+        if retain_gradient_tape:
+            if not normalized.requires_grad:
+                raise RuntimeError(
+                    "terminal normalized output is detached from the exact suffix"
+                )
+            live_auxiliary_observations.append(
+                ("terminal.rmsnorm.output", normalized)
+            )
+        tape = (
+            JointGraphEventGradientTape(
+                live_observations,
+                live_auxiliary_observations,
+            )
+            if retain_gradient_tape
+            else None
+        )
+        common_execution = {
+            "output": output,
+            "normalized_output": normalized,
+            "mutation_receipts": receipts,
+            "operator_receipts": tuple(operator_receipts),
+            "mutation_chart_input_sha256s": tuple(
+                mutation_chart_input_sha256s
+            ),
+            "mutation_delta_sha256s": tuple(mutation_delta_sha256s),
+            "carrier_version": carrier_version,
+            "transport_edge_count": len(self.transports),
+            "peak_live_transport_packets": (
+                message_session.peak_live_packets
+            ),
+            "peak_live_transport_packet_bytes": (
+                message_session.peak_live_packet_bytes
+            ),
+        }
+        if not materialize_logits:
+            if tape is None:
+                raise RuntimeError("logits-free execution omitted its tape")
+            return JointGraphObservedBackboneExecution(
+                execution=JointGraphBackboneExecution(
+                    attention_operator_output_snapshots=tuple(
+                        detached_attention_operator_outputs
+                    ),
+                    event_ids=self.ordered_event_ids[:-1],
+                    **common_execution,
+                ),
+                gradient_tape=tape,
+            )
         logits = self.lexical.egress(normalized)
         if (
             not isinstance(logits, Tensor)
@@ -2122,29 +2724,9 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
             cap = self.final_logit_softcap
             logits = torch.tanh(logits / cap) * cap
         execution = JointGraphWholeModelExecution(
-            output=output,
-            normalized_output=normalized,
             logits=logits,
             event_ids=self.ordered_event_ids,
-            mutation_receipts=receipts,
-            operator_receipts=tuple(operator_receipts),
-            mutation_chart_input_sha256s=tuple(
-                mutation_chart_input_sha256s
-            ),
-            mutation_delta_sha256s=tuple(mutation_delta_sha256s),
-            carrier_version=carrier_version,
-            transport_edge_count=len(self.transports),
-            peak_live_transport_packets=(
-                message_session.peak_live_packets
-            ),
-            peak_live_transport_packet_bytes=(
-                message_session.peak_live_packet_bytes
-            ),
-        )
-        tape = (
-            JointGraphEventGradientTape(live_observations)
-            if retain_gradient_tape
-            else None
+            **common_execution,
         )
         return JointGraphObservedExecution(
             execution=execution,
@@ -2172,7 +2754,9 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
             input_ids,
             sequence,
             observer=None,
+            attention_route_factor_observer=None,
             retain_gradient_tape=False,
+            materialize_logits=True,
             shadow_source_site_id=None,
             shadow_target_event_id=None,
             shadow_perturbation=None,
@@ -2185,6 +2769,9 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
         *,
         observer: JointGraphEventObserver,
         retain_gradient_tape: bool = False,
+        attention_route_factor_observer: (
+            JointGraphAttentionRouteFactorObserver | None
+        ) = None,
     ) -> JointGraphObservedExecution:
         """Run exactly once while exporting detached 73-site snapshots.
 
@@ -2199,11 +2786,49 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
             input_ids,
             sequence,
             observer=observer,
+            attention_route_factor_observer=(
+                attention_route_factor_observer
+            ),
             retain_gradient_tape=retain_gradient_tape,
+            materialize_logits=True,
             shadow_source_site_id=None,
             shadow_target_event_id=None,
             shadow_perturbation=None,
         )
+
+    def forward_backbone_with_observer(
+        self,
+        input_ids: Tensor,
+        sequence: SequenceContext,
+        *,
+        observer: JointGraphEventObserver,
+        attention_route_factor_observer: (
+            JointGraphAttentionRouteFactorObserver | None
+        ) = None,
+    ) -> JointGraphObservedBackboneExecution:
+        """Run the 38-event backbone and stop before lexical egress.
+
+        The result always owns a one-use gradient tape.  A caller can compute
+        an exact terminal-output cotangent with a bounded analytic lexical
+        kernel, then pull it back without ever allocating ``[B,L,V]`` logits.
+        """
+
+        result = self._forward_components_impl(
+            input_ids,
+            sequence,
+            observer=observer,
+            attention_route_factor_observer=(
+                attention_route_factor_observer
+            ),
+            retain_gradient_tape=True,
+            materialize_logits=False,
+            shadow_source_site_id=None,
+            shadow_target_event_id=None,
+            shadow_perturbation=None,
+        )
+        if not isinstance(result, JointGraphObservedBackboneExecution):
+            raise RuntimeError("backbone execution crossed lexical egress")
+        return result
 
     def forward_components_with_shadow_intervention(
         self,
@@ -2227,7 +2852,9 @@ class Gemma3JointCrossBlockChartExecutor(nn.Module):
             input_ids,
             sequence,
             observer=None,
+            attention_route_factor_observer=None,
             retain_gradient_tape=False,
+            materialize_logits=True,
             shadow_source_site_id=source_site_id,
             shadow_target_event_id=target_event_id,
             shadow_perturbation=perturbation,
@@ -2247,6 +2874,9 @@ __all__ = [
     "JOINT_CROSS_BLOCK_CHART_ARM_ID",
     "JOINT_EXACT_CONTROL_ARM_ID",
     "JointGraphCrossBlockTransportEdge",
+    "JointGraphAttentionRouteFactorObserver",
+    "JointGraphAttentionOperatorOutputSnapshot",
+    "JointGraphBackboneExecution",
     "JointGraphEventGradientTape",
     "JointGraphEventObserver",
     "JointGraphEventSpec",
@@ -2254,6 +2884,8 @@ __all__ = [
     "JointGraphMutationExecution",
     "JointGraphMutationRuntimeReceipt",
     "JointGraphObservedExecution",
+    "JointGraphObservedBackboneExecution",
+    "JointGraphScoreGradientBundle",
     "JointGraphTransportSpec",
     "JointGraphWholeModelExecution",
     "PINNED_GEMMA3_BLOCK_COUNT",

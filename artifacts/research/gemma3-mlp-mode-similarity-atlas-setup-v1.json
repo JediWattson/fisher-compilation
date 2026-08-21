@@ -1,0 +1,879 @@
+{
+  "affinity_and_seriation": {
+    "Fiedler_vector": "eigenvector_at_zero_based_index_1",
+    "affinity_exponent_is_clipped_at_atlas_config_maximum": true,
+    "dense_affinity": "A_ij=exp(-min(D_ij/distance_scale,700))_for_i_not_equal_j;A_ii=0",
+    "distance_scale": "median_of_all_153_strictly_positive_off_diagonal_distances",
+    "eigendecomposition": "real_symmetric_float64_eigh_with_eigenvalues_ascending",
+    "fail_closed_conditions": [
+      "Fiedler_eigenvalue_not_above_connectivity_tolerance",
+      "lambda_3_minus_lambda_2_not_above_fiedler_eigengap_relative_tolerance_times_max(1,abs(lambda_2),abs(lambda_3))",
+      "any_sorted_Fiedler_coordinate_gap_not_above_coordinate_tie_tolerance_times_max(1,max_abs_Fiedler_coordinate)",
+      "any_mode_nearest_neighbor_gap_not_above_nearest_neighbor_tie_tolerance_times_max(1,first_distance,second_distance)",
+      "any_nonfinite_matrix_eigenvalue_or_coordinate"
+    ],
+    "global_reversal_resolution": "compare_the_forward_and_reversed_sequences_of_native_source_state_SHA256_values_and_keep_the_lexicographically_smaller_sequence",
+    "input": "full_18_by_18_primary_symmetric_distance_matrix",
+    "laplacian": "symmetric_normalized_I-D^(-1/2)*A*D^(-1/2)",
+    "mode_ID_invocation_block_ordinal_or_source_label_tie_break": false,
+    "numerical_ties_are_never_broken_by_provenance": true,
+    "numerical_tolerances": "exactly_the_top_level_atlas_config",
+    "ordering_quality_diagnostic": {
+      "may_change_order_or_hypotheses": false,
+      "path_cost": "sum_adjacent_primary_symmetric_distances",
+      "random_generator": "numpy_PCG64",
+      "random_permutation_count": 10000,
+      "random_permutation_seed": 0
+    },
+    "raw_order": "ascending_Fiedler_coordinate",
+    "sparsification_or_nearest_neighbor_graph_used": false,
+    "state_fingerprint_never_enters_distance_affinity_or_numerical_tie_breaking": true,
+    "state_fingerprint_role": "canonical_input_axis_and_global_reversal_only",
+    "zero_or_nonfinite_distance_scale_fails_closed": true
+  },
+  "artifact_role": "setup_only_exact_no_compression_MLP_first_typed_mode_similarity_atlas",
+  "atlas_config": {
+    "affinity_kernel": "exp_neg_distance_over_positive_median_v1",
+    "affinity_max_exponent": 700.0,
+    "connectivity_tolerance": 1e-12,
+    "cosine_role": "diagnostic_only",
+    "distance_metric": "bidirectional_equal_family_mean_relative_sse_v1",
+    "energy_epsilon": 1e-12,
+    "fiedler_coordinate_tie_tolerance": 1e-10,
+    "fiedler_eigengap_relative_tolerance": 1e-08,
+    "laplacian": "symmetric_normalized_v1",
+    "mode_id_role": "receipt_label_only",
+    "mode_kind_role": "receipt_label_only",
+    "nearest_neighbor_tie_tolerance": 1e-10,
+    "ordering_quality_random_permutation_count": 10000,
+    "ordering_quality_random_permutation_seed": 0,
+    "state_fingerprint_role": "canonical_axis_and_global_reversal_only",
+    "sufficient_stat_relative_tolerance": 1e-07
+  },
+  "claim_boundary": {
+    "a_future_negative_result_may_report_no_qualifying_neighbors": true,
+    "attention_or_lexical_geometry_claimed": false,
+    "causal_or_functional_interchangeability_claimed": false,
+    "compression_parameter_MAC_byte_memory_or_latency_reduction_claimed": false,
+    "descriptive_exact_geometry_only": true,
+    "edge_similarity_or_edge_compression_claimed": false,
+    "model_prompt_or_metric_access_occurred": false,
+    "setup_only": true,
+    "shared_generator_family_or_merge_claimed": false,
+    "stable_neighbors_are_hypotheses_requiring_fresh_data": true,
+    "whole_model_is_executed_for_capture_but_not_modified": true
+  },
+  "comparison_abi": {
+    "abi_name": "carrier_mutation.token_local.h640",
+    "abi_version": 1,
+    "context_signature": "token_local.no_external_context",
+    "input_signature": "raw_carrier_row.float.h640",
+    "output_signature": "additive_full_atom_delta.float.h640"
+  },
+  "diagnostic_geometry": {
+    "diagnostics_never_change_primary_distance_or_order": true,
+    "raw_unweighted_diagnostics": {
+      "NRMSE": "sqrt(sum((Gi-Gj)^2)/sum(Gi^2))",
+      "aggregation": "per_family_then_equal_family_mean",
+      "cosine": "sum(Gi*Gj)/sqrt(sum(Gi^2)*sum(Gj^2))",
+      "may_enter_primary_distance": false
+    },
+    "weighted_bidirectional_cosine": {
+      "denominator_uses_same_atlas_config_energy_epsilon": true,
+      "directed_cosine": "weighted_dot/sqrt(max(weighted_reference_energy,atlas_config.energy_epsilon)*max(weighted_candidate_energy,atlas_config.energy_epsilon))",
+      "symmetric_cosine_distance": "0.5*((1-cos_i_to_j)+(1-cos_j_to_i))"
+    },
+    "weighted_residual_rank_profile": {
+      "SVD_dtype": "float64",
+      "matrix_columns": 640,
+      "matrix_rows": "concatenate_elementwise_sqrt(g_i_squared)_times_(Gi(x_i)-Gj(x_i))_for_the_120_i_origin_probes",
+      "may_enter_primary_distance_or_seriation": false,
+      "rank_order": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        640
+      ],
+      "report_both_directions_separately": true,
+      "reported_value": "cumulative_squared_singular_value_energy_fraction"
+    }
+  },
+  "directed_distance_contract": {
+    "candidate": "Gj_of_xi_exact_full_atom_delta",
+    "coordinate_weight": "g_i_squared_diagonal_output_Fisher",
+    "diagonal_exactly_zero": true,
+    "direction_definition": "i_to_j_uses_only_i_origin_exact_raw_carrier_probes_and_i_origin_output_Fisher",
+    "distance_component_standardization_or_mixing_present": false,
+    "family_weighting": "equal_one_sixth_each_not_row_weighted",
+    "negative_roundoff_within_float64_tolerance_clamped_to_zero": true,
+    "off_diagonal_must_be_finite_and_nonnegative": true,
+    "operator_execution_dtype": "source_float32",
+    "per_family_relative_SSE": "weighted_residual_SSE/max(weighted_reference_energy,atlas_config.energy_epsilon)",
+    "per_family_sufficient_statistics": {
+      "weighted_candidate_energy": "sum(g_i^2*Gj(x_i)^2)",
+      "weighted_dot": "sum(g_i^2*Gi(x_i)*Gj(x_i))",
+      "weighted_reference_energy": "sum(g_i^2*Gi(x_i)^2)",
+      "weighted_residual_SSE": "reference_energy+candidate_energy-2*weighted_dot"
+    },
+    "primary_directed_distance": "arithmetic_mean_of_the_six_per_family_relative_SSE_values",
+    "primary_symmetric_distance": "0.5*(d(i_to_j)+d(j_to_i))",
+    "reference": "Gi_of_xi_exact_full_atom_delta",
+    "reference_energy_must_be_finite_and_nonnegative": true,
+    "relative_SSE_denominator": "max(weighted_reference_energy,atlas_config.energy_epsilon)",
+    "sufficient_statistic_accumulation_dtype": "float64"
+  },
+  "discovery_data_firewall": {
+    "all_60_examples_are_spent_after_this_atlas": true,
+    "all_six_families_visible_to_descriptive_geometry": true,
+    "every_future_merge_or_compression_protocol_requires": [
+      "a_new_panel_with_a_distinct_authenticated_SHA256",
+      "zero_example_id_overlap",
+      "zero_exact_prompt_text_overlap",
+      "zero_paraphrase_or_template_instance_overlap",
+      "a_preregistered_overlap_audit_before_model_load",
+      "no_atlas_metric_access_while_authoring_fresh_examples"
+    ],
+    "example_count": 60,
+    "family_count": 6,
+    "family_label_overlap_in_a_future_panel": "allowed_only_if_preregistered_but_never_counts_as_fresh_prompt_evidence_by_itself",
+    "family_manifests": [
+      {
+        "example_count": 10,
+        "family_id": "integer_addition",
+        "family_manifest_sha256": "bcfd923f2f26a5091cc225b25d11a405d8ccad55bd303d839b8c1faab5bba98c",
+        "family_ordinal": 0,
+        "ordered_example_ids": [
+          "addition-01",
+          "addition-02",
+          "addition-03",
+          "addition-04",
+          "addition-05",
+          "addition-06",
+          "addition-07",
+          "addition-08",
+          "addition-09",
+          "addition-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      },
+      {
+        "example_count": 10,
+        "family_id": "integer_subtraction",
+        "family_manifest_sha256": "2656f91baa0e8e5999ff0943786b2b35f97fd855d4d6ff2e3608346d059e9e5a",
+        "family_ordinal": 1,
+        "ordered_example_ids": [
+          "subtraction-01",
+          "subtraction-02",
+          "subtraction-03",
+          "subtraction-04",
+          "subtraction-05",
+          "subtraction-06",
+          "subtraction-07",
+          "subtraction-08",
+          "subtraction-09",
+          "subtraction-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      },
+      {
+        "example_count": 10,
+        "family_id": "integer_comparison",
+        "family_manifest_sha256": "e7f4b222cd6127ae0b10e0a775a7677393aa064db51d0f71083f3626e24daa59",
+        "family_ordinal": 2,
+        "ordered_example_ids": [
+          "comparison-01",
+          "comparison-02",
+          "comparison-03",
+          "comparison-04",
+          "comparison-05",
+          "comparison-06",
+          "comparison-07",
+          "comparison-08",
+          "comparison-09",
+          "comparison-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      },
+      {
+        "example_count": 10,
+        "family_id": "lexical_antonym",
+        "family_manifest_sha256": "582306f977d3dbff01d7602bc5e969d5b806a67be5bad8440e1a9236f4bfdd52",
+        "family_ordinal": 3,
+        "ordered_example_ids": [
+          "antonym-01",
+          "antonym-02",
+          "antonym-03",
+          "antonym-04",
+          "antonym-05",
+          "antonym-06",
+          "antonym-07",
+          "antonym-08",
+          "antonym-09",
+          "antonym-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      },
+      {
+        "example_count": 10,
+        "family_id": "category_completion",
+        "family_manifest_sha256": "126d1023cfb393861f4bd232cb53e6434f804e81711c7ea2ad7aeef03f836336",
+        "family_ordinal": 4,
+        "ordered_example_ids": [
+          "category-01",
+          "category-02",
+          "category-03",
+          "category-04",
+          "category-05",
+          "category-06",
+          "category-07",
+          "category-08",
+          "category-09",
+          "category-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      },
+      {
+        "example_count": 10,
+        "family_id": "world_capitals",
+        "family_manifest_sha256": "66555269b3a173c36513cb9256c34df8c3bc59be4a9a0b85f0a984acbbbb17cc",
+        "family_ordinal": 5,
+        "ordered_example_ids": [
+          "capital-01",
+          "capital-02",
+          "capital-03",
+          "capital-04",
+          "capital-05",
+          "capital-06",
+          "capital-07",
+          "capital-08",
+          "capital-09",
+          "capital-10"
+        ],
+        "role": "spent_descriptive_discovery"
+      }
+    ],
+    "future_attention_or_lexical_descriptive_protocol_may_reuse_panel": "only_if_it_makes_no_merge_compression_or_selection_claim",
+    "leave_one_family_out_views_are_stability_analyses_not_holdouts": true,
+    "one_role_only": "spent_descriptive_discovery",
+    "ordered_family_ids": [
+      "integer_addition",
+      "integer_subtraction",
+      "integer_comparison",
+      "lexical_antonym",
+      "category_completion",
+      "world_capitals"
+    ],
+    "panel_id": "gemma3-single-token-forced-choice-v1",
+    "panel_path": "examples/gemma3_downstream_retention_v1.json",
+    "panel_sha256": "47d91ae000b4036d7744509bbbfec67aa0bd48bb1e1162fd6efa53974c23e6ff",
+    "raw_prompt_text_or_token_ids_written_to_setup_or_report": false,
+    "this_atlas_may_not_choose_a_future_merge_rank_or_threshold": true
+  },
+  "execution_and_report_contract": {
+    "deterministic_replay_of_probe_selection_distances_and_order": true,
+    "exact_source_state_fingerprint_before_and_after_equal": true,
+    "preflight_before_model_load": [
+      "authenticate_this_setup_internal_and_file_SHA256",
+      "authenticate_predecessor_setup_internal_and_file_SHA256",
+      "authenticate_predecessor_report_internal_and_file_SHA256",
+      "authenticate_panel_file_SHA256_family_and_example_manifests",
+      "refuse_an_existing_output_path"
+    ],
+    "report_contains_model_weights_prompt_text_or_token_ids": false,
+    "report_schema": "fisher_graph.gemma3_mlp_mode_similarity_atlas.experiment.v1",
+    "required_report_fields": [
+      "setup_model_predecessor_and_panel_provenance",
+      "all_18_runtime_source_state_SHA256_values",
+      "probe_selection_catalog_and_SHA256",
+      "choice_tokenization_and_last_query_receipt_SHA256",
+      "per_example_per_family_sufficient_statistic_SHA256_values",
+      "six_directed_family_distance_matrices",
+      "108_per_family_mode_self_replay_numerical_parity_receipts",
+      "full_directed_and_symmetric_distance_matrices",
+      "weighted_and_raw_diagnostic_matrices",
+      "bidirectional_weighted_residual_rank_profiles",
+      "distance_scale_affinity_laplacian_eigenvalues_and_order",
+      "six_leave_one_family_out_orders_and_adjacency_receipts",
+      "bootstrap_draw_SHA256_degeneracy_count_and_adjacency_frequencies",
+      "stable_neighbor_hypotheses_or_an_authenticated_empty_list",
+      "runtime_peak_memory_and_source_call_audit"
+    ]
+  },
+  "format_version": 1,
+  "mode_ontology": {
+    "abi_catalog": [
+      {
+        "context_dependency": "token_local",
+        "cross_execution_rule": "any_exact_atom_with_this_identical_ABI_may_be_evaluated_on_any_origin_row",
+        "eligible_in_this_setup": true,
+        "input": "one_exact_raw_carrier_row_float_h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "output": "one_additive_full_atom_delta_row_float_h640",
+        "source_implementation_labels": [
+          "MLP"
+        ]
+      },
+      {
+        "context_dependency": "causal_sequence_routed",
+        "eligible_in_this_setup": false,
+        "future_protocol_required": true,
+        "input": "exact_carrier_sequence_plus_mask_position_and_routing_context",
+        "mode_abi_id": "abi.carrier_mutation.sequence_routed.h640.v1",
+        "output": "additive_carrier_sequence_delta_h640",
+        "source_implementation_labels": [
+          "attention"
+        ]
+      },
+      {
+        "context_dependency": "vocabulary_boundary",
+        "eligible_in_this_setup": false,
+        "future_protocol_required": true,
+        "input": "token_identity_or_terminal_carrier_h640",
+        "mode_abi_id": "abi.lexical_boundary.vocab_h640.v1",
+        "output": "initial_carrier_h640_or_vocabulary_logits",
+        "source_implementation_labels": [
+          "embedding_ingress",
+          "tied_lexical_egress"
+        ]
+      }
+    ],
+    "cross_ABI_comparison_requires_a_preregistered_exact_adapter": true,
+    "future_attention_and_lexical_atlases_extend_the_same_ontology": true,
+    "implementation_names_are_provenance_not_ontology": true,
+    "layer_block_invocation_and_component_labels_are_not_features": true,
+    "mode_definition": "one_parameterized_state_mutation_operator_at_one_causal_occurrence_with_an_explicit_input_output_and_context_ABI",
+    "no_cross_ABI_adapter_is_present_here": true
+  },
+  "model_contract": {
+    "edge_occurrence_count": 75,
+    "event_count": 39,
+    "full_native_model_used_only_for_exact_capture_and_gradients": true,
+    "hidden_width": 640,
+    "layer_count": 18,
+    "model_id": "google/gemma-3-270m",
+    "mutation_count": 36,
+    "parameter_state_and_training_mode_immutable": true,
+    "revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "source_unique_stored_scalars": 268098176
+  },
+  "predecessor_chain": {
+    "both_internal_and_file_SHA256_values_verified_before_model_load": true,
+    "predecessor_pair_or_metric_may_seed_order_or_break_ties": false,
+    "report": {
+      "file_sha256": "b29e5e6456793776809acca5d2334700ef16f85b62af257ac51ce936e5fee43d",
+      "path": ".local-runs/google--gemma-3-270m/mlp-shared-family-residual-adapter-v1.json",
+      "report_sha256": "11bec66d79aaf585c6dbfe835485c3b2aba15a2be5dcd10189bc9d26455f68b4",
+      "schema": "fisher_graph.gemma3_mlp_shared_family_residual_adapter.experiment.v1"
+    },
+    "required_outcome": {
+      "B_guard_winner": null,
+      "C_assessment_opened": false,
+      "dense_exact_control_passed_before_compressed_fit": true,
+      "diagnostic_outcome": "shared_family_pair_mechanism_not_qualified",
+      "pair_mechanism_qualified": false,
+      "selected_pair_is_not_inherited_as_a_family": true
+    },
+    "setup": {
+      "file_sha256": "6fe26fe3e6d4af2460dc2c65e636559b6d00a9b0718c48edd947996692d1f56f",
+      "path": "artifacts/research/gemma3-mlp-shared-family-residual-adapter-setup-v1.json",
+      "schema": "fisher_graph.gemma3_mlp_shared_family_residual_adapter.setup.v1",
+      "setup_sha256": "39d4debc38f680d8318bced5b9f553fe9ec8aa9866a990d9852c10e8f55059e8"
+    }
+  },
+  "probe_sampling": {
+    "Fisher_objective": "sum_across_examples_of_gold_cross_entropy_under_the_native_restricted_four_way_softmax_at_the_last_valid_prompt_query",
+    "all_rows_seen_before_top_two_selection": true,
+    "capture_population": "all_valid_nonpadding_causal_prompt_rows_for_each_origin_mode_and_panel_example",
+    "choice_tokenization_gate": {
+      "choice_encoding": "tokenize_one_leading_space_plus_choice",
+      "four_choice_token_ids_must_be_distinct_within_example": true,
+      "gold_index": "canonical_panel_correct_choice",
+      "loss_reduction_across_examples": "sum_not_mean",
+      "per_example_choice_tokenization_and_query_receipt_SHA256_required": true,
+      "query_position": "last_valid_nonpadding_prompt_position",
+      "required_token_count_per_choice": 1,
+      "restricted_logits_order": "canonical_panel_choice_order",
+      "token_ids_may_appear_in_setup_or_report": false
+    },
+    "coordinatewise_output_Fisher": "square_in_float64_of_the_source_dtype_gradient_of_that_objective_with_respect_to_each_exact_full_atom_delta_coordinate_at_every_causal_prompt_row",
+    "cross_evaluate_all_18_exact_atoms_per_origin_probe": true,
+    "foreign_atom_cross_executions": 36720,
+    "full_atom_cross_executions": 38880,
+    "insufficient_valid_rows_fails_closed": true,
+    "ordered_tie_break": [
+      "smaller_zero_based_token_index",
+      "lexicographically_smaller_SHA256_of_canonical_float32_raw_carrier_delta_and_gradient_bytes",
+      "fail_closed_if_row_identity_remains_ambiguous"
+    ],
+    "origin_atom_self_replays": 2160,
+    "probe_catalog_hash_domain_hex": "6669736865725f67726170683a67656d6d61332d6d6f64652d61746c61732d70726f62652d647261773a763100",
+    "probe_selection_catalog_and_SHA256_required": true,
+    "probes_per_origin_mode": 120,
+    "probes_per_origin_mode_example": 2,
+    "probes_per_origin_mode_family": 20,
+    "row_energy": "sum_over_640_coordinates_of_output_Fisher",
+    "selection_per_origin_mode_and_example": "largest_row_energy_first_keep_exactly_two_distinct_rows",
+    "self_replay_is_an_exact_runtime_gate_not_a_pair_distance": true,
+    "self_replay_numerical_parity_gate": {
+      "claim": "same_operator_float32_numerical_parity",
+      "delta_NRMSE_maximum": 1e-07,
+      "finite_values_required": true,
+      "maximum_absolute_delta_error": 1e-06,
+      "original_batch_shape_literal_hash_replay": "optional_diagnostic_reported_separately_if_executed",
+      "reason_not_bitwise": "capture_and_concatenated_atlas_replay_may_use_different_GEMM_batch_shapes",
+      "receipt_count": 108,
+      "receipt_unit": "origin_mode_by_panel_family"
+    },
+    "total_origin_probes": 2160,
+    "valid_row_identity": "family_id_example_id_and_zero_based_prompt_token_index_without_recording_token_identity"
+  },
+  "schema": "fisher_graph.gemma3_mlp_mode_similarity_atlas.setup.v1",
+  "scope_freeze": {
+    "attention_or_lexical_mode_measured": false,
+    "candidate_model_constructed": false,
+    "carrier_edge_changed_or_learned": false,
+    "compression_or_low_rank_fit_performed": false,
+    "directed_off_diagonal_count": 306,
+    "eligible_mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+    "eligible_mode_count": 18,
+    "every_pair_and_both_directions_measured": true,
+    "generator_shared_merged_deleted_or_replaced": false,
+    "mode_catalog": [
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.2",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.0",
+        "source_block_ordinal": 0,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.2",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.4",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.1",
+        "source_block_ordinal": 1,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.4",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.6",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.2",
+        "source_block_ordinal": 2,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.6",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.8",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.3",
+        "source_block_ordinal": 3,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.8",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.10",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.4",
+        "source_block_ordinal": 4,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.10",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.12",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.5",
+        "source_block_ordinal": 5,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.12",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.14",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.6",
+        "source_block_ordinal": 6,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.14",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.16",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.7",
+        "source_block_ordinal": 7,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.16",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.18",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.8",
+        "source_block_ordinal": 8,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.18",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.20",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.9",
+        "source_block_ordinal": 9,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.20",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.22",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.10",
+        "source_block_ordinal": 10,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.22",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.24",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.11",
+        "source_block_ordinal": 11,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.24",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.26",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.12",
+        "source_block_ordinal": 12,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.26",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.28",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.13",
+        "source_block_ordinal": 13,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.28",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.30",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.14",
+        "source_block_ordinal": 14,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.30",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.32",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.15",
+        "source_block_ordinal": 15,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.32",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.34",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.16",
+        "source_block_ordinal": 16,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.34",
+        "source_operator_label": "gated_GELU_MLP"
+      },
+      {
+        "cross_execution_eligible": true,
+        "generic_core_mode_kind": "carrier_mutation.token_local.h640",
+        "mode_abi_id": "abi.carrier_mutation.token_local.h640.v1",
+        "mode_id": "mode.mutation.36",
+        "native_source_state_sha256": "captured_and_authenticated_at_runtime",
+        "provenance_fields_allowed_as_numerical_features": false,
+        "source_atom_id": "atom.mlp.layer.17",
+        "source_block_ordinal": 17,
+        "source_implementation_label": "MLP",
+        "source_invocation_id": "mutation.36",
+        "source_operator_label": "gated_GELU_MLP"
+      }
+    ],
+    "nonadjacency_filter_present": false,
+    "ordered_mode_ids": [
+      "mode.mutation.2",
+      "mode.mutation.4",
+      "mode.mutation.6",
+      "mode.mutation.8",
+      "mode.mutation.10",
+      "mode.mutation.12",
+      "mode.mutation.14",
+      "mode.mutation.16",
+      "mode.mutation.18",
+      "mode.mutation.20",
+      "mode.mutation.22",
+      "mode.mutation.24",
+      "mode.mutation.26",
+      "mode.mutation.28",
+      "mode.mutation.30",
+      "mode.mutation.32",
+      "mode.mutation.34",
+      "mode.mutation.36"
+    ],
+    "per_family_directed_cross_mode_stat_count": 1836,
+    "per_family_example_directed_cross_mode_stat_count": 18360,
+    "per_family_self_replay_stat_count": 108,
+    "source_block_distance_used_as_eligibility_or_feature": false,
+    "source_parameters_or_persistent_buffers_changed": false,
+    "unordered_pair_count": 153
+  },
+  "setup_receipt": {
+    "carrier_or_atom_delta_captured": false,
+    "distance_or_affinity_computed": false,
+    "experiment_report_written": false,
+    "foreign_atom_cross_execution_performed": false,
+    "model_weights_loaded": false,
+    "new_experiment_metrics_present": false,
+    "output_gradient_or_Fisher_computed": false,
+    "predecessor_artifacts_opened_by_builder": false,
+    "prompt_panel_or_prompt_text_opened": false,
+    "seriation_or_bootstrap_performed": false,
+    "tokenization_performed": false
+  },
+  "setup_sha256": "7edb27bc2a2778459764a855bba0d0f358b55b06b547e2a4b6c1029ee0110dd0",
+  "stability_contract": {
+    "absence_of_stable_neighbors_is_a_valid_result": true,
+    "leave_one_family_out": {
+      "each_fold_distance": "equal_mean_of_the_five_included_family_relative_SSE_matrices",
+      "fold_count": 6,
+      "fold_order": [
+        "integer_addition",
+        "integer_subtraction",
+        "integer_comparison",
+        "lexical_antonym",
+        "category_completion",
+        "world_capitals"
+      ],
+      "held_out_family_is_not_a_clean_assessment_role": true,
+      "report_order_adjacency_set_and_full_order_adjacency_retention": true,
+      "same_affinity_seriation_and_degeneracy_rules": true
+    },
+    "stable_neighbor_hypothesis_rule": {
+      "bootstrap_adjacency_frequency_minimum": 0.8,
+      "does_not_establish_a_generator_family_or_merge": true,
+      "leave_one_family_out_adjacency_count_minimum": 5,
+      "must_be_adjacent_in_full_order": true,
+      "result_label": "stable_neighbor_hypothesis_only"
+    },
+    "within_family_bootstrap": {
+      "bootstrap_draw_catalog_SHA256_required": true,
+      "cluster_unit": "panel_example_with_its_two_selected_rows",
+      "counter_PRNG": "uint64_big_endian_first_8_bytes_of_SHA256(domain||seed_u64||resample_u64||family_u32||draw_u32)_mod_10",
+      "counter_hash_domain_hex": "6669736865725f67726170683a67656d6d61332d6d6f64652d61746c61732d626f6f7473747261702d647261773a763100",
+      "degenerate_resample_count_reported_and_excluded_from_frequency_denominator": true,
+      "draw_rule": "for_each_family_and_resample_draw_10_example_ordinals_with_replacement",
+      "each_resample_recomputes_distance_affinity_and_Fiedler_order": true,
+      "fail_if_more_than_one_percent_resamples_degenerate": true,
+      "family_ordinal_order": [
+        "integer_addition",
+        "integer_subtraction",
+        "integer_comparison",
+        "lexical_antonym",
+        "category_completion",
+        "world_capitals"
+      ],
+      "report_unordered_adjacency_frequency_for_all_153_pairs": true,
+      "resamples": 10000,
+      "same_drawn_example_indices_shared_by_all_modes_and_pairs": true,
+      "seed": 2311
+    }
+  },
+  "within_family_bootstrap_config": {
+    "draw_catalog_digest_domain_hex": "6669736865725f67726170682e6d6f64655f73696d696c61726974795f61746c61732e626f6f7473747261705f636174616c6f672e763100",
+    "draw_catalog_digest_encoding": "sha256(catalog_domain||canonical_config||repeated(resample_u64be,family_u32be,draw_u32be,example_u32be))",
+    "draw_digest_selection": "first_8_sha256_bytes_u64be_mod_example_count",
+    "draw_preimage_encoding": "domain||seed_u64be||resample_u64be||family_u32be||draw_u32be",
+    "draw_protocol": "sha256_counter_modulo_example_count_v1",
+    "draw_protocol_domain_hex": "6669736865725f67726170683a67656d6d61332d6d6f64652d61746c61732d626f6f7473747261702d647261773a763100",
+    "draws_per_family": 10,
+    "families": [
+      {
+        "example_cluster_ids": [
+          "addition-01",
+          "addition-02",
+          "addition-03",
+          "addition-04",
+          "addition-05",
+          "addition-06",
+          "addition-07",
+          "addition-08",
+          "addition-09",
+          "addition-10"
+        ],
+        "family_id": "integer_addition"
+      },
+      {
+        "example_cluster_ids": [
+          "subtraction-01",
+          "subtraction-02",
+          "subtraction-03",
+          "subtraction-04",
+          "subtraction-05",
+          "subtraction-06",
+          "subtraction-07",
+          "subtraction-08",
+          "subtraction-09",
+          "subtraction-10"
+        ],
+        "family_id": "integer_subtraction"
+      },
+      {
+        "example_cluster_ids": [
+          "comparison-01",
+          "comparison-02",
+          "comparison-03",
+          "comparison-04",
+          "comparison-05",
+          "comparison-06",
+          "comparison-07",
+          "comparison-08",
+          "comparison-09",
+          "comparison-10"
+        ],
+        "family_id": "integer_comparison"
+      },
+      {
+        "example_cluster_ids": [
+          "antonym-01",
+          "antonym-02",
+          "antonym-03",
+          "antonym-04",
+          "antonym-05",
+          "antonym-06",
+          "antonym-07",
+          "antonym-08",
+          "antonym-09",
+          "antonym-10"
+        ],
+        "family_id": "lexical_antonym"
+      },
+      {
+        "example_cluster_ids": [
+          "category-01",
+          "category-02",
+          "category-03",
+          "category-04",
+          "category-05",
+          "category-06",
+          "category-07",
+          "category-08",
+          "category-09",
+          "category-10"
+        ],
+        "family_id": "category_completion"
+      },
+      {
+        "example_cluster_ids": [
+          "capital-01",
+          "capital-02",
+          "capital-03",
+          "capital-04",
+          "capital-05",
+          "capital-06",
+          "capital-07",
+          "capital-08",
+          "capital-09",
+          "capital-10"
+        ],
+        "family_id": "world_capitals"
+      }
+    ],
+    "maximum_degenerate_fraction": 0.01,
+    "resample_count": 10000,
+    "sampling_unit": "example_plus_selected_probes_cluster",
+    "seed": 2311,
+    "with_replacement": true
+  }
+}

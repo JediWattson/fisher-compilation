@@ -141,7 +141,151 @@ candidate compilation, and deployment authority:
 | Validation and iteration | Score shadows, map residuals, propose mutations, and fail closed at declared gates | [`shadow_fidelity.py`](src/fisher_graph/shadow_fidelity.py), [`compiler/progressive.py`](src/fisher_graph/compiler/progressive.py) |
 | Model runtime | Authenticate source identity and capabilities, then dispatch compiled or native segments | [`compiler/manifest.py`](src/fisher_graph/compiler/manifest.py), [`compiler/runtime.py`](src/fisher_graph/compiler/runtime.py) |
 
-### Exact causal carrier-transport result
+### Layer-agnostic whole-model compression rung
+
+The unrestricted Gemma experiment is preregistered but has not yet been
+fitted. Its runtime ontology removes native layers as graph objects while keeping
+the causal mutation sequence explicit. A reusable generator family may span
+distant source blocks; each temporal use is a separate invocation, so sharing
+does not erase order or create a false self-cycle. Native layer names remain
+only in authenticated provenance.
+
+The setup covers the tied lexical ingress/egress factor, all 36 attention and
+feed-forward mutation occurrences, the residual carrier chain, pooled chart
+atlases, exact terminal RMSNorm, and logit softcap. Physical storage and
+logical compute must close over every family, invocation adapter, chart,
+transport, lexical map, and retained exact component before compression can
+receive credit. The exact dense residual-carrier body remains the reference
+control; a compressed candidate must use carrier-native chart mutations rather
+than re-materializing a dense width-640 state at every occurrence.
+
+The generic artifact contracts live in
+[`layer_agnostic_modal_graph.py`](src/fisher_graph/layer_agnostic_modal_graph.py).
+The model-specific
+[`Gemma bridge`](src/fisher_graph/gemma3_layer_agnostic_modal_graph_bridge.py)
+then requires the pinned 39-event schedule, exact global/sliding attention
+contracts, selected arm and resource point, source/exact-control identities,
+and `input_ids` boundary before a fitted generic graph can call itself a Gemma
+whole-model candidate.
+Even then, the bridge authorizes structural comparison only: generic resource
+eligibility cannot become a Gemma compression claim until the frozen
+family-disjoint guard and assessment pass.
+The frozen search, fitting, firewall, controls, and acceptance rules live in
+[`gemma3_layer_agnostic_whole_model_compression_protocol.py`](src/fisher_graph/gemma3_layer_agnostic_whole_model_compression_protocol.py)
+and its checked-in
+[`setup artifact`](artifacts/research/gemma3-layer-agnostic-whole-model-compression-protocol-v1.json).
+The installed setup command authenticates that artifact without loading Gemma
+or opening prompt data:
+
+```bash
+fisher-graph-gemma-layer-agnostic-compression-setup --check
+```
+
+The first model-facing worker now executes the protocol's
+`compressed_lexical_exact_body_ablation`. It authenticates an exact rank-640
+whole-model control, then replaces Gemma's physically tied embedding and output
+head with one packed low-rank factor while retaining the exact 36-mutation body
+and terminal RMSNorm:
+
+```bash
+fisher-graph-gemma-layer-agnostic-compression-worker \
+  --lexical-rank 512 \
+  --output .local-runs/google--gemma-3-270m/lexical-r512.json
+```
+
+The first rank-512 development run proved that the complete 39-event worker is
+executable and source-independent at runtime, but the compression candidate did
+not retain fidelity:
+
+| Condition | Stored parameters | Reduction | Delta NLL | Native KL | Top-1 agreement |
+|---|---:|---:|---:|---:|---:|
+| Rank-640 exact control | 268,098,176 | 0% | 0.000 | 0.000 | 100.00% |
+| Rank-512 tied lexical factor | 234,871,424 | 12.39% | +1.447 | 2.427 | 17.49% |
+
+This is a useful negative control: unconditioned weight-SVD of the tied lexical
+boundary is not sufficient. It does not establish the unrestricted
+Fisher/chart/generator compiler, body compression, a deployable serialized
+artifact, or a speedup. The next worker backend must use activation/Fisher-aware
+lexical fitting and then replace exact body mutations with the preregistered
+shared generator families.
+
+The next bounded worker is now prepared but deliberately unrun. It replaces all
+18 MLPs with progressively fitted activation-chart generator graphs: each target
+is captured on the current compiled-prefix trajectory, scalar Fisher row
+salience weights the chart fit, and adjacent same-token transports are fitted
+against the residual left by the local generators. Native tied lexical,
+attention, residual, and normalization paths remain live, so this is an
+all-MLP chart development overlay rather than the unrestricted layer-agnostic
+compiler or a source-free deployment artifact.
+
+Authenticate the frozen setup without loading the model:
+
+```bash
+fisher-graph-gemma-fisher-activation-chart-setup --check
+```
+
+The model-facing experiment is ready for a later explicit run:
+
+```bash
+fisher-graph-gemma-fisher-activation-chart-worker \
+  --output .local-runs/google--gemma-3-270m/fisher-chart-dev.json
+```
+
+Before evaluation, its fixed topology projects approximately `7.76%`
+whole-model parameter reduction. That is only a structural capacity bound:
+fidelity, physical resident savings, whole-model MAC reduction, serialization,
+and compression qualification remain unmeasured until the experiment runs.
+
+The joint cross-block development arm goes beyond that overlay. It is one
+standalone 39-event runtime containing a physically shared tied lexical factor,
+18 reduced attention generators, 18 Fisher/activation-chart MLP generators,
+the ordered residual carrier, terminal RMSNorm, and strictly-forward
+attention-to-MLP transports that may skip across blocks. Its exact control uses
+the same boundary and must reproduce native Gemma literally before any fitted
+candidate is constructed:
+
+```bash
+fisher-graph-gemma-joint-cross-block-whole-model-dev \
+  --output .local-runs/google--gemma-3-270m/joint-cross-block-dev.json
+```
+
+The first canonical development run completed. Its exact 39-event control was
+literal parity, but the compressed candidate collapsed despite a projected
+`26.68%` parameter reduction (`delta NLL +10.86`, native KL `12.78`, and `0%`
+top-1 agreement). That cleanly separates exact graph/residual wiring from the
+failed attempt to learn edges while simultaneously compressing lexical,
+attention, and MLP operators.
+
+The next rung therefore freezes every Gemma operator at exact width and studies
+only graph edges. Its sidecar observes 73 full-width sites: tied lexical
+ingress, and the input/output of all 18 attention and all 18 MLP mutations. It
+fits one dense `640 x 640` strictly-forward, cross-block, cross-family edge per
+selected target beyond a same-event local baseline. Edges are never written
+back into the residual carrier or logits, so this rung performs no model
+compression or mutation.
+
+Authenticate the frozen A-fit/B-predictive/C-intervention setup without loading
+Gemma:
+
+```bash
+fisher-graph-gemma-exact-edge-sidecar-setup --check
+```
+
+The first edge-only run completed:
+
+```bash
+fisher-graph-gemma-exact-edge-sidecar-dev \
+  --output .local-runs/google--gemma-3-270m/exact-edge-sidecar-v1.json
+```
+
+Its real-edge arm must beat zero, row-shuffled, family-shuffled, and
+provenance-permuted controls on disjoint predictive rows, then survive separate
+JVP and finite-intervention checks. The frozen B predictive gate failed: 34
+selected edges achieved only about `0.18%` aggregate held-out gain, so C was
+correctly skipped and no graph-edge claim was authorized. Any future
+compression experiment remains a separate rung.
+
+#### Exact causal carrier-transport result
 
 The causal carrier-transport rung unifies the exact residual identity,
 attention routing, and MLP mutation under one live message abstraction. Each of

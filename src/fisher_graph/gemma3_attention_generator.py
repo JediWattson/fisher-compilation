@@ -46,6 +46,10 @@ from .structured_transformer_layer_executor import (
 
 __all__ = [
     "ATTENTION_GENERATOR_KINDS",
+    "ATTENTION_ROUTE_PROBABILITY_SIMPLEX_FORMULA_ID",
+    "ATTENTION_ROUTE_PROBABILITY_SIMPLEX_MAX_SUPPORT",
+    "ATTENTION_ROUTE_PROBABILITY_SIMPLEX_SUPPORT_DERIVATION_ID",
+    "AttentionRouteProbabilitySimplexAudit",
     "AttentionCoordinatePacket",
     "Gemma3AttentionGenerator",
     "Gemma3AttentionGeneratorConfig",
@@ -53,13 +57,17 @@ __all__ = [
     "Gemma3AttentionGeneratorLogicalAccounting",
     "Gemma3AttentionGeneratorParameterAccounting",
     "Gemma3AttentionGeneratorReceipt",
+    "Gemma3AttentionRouteFactorSnapshot",
     "ExactAttentionGeneratorCoefficients",
     "ReducedAttentionGeneratorCoefficients",
     "compile_exact_attention_generator",
     "compile_exact_attention_generator_from_structured_executor",
     "compile_reduced_attention_generator",
     "compile_svd_reduced_attention_generator",
+    "derive_attention_route_allowed_mask",
+    "attention_route_probability_simplex_forward_error_bound",
     "transport_attention_coordinates",
+    "validate_attention_route_probability_simplex",
 ]
 
 
@@ -71,6 +79,21 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CONFIG_HASH_DOMAIN = b"fisher_graph:gemma3-attention-config:v1\0"
 _ARTIFACT_HASH_DOMAIN = b"fisher_graph:gemma3-attention-artifact:v1\0"
 _COORDINATE_HASH_DOMAIN = b"fisher_graph:gemma3-attention-coordinate:v1\0"
+_ROUTE_FACTOR_HASH_DOMAIN = b"fisher_graph:gemma3-attention-route-factor:v1\0"
+_ROUTE_SIMPLEX_AUDIT_HASH_DOMAIN = (
+    b"fisher_graph:gemma3-attention-route-simplex-audit:v1\0"
+)
+ATTENTION_ROUTE_PROBABILITY_SIMPLEX_FORMULA_ID = (
+    "float32_softmax_simplex."
+    "gamma32_support_plus_2_gamma64_audit_plus_ftz.v1"
+)
+ATTENTION_ROUTE_PROBABILITY_SIMPLEX_SUPPORT_DERIVATION_ID = (
+    "query_key_valid_masks_logical_causal_optional_strict_window.v1"
+)
+ATTENTION_ROUTE_PROBABILITY_SIMPLEX_MAX_SUPPORT = 768
+_FLOAT32_UNIT_ROUNDOFF = 2.0**-24
+_FLOAT64_UNIT_ROUNDOFF = 2.0**-53
+_FLOAT32_MIN_NORMAL = 2.0**-126
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -85,6 +108,289 @@ def _canonical_json_bytes(value: object) -> bytes:
 
 def _json_sha256(domain: bytes, value: object) -> str:
     return hashlib.sha256(domain + _canonical_json_bytes(value)).hexdigest()
+
+
+def attention_route_probability_simplex_forward_error_bound(
+    support_count: int,
+) -> float:
+    """Return the frozen forward-error bound for one stored f32 softmax row.
+
+    The native CPU kernel stores float32 probabilities after a float32
+    reduction, reciprocal, and multiply.  The audit then sums those exact
+    stored bytes in float64.  For support ``k`` the bound is
+
+    ``gamma32(k+2) + gamma64(k-1)*(1+gamma32(k+2)) + k*2^-126``.
+
+    The final term is deliberately the float32 minimum *normal*, not the
+    minimum subnormal, so the contract remains safe under flush-to-zero.
+    """
+
+    if (
+        type(support_count) is not int
+        or support_count < 1
+        or support_count > ATTENTION_ROUTE_PROBABILITY_SIMPLEX_MAX_SUPPORT
+    ):
+        raise ValueError(
+            "support_count must be an integer in [1, 768]"
+        )
+    gamma32_numerator = (support_count + 2) * _FLOAT32_UNIT_ROUNDOFF
+    gamma32 = gamma32_numerator / (1.0 - gamma32_numerator)
+    gamma64_numerator = (support_count - 1) * _FLOAT64_UNIT_ROUNDOFF
+    gamma64 = gamma64_numerator / (1.0 - gamma64_numerator)
+    return (
+        gamma32
+        + gamma64 * (1.0 + gamma32)
+        + support_count * _FLOAT32_MIN_NORMAL
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class AttentionRouteProbabilitySimplexAudit:
+    formula_id: str
+    source_softmax_dtype: str
+    source_softmax_device: str
+    audit_accumulation_dtype: str
+    valid_row_count: int
+    support_minimum: int
+    support_maximum: int
+    maximum_absolute_mass_residual: float
+    maximum_forward_error_bound: float
+    minimum_error_margin: float
+
+    def __post_init__(self) -> None:
+        if self.formula_id != ATTENTION_ROUTE_PROBABILITY_SIMPLEX_FORMULA_ID:
+            raise ValueError("probability simplex formula_id drifted")
+        if self.source_softmax_dtype != "torch.float32":
+            raise ValueError("source_softmax_dtype must be torch.float32")
+        if self.source_softmax_device != "cpu":
+            raise ValueError("source_softmax_device must be cpu")
+        if self.audit_accumulation_dtype != "torch.float64":
+            raise ValueError("audit_accumulation_dtype must be torch.float64")
+        if type(self.valid_row_count) is not int or self.valid_row_count <= 0:
+            raise ValueError("valid_row_count must be positive")
+        if (
+            type(self.support_minimum) is not int
+            or type(self.support_maximum) is not int
+            or self.support_minimum < 1
+            or self.support_maximum < self.support_minimum
+            or self.support_maximum
+            > ATTENTION_ROUTE_PROBABILITY_SIMPLEX_MAX_SUPPORT
+        ):
+            raise ValueError("simplex audit support bounds are invalid")
+        for label, value in (
+            (
+                "maximum_absolute_mass_residual",
+                self.maximum_absolute_mass_residual,
+            ),
+            ("maximum_forward_error_bound", self.maximum_forward_error_bound),
+            ("minimum_error_margin", self.minimum_error_margin),
+        ):
+            if not isinstance(value, float) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{label} must be finite and nonnegative")
+        if (
+            self.maximum_absolute_mass_residual
+            > self.maximum_forward_error_bound
+        ):
+            raise ValueError("simplex audit residual exceeds its bound")
+        minimum_support_bound = (
+            attention_route_probability_simplex_forward_error_bound(
+                self.support_minimum
+            )
+        )
+        if self.minimum_error_margin > minimum_support_bound:
+            raise ValueError(
+                "simplex audit error margin exceeds its minimum-support bound"
+            )
+        extrema_sum = (
+            self.maximum_absolute_mass_residual + self.minimum_error_margin
+        )
+        if not minimum_support_bound <= extrema_sum <= (
+            self.maximum_forward_error_bound
+        ):
+            raise ValueError(
+                "simplex audit extrema cannot arise from the support inventory"
+            )
+        expected_maximum_bound = (
+            attention_route_probability_simplex_forward_error_bound(
+                self.support_maximum
+            )
+        )
+        if self.maximum_forward_error_bound != expected_maximum_bound:
+            raise ValueError(
+                "maximum_forward_error_bound does not close to the frozen "
+                "formula"
+            )
+
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "formula_id": self.formula_id,
+            "source_softmax_dtype": self.source_softmax_dtype,
+            "source_softmax_device": self.source_softmax_device,
+            "audit_accumulation_dtype": self.audit_accumulation_dtype,
+            "valid_row_count": self.valid_row_count,
+            "support_minimum": self.support_minimum,
+            "support_maximum": self.support_maximum,
+            "maximum_absolute_mass_residual": (
+                self.maximum_absolute_mass_residual
+            ),
+            "maximum_forward_error_bound": self.maximum_forward_error_bound,
+            "minimum_error_margin": self.minimum_error_margin,
+        }
+
+    @property
+    def sha256(self) -> str:
+        return _json_sha256(
+            _ROUTE_SIMPLEX_AUDIT_HASH_DOMAIN,
+            self.state_dict(),
+        )
+
+
+def derive_attention_route_allowed_mask(
+    *,
+    query_valid_mask: Tensor,
+    key_valid_mask: Tensor,
+    query_logical_positions: Tensor,
+    key_logical_positions: Tensor,
+    window_size: int | None,
+) -> Tensor:
+    """Derive the authenticated causal route support from masks/positions."""
+
+    for label, value in (
+        ("query_valid_mask", query_valid_mask),
+        ("key_valid_mask", key_valid_mask),
+    ):
+        if (
+            not isinstance(value, Tensor)
+            or value.ndim != 2
+            or value.dtype != torch.bool
+        ):
+            raise ValueError(f"{label} must be a bool matrix")
+    for label, value in (
+        ("query_logical_positions", query_logical_positions),
+        ("key_logical_positions", key_logical_positions),
+    ):
+        if (
+            not isinstance(value, Tensor)
+            or value.ndim != 2
+            or value.dtype not in (torch.int32, torch.int64)
+        ):
+            raise ValueError(f"{label} must be an integer matrix")
+    if (
+        query_valid_mask.shape != query_logical_positions.shape
+        or key_valid_mask.shape != key_logical_positions.shape
+        or query_valid_mask.shape[0] != key_valid_mask.shape[0]
+    ):
+        raise ValueError("route masks and logical positions do not align")
+    devices = {
+        query_valid_mask.device,
+        key_valid_mask.device,
+        query_logical_positions.device,
+        key_logical_positions.device,
+    }
+    if len(devices) != 1:
+        raise ValueError("route masks and logical positions must share a device")
+    if window_size is not None and (
+        type(window_size) is not int or window_size <= 0
+    ):
+        raise ValueError("window_size must be positive when present")
+    allowed = (
+        query_valid_mask[:, :, None]
+        & key_valid_mask[:, None, :]
+        & (
+            key_logical_positions[:, None, :]
+            <= query_logical_positions[:, :, None]
+        )
+    )
+    if window_size is not None:
+        allowed &= (
+            key_logical_positions[:, None, :]
+            > query_logical_positions[:, :, None] - window_size
+        )
+    return allowed
+
+
+def validate_attention_route_probability_simplex(
+    probabilities: Tensor,
+    *,
+    allowed_mask: Tensor,
+    valid_row_mask: Tensor,
+) -> AttentionRouteProbabilitySimplexAudit:
+    """Validate exact stored float32 route probabilities without renormalizing."""
+
+    if (
+        not isinstance(probabilities, Tensor)
+        or probabilities.ndim < 2
+        or probabilities.dtype != torch.float32
+        or probabilities.device.type != "cpu"
+        or probabilities.requires_grad
+        or not bool(torch.isfinite(probabilities).all())
+    ):
+        raise ValueError(
+            "route probabilities must be finite detached CPU torch.float32"
+        )
+    if (
+        not isinstance(allowed_mask, Tensor)
+        or allowed_mask.dtype != torch.bool
+        or allowed_mask.shape != probabilities.shape
+        or allowed_mask.device != probabilities.device
+    ):
+        raise ValueError("allowed_mask must be a bool tensor matching probabilities")
+    if (
+        not isinstance(valid_row_mask, Tensor)
+        or valid_row_mask.dtype != torch.bool
+        or valid_row_mask.shape != probabilities.shape[:-1]
+        or valid_row_mask.device != probabilities.device
+    ):
+        raise ValueError("valid_row_mask must match probability rows")
+    if bool(((probabilities < 0) | (probabilities > 1)).any()):
+        raise ValueError("route probabilities must lie in [0, 1]")
+    if bool((probabilities.masked_select(~allowed_mask) != 0).any()):
+        raise ValueError("masked route probabilities must be exactly zero")
+    support_counts = allowed_mask.sum(dim=-1)
+    if bool((support_counts[valid_row_mask] < 1).any()):
+        raise ValueError("valid route rows must have positive support")
+    if bool(
+        (
+            support_counts[valid_row_mask]
+            > ATTENTION_ROUTE_PROBABILITY_SIMPLEX_MAX_SUPPORT
+        ).any()
+    ):
+        raise ValueError("valid route support exceeds the frozen maximum")
+    if bool((support_counts[~valid_row_mask] != 0).any()):
+        raise ValueError("invalid route rows must have zero support")
+    if bool((probabilities[~valid_row_mask] != 0).any()):
+        raise ValueError("invalid route probabilities must be exactly zero")
+    if not bool(valid_row_mask.any()):
+        raise ValueError("probability simplex audit requires a valid route row")
+    support = support_counts[valid_row_mask].to(torch.float64)
+    gamma32_numerator = (support + 2.0) * _FLOAT32_UNIT_ROUNDOFF
+    gamma32 = gamma32_numerator / (1.0 - gamma32_numerator)
+    gamma64_numerator = (support - 1.0) * _FLOAT64_UNIT_ROUNDOFF
+    gamma64 = gamma64_numerator / (1.0 - gamma64_numerator)
+    bounds = (
+        gamma32
+        + gamma64 * (1.0 + gamma32)
+        + support * _FLOAT32_MIN_NORMAL
+    )
+    masses = probabilities.to(torch.float64).sum(dim=-1)[valid_row_mask]
+    residuals = (masses - 1.0).abs()
+    if bool((residuals > bounds).any()):
+        raise ValueError(
+            "valid route probabilities exceed the frozen simplex error bound"
+        )
+    margins = bounds - residuals
+    return AttentionRouteProbabilitySimplexAudit(
+        formula_id=ATTENTION_ROUTE_PROBABILITY_SIMPLEX_FORMULA_ID,
+        source_softmax_dtype="torch.float32",
+        source_softmax_device="cpu",
+        audit_accumulation_dtype="torch.float64",
+        valid_row_count=int(valid_row_mask.sum()),
+        support_minimum=int(support.min()),
+        support_maximum=int(support.max()),
+        maximum_absolute_mass_residual=float(residuals.max()),
+        maximum_forward_error_bound=float(bounds.max()),
+        minimum_error_margin=float(margins.min()),
+    )
 
 
 def _require_sha256(value: object, *, label: str) -> str:
@@ -140,6 +446,12 @@ def _tensor_payload(value: Tensor) -> bytes:
             canonical.view(torch.uint8).numpy().tobytes(order="C"),
         )
     )
+
+
+def _tensor_sha256(value: Tensor) -> str:
+    return hashlib.sha256(
+        _ROUTE_FACTOR_HASH_DOMAIN + _tensor_payload(value)
+    ).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,6 +691,294 @@ class Gemma3AttentionGeneratorReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class Gemma3AttentionRouteFactorSnapshot:
+    """Detached exact factors for scale-safe native-route aggregation.
+
+    The snapshot keeps the factorization ``P`` and repeated ``V`` rather than
+    materializing one residual-width vector for every ``(q, head, k)`` route.
+    It is deliberately an execution sidecar: all tensors are detached CPU
+    clones, and its digest binds the exact attention artifact and context.
+    """
+
+    invocation_id: str
+    generator_kind: str
+    attention_kind: str
+    config_sha256: str
+    artifact_sha256: str
+    probabilities: Tensor
+    repeated_values: Tensor
+    output_projection_weight: Tensor
+    query_valid_mask: Tensor
+    key_valid_mask: Tensor
+    query_logical_positions: Tensor
+    key_logical_positions: Tensor
+    query_head_count: int
+    key_value_head_count: int
+    head_dimension: int
+    window_size: int | None
+    rope_theta: float
+    rope_scaling_kind: str
+    rope_scaling_factor: float | None
+    output_projection_bias_present: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.invocation_id, str) or not self.invocation_id:
+            raise ValueError("route-factor invocation_id must be nonempty")
+        if self.generator_kind != "exact_full_rank":
+            raise ValueError("route-factor snapshots require exact attention")
+        if self.attention_kind not in {"global_causal", "sliding_causal"}:
+            raise ValueError("route-factor attention_kind is invalid")
+        if type(self.output_projection_bias_present) is not bool:
+            raise TypeError("output_projection_bias_present must be bool")
+        if self.output_projection_bias_present:
+            raise ValueError(
+                "factorized attention routes require a bias-free O projection"
+            )
+        _require_sha256(self.config_sha256, label="config_sha256")
+        _require_sha256(self.artifact_sha256, label="artifact_sha256")
+        if (
+            not isinstance(self.probabilities, Tensor)
+            or self.probabilities.dtype != torch.float32
+            or self.probabilities.device.type != "cpu"
+        ):
+            raise ValueError(
+                "source route probabilities must be CPU torch.float32"
+            )
+        tensors: dict[str, Tensor] = {}
+        for label, value, ndim in (
+            ("probabilities", self.probabilities, 4),
+            ("repeated_values", self.repeated_values, 4),
+            ("output_projection_weight", self.output_projection_weight, 2),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or value.ndim != ndim
+                or not value.is_floating_point()
+                or value.requires_grad
+                or not bool(torch.isfinite(value).all())
+            ):
+                raise ValueError(
+                    f"{label} must be a finite detached rank-{ndim} tensor"
+                )
+            tensors[label] = value.detach().to(
+                device="cpu",
+                copy=True,
+            ).contiguous()
+        masks: dict[str, Tensor] = {}
+        positions: dict[str, Tensor] = {}
+        for label, value in (
+            ("query_valid_mask", self.query_valid_mask),
+            ("key_valid_mask", self.key_valid_mask),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or value.ndim != 2
+                or value.dtype != torch.bool
+                or value.requires_grad
+            ):
+                raise ValueError(f"{label} must be a detached bool matrix")
+            masks[label] = value.detach().to(
+                device="cpu",
+                copy=True,
+            ).contiguous()
+        for label, value in (
+            ("query_logical_positions", self.query_logical_positions),
+            ("key_logical_positions", self.key_logical_positions),
+        ):
+            if (
+                not isinstance(value, Tensor)
+                or value.ndim != 2
+                or value.dtype not in (torch.int32, torch.int64)
+                or value.requires_grad
+            ):
+                raise ValueError(
+                    f"{label} must be a detached integer matrix"
+                )
+            positions[label] = value.detach().to(
+                device="cpu",
+                dtype=torch.int64,
+                copy=True,
+            ).contiguous()
+        probabilities = tensors["probabilities"]
+        repeated = tensors["repeated_values"]
+        output_weight = tensors["output_projection_weight"]
+        query_mask = masks["query_valid_mask"]
+        key_mask = masks["key_valid_mask"]
+        query_positions = positions["query_logical_positions"]
+        key_positions = positions["key_logical_positions"]
+        for label, value in (
+            ("query_head_count", self.query_head_count),
+            ("key_value_head_count", self.key_value_head_count),
+            ("head_dimension", self.head_dimension),
+        ):
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{label} must be positive")
+        if self.query_head_count % self.key_value_head_count:
+            raise ValueError("query heads must be divisible by key/value heads")
+        batch, heads, query_width, key_width = probabilities.shape
+        if (
+            heads != self.query_head_count
+            or repeated.shape
+            != (batch, heads, key_width, self.head_dimension)
+            or output_weight.shape[1]
+            != self.query_head_count * self.head_dimension
+            or query_mask.shape != (batch, query_width)
+            or key_mask.shape != (batch, key_width)
+            or query_positions.shape != query_mask.shape
+            or key_positions.shape != key_mask.shape
+        ):
+            raise ValueError("route-factor tensor shapes do not close")
+        allowed = derive_attention_route_allowed_mask(
+            query_valid_mask=query_mask,
+            key_valid_mask=key_mask,
+            query_logical_positions=query_positions,
+            key_logical_positions=key_positions,
+            window_size=self.window_size,
+        )
+        if (
+            self.attention_kind == "global_causal"
+            and self.window_size is not None
+        ):
+            raise ValueError("global attention cannot carry a sliding window")
+        if (
+            self.attention_kind == "sliding_causal"
+            and self.window_size is None
+        ):
+            raise ValueError("sliding attention requires a window")
+        validate_attention_route_probability_simplex(
+            probabilities,
+            allowed_mask=allowed[:, None, :, :].expand_as(probabilities),
+            valid_row_mask=query_mask[:, None, :].expand(
+                batch,
+                heads,
+                query_width,
+            ),
+        )
+        if not math.isfinite(self.rope_theta) or self.rope_theta <= 0:
+            raise ValueError("rope_theta must be finite and positive")
+        if self.rope_scaling_kind not in {"none", "linear"}:
+            raise ValueError("rope_scaling_kind is unsupported")
+        if self.rope_scaling_kind == "linear":
+            if (
+                self.rope_scaling_factor is None
+                or not math.isfinite(self.rope_scaling_factor)
+                or self.rope_scaling_factor <= 0
+            ):
+                raise ValueError("linear RoPE requires a positive scaling factor")
+        elif self.rope_scaling_factor is not None:
+            raise ValueError("unscaled RoPE cannot carry a scaling factor")
+        for label, value in tensors.items():
+            object.__setattr__(self, label, value)
+        for label, value in masks.items():
+            object.__setattr__(self, label, value)
+        for label, value in positions.items():
+            object.__setattr__(self, label, value)
+
+    @property
+    def tensor_sha256s(self) -> dict[str, str]:
+        return {
+            "key_logical_positions": _tensor_sha256(
+                self.key_logical_positions
+            ),
+            "key_valid_mask": _tensor_sha256(self.key_valid_mask),
+            "output_projection_weight": _tensor_sha256(
+                self.output_projection_weight
+            ),
+            "probabilities": _tensor_sha256(self.probabilities),
+            "query_logical_positions": _tensor_sha256(
+                self.query_logical_positions
+            ),
+            "query_valid_mask": _tensor_sha256(self.query_valid_mask),
+            "repeated_values": _tensor_sha256(self.repeated_values),
+        }
+
+    @property
+    def probability_simplex_audit(
+        self,
+    ) -> AttentionRouteProbabilitySimplexAudit:
+        allowed = derive_attention_route_allowed_mask(
+            query_valid_mask=self.query_valid_mask,
+            key_valid_mask=self.key_valid_mask,
+            query_logical_positions=self.query_logical_positions,
+            key_logical_positions=self.key_logical_positions,
+            window_size=self.window_size,
+        )
+        batch, heads, query_width, _ = self.probabilities.shape
+        return validate_attention_route_probability_simplex(
+            self.probabilities,
+            allowed_mask=allowed[:, None, :, :].expand_as(
+                self.probabilities
+            ),
+            valid_row_mask=self.query_valid_mask[:, None, :].expand(
+                batch,
+                heads,
+                query_width,
+            ),
+        )
+
+    @property
+    def sha256(self) -> str:
+        simplex_audit = self.probability_simplex_audit
+        return _json_sha256(
+            _ROUTE_FACTOR_HASH_DOMAIN,
+            {
+                "artifact_sha256": self.artifact_sha256,
+                "attention_kind": self.attention_kind,
+                "config_sha256": self.config_sha256,
+                "factorization": "probability_times_repeated_value_then_O_head_slice",
+                "head_dimension": self.head_dimension,
+                "invocation_id": self.invocation_id,
+                "key_value_head_count": self.key_value_head_count,
+                "output_projection_bias_present": (
+                    self.output_projection_bias_present
+                ),
+                "query_head_count": self.query_head_count,
+                "probability_simplex_audit_sha256": simplex_audit.sha256,
+                "probability_simplex_formula_id": (
+                    ATTENTION_ROUTE_PROBABILITY_SIMPLEX_FORMULA_ID
+                ),
+                "probability_simplex_support_derivation_id": (
+                    ATTENTION_ROUTE_PROBABILITY_SIMPLEX_SUPPORT_DERIVATION_ID
+                ),
+                "rope_scaling_factor": self.rope_scaling_factor,
+                "rope_scaling_kind": self.rope_scaling_kind,
+                "rope_theta": float(self.rope_theta),
+                "tensor_sha256s": self.tensor_sha256s,
+                "window_size": self.window_size,
+            },
+        )
+
+    def metadata(self) -> dict[str, object]:
+        simplex_audit = self.probability_simplex_audit
+        return {
+            "snapshot_sha256": self.sha256,
+            "invocation_id": self.invocation_id,
+            "generator_kind": self.generator_kind,
+            "attention_kind": self.attention_kind,
+            "config_sha256": self.config_sha256,
+            "artifact_sha256": self.artifact_sha256,
+            "query_head_count": self.query_head_count,
+            "key_value_head_count": self.key_value_head_count,
+            "head_dimension": self.head_dimension,
+            "output_projection_bias_present": (
+                self.output_projection_bias_present
+            ),
+            "window_size": self.window_size,
+            "rope_theta": float(self.rope_theta),
+            "rope_scaling_kind": self.rope_scaling_kind,
+            "rope_scaling_factor": self.rope_scaling_factor,
+            "tensor_sha256s": self.tensor_sha256s,
+            "probability_simplex_audit": simplex_audit.state_dict(),
+            "probability_simplex_audit_sha256": simplex_audit.sha256,
+            "probability_shape": list(self.probabilities.shape),
+            "repeated_value_shape": list(self.repeated_values.shape),
+            "full_route_vectors_materialized": False,
+            "contains_token_ids": False,
+            "contains_prompt_text": False,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Gemma3AttentionGeneratorExecution:
     normalized_input: Tensor | None
     input_coordinates: AttentionCoordinatePacket
@@ -386,6 +986,7 @@ class Gemma3AttentionGeneratorExecution:
     operator_output: Tensor
     residual_delta: Tensor
     receipt: Gemma3AttentionGeneratorReceipt
+    route_factor_snapshot: Gemma3AttentionRouteFactorSnapshot | None = None
 
     @property
     def delta(self) -> Tensor:
@@ -749,6 +1350,10 @@ class Gemma3AttentionGenerator(nn.Module):
         return 0
 
     @property
+    def supports_route_factor_capture(self) -> bool:
+        return self.generator_kind == "exact_full_rank"
+
+    @property
     def artifact_sha256(self) -> str:
         digest = hashlib.sha256()
         digest.update(_ARTIFACT_HASH_DOMAIN)
@@ -1018,7 +1623,18 @@ class Gemma3AttentionGenerator(nn.Module):
         sequence: SequenceContext,
         *,
         normalized_input: Tensor | None,
+        capture_route_factors: bool = False,
     ) -> Gemma3AttentionGeneratorExecution:
+        if type(capture_route_factors) is not bool:
+            raise TypeError("capture_route_factors must be bool")
+        if capture_route_factors and self.generator_kind != "exact_full_rank":
+            raise ValueError(
+                "route-factor snapshots are available only on exact attention"
+            )
+        if capture_route_factors and self.o_bias is not None:
+            raise ValueError(
+                "factorized route capture requires a bias-free O projection"
+            )
         self._validate_input_packet(packet, sequence)
         attention = self.config.attention
         batch = sequence.batch_size
@@ -1086,11 +1702,16 @@ class Gemma3AttentionGenerator(nn.Module):
             ~allowed.unsqueeze(1),
             torch.finfo(scores.dtype).min,
         )
-        probabilities = F.softmax(
+        native_float32_probabilities = F.softmax(
             scores,
             dim=-1,
             dtype=torch.float32,
-        ).to(dtype=query.dtype)
+        )
+        probabilities = native_float32_probabilities.to(dtype=query.dtype)
+        route_probabilities = native_float32_probabilities.masked_fill(
+            ~allowed.unsqueeze(1),
+            0,
+        )
         context = torch.matmul(probabilities, repeated_value)
         context = context.transpose(1, 2).contiguous().view(
             batch,
@@ -1131,6 +1752,58 @@ class Gemma3AttentionGenerator(nn.Module):
             source_invocation_id=self.config.invocation_id,
         )
         pair_count = int(allowed.sum().item())
+        route_factor_snapshot = None
+        if capture_route_factors:
+            if native_float32_probabilities.device.type != "cpu":
+                raise ValueError(
+                    "route-factor capture requires the frozen CPU softmax"
+                )
+            authenticated_allowed = derive_attention_route_allowed_mask(
+                query_valid_mask=sequence.query_valid_mask,
+                key_valid_mask=sequence.key_valid_mask,
+                query_logical_positions=sequence.logical_positions,
+                key_logical_positions=sequence.key_logical_positions,
+                window_size=attention.window_size,
+            )
+            if not torch.equal(authenticated_allowed, allowed):
+                raise ValueError(
+                    "native dense attention support disagrees with the "
+                    "authenticated logical route support"
+                )
+            rope = attention.rope
+            assert rope is not None and rope.theta is not None
+            route_factor_snapshot = Gemma3AttentionRouteFactorSnapshot(
+                invocation_id=self.config.invocation_id,
+                generator_kind=self.generator_kind,
+                attention_kind=attention.kind,
+                config_sha256=self.config.config_sha256,
+                artifact_sha256=self.artifact_sha256,
+                probabilities=route_probabilities.detach(),
+                repeated_values=repeated_value.detach(),
+                output_projection_weight=(
+                    self.output_decoder_weight.detach()
+                ),
+                query_valid_mask=sequence.query_valid_mask.detach(),
+                key_valid_mask=sequence.key_valid_mask.detach(),
+                query_logical_positions=(
+                    sequence.logical_positions.detach()
+                ),
+                key_logical_positions=(
+                    sequence.key_logical_positions.detach()
+                ),
+                query_head_count=attention.query_heads,
+                key_value_head_count=attention.key_value_heads,
+                head_dimension=head_dimension,
+                window_size=attention.window_size,
+                rope_theta=float(rope.theta),
+                rope_scaling_kind=(
+                    "none"
+                    if rope.scaling_kind is None
+                    else rope.scaling_kind
+                ),
+                rope_scaling_factor=rope.scaling_factor,
+                output_projection_bias_present=self.o_bias is not None,
+            )
         return Gemma3AttentionGeneratorExecution(
             normalized_input=normalized_input,
             input_coordinates=packet,
@@ -1147,17 +1820,21 @@ class Gemma3AttentionGenerator(nn.Module):
                 source_projection_call_count=0,
                 source_fallback_call_count=0,
             ),
+            route_factor_snapshot=route_factor_snapshot,
         )
 
     def forward_from_coordinates(
         self,
         packet: AttentionCoordinatePacket,
         sequence: SequenceContext,
+        *,
+        capture_route_factors: bool = False,
     ) -> Gemma3AttentionGeneratorExecution:
         return self._execute_coordinates(
             packet,
             sequence,
             normalized_input=None,
+            capture_route_factors=capture_route_factors,
         )
 
     def execute_with_incoming(
@@ -1167,6 +1844,7 @@ class Gemma3AttentionGenerator(nn.Module):
         incoming_generator_latents: Tensor,
         *,
         normalized_input_perturbation: Tensor | None = None,
+        capture_route_factors: bool = False,
     ) -> Gemma3AttentionGeneratorExecution:
         """Execute after adding sparse cross-block messages to the input chart.
 
@@ -1239,18 +1917,22 @@ class Gemma3AttentionGenerator(nn.Module):
             transported,
             sequence,
             normalized_input=normalized,
+            capture_route_factors=capture_route_factors,
         )
 
     def forward(
         self,
         residual_state: Tensor,
         sequence: SequenceContext,
+        *,
+        capture_route_factors: bool = False,
     ) -> Gemma3AttentionGeneratorExecution:
         normalized, packet = self.encode_input(residual_state, sequence)
         return self._execute_coordinates(
             packet,
             sequence,
             normalized_input=normalized,
+            capture_route_factors=capture_route_factors,
         )
 
     def forward_delta(

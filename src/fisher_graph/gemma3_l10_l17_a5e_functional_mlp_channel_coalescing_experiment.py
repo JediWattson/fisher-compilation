@@ -427,14 +427,28 @@ def _tokenize_batches(
 def _capture_fisher_rows(
     adapter: Gemma3CausalLMAdapter,
     batches: Sequence[Mapping[str, Tensor]],
+    *,
+    target_layers: Sequence[int] = TARGET_LAYERS,
 ) -> dict[int, _LayerCapture]:
+    layer_ordinals = tuple(target_layers)
+    if (
+        not layer_ordinals
+        or len(set(layer_ordinals)) != len(layer_ordinals)
+        or any(
+            type(ordinal) is not int
+            or ordinal < 0
+            or ordinal >= len(adapter.layers)
+            for ordinal in layer_ordinals
+        )
+    ):
+        raise ValueError("capture target layers are invalid")
     rows: dict[int, dict[str, list[Tensor]]] = {
         ordinal: {"inputs": [], "features": [], "score_gradients": []}
-        for ordinal in TARGET_LAYERS
+        for ordinal in layer_ordinals
     }
     source_mlps = {
         ordinal: adapter.source_module(adapter.layers[ordinal].id).mlp
-        for ordinal in TARGET_LAYERS
+        for ordinal in layer_ordinals
     }
     for batch in batches:
         current_inputs: dict[int, Tensor] = {}
@@ -470,7 +484,7 @@ def _capture_fisher_rows(
             loss = F.cross_entropy(logits[valid], labels[valid], reduction="sum")
             loss.backward()
             token_mask = batch["attention_mask"].bool()
-            for ordinal in TARGET_LAYERS:
+            for ordinal in layer_ordinals:
                 inputs = current_inputs[ordinal]
                 features = current_features[ordinal]
                 gradients = features.grad

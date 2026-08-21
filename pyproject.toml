@@ -139,10 +139,18 @@ fisher-graph-gemma-l3-l4-bilinear-spectral-dev = "fisher_graph.gemma3_l3_l4_bili
 fisher-graph-gemma-l3-l4-reference-provider-dev = "fisher_graph.gemma3_l3_l4_reference_provider_experiment:main"
 fisher-graph-gemma-l3-l4-attenuation-localization-dev = "fisher_graph.gemma3_l3_l4_attenuation_localization_experiment:main"
 fisher-graph-gemma-l10-l17-a5e-coalescing-dev = "fisher_graph.gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment:main"
+fisher-graph-gemma-full-model-mode-graph-dev = "fisher_graph.gemma3_full_model_all_mode_generator_graph_experiment:main"
+fisher-graph-gemma-cross-layer-chart-transport-setup = "fisher_graph.gemma3_cross_layer_chart_transport_experiment:main"
+fisher-graph-gemma-cross-layer-chart-transport-dev = "fisher_graph.gemma3_cross_layer_chart_transport_model_experiment:main"
 fisher-graph-gemma-one-block-residual-dev = "fisher_graph.gemma3_one_block_residual_form_experiment:main"
 fisher-graph-gemma-full-body-residual-carrier-dev = "fisher_graph.gemma3_full_body_residual_carrier_experiment:main"
 fisher-graph-gemma-layer-agnostic-compression-setup = "fisher_graph_layer_agnostic_compression_setup:main"
 fisher-graph-gemma-layer-agnostic-compression-worker = "fisher_graph.gemma3_layer_agnostic_whole_model_compression_worker:main"
+fisher-graph-gemma-fisher-activation-chart-setup = "fisher_graph_fisher_activation_chart_setup:main"
+fisher-graph-gemma-fisher-activation-chart-worker = "fisher_graph.gemma3_fisher_activation_chart_whole_model_experiment:main"
+fisher-graph-gemma-joint-cross-block-whole-model-dev = "fisher_graph.gemma3_joint_cross_block_whole_model_experiment:main"
+fisher-graph-gemma-exact-edge-sidecar-setup = "fisher_graph_exact_edge_sidecar_setup:main"
+fisher-graph-gemma-exact-edge-sidecar-dev = "fisher_graph.gemma3_exact_edge_sidecar_experiment:main"
 fisher-graph-gemma-causal-carrier-transport-setup = "fisher_graph_causal_carrier_transport_setup:main"
 fisher-graph-gemma-causal-carrier-transport-dev = "fisher_graph.gemma3_causal_carrier_transport_experiment:main"
 fisher-graph-gemma-l3-l4-frozen-provider-v3 = "fisher_graph.gemma3_l3_l4_frozen_provider_assessment_v3:main"
@@ -186,6 +194,8 @@ where = ["src"]
 [tool.setuptools]
 py-modules = [
   "fisher_graph_layer_agnostic_compression_setup",
+  "fisher_graph_fisher_activation_chart_setup",
+  "fisher_graph_exact_edge_sidecar_setup",
   "fisher_graph_causal_carrier_transport_setup",
 ]
 

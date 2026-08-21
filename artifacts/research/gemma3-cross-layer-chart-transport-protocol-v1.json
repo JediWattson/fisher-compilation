@@ -1,0 +1,220 @@
+{
+  "arms": [
+    {
+      "all_native_layers_executed": true,
+      "arm_id": "native",
+      "compression_credit_allowed": false
+    },
+    {
+      "all_modes_retained": true,
+      "arm_id": "exact_all_mode_graph",
+      "bit_exact_native_equivalence_required": true,
+      "compression_credit_allowed": false,
+      "source_free_runtime": true
+    },
+    {
+      "arm_id": "one_shot_independent_dense_chart_reproduction",
+      "compression_credit_allowed": false,
+      "cross_layer_messages": false,
+      "fit_trajectory": "all_native",
+      "purpose": "reproduce_full_model_v1_failure"
+    },
+    {
+      "arm_id": "progressive_independent_factorized_chart",
+      "compression_credit_allowed": false,
+      "cross_layer_messages": false,
+      "fit_trajectory": "actual_frozen_compiled_prefix",
+      "purpose": "matched_progressive_baseline"
+    },
+    {
+      "arm_id": "progressive_factorized_chart_transport",
+      "compression_credit_allowed": false,
+      "cross_layer_messages": true,
+      "fit_trajectory": "actual_frozen_compiled_prefix",
+      "local_capacity_unchanged": true,
+      "purpose": "dependency_and_fidelity_diagnostic",
+      "transport_scope": "adjacent_layer_same_token_only"
+    },
+    {
+      "arm_id": "budget_matched_factorized_chart_transport",
+      "compression_credit_allowed": false,
+      "cross_layer_messages": true,
+      "fit_trajectory": "actual_frozen_compiled_prefix",
+      "local_generator_rank_reduced": true,
+      "stored_scalars_and_macs_must_not_exceed": "progressive_independent_factorized_chart"
+    },
+    {
+      "arm_id": "transport_zero_edge_control",
+      "compression_credit_allowed": false,
+      "nested_candidate": "progressive_factorized_chart_transport",
+      "transport_weights_zeroed_without_refit": true
+    },
+    {
+      "arm_id": "transport_row_shuffled_negative_control",
+      "compression_credit_allowed": false,
+      "evaluation_rows_never_permuted": true,
+      "fit_only_source_packets_permuted_by_example": true
+    }
+  ],
+  "artifact_role": "preregistered_setup_only",
+  "chart_coordinate_rank": 16,
+  "chart_count": 8,
+  "chart_feature_width": 17,
+  "chart_temperature_ladder": [
+    0.5,
+    1.0,
+    2.0
+  ],
+  "claim_boundary": {
+    "all_modes_retained": true,
+    "compression_requires_budget_matched_guard_pass": true,
+    "compression_success_claimed": false,
+    "deletion_performed": false,
+    "dependency_proven_by_prediction_alone": false,
+    "latency_or_kernel_speed_claimed": false,
+    "merging_performed": false,
+    "transport_plus_unchanged_local_is_accuracy_only": true
+  },
+  "data_firewall": {
+    "assessment_or_test_opened_during_development": false,
+    "development_panel_is_family_disjoint": false,
+    "development_result_may_claim_heldout_confirmation": false,
+    "fit_may_build_charts_factors_and_edge_shortlist": true,
+    "future_fit_selection_guard_families_must_be_disjoint": true,
+    "guard_may_refit_or_select": false,
+    "guard_opened_only_after_full_stack_freeze": true,
+    "selection_may_choose_rank_indegree_ridge_temperature": true
+  },
+  "edge_selection": {
+    "causal_confirmation": "held_direction_jvp_then_finite_displacement",
+    "criterion": "partial_selection_residual_gain_beyond_local_generator",
+    "maximum_source_layer_gap": 1,
+    "raw_cross_layer_correlation_is_sufficient": false,
+    "shortlist_tie_break": "descending_partial_gain_then_source_chart_index",
+    "skip_layer_and_cross_token_edges_deferred": true
+  },
+  "format_version": 1,
+  "frozen_numerics": {
+    "affine_relative_ridge": 0.001,
+    "block_coordinate_sweeps": 8,
+    "chart_geometry_kmeans_iterations": 12,
+    "factorization": "per_chart_canonical_truncated_svd",
+    "global_generator_rank_per_candidate_stack": true,
+    "local_chart_relative_ridge": 0.01,
+    "local_chart_solver": "joint_weighted_ridge_float64",
+    "monotonic_objective_tolerance": "128_times_float64_epsilon_times_max_1_baseline_sse",
+    "row_fisher_clamp": [
+      0.1,
+      10.0
+    ],
+    "transport_solver": "deterministic_block_ridge",
+    "weighted_affine_solver": "dual_ridge_float64"
+  },
+  "generator_message_definition": {
+    "chart_indices_have_cross_layer_identity": false,
+    "emitted_latent": "q_lc_times_(local_latent_plus_incoming_latent)",
+    "local_chart_feature": "q_lc_times_[1,z_lc]",
+    "local_latent": "[1,z_lc]_times_L_lc",
+    "mode_residual": "sum_d_emitted_latent_ld_times_D_ld",
+    "same_token_only": true,
+    "strictly_forward": true,
+    "transport": "emitted_lminus1_c_times_T_lminus1c_to_ld"
+  },
+  "generator_rank_ladder": [
+    2,
+    4,
+    8,
+    16
+  ],
+  "guard_acceptance_thresholds": {
+    "delta_nll_per_token_maximum": 0.1,
+    "family_bootstrap_lower_bound_must_pass": true,
+    "native_to_candidate_kl_per_token_maximum": 0.1,
+    "row_shuffled_gain_fraction_of_real_maximum": 0.25,
+    "top1_agreement_to_native_minimum": 0.9,
+    "transport_gain_over_zero_edge_must_be_positive": true
+  },
+  "hidden_width": 640,
+  "known_capacity_limit": {
+    "affine_base_and_mode_decoder_remain_dense": true,
+    "large_future_gain_requires_base_or_decoder_sharing": true,
+    "transport_can_only_compact_chart_correction_in_v1": true
+  },
+  "layer_count": 18,
+  "maximum_incoming_charts_per_target_ladder": [
+    1,
+    2
+  ],
+  "mode_count": 2048,
+  "model_experiment_executed": false,
+  "model_weights_loaded": false,
+  "pinned_runtime": {
+    "deterministic_seed": 1729,
+    "development_panel_path": "examples/gemma3_downstream_retention_v1.json",
+    "development_panel_sha256": "47d91ae000b4036d7744509bbbfec67aa0bd48bb1e1162fd6efa53974c23e6ff",
+    "device": "cpu",
+    "dtype": "float32",
+    "model_id": "google/gemma-3-270m",
+    "model_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "tokenizer_revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1"
+  },
+  "progressive_fit_order": {
+    "all_native_capture_reuse_for_progressive_fit": false,
+    "capture_rule": "freeze_prefix_0_through_lminus1_then_capture_native_target_l_on_actual_compiled_prefix",
+    "freeze_before_advance": true,
+    "layer_order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "layer_zero_has_incoming_transport": false,
+    "prefix_catalog_sha256_required_per_layer": true,
+    "source_target_row_identity_sha256_must_match": true
+  },
+  "protocol_sha256": "b373f855076c73aceb9fea9adf404a60cf7406718e4b7a3c96dc295b8a64ab5b",
+  "required_metrics": [
+    "modal_state_nrmse",
+    "mlp_output_nrmse_and_cosine",
+    "fisher_weighted_residual",
+    "transport_partial_explained_fraction",
+    "zero_edge_ablation_gain",
+    "row_shuffled_negative_control_gain",
+    "chart_membership_entropy_and_occupancy",
+    "prefix_delta_nll_and_kl_after_each_layer",
+    "full_model_nll_kl_top1_and_logit_nrmse",
+    "worst_family_metrics_and_bootstrap_intervals",
+    "held_direction_jvp_and_finite_displacement"
+  ],
+  "resource_accounting": {
+    "count_affine_base_and_final_mode_decoder": true,
+    "count_chart_centers_bases_scales": true,
+    "count_chart_routing_and_transport_macs": true,
+    "count_local_L_and_D_factors": true,
+    "count_peak_live_packet_bytes": true,
+    "count_sparse_transport_T_edges_and_indices": true,
+    "softmax_non_mac_ops_reported_separately": true,
+    "source_weight_removal_credit_requires_source_free_artifact": true,
+    "theoretical_sparse_and_realized_kernel_costs_separate": true
+  },
+  "schema": "fisher_graph.gemma3_cross_layer_chart_transport.protocol.v1",
+  "transport_ridge_ladder": [
+    0.0001,
+    0.001,
+    0.01
+  ]
+}

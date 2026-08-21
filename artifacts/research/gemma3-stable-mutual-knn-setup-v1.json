@@ -1,0 +1,1476 @@
+{
+  "claim_boundary": {
+    "cluster_claimed": false,
+    "confirmed_neighborhood_edge_claimed": false,
+    "deployment_claimed": false,
+    "fresh_measurement_exists": false,
+    "fresh_panel_exists": false,
+    "generator_family_claimed": false,
+    "long_context_result_claimed": false,
+    "merge_or_compression_claimed": false,
+    "setup_only": true,
+    "stable_neighbor_group_claimed": false
+  },
+  "claim_taxonomy": {
+    "allowed_after_all_gates": {
+      "confirmed_neighborhood_edge": true,
+      "response_geometry_only": true,
+      "stable_neighbor_group_for_maximal_clique": true
+    },
+    "diagnostic_only": {
+      "connected_component": true,
+      "edge_asymmetry_ratio": true,
+      "fresh_non_candidate_mutual_edge": true,
+      "operator_kind_or_depth_enrichment": true
+    },
+    "later_compression_requires_joint_composition_and_quality_experiments": true,
+    "never_authorized_by_this_protocol": {
+      "causal_interchangeability": true,
+      "cluster": true,
+      "compression": true,
+      "deployment": true,
+      "generator_family": true,
+      "merge": true,
+      "native_ABI_interchangeability": true,
+      "parameter_MAC_byte_memory_or_latency_reduction": true
+    }
+  },
+  "confirmation_worker_source": {
+    "path": "src/fisher_graph/gemma3_stable_mutual_knn_confirmation_experiment.py",
+    "sha256": "caf874c060058340e7eebfb95ce2e6266125b5737613fae769ad800b50d8b2a7"
+  },
+  "discovery_candidate_graph": {
+    "all_14_edges_retained_irrespective_of_discovery_stability_or_error_gates": true,
+    "candidate_catalog_hash_payload": "canonical_sorted_JSON_list_of_lexically_canonical_node_ID_pairs_only",
+    "candidate_catalog_sha256": "42de366dd16fbc190a9380822b769f6b085ef1c35382b8dc4522153fbb204e6a",
+    "candidate_edge_count": 14,
+    "candidate_edges": [
+      {
+        "discovery_LOFO_mutual_count": 4,
+        "discovery_LOFO_mutual_frequency": 0.6666666666666666,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.08281651576099282,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.08281651576099282,
+        "discovery_bootstrap_mutual_count": 6315,
+        "discovery_bootstrap_mutual_frequency": 0.6315,
+        "discovery_directed_relative_sse_a_to_b": 0.919377302273929,
+        "discovery_directed_relative_sse_b_to_a": 1.0795040469860981,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 0.9994406746300135,
+        "member_label_a": "mode.mutation.21",
+        "member_label_b": "mode.mutation.19",
+        "node_a_id": "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+        "node_b_id": "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+      },
+      {
+        "discovery_LOFO_mutual_count": 5,
+        "discovery_LOFO_mutual_frequency": 0.8333333333333334,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.0922131140176002,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.0922131140176002,
+        "discovery_bootstrap_mutual_count": 3655,
+        "discovery_bootstrap_mutual_frequency": 0.3655,
+        "discovery_directed_relative_sse_a_to_b": 1.1872690840950557,
+        "discovery_directed_relative_sse_b_to_a": 0.9940735466396614,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.0906713153673586,
+        "member_label_a": "mode.mutation.21",
+        "member_label_b": "mode.mutation.18",
+        "node_a_id": "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+        "node_b_id": "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+      },
+      {
+        "discovery_LOFO_mutual_count": 3,
+        "discovery_LOFO_mutual_frequency": 0.5,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.0506755537486389,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.0506755537486389,
+        "discovery_bootstrap_mutual_count": 2891,
+        "discovery_bootstrap_mutual_frequency": 0.2891,
+        "discovery_directed_relative_sse_a_to_b": 2.0204379994760737,
+        "discovery_directed_relative_sse_b_to_a": 2.259543672958251,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 2.1399908362171622,
+        "member_label_a": "mode.mutation.15",
+        "member_label_b": "mode.mutation.33",
+        "node_a_id": "response_class.030e85671a21944e892509f687eaccb87cae5aa746730248526b43c6138a7a58",
+        "node_b_id": "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16"
+      },
+      {
+        "discovery_LOFO_mutual_count": 5,
+        "discovery_LOFO_mutual_frequency": 0.8333333333333334,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.07295875005645168,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.07295875005645168,
+        "discovery_bootstrap_mutual_count": 7009,
+        "discovery_bootstrap_mutual_frequency": 0.7009,
+        "discovery_directed_relative_sse_a_to_b": 0.9249753224808366,
+        "discovery_directed_relative_sse_b_to_a": 1.0481479930780147,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 0.9865616577794256,
+        "member_label_a": "mode.mutation.17",
+        "member_label_b": "mode.mutation.19",
+        "node_a_id": "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+        "node_b_id": "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+      },
+      {
+        "discovery_LOFO_mutual_count": 2,
+        "discovery_LOFO_mutual_frequency": 0.3333333333333333,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.09058264474727452,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.09058264474727452,
+        "discovery_bootstrap_mutual_count": 4906,
+        "discovery_bootstrap_mutual_frequency": 0.4906,
+        "discovery_directed_relative_sse_a_to_b": 1.3162343890696964,
+        "discovery_directed_relative_sse_b_to_a": 0.9238344454783046,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.1200344172740004,
+        "member_label_a": "mode.mutation.17",
+        "member_label_b": "mode.mutation.7",
+        "node_a_id": "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+        "node_b_id": "response_class.7066d642ba230ebc5813d58e9b3aa409801c50ce3ef84df0896f59b0b97d557d"
+      },
+      {
+        "discovery_LOFO_mutual_count": 2,
+        "discovery_LOFO_mutual_frequency": 0.3333333333333333,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.48867159850937725,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.48867159850937725,
+        "discovery_bootstrap_mutual_count": 5460,
+        "discovery_bootstrap_mutual_frequency": 0.546,
+        "discovery_directed_relative_sse_a_to_b": 2.0410470446508326,
+        "discovery_directed_relative_sse_b_to_a": 0.5208007494963087,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.2809238970735706,
+        "member_label_a": "mode.mutation.8",
+        "member_label_b": "mode.mutation.3",
+        "node_a_id": "response_class.47e7d574473ec0a15e6df58ed83164db0d8edffab014884cb2eb1bbfbd51ae66",
+        "node_b_id": "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+      },
+      {
+        "discovery_LOFO_mutual_count": 5,
+        "discovery_LOFO_mutual_frequency": 0.8333333333333334,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.1021818022967684,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.1021818022967684,
+        "discovery_bootstrap_mutual_count": 7609,
+        "discovery_bootstrap_mutual_frequency": 0.7609,
+        "discovery_directed_relative_sse_a_to_b": 0.5965177367603002,
+        "discovery_directed_relative_sse_b_to_a": 0.31089150795585324,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 0.45370462235807674,
+        "member_label_a": "mode.mutation.9",
+        "member_label_b": "mode.mutation.6",
+        "node_a_id": "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+        "node_b_id": "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38"
+      },
+      {
+        "discovery_LOFO_mutual_count": 3,
+        "discovery_LOFO_mutual_frequency": 0.5,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.05104194502015226,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.05104194502015226,
+        "discovery_bootstrap_mutual_count": 3824,
+        "discovery_bootstrap_mutual_frequency": 0.3824,
+        "discovery_directed_relative_sse_a_to_b": 2.2087261444083683,
+        "discovery_directed_relative_sse_b_to_a": 1.7078389971032042,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.9582825707557863,
+        "member_label_a": "mode.mutation.33",
+        "member_label_b": "mode.mutation.31",
+        "node_a_id": "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16",
+        "node_b_id": "response_class.c85512439f03a85572af0f7d9f5d14310ce5877cd1ad60fe0f5ca5dd4d456fc0"
+      },
+      {
+        "discovery_LOFO_mutual_count": 2,
+        "discovery_LOFO_mutual_frequency": 0.3333333333333333,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.0942355878213215,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.0942355878213215,
+        "discovery_bootstrap_mutual_count": 3956,
+        "discovery_bootstrap_mutual_frequency": 0.3956,
+        "discovery_directed_relative_sse_a_to_b": 0.26593512976754013,
+        "discovery_directed_relative_sse_b_to_a": 0.7769830779612485,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 0.5214591038643943,
+        "member_label_a": "mode.mutation.6",
+        "member_label_b": "mode.mutation.14",
+        "node_a_id": "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38",
+        "node_b_id": "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6"
+      },
+      {
+        "discovery_LOFO_mutual_count": 4,
+        "discovery_LOFO_mutual_frequency": 0.6666666666666666,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.09906232033079143,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.09906232033079143,
+        "discovery_bootstrap_mutual_count": 4400,
+        "discovery_bootstrap_mutual_frequency": 0.44,
+        "discovery_directed_relative_sse_a_to_b": 0.5734112009095815,
+        "discovery_directed_relative_sse_b_to_a": 1.5602031572232216,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.0668071790664015,
+        "member_label_a": "mode.mutation.20",
+        "member_label_b": "mode.mutation.18",
+        "node_a_id": "response_class.7c64262e52b2d919cf223124c320fe352f6c396dbdf299f52b73ee0dacc68bb2",
+        "node_b_id": "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+      },
+      {
+        "discovery_LOFO_mutual_count": 3,
+        "discovery_LOFO_mutual_frequency": 0.5,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.1243398278839728,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.1243398278839728,
+        "discovery_bootstrap_mutual_count": 3070,
+        "discovery_bootstrap_mutual_frequency": 0.307,
+        "discovery_directed_relative_sse_a_to_b": 1.5270843448895015,
+        "discovery_directed_relative_sse_b_to_a": 2.0314815279003757,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.7792829363949387,
+        "member_label_a": "mode.mutation.34",
+        "member_label_b": "mode.mutation.32",
+        "node_a_id": "response_class.86db586a5ac58bb844ad26393c3e853ae42d2c9d5d6a8b3c67e6f697f05f974a",
+        "node_b_id": "response_class.be7aae74b527794d493c67d8718290cda375055e279f72fbe160a0ee25bb8008"
+      },
+      {
+        "discovery_LOFO_mutual_count": 3,
+        "discovery_LOFO_mutual_frequency": 0.5,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.12696489506776978,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.12696489506776978,
+        "discovery_bootstrap_mutual_count": 3368,
+        "discovery_bootstrap_mutual_frequency": 0.3368,
+        "discovery_directed_relative_sse_a_to_b": 2.487732295522701,
+        "discovery_directed_relative_sse_b_to_a": 1.54601714158363,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 2.0168747185531655,
+        "member_label_a": "mode.mutation.26",
+        "member_label_b": "mode.mutation.24",
+        "node_a_id": "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340",
+        "node_b_id": "response_class.c76b0821ec24b40a43fefb422230fafca0e45fb066ac96c282197a71625de2d6"
+      },
+      {
+        "discovery_LOFO_mutual_count": 6,
+        "discovery_LOFO_mutual_frequency": 1.0,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.04821618592346871,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.04821618592346871,
+        "discovery_bootstrap_mutual_count": 9997,
+        "discovery_bootstrap_mutual_frequency": 0.9997,
+        "discovery_directed_relative_sse_a_to_b": 0.23329272610883367,
+        "discovery_directed_relative_sse_b_to_a": 0.17167718952955222,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 0.20248495781919296,
+        "member_label_a": "mode.mutation.14",
+        "member_label_b": "mode.mutation.16",
+        "node_a_id": "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6",
+        "node_b_id": "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+      },
+      {
+        "discovery_LOFO_mutual_count": 6,
+        "discovery_LOFO_mutual_frequency": 1.0,
+        "discovery_absolute_weighted_RMSE_a_to_b": 0.5317367830432929,
+        "discovery_absolute_weighted_RMSE_b_to_a": 0.5317367830432929,
+        "discovery_bootstrap_mutual_count": 9155,
+        "discovery_bootstrap_mutual_frequency": 0.9155,
+        "discovery_directed_relative_sse_a_to_b": 1.6679938882609378,
+        "discovery_directed_relative_sse_b_to_a": 0.8290934540216089,
+        "discovery_only_not_confirmed": true,
+        "discovery_symmetric_distance": 1.2485436711412734,
+        "member_label_a": "mode.lexical.egress",
+        "member_label_b": "mode.mutation.3",
+        "node_a_id": "response_class.e74b48dc469c2d658967958c7bef056cca82a7af1ba2845f46e37295555e1d91",
+        "node_b_id": "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+      }
+    ],
+    "candidate_universe_is_exactly_discovery_mutual_k2": true,
+    "discovery_LOFO_protocol": "omit_each_of_six_families_once",
+    "discovery_bootstrap_protocol": "within_family_example_cluster_resampling_10000_seed2311",
+    "discovery_evidence_catalog_sha256": "75ce782f9bb108562e379f53333f2be3c821f539ed762e5746884e868a43e982",
+    "discovery_values_are_descriptive_and_spent": true,
+    "no_discovery_edge_is_confirmed": true,
+    "ordered_discovery_family_ids": [
+      "integer_addition",
+      "integer_subtraction",
+      "integer_comparison",
+      "lexical_antonym",
+      "category_completion",
+      "world_capitals"
+    ]
+  },
+  "discovery_data_firewall": {
+    "all_discovery_rows_spent": true,
+    "all_duplicate_and_overlap_counts_must_be_zero": true,
+    "any_overlap_or_missing_lineage_metadata_is_fail_closed": true,
+    "canonical_prompt_catalog_sha256": "07c629206de7c868b7789c9e739fca8392b19b9453ecfccbb9f4296120f75a1f",
+    "discovery_example_count": 60,
+    "discovery_panel_file_sha256": "47d91ae000b4036d7744509bbbfec67aa0bd48bb1e1162fd6efa53974c23e6ff",
+    "discovery_panel_id": "gemma3-single-token-forced-choice-v1",
+    "discovery_panel_path": "examples/gemma3_downstream_retention_v1.json",
+    "fresh_overlap_audit_receipt_required_before_tokenization": true,
+    "fresh_token_count_and_long_evidence_audit_required_before_model_weights_load": true,
+    "instance_id_disjointness_is_the_paraphrase_firewall": true,
+    "instance_id_is_canonical_semantic_task_key_not_opaque_nonce": true,
+    "model_free_paraphrase_overlap_check_required": true,
+    "normalization": "Unicode_NFKC_then_casefold_then_join_regex_[a-z0-9]+_tokens_with_single_ASCII_spaces",
+    "ordered_source_reference_inventory_paths_file_SHA256s_counts_and_catalog_hashes_required": true,
+    "raw_prompt_catalog_sha256": "a0df1c0d189562a01b8429a77a60a36dddcceb47f5d95e7a61199e718cf1222f",
+    "required_zero_intersections": [
+      "family_id",
+      "text_sha256",
+      "canonical_sha256",
+      "instance_id",
+      "template_id",
+      "domain_template",
+      "semantic_lineage_id",
+      "paraphrase_lineage_id",
+      "template_signature_sha256"
+    ],
+    "semantic_instance_catalog_sha256": "5a31cfc3b5495af925b96f56a85a70ec1375d173f8875dde3067db1409bec6d2",
+    "semantic_instance_definition": "family_specific_canonical_task_arguments_independent_of_surface_wording",
+    "template_id_and_domain_template_are_content_derived_not_arbitrary_nonces": true,
+    "template_signature_catalog_sha256": "7b91b2a14286dd5becf38715394b5b3dbc17a5057c5bcf38774a7d6ada9e2ea1",
+    "template_signature_definition": "normalized_prompt_with_family_specific_semantic_slots_replaced_by_typed_placeholders"
+  },
+  "discovery_k_sweep": {
+    "k_1": {
+      "covered_node_count": 12,
+      "edge_catalog": [
+        [
+          "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+          "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+        ],
+        [
+          "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38"
+        ],
+        [
+          "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16",
+          "response_class.c85512439f03a85572af0f7d9f5d14310ce5877cd1ad60fe0f5ca5dd4d456fc0"
+        ],
+        [
+          "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340",
+          "response_class.c76b0821ec24b40a43fefb422230fafca0e45fb066ac96c282197a71625de2d6"
+        ],
+        [
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6",
+          "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+        ],
+        [
+          "response_class.e74b48dc469c2d658967958c7bef056cca82a7af1ba2845f46e37295555e1d91",
+          "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+        ]
+      ],
+      "edge_catalog_sha256": "abef9efe26dfb3516074d7f1393134794e23f218f8385ecea929448bcf36c7af",
+      "edge_count": 6,
+      "isolated_node_count": 25,
+      "maximum_degree": 1,
+      "nonisolated_connected_component_count": 6,
+      "nonisolated_connected_component_sizes": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    "k_2": {
+      "covered_node_count": 20,
+      "edge_catalog": [
+        [
+          "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+          "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+        ],
+        [
+          "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+          "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+        ],
+        [
+          "response_class.030e85671a21944e892509f687eaccb87cae5aa746730248526b43c6138a7a58",
+          "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16"
+        ],
+        [
+          "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+          "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+        ],
+        [
+          "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+          "response_class.7066d642ba230ebc5813d58e9b3aa409801c50ce3ef84df0896f59b0b97d557d"
+        ],
+        [
+          "response_class.47e7d574473ec0a15e6df58ed83164db0d8edffab014884cb2eb1bbfbd51ae66",
+          "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+        ],
+        [
+          "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38"
+        ],
+        [
+          "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16",
+          "response_class.c85512439f03a85572af0f7d9f5d14310ce5877cd1ad60fe0f5ca5dd4d456fc0"
+        ],
+        [
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38",
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6"
+        ],
+        [
+          "response_class.7c64262e52b2d919cf223124c320fe352f6c396dbdf299f52b73ee0dacc68bb2",
+          "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+        ],
+        [
+          "response_class.86db586a5ac58bb844ad26393c3e853ae42d2c9d5d6a8b3c67e6f697f05f974a",
+          "response_class.be7aae74b527794d493c67d8718290cda375055e279f72fbe160a0ee25bb8008"
+        ],
+        [
+          "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340",
+          "response_class.c76b0821ec24b40a43fefb422230fafca0e45fb066ac96c282197a71625de2d6"
+        ],
+        [
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6",
+          "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+        ],
+        [
+          "response_class.e74b48dc469c2d658967958c7bef056cca82a7af1ba2845f46e37295555e1d91",
+          "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+        ]
+      ],
+      "edge_catalog_sha256": "981d6ca7acef5ebeef4213d4b49a93c88390b5e234e68fe5b7f7677426a269f7",
+      "edge_count": 14,
+      "isolated_node_count": 17,
+      "maximum_degree": 2,
+      "nonisolated_connected_component_count": 6,
+      "nonisolated_connected_component_sizes": [
+        6,
+        4,
+        3,
+        3,
+        2,
+        2
+      ]
+    },
+    "k_3": {
+      "covered_node_count": 24,
+      "edge_catalog": [
+        [
+          "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+          "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+        ],
+        [
+          "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+          "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+        ],
+        [
+          "response_class.030e85671a21944e892509f687eaccb87cae5aa746730248526b43c6138a7a58",
+          "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16"
+        ],
+        [
+          "response_class.18b04a725ceaaa654e60f4dfa45ade2b70b6eff0a9bf2405967ae93f230cd1fe",
+          "response_class.9878790727773903a7d6561dffa96dc61476edea1519c37ba21c812792a1400b"
+        ],
+        [
+          "response_class.3215b347d3f8145cc6cd5d309b6b73c944670b621ebe3f52a881b714af461e40",
+          "response_class.7c64262e52b2d919cf223124c320fe352f6c396dbdf299f52b73ee0dacc68bb2"
+        ],
+        [
+          "response_class.3215b347d3f8145cc6cd5d309b6b73c944670b621ebe3f52a881b714af461e40",
+          "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+        ],
+        [
+          "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+          "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c"
+        ],
+        [
+          "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+          "response_class.7066d642ba230ebc5813d58e9b3aa409801c50ce3ef84df0896f59b0b97d557d"
+        ],
+        [
+          "response_class.3cfa05a5cade7177cd9dd152f7317e0343dbf4a0cec23f86b290ad50d26d7ede",
+          "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340"
+        ],
+        [
+          "response_class.47e7d574473ec0a15e6df58ed83164db0d8edffab014884cb2eb1bbfbd51ae66",
+          "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+        ],
+        [
+          "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38"
+        ],
+        [
+          "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6"
+        ],
+        [
+          "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16",
+          "response_class.c85512439f03a85572af0f7d9f5d14310ce5877cd1ad60fe0f5ca5dd4d456fc0"
+        ],
+        [
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38",
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6"
+        ],
+        [
+          "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38",
+          "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+        ],
+        [
+          "response_class.7c64262e52b2d919cf223124c320fe352f6c396dbdf299f52b73ee0dacc68bb2",
+          "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50"
+        ],
+        [
+          "response_class.86db586a5ac58bb844ad26393c3e853ae42d2c9d5d6a8b3c67e6f697f05f974a",
+          "response_class.be7aae74b527794d493c67d8718290cda375055e279f72fbe160a0ee25bb8008"
+        ],
+        [
+          "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340",
+          "response_class.c76b0821ec24b40a43fefb422230fafca0e45fb066ac96c282197a71625de2d6"
+        ],
+        [
+          "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6",
+          "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9"
+        ],
+        [
+          "response_class.e74b48dc469c2d658967958c7bef056cca82a7af1ba2845f46e37295555e1d91",
+          "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f"
+        ]
+      ],
+      "edge_catalog_sha256": "f14ef404dae10e3fc2d973f18f4c15fca460256722c872646bfa79aca6d3c1b8",
+      "edge_count": 20,
+      "isolated_node_count": 13,
+      "maximum_degree": 3,
+      "nonisolated_connected_component_count": 6,
+      "nonisolated_connected_component_sizes": [
+        11,
+        3,
+        3,
+        3,
+        2,
+        2
+      ]
+    },
+    "k_selection_may_not_be_retuned_on_fresh_data": true,
+    "metric": "equal_family_mean_bidirectional_relative_SSE_symmetric_distance",
+    "rank_boundary_tie_absolute_tolerance": 1e-10,
+    "selected_k": 2,
+    "selection_reason": "k1_leaves_25_of_37_nodes_isolated_while_k3_already_has_an_11_node_component;_k2_is_the_last_sparse_middle_rung",
+    "selection_was_frozen_before_fresh_panel": true,
+    "source": "spent_exact_response_equivalence_class_atlas",
+    "tie_policy": "fail_closed_when_kth_and_kplus1_distances_are_within_absolute_tolerance"
+  },
+  "exact_predecessor": {
+    "all_predecessor_digests_required_before_fresh_panel_or_live_dependencies": true,
+    "diagnostic_outcome": "typed_mode_response_geometry_discovery_only",
+    "equivalence_atlas_receipt_sha256": "4572fbd621eef5345788a96fcaa4b0ecec076f0ce15f735d157af47439c4e22a",
+    "input_statistics_sha256": "f6d9a4d423627a5aa9a257ade07dc39767c7cf0bf34813468399aa512a2b5a0f",
+    "measurement_input_sha256": "cae68825f4d8f81e5fe106495bcab2eaa8f0f167ccc40f3fe9daf9487e7cad9f",
+    "multi_ABI_receipt_sha256": "502772681a731e08cc5b9bf6a3b5e4b2c66b258707d08c0338c9cd9fd19b4966",
+    "response_ABI_sha256": "a55b5fc1c50c7d435a8b26d22b0da81df32914685a2fff4f9b1ea69e6cd72367",
+    "runtime_output_Fisher_weight_catalog_sha256": "b99b42a17ccd3dcf4082ba8a8dba4ff943c65c3ef7456dd8e65440ff50b1b1b0",
+    "typed_response_report_file_sha256": "eeb4d735263309f9050c7ae3a61a49dfe9830e7b1d1ac23b47266a3cc3186996",
+    "typed_response_report_path": ".local-runs/google--gemma-3-270m/typed-mode-response-atlas-v1.json",
+    "typed_response_report_schema": "fisher_graph.gemma3_typed_mode_response.experiment.v1",
+    "typed_response_report_sha256": "1ae47951899bf7f3ff4ddae4e3de69ce1bd5a798e2897ffe42931f3ed7005faa",
+    "typed_response_setup_file_sha256": "a821b963c491b710784f4bf7745321208dfee8ba23201f4ece4f017d1be00aa0",
+    "typed_response_setup_path": "artifacts/research/gemma3-typed-mode-response-setup-v1.json",
+    "typed_response_setup_sha256": "189887111e12acd8e86bb56574ac69ebaf44660491a99a333ebcc75f7942de0f"
+  },
+  "execution_order": [
+    "strict_load_this_setup_and_authenticate_every_predecessor_digest",
+    "strict_load_and_hash_fresh_panel_without_model_weights",
+    "audit_all_overlap_semantic_template_and_lineage_firewalls",
+    "load_only_pinned_tokenizer_and_freeze_choice_token_and_prompt_length_catalogs",
+    "audit_short_long_counts_and_distant_evidence_spans",
+    "only_then_load_pinned_model_weights",
+    "measure_exact_38_logical_responses_and_37_atomic_graph_nodes",
+    "evaluate_only_the_frozen_14_edges_confirmatorily",
+    "report_components_cliques_singletons_and_exploratory_new_edges_under_the_claim_taxonomy"
+  ],
+  "format_version": 1,
+  "fresh_confirmation_gates": {
+    "confirmation_conjunction": [
+      "edge_is_in_frozen_14_edge_candidate_catalog",
+      "fresh_pooled_point_mutual_k2",
+      "fresh_pooled_both_directional_relative_SSE_at_most_1",
+      "fresh_pooled_both_absolute_weighted_RMSE_at_most_0.125",
+      "fresh_bootstrap_mutual_frequency_at_least_0.80",
+      "fresh_LOFO_mutual_count_at_least_5_of_6",
+      "fresh_long_stratum_point_mutual_k2",
+      "fresh_long_stratum_same_point_error_gates"
+    ],
+    "leave_one_family_out": {
+      "minimum_mutual_count": 5,
+      "minimum_mutual_frequency": 0.8333333333333334,
+      "mutual_k2_topology_recomputed_per_replicate": true,
+      "ordered_omitted_family_ids": [
+        "C_confirmation.observational_diagnosis",
+        "C_confirmation.quantitative_reasoning",
+        "C_confirmation.technical_explanation",
+        "C_confirmation.procedural_planning",
+        "C_confirmation.formal_logic",
+        "C_confirmation.causal_evidence_synthesis"
+      ],
+      "point_error_gates_recomputed_per_replicate": false,
+      "replicate_count": 6
+    },
+    "long_context_robustness_veto": {
+      "applies_to_every_candidate_edge": true,
+      "failure_vetoes_confirmation": true,
+      "long_stratum_bootstrap_or_LOFO_claim_required": false,
+      "long_stratum_point_mutual_k2_required": true,
+      "same_bidirectional_relative_and_absolute_error_gates_required": true
+    },
+    "partial_gate_pass_never_confirms_an_edge": true,
+    "point_error_gates": {
+      "absolute_weighted_RMSE_formula": "sqrt(equal_family_mean(weighted_SSE_f/coordinate_row_count_f))",
+      "absolute_weighted_RMSE_units": "Fisher_weighted_centered_restricted_logit",
+      "asymmetry_ratio_both_zero_value": 1,
+      "asymmetry_ratio_formula": "max(relative_a_to_b,relative_b_to_a)/min(relative_a_to_b,relative_b_to_a)",
+      "asymmetry_ratio_is_diagnostic_only": true,
+      "asymmetry_ratio_one_zero_value": "positive_infinity",
+      "both_absolute_directions_recorded_even_though_primary_SSE_is_symmetric": true,
+      "both_directions_required": true,
+      "maximum_absolute_weighted_RMSE": 0.125,
+      "maximum_directional_relative_SSE": 1.0
+    },
+    "point_mutual_k2_required": true,
+    "thresholds_may_not_be_retuned_after_fresh_data_access": true,
+    "within_family_bootstrap": {
+      "draw_catalog_digest_domain_hex": "6669736865725f67726170682e6d6f64655f73696d696c61726974795f61746c61732e626f6f7473747261705f636174616c6f672e763100",
+      "draw_catalog_digest_encoding": "sha256(catalog_domain||canonical_config||repeated(resample_u64be,family_u32be,draw_u32be,example_u32be))",
+      "draw_catalog_iteration_order": "resample_then_configured_family_then_draw",
+      "draw_digest_selection": "first_8_sha256_bytes_u64be_mod_example_count",
+      "draw_preimage_encoding": "domain||seed_u64be||resample_u64be||family_u32be||draw_u32be",
+      "draw_protocol": "sha256_counter_modulo_example_count_v1",
+      "draw_protocol_domain_hex": "6669736865725f67726170683a67656d6d61332d6d6f64652d61746c61732d626f6f7473747261702d647261773a763100",
+      "draws_per_family": 10,
+      "frequency_denominator": "valid_resamples_only",
+      "maximum_degenerate_fraction": 0.01,
+      "minimum_mutual_frequency": 0.8,
+      "mutual_k2_topology_recomputed_per_resample": true,
+      "point_error_gates_recomputed_per_resample": false,
+      "resample_count": 10000,
+      "sampling_unit": "example_plus_centered_logits4_response_cluster",
+      "seed": 2311,
+      "with_replacement": true
+    }
+  },
+  "fresh_panel_contract": {
+    "all_60_confirmation_input_ids_attention_masks_and_valid_lengths_authenticated_before_model_weights_load": true,
+    "all_choices_have_one_leading_ASCII_space": true,
+    "all_choices_single_token_under_pinned_tokenizer": true,
+    "all_four_choice_token_ids_distinct_per_example": true,
+    "boundary_examples_per_family": 4,
+    "canonical_confirmation_stratum_ids": [
+      "short_32",
+      "short_64",
+      "short_96",
+      "boundary_511",
+      "boundary_512",
+      "transition_513",
+      "transition_514",
+      "outside_window_576",
+      "outside_window_640",
+      "outside_window_768"
+    ],
+    "choice_count": 4,
+    "choice_tokenization_and_prompt_token_count_catalogs_frozen_before_model_weights_load": true,
+    "context_strata": {
+      "boundary": {
+        "exact_valid_prompt_token_targets": [
+          511,
+          512,
+          513,
+          514
+        ],
+        "global_example_count": 24,
+        "role": "diagnostic_window_transition",
+        "token_513_is_diagnostic_only_under_BOS_semantics": true,
+        "token_514_is_diagnostic_only_and_carries_no_long_context_evidence_claim": true
+      },
+      "long": {
+        "answer_relevant_evidence_outside_final_512_token_window_required": true,
+        "crosses_attention_sliding_window_cutoff_512": true,
+        "evidence_span_token_indices_required": true,
+        "exact_valid_prompt_token_targets": [
+          576,
+          640,
+          768
+        ],
+        "full_minimal_sufficient_evidence_span_outside_final_512_token_window_required": true,
+        "global_example_count": 18,
+        "last_query_token_index_minus_evidence_end_at_least": 512,
+        "minimum_valid_prompt_tokens": 576,
+        "role": "hard_robustness_veto",
+        "visible_suffix_must_be_answer_neutral": true
+      },
+      "short": {
+        "exact_valid_prompt_token_targets": [
+          32,
+          64,
+          96
+        ],
+        "global_example_count": 18,
+        "role": "diagnostic_control"
+      }
+    },
+    "corpus_format_version": 1,
+    "corpus_schema": "fisher_graph.gemma3_stable_mutual_knn_confirmation_corpus",
+    "corpus_top_level_roles_exactly": [
+      "C_confirmation",
+      "reserve"
+    ],
+    "default_audit_path": "artifacts/research/gemma3-stable-mutual-knn-confirmation-panel-audit-v1.json",
+    "default_corpus_path": "examples/gemma3_stable_mutual_knn_confirmation_corpus.json",
+    "default_manifest_path": "examples/gemma3_stable_mutual_knn_confirmation_panel.json",
+    "exact_valid_prompt_token_targets_per_family": [
+      32,
+      64,
+      96,
+      511,
+      512,
+      513,
+      514,
+      576,
+      640,
+      768
+    ],
+    "example_count": 60,
+    "examples_per_family": 10,
+    "fresh_panel_file_SHA256_frozen_into_execution_manifest_before_model_weights_load": true,
+    "fresh_semantic_families_are_disjoint_from_discovery_families": true,
+    "long_examples_per_family": 3,
+    "manifest_format_version": 1,
+    "manifest_role_keys_exactly": [
+      "C_confirmation",
+      "reserve"
+    ],
+    "manifest_schema": "fisher_graph.gemma3_stable_mutual_knn_confirmation_panel",
+    "ordered_family_ids": [
+      "C_confirmation.observational_diagnosis",
+      "C_confirmation.quantitative_reasoning",
+      "C_confirmation.technical_explanation",
+      "C_confirmation.procedural_planning",
+      "C_confirmation.formal_logic",
+      "C_confirmation.causal_evidence_synthesis"
+    ],
+    "ordered_reserve_family_ids": [
+      "reserve.observational_diagnosis",
+      "reserve.quantitative_reasoning",
+      "reserve.technical_explanation",
+      "reserve.procedural_planning",
+      "reserve.formal_logic",
+      "reserve.causal_evidence_synthesis"
+    ],
+    "panel_id": "gemma3_stable_mutual_knn_confirmation_v1",
+    "panel_id_must_differ_from_discovery_panel_id": true,
+    "panel_not_authored_by_this_setup": true,
+    "pooled_is_primary": true,
+    "reserve_contract": {
+      "choice_token_ids_must_be_null": true,
+      "choices_choices_sha256_and_correct_choice_required": true,
+      "example_count": 12,
+      "examples_per_family": 2,
+      "executable_stratum_forbidden": true,
+      "future_use_requires_a_new_frozen_protocol": true,
+      "input_ids_sha256_must_be_null": true,
+      "model_access_forbidden": true,
+      "ordered_family_ids": [
+        "reserve.observational_diagnosis",
+        "reserve.quantitative_reasoning",
+        "reserve.technical_explanation",
+        "reserve.procedural_planning",
+        "reserve.formal_logic",
+        "reserve.causal_evidence_synthesis"
+      ],
+      "parse_and_hash_audit_only": true,
+      "same_overlap_and_manifest_audit_required": true,
+      "target_valid_tokens_must_be_null": true,
+      "tokenization_receipt_forbidden": true,
+      "tokenizer_access_forbidden": true,
+      "unreachable_by_primary_experiment": true
+    },
+    "row_manifest_required_fields": [
+      "prompt_id",
+      "corpus_index",
+      "choices",
+      "correct_choice",
+      "template_id",
+      "instance_id",
+      "domain_template",
+      "kind",
+      "stratum_id",
+      "text_sha256",
+      "target_valid_tokens",
+      "input_ids_sha256",
+      "choices_sha256",
+      "choice_token_ids",
+      "answer_evidence",
+      "canonical_sha256",
+      "semantic_lineage_id",
+      "paraphrase_lineage_id",
+      "template_signature_sha256"
+    ],
+    "same_finite_response_and_Fisher_weighting_ABI_as_predecessor": true,
+    "short_and_boundary_are_diagnostic_only": true,
+    "short_examples_per_family": 3,
+    "stratum_outputs_required": [
+      "pooled",
+      "short",
+      "boundary",
+      "long"
+    ]
+  },
+  "graph_extraction_and_reporting": {
+    "connected_components_are_not_clusters": true,
+    "connected_components_reported": true,
+    "connected_components_role": "diagnostic_topology_only",
+    "fresh_non_candidate_mutual_edges_reported": true,
+    "fresh_non_candidate_mutual_edges_role": "exploratory_only",
+    "maximal_clique_minimum_node_count": 2,
+    "maximal_cliques_may_overlap": true,
+    "maximal_cliques_reported": true,
+    "maximal_cliques_role": "stable_neighbor_groups_only",
+    "new_edges_cannot_enter_confirmatory_graph": true,
+    "operator_kind_reported_post_hoc_only": true,
+    "overlapping_cliques_must_not_be_forced_into_a_partition": true,
+    "singletons_reported": true,
+    "surviving_edge_set": "only_frozen_candidates_passing_every_confirmation_gate"
+  },
+  "model_freeze": {
+    "model_id": "google/gemma-3-270m",
+    "parameter_count": 268098176,
+    "revision": "9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1",
+    "source_execution_fingerprint_sha256": "b04085b6cd7c076596dd074e3693feb465e69a917c61a46cc0f7310afb444e60",
+    "source_model_fingerprint_sha256": "7b083050fa3ae98fde3f193cdf84c91b27ce40a68b3117e9cc38260ca945d4b9",
+    "source_parameters_frozen": true
+  },
+  "node_ontology": {
+    "exact_equivalence_class_is_atomic_for_ranking": true,
+    "failed_fresh_tied_lexical_equality_invalidates_the_run": true,
+    "fresh_tied_lexical_ingress_egress_exact_equality_must_be_reproved": true,
+    "graph_fit_unit": "exact_response_equivalence_class",
+    "logical_member_expansion_reporting_only": true,
+    "logical_mode_count": 38,
+    "new_fresh_exact_equalities_are_diagnostic_only": true,
+    "new_fresh_exact_equalities_may_not_collapse_nodes_or_change_ranking_universe": true,
+    "node_catalog_sha256": "fe0e348eb8256b61d0adac3c2560d31ff163bfcd1fa04205535b2e59b3e1ffe8",
+    "node_count": 37,
+    "operator_kind_and_block_ordinal_are_provenance_only": true,
+    "operator_kind_or_block_ordinal_used_as_graph_features": false,
+    "ordered_node_catalog": [
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          10
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.21"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.0279b2a8f0931bdc17fdff17b5333cc3627c841f3f63a3cd07782d3437e29a29",
+        "representative_mode_id": "mode.mutation.21"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          7
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.15"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.030e85671a21944e892509f687eaccb87cae5aa746730248526b43c6138a7a58",
+        "representative_mode_id": "mode.mutation.15"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          14
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.30"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.18b04a725ceaaa654e60f4dfa45ade2b70b6eff0a9bf2405967ae93f230cd1fe",
+        "representative_mode_id": "mode.mutation.30"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          10
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.22"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.21f6019b8b6571a8be1dcf1843170e69a618c29daff30e02dc4a4d569a316620",
+        "representative_mode_id": "mode.mutation.22"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          13
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.27"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.281da9a967ba0eddbe88fae58d3593e63090e9036ba00ad0f94bb002d07feb63",
+        "representative_mode_id": "mode.mutation.27"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          14
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.29"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.313860638f6f89edbc94a6e490b1bdf0d2c049729308407fbaf663fb1d554f27",
+        "representative_mode_id": "mode.mutation.29"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          4
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.10"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.3215b347d3f8145cc6cd5d309b6b73c944670b621ebe3f52a881b714af461e40",
+        "representative_mode_id": "mode.mutation.10"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          8
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.17"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.3bb9a9b465aa135c3d9f520aa89842b228f50c076d5d37f53b5f84d7298c5e73",
+        "representative_mode_id": "mode.mutation.17"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          6
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.13"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.3cfa05a5cade7177cd9dd152f7317e0343dbf4a0cec23f86b290ad50d26d7ede",
+        "representative_mode_id": "mode.mutation.13"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          9
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.19"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.3ebdd1d3925bda25afd09cb6494da7a49d186318f60cb496165662729b6f365c",
+        "representative_mode_id": "mode.mutation.19"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          3
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.8"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.47e7d574473ec0a15e6df58ed83164db0d8edffab014884cb2eb1bbfbd51ae66",
+        "representative_mode_id": "mode.mutation.8"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          4
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.9"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.4c7543a57d333b728c3cf83621dbba5ec7954bd19c4fe8d224c606ecdd99001d",
+        "representative_mode_id": "mode.mutation.9"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          16
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.33"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.5fcc6e670d5d477ceb7c9b51adce9854397ba6b1bdd5810b58e58bb077573b16",
+        "representative_mode_id": "mode.mutation.33"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          17
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.35"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.62bf485f7f88d09061a6c9e217d2c54e62df360ae5e71351ec18efe3b854c696",
+        "representative_mode_id": "mode.mutation.35"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          0
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.1"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.64999e8947294bead3edb9e5afdafeb3deec4451a1a8377dd034c5850e322e6e",
+        "representative_mode_id": "mode.mutation.1"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          5
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.11"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.67db4902796b165c67fbf840d2f5c70a778dd88a4929ee06431598014e22a4dc",
+        "representative_mode_id": "mode.mutation.11"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          13
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.28"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.6ee61238904e8ad4cc64585e39d6a2e82d370fcb145678804f6fe759ae2f46fb",
+        "representative_mode_id": "mode.mutation.28"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          3
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.7"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.7066d642ba230ebc5813d58e9b3aa409801c50ce3ef84df0896f59b0b97d557d",
+        "representative_mode_id": "mode.mutation.7"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          5
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.12"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.78db0226061c87a1c7583aa73eb620fe7f5157169e97f25d9b58faaf323dbc7a",
+        "representative_mode_id": "mode.mutation.12"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          2
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.6"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.7bda3f9efb0d7df269d74d6bf27b801bcb2b40eff6282bc7153247abbe51fc38",
+        "representative_mode_id": "mode.mutation.6"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          9
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.20"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.7c64262e52b2d919cf223124c320fe352f6c396dbdf299f52b73ee0dacc68bb2",
+        "representative_mode_id": "mode.mutation.20"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          16
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.34"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.86db586a5ac58bb844ad26393c3e853ae42d2c9d5d6a8b3c67e6f697f05f974a",
+        "representative_mode_id": "mode.mutation.34"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          0
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.2"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.9878790727773903a7d6561dffa96dc61476edea1519c37ba21c812792a1400b",
+        "representative_mode_id": "mode.mutation.2"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          17
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.36"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.b111c3a4516d6f21c9051cb92ebab69230a1fdbfc5dbdf41d1578d68304019a2",
+        "representative_mode_id": "mode.mutation.36"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          12
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.26"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.b536e2db2cfc5117f9aaeb80e708bbfb1d68e8e990c5ed1afd10ccd2c0b340",
+        "representative_mode_id": "mode.mutation.26"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          15
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.32"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.be7aae74b527794d493c67d8718290cda375055e279f72fbe160a0ee25bb8008",
+        "representative_mode_id": "mode.mutation.32"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          11
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.23"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.c45b410145c1cee200f32b2e92cc89940e6a8e427bef765a36cc50918a8f4f32",
+        "representative_mode_id": "mode.mutation.23"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          11
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.24"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.c76b0821ec24b40a43fefb422230fafca0e45fb066ac96c282197a71625de2d6",
+        "representative_mode_id": "mode.mutation.24"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          15
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.31"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.c85512439f03a85572af0f7d9f5d14310ce5877cd1ad60fe0f5ca5dd4d456fc0",
+        "representative_mode_id": "mode.mutation.31"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          8
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.18"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.d2c4ed41acd9890238b762276f6d3f4fe020918849a6545e30276eb7ae8b1e50",
+        "representative_mode_id": "mode.mutation.18"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          6
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.14"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.d364d5410eceed7fbf3d5a4cadd4abf9717e65582ba7352fc91f620ae0c0a3e6",
+        "representative_mode_id": "mode.mutation.14"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          12
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.25"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.d720edfaef364e73134049861dffaa9db2a911e08e2325abafb40b3387638c82",
+        "representative_mode_id": "mode.mutation.25"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          null,
+          null
+        ],
+        "member_count": 2,
+        "member_mode_ids": [
+          "mode.lexical.egress",
+          "mode.lexical.ingress"
+        ],
+        "member_operator_kinds": [
+          "lexical_egress",
+          "lexical_ingress"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.e74b48dc469c2d658967958c7bef056cca82a7af1ba2845f46e37295555e1d91",
+        "representative_mode_id": "mode.lexical.egress"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          2
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.5"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.eb0e4812ee6f0bead5a403d3b7acadae7d5db8a8f708ba9eea2accaeb4e5ebb1",
+        "representative_mode_id": "mode.mutation.5"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          7
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.16"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.f225f02c55bb5bbfb58f9b79a8e3a4925f5a24744ff08e925d17bb1ebdcc4ed9",
+        "representative_mode_id": "mode.mutation.16"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          1
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.4"
+        ],
+        "member_operator_kinds": [
+          "mlp"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.f7a5391b4cd047a4efdc05e21138531ee78f0b5dd3336650c0a60f2fc4eca26d",
+        "representative_mode_id": "mode.mutation.4"
+      },
+      {
+        "equivalence_definition": "exact_zero_sse_and_identical_quadratics_on_every_row_v1",
+        "member_block_ordinals": [
+          1
+        ],
+        "member_count": 1,
+        "member_mode_ids": [
+          "mode.mutation.3"
+        ],
+        "member_operator_kinds": [
+          "attention"
+        ],
+        "native_ABI_equivalence_implied": false,
+        "node_id": "response_class.fa8ee5755e59963e35b61f100a1d63320ee1fcdd4471b36432d80080210b714f",
+        "representative_mode_id": "mode.mutation.3"
+      }
+    ],
+    "predecessor_37_node_universe_is_immutable_for_fresh_graph": true,
+    "response_equivalence_does_not_imply_native_ABI_equivalence": true,
+    "tied_lexical_class_consumes_one_neighbor_slot": true,
+    "tied_lexical_class_member_mode_ids": [
+      "mode.lexical.egress",
+      "mode.lexical.ingress"
+    ]
+  },
+  "ranking_protocol": {
+    "directed_relative_SSE_formula": "equal_family_mean(weighted_SSE_f/max(source_energy_f,1e-12))",
+    "equivalence_classes_collapsed_before_ranking": true,
+    "k": 2,
+    "mode_or_node_label_tie_break_forbidden": true,
+    "mutual_definition": "a_is_in_exact_top2_of_b_and_b_is_in_exact_top2_of_a",
+    "pool_family_sufficient_statistics_before_each_family_ratio": true,
+    "rank_boundary_tie_absolute_tolerance": 1e-10,
+    "rank_boundary_tie_policy": "fail_closed_undefined_node_neighbors",
+    "rank_metric": "symmetric_distance",
+    "symmetric_distance_formula": "0.5*(directed_relative_SSE_a_to_b+directed_relative_SSE_b_to_a)"
+  },
+  "schema": "fisher_graph.gemma3_stable_mutual_knn.setup.v1",
+  "setup_id": "gemma3-stable-mutual-knn-v1",
+  "setup_receipt": {
+    "fresh_panel_opened": false,
+    "graph_fitted": false,
+    "model_backward_count": 0,
+    "model_forward_count": 0,
+    "model_loaded": false,
+    "predecessor_opened": false,
+    "scientific_result_emitted": false,
+    "tokenizer_loaded": false
+  },
+  "setup_sha256": "feeb55f74882093fc29415621f9b5c99b45765efb3d3c72bb16dbbfc9debfc9a"
+}

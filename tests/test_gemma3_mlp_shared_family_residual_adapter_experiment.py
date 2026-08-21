@@ -59,6 +59,33 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
 
 
+@pytest.mark.parametrize("message_kind", ("attention_transport", "mlp_mutation"))
+def test_primary_generator_receipt_uses_live_carrier_message_kinds(
+    message_kind: str,
+) -> None:
+    primary = SimpleNamespace(message_kind=message_kind, value_sha256=_digest("delta"))
+    boundary = SimpleNamespace(
+        message_receipts=(
+            SimpleNamespace(message_kind="identity_carry"),
+            primary,
+        )
+    )
+
+    assert worker._primary_generator_message_receipt(boundary) is primary
+
+
+def test_primary_generator_receipt_rejects_legacy_generic_kind() -> None:
+    boundary = SimpleNamespace(
+        message_receipts=(
+            SimpleNamespace(message_kind="identity_carry"),
+            SimpleNamespace(message_kind="primary_generator"),
+        )
+    )
+
+    with pytest.raises(ValueError, match="exactly one typed primary message"):
+        worker._primary_generator_message_receipt(boundary)
+
+
 def _seal(value: dict[str, object], field: str) -> dict[str, object]:
     payload = deepcopy(value)
     payload.pop(field, None)
@@ -75,8 +102,8 @@ def _typed_pair_manifest() -> dict[str, object]:
         source_model_fingerprint=_PINNED_SOURCE_MODEL_SHA256,
         anchor_invocation_id="mutation.2",
         member_invocation_id="mutation.6",
-        anchor_atom_id="mlp.block.0",
-        member_atom_id="mlp.block.2",
+        anchor_atom_id="atom.mlp.layer.0",
+        member_atom_id="atom.mlp.layer.2",
         anchor_block_ordinal=0,
         member_block_ordinal=2,
         a_fit_manifest_sha256=_SETUP["data_firewall"]["roles"]["A_fit"][
@@ -188,8 +215,8 @@ def _pair_selection() -> dict[str, object]:
         "family_id": "family.mlp.gated_gelu_h640_i2048",
         "anchor_invocation_id": "mutation.2",
         "member_invocation_id": "mutation.6",
-        "anchor_atom_id": "mlp.block.0",
-        "member_atom_id": "mlp.block.2",
+        "anchor_atom_id": "atom.mlp.layer.0",
+        "member_atom_id": "atom.mlp.layer.2",
         "anchor_block_ordinal": 0,
         "member_block_ordinal": 2,
         "selected_on": "A_fit",
@@ -1880,7 +1907,7 @@ def test_strict_loader_rejects_coordinated_rehashed_semantic_tampering(
     elif mutation == "pair_adjacent_coordinated":
         pair = changed["pair_selection"]
         pair["member_invocation_id"] = "mutation.4"
-        pair["member_atom_id"] = "mlp.block.1"
+        pair["member_atom_id"] = "atom.mlp.layer.1"
         pair["member_block_ordinal"] = 1
         _rebind_pair_lineage(changed)
     elif mutation == "pair_anchor_source_drift":

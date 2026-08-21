@@ -1,0 +1,532 @@
+{
+  "B_C_neighbor_confirmation": {
+    "A_bootstrap_or_A_LOFO_does_not_authorize_K_selection": true,
+    "B_nominates_only_point_gated_mutual_k2_candidates": true,
+    "C_tests_only_frozen_B_candidates": true,
+    "K_chart_and_k_neighbor_are_distinct": true,
+    "chart_count_frozen_from_A_before_B": true,
+    "hard_long_576_640_768_confirmation_veto_unchanged": true,
+    "leave_one_family_out": {
+      "family_count": 6,
+      "minimum_mutual_count": 5,
+      "mutual_k2_recomputed_per_replicate": true,
+      "replicate_count": 6,
+      "unchanged_from_v1": true
+    },
+    "mutual_neighbor_k": 2,
+    "mutual_neighbor_k_symbol": "k_neighbor",
+    "no_cross_K_B_C_multiplicity_because_only_one_K_reaches_B_C": true,
+    "optional_A_LOFO_is_diagnostic_only_and_cannot_change_K": true,
+    "token_count_514_excluded_from_primary_topology_bootstrap_LOFO_and_hard_gates": true,
+    "within_family_bootstrap": {
+      "maximum_degenerate_fraction": 0.01,
+      "minimum_mutual_frequency": 0.8,
+      "primary_examples_per_family": 7,
+      "resample_count": 10000,
+      "sampling_unit": "whole_example_with_all_target_token_rows",
+      "seed": 7901,
+      "unchanged_from_v1": true
+    }
+  },
+  "K1_boundary": {
+    "K1_is_mathematically_admissible_with_rank16": true,
+    "allowed_result_wording": "single_global_rank16_chart_transport_geometry",
+    "hard_row_requirement": 17,
+    "membership_is_identically_one": true,
+    "mode_neighbor_graph_remains_defined_because_modes_not_charts_are_graph_nodes": true,
+    "multi_chart_local_chart_mixture_or_routing_claim_forbidden": true,
+    "reason": "rank16_is_within_each_H640_chart_not_across_chart_count",
+    "source_feature_width": 17
+  },
+  "chart_capacity_selection": {
+    "B_C_bootstrap_LOFO_or_response_results_forbidden_for_selection": true,
+    "alternate_seed_forbidden": true,
+    "authentication_source_resource_IO_and_backend_failures_are_terminal": true,
+    "candidate_attempts_stop_at_first_failed_intrinsic_gate": true,
+    "candidate_order": [
+      8,
+      7,
+      6,
+      5,
+      4,
+      3,
+      2,
+      1
+    ],
+    "candidate_range_is_exhaustive_integer_descent_8_through_1": true,
+    "chart_count_symbol": "K_chart",
+    "comparison_values_forbidden_for_selection": true,
+    "context_values_and_balanced_row_weights_are_the_only_selection_inputs": true,
+    "early_N_less_than_K_times_rank_plus_one_abort_forbidden": true,
+    "full_pass_status": "ADMISSIBLE",
+    "generalized_contributions_forbidden_for_selection": true,
+    "intrinsic_reject_codes_in_gate_order": [
+      "CENTER_INITIALIZATION_DEGENERATE",
+      "LLOYD_EMPTY_CHART",
+      "HARD_COUNT_BELOW_RANK_PLUS_ONE",
+      "BALANCED_HARD_MASS_BELOW_MINIMUM",
+      "RADIUS_CONTRACT_FAILED",
+      "SOFT_OCCUPANCY_CONTRACT_FAILED",
+      "COVARIANCE_CONTRACT_FAILED",
+      "EIGENGAP_ORIENTATION_UNDEFINED",
+      "SPD_CONTRACT_FAILED"
+    ],
+    "low_row_candidate_infeasibility_is_classified_by_center_initialization_Lloyd_or_final_hard_count_gate": true,
+    "lower_candidates_unattempted_after_selection": true,
+    "malformed_or_zero_row_input_remains_terminal": true,
+    "neighbor_distance_edge_count_or_topology_forbidden_for_selection": true,
+    "no_candidate_admissible_aborts_before_B": true,
+    "only_typed_K_dependent_intrinsic_rejects_descend": true,
+    "rank_tuning_forbidden": true,
+    "run_terminal_statuses": [
+      "A_ATLAS_SELECTED",
+      "A_ATLAS_NO_ADMISSIBLE_K",
+      "A_ATLAS_SELECTION_ENGINEERING_ABORT",
+      "A_ATLAS_FREEZE_INTEGRITY_ABORT",
+      "A_POST_SELECTION_TRANSPORT_ABORT"
+    ],
+    "same_A_raw_spools_used_read_only_for_every_attempt": true,
+    "selected_K_is_live_A_receipt_owned_not_setup_owned": true,
+    "selected_atlas_hash_or_integrity_failure_is_terminal": true,
+    "selected_atlas_serialization_application_or_transport_failure_is_terminal_and_cannot_resume_K_search": true,
+    "selection_receipt_outcomes": [
+      "A_ATLAS_SELECTED",
+      "A_ATLAS_NO_ADMISSIBLE_K"
+    ],
+    "selection_rule": "first_descending_candidate_completing_the_entire_frozen_intrinsic_context_only_atlas_contract",
+    "smaller_K_descent_continues_after_typed_low_row_reject": true,
+    "stop_after_first_admissible_candidate": true,
+    "threshold_tuning_forbidden": true,
+    "transport_loss_or_fit_quality_forbidden_for_selection": true,
+    "unexpected_exception_is_terminal": true
+  },
+  "claim_taxonomy": {
+    "K8_failure_interpretation": "K8_failed_this_A_balanced_solver_gate_not_K8_is_universally_impossible",
+    "K_at_least_2_additional_allowed_wording": [
+      "multi_chart_shared_geometry_measured"
+    ],
+    "K_equal_1_allowed_wording": [
+      "single_global_rank16_chart_transport_geometry"
+    ],
+    "allowed_after_C_all_gates": [
+      "chart_native_mode_neighbor_edge_conditional_on_A_selected_K",
+      "cross_native_ABI_chart_affinity_conditional_on_A_selected_K"
+    ],
+    "never_authorized": [
+      "weights_alone_determine_neighbors",
+      "raw_weight_similarity_neighbor",
+      "causal_interchangeability",
+      "cluster_or_generator_family",
+      "parameter_sharing",
+      "merge_or_deletion",
+      "compression",
+      "deployment_or_latency_improvement"
+    ],
+    "requires_separate_A_resampling_evidence": [
+      "stable_atlas_geometry"
+    ],
+    "requires_separate_D_support": [
+      "downstream_response_supported_chart_neighbor"
+    ]
+  },
+  "dynamic_transport_contract": {
+    "K8_is_preregistered_maximum_storage_envelope": true,
+    "all_F_coefficients_penalized": true,
+    "membership_shape": "rows_by_selected_K",
+    "ordered_pair_count": 1406,
+    "raw_A_spool_bytes_unchanged_by_K": true,
+    "resource_table": [
+      {
+        "all_ordered_coefficient_bytes": 979025920,
+        "applied_store_payload_bytes_per_mode": 92596608,
+        "applied_store_payload_bytes_per_role": 3518671104,
+        "chart_count": 8,
+        "source_feature_width": 136
+      },
+      {
+        "all_ordered_coefficient_bytes": 856647680,
+        "applied_store_payload_bytes_per_mode": 89035200,
+        "applied_store_payload_bytes_per_role": 3383337600,
+        "chart_count": 7,
+        "source_feature_width": 119
+      },
+      {
+        "all_ordered_coefficient_bytes": 734269440,
+        "applied_store_payload_bytes_per_mode": 85473792,
+        "applied_store_payload_bytes_per_role": 3248004096,
+        "chart_count": 6,
+        "source_feature_width": 102
+      },
+      {
+        "all_ordered_coefficient_bytes": 611891200,
+        "applied_store_payload_bytes_per_mode": 81912384,
+        "applied_store_payload_bytes_per_role": 3112670592,
+        "chart_count": 5,
+        "source_feature_width": 85
+      },
+      {
+        "all_ordered_coefficient_bytes": 489512960,
+        "applied_store_payload_bytes_per_mode": 78350976,
+        "applied_store_payload_bytes_per_role": 2977337088,
+        "chart_count": 4,
+        "source_feature_width": 68
+      },
+      {
+        "all_ordered_coefficient_bytes": 367134720,
+        "applied_store_payload_bytes_per_mode": 74789568,
+        "applied_store_payload_bytes_per_role": 2842003584,
+        "chart_count": 3,
+        "source_feature_width": 51
+      },
+      {
+        "all_ordered_coefficient_bytes": 244756480,
+        "applied_store_payload_bytes_per_mode": 71228160,
+        "applied_store_payload_bytes_per_role": 2706670080,
+        "chart_count": 2,
+        "source_feature_width": 34
+      },
+      {
+        "all_ordered_coefficient_bytes": 122378240,
+        "applied_store_payload_bytes_per_mode": 67666752,
+        "applied_store_payload_bytes_per_role": 2571336576,
+        "chart_count": 1,
+        "source_feature_width": 17
+      }
+    ],
+    "ridge_scale_formula": "trace(G)/F",
+    "selected_K_exact_resource_receipt_required": true,
+    "selection_streaming_resource_config": {
+      "atlas_chunk_size": 256,
+      "exact_payload_bound_by_traced_selection_kernel_receipt": true,
+      "max_artifact_bytes": 4294967296,
+      "max_resident_bytes": 8589934592,
+      "row_chunk_size": 256
+    },
+    "separate_intercept": false,
+    "solve_formula": "Beta=solve(G+ridge*I_F,X^T*W*Y)",
+    "source_feature": "concat_c(q_source_c*[1,z_source_c])",
+    "source_feature_formula": "F=K_chart*(tangent_rank+1)=17*K_chart",
+    "tangent_coordinate_shape": "rows_by_selected_K_by_16"
+  },
+  "format_version": 2,
+  "implementation_sources": {
+    "full_v2_worker_source_pin_deferred_until_worker_exists": true,
+    "future_implementation_qualification": {
+      "diagnostic_values_forbidden_from_qualification_identity": true,
+      "must_bind_full_worker_and_dependency_source_closure": true,
+      "must_bind_this_unchanged_setup_sha256": true,
+      "must_not_modify_or_regenerate_this_scientific_setup": true,
+      "path": "artifacts/research/gemma3-chart-native-neighbor-v2-implementation-qualification-v1.json"
+    },
+    "setup_module_is_reviewed_non_self_hashed_trust_anchor": true,
+    "streaming_selector": {
+      "file_sha256": "e414a95485eb5055292d1ae69c60e85295eb9c03f5f8d1bac56e1755023206a1",
+      "path": "src/fisher_graph/streaming_shared_chart_atlas_selection_v1.py"
+    },
+    "traced_selection_kernel": {
+      "exact_receipt_required_in_every_attempt_and_selection": true,
+      "function": "streaming_shared_chart_atlas_selection_kernel_receipt_v1",
+      "receipt_sha256": "133311b1c982ebc42cf98219faa8eed37c8b36b4348385c02f78edceebded9f6"
+    }
+  },
+  "implementation_status": {
+    "A_only_K8_diagnostic_protocol_defined": true,
+    "A_selected_K_known": false,
+    "B_opened": false,
+    "C_opened": false,
+    "descending_streaming_selector_API_required": "select_and_fit_shared_chart_atlas_streaming",
+    "full_v2_experiment_worker_implemented": false,
+    "model_run_performed": false,
+    "v2_setup_frozen": true
+  },
+  "methodology_provenance": {
+    "A_is_fit_development_not_fresh_confirmation": true,
+    "A_only_K8_diagnostic_is_nonselecting": true,
+    "A_only_K8_diagnostic_required_outcome": "BALANCED_HARD_MASS_BELOW_MINIMUM",
+    "A_only_K8_diagnostic_required_terminal_phase": "final_hard_mass_gate",
+    "A_only_K8_diagnostic_result_cannot_select_or_tune_K": true,
+    "A_only_K8_diagnostic_result_is_required_prior_evidence_for_workflow": true,
+    "A_only_K8_diagnostic_result_must_strict_parse_before_v2": true,
+    "A_only_K8_diagnostic_result_path": ".local-runs/google--gemma-3-270m/chart-native-neighbor-a-k8-occupancy-diagnostic-v1.json",
+    "A_only_K8_diagnostic_setup_file_sha256": "34166b8f16f4f11ce058360e743fc29d3056a96fe942f9c0b01c36519d9e9b96",
+    "A_only_K8_diagnostic_setup_path": "artifacts/research/gemma3-chart-native-neighbor-a-k8-occupancy-diagnostic-setup-v1.json",
+    "A_only_K8_diagnostic_setup_sha256": "bbb87b3314ce5dd317afe9d524e116ed6d53cf546f2f21cdd48bab9404608f32",
+    "diagnostic_K8_disagreement_is_terminal_before_B": true,
+    "diagnostic_and_v2_K8_semantic_agreement_required": true,
+    "diagnostic_result_SHA_is_bound_by_live_v2_receipts_not_setup": true,
+    "external_journal_path_is_not_an_executable_dependency": true,
+    "predecessor_v1_setup_file_sha256": "d597c9210f0fddae71a514b1a1738612eda22e99978f94d109ef61b489fee042",
+    "predecessor_v1_setup_path": "artifacts/research/gemma3-chart-native-neighbor-setup-v1.json",
+    "predecessor_v1_setup_sha256": "5ebc02aa5800add5d16f9b3f506224029adcf1fa257ac80a7d46155ce0a1e484",
+    "v1_B_C_D_reserve_semantically_unopened": true,
+    "v1_all_charts_had_at_least_17_hard_rows": true,
+    "v1_at_least_one_chart_had_balanced_mass_below_0_005": true,
+    "v1_atlas_frozen": false,
+    "v1_dispatch_record_jsonl_SHA256": "2862739f786553412c003a305dd505e54afe720090ae3a7f5523224a592d93fa",
+    "v1_exact_occupancy_vectors_not_retained": true,
+    "v1_fixed_chart_count": 8,
+    "v1_graph_defined": false,
+    "v1_terminal_gate": "minimum_balanced_hard_occupancy_0_005",
+    "v1_terminal_record_jsonl_SHA256": "3eab4751d8f72183c6f4420289405856f212ddf07388954e5a2c25e9594116bc",
+    "v1_terminal_role": "A_chart_transport_fit",
+    "v1_terminal_timestamp_UTC": "2026-08-10T11:30:39.349Z",
+    "v1_transports_fitted": false,
+    "v2_independently_reproduces_K8_before_descending": true,
+    "v2_is_post_A_informed": true,
+    "v2_is_prospective_to_B_and_C": true,
+    "whole_protocol_preregistered_from_scratch_claimed": false
+  },
+  "output_contract": {
+    "A_selection_receipt_embedded": true,
+    "all_names_are_distinct_from_v1": true,
+    "atlas": ".local-runs/google--gemma-3-270m/chart-native-neighbor-experiment-v2.atlas.bundle",
+    "independent_v2_K8_agreement_receipt_bound": true,
+    "prior_K8_diagnostic_result_receipt_and_SHA_bound": true,
+    "rejected_attempt_prefix_and_sufficient_statistics_reported": true,
+    "report": ".local-runs/google--gemma-3-270m/chart-native-neighbor-experiment-v2.json",
+    "report_is_published_last_as_commit_marker": true,
+    "selected_K_rank_feature_width_and_claim_tier_reported": true,
+    "svg": ".local-runs/google--gemma-3-270m/chart-native-neighbor-experiment-v2.svg"
+  },
+  "role_firewall": {
+    "A_may_fit_and_select_intrinsic_chart_geometry": true,
+    "B_C_D_reserve_may_not_select_or_refit_chart_count": true,
+    "B_candidate_nomination_only": true,
+    "C_confirmation_only": true,
+    "D_response_validation_non_authorizing": true,
+    "one_selected_K_reaches_B_and_C": true,
+    "ordered_roles": [
+      "A_chart_transport_fit",
+      "B_neighbor_discovery",
+      "C_neighbor_confirmation",
+      "D_response_validation",
+      "reserve_unopened"
+    ],
+    "reserve_unopened": true,
+    "running_B_or_C_for_multiple_K_values_invalidates_confirmation": true,
+    "selected_atlas_and_A_transports_frozen_before_B_open": true
+  },
+  "schema": "fisher_graph.gemma3_chart_native_neighbor.setup.v2",
+  "selection_receipt": {
+    "A_panel_row_context_weight_and_spool_catalog_hashes_required": true,
+    "attempted_prefix_and_unattempted_suffix_required": true,
+    "candidate_order_and_gate_order_required": true,
+    "chart_by_mode_and_chart_by_family_occupancy_catalog_hashes_required": true,
+    "exact_traced_selection_kernel_receipt_required": "133311b1c982ebc42cf98219faa8eed37c8b36b4348385c02f78edceebded9f6",
+    "per_attempt_typed_status_and_first_failed_gate_required": true,
+    "per_chart_final_hard_counts_and_balanced_masses_required": true,
+    "per_chart_radius_soft_occupancy_eigen_gap_scale_and_SPD_diagnostics_required_when_reached": true,
+    "post_occupancy_gate_sufficient_statistics": {
+      "PASS_evidence_required_for_every_reached_predicate": true,
+      "SPD_contract": {
+        "basis_gram_atol_binary64": "3e112e0be826d695",
+        "basis_gram_rtol_binary64": "3e112e0be826d695",
+        "basis_orthonormality": {
+          "bound_formula": "1e_minus_9_plus_1e_minus_9_times_abs_identity_ij",
+          "component_ordinal": "i_times_16_plus_j",
+          "decisive_component_rule": "minimum_signed_margin_if_finite_else_first_nonfinite_component",
+          "observed_binary64": [
+            "basis_gram_ij",
+            "identity_ij",
+            "absolute_residual"
+          ],
+          "signed_margin": "bound_minus_absolute_residual"
+        },
+        "canonical_inventory_after_all_eigengaps_PASS": [
+          "K_chart_basis_orthonormality_decisive_components",
+          "K_chart_minimum_positive_tangent_variances",
+          "K_chart_positive_orthogonal_alpha_scalars"
+        ],
+        "nonfinite_classification_required": true,
+        "orthogonal_alpha": {
+          "bound_binary64": "0000000000000000",
+          "observed_binary64": [
+            "orthogonal_alpha"
+          ],
+          "signed_margin": "orthogonal_alpha_minus_zero"
+        },
+        "tangent_variance": {
+          "bound_binary64": "0000000000000000",
+          "component_ordinal": "minimum_component_0_through_15",
+          "observed_binary64": [
+            "minimum_published_tangent_variance"
+          ],
+          "signed_margin": "published_variance_minus_zero",
+          "variance_floor_value_not_exposed_or_claimed": true
+        }
+      },
+      "canonical_predicate_order": [
+        "finite_and_positive_radius_squared",
+        "finite_membership",
+        "nonnegative_membership",
+        "membership_simplex_absolute_residual",
+        "finite_and_positive_soft_occupancy",
+        "finite_symmetric_covariance",
+        "strict_relative_eigengap",
+        "basis_orthonormality",
+        "finite_and_positive_tangent_variance",
+        "finite_and_positive_orthogonal_alpha"
+      ],
+      "covariance_contract": {
+        "bound_formula": "1e_minus_12_times_max_1_abs_Cij_abs_Cji",
+        "cardinality_when_reached": "K_chart",
+        "component_ordinal": "i_times_hidden_width_plus_j",
+        "covariance_bytes_remain_original_and_unsymmetrized": true,
+        "decisive_pair_rule": "minimum_signed_margin_pair_on_PASS_else_first_failing_or_nonfinite_pair",
+        "maximum_covariance_residual_not_exposed_or_claimed": true,
+        "nonfinite_pair_classification_required": true,
+        "observed_binary64": [
+          "C_ij",
+          "C_ji",
+          "absolute_pair_residual",
+          "scale_max_1_abs_Cij_abs_Cji"
+        ],
+        "order": "chart_ordinal_0_through_K_chart_minus_1",
+        "predicate_id": "finite_symmetric_covariance",
+        "relative_tolerance_binary64": "3d719799812dea11",
+        "signed_margin": "bound_minus_absolute_pair_residual"
+      },
+      "eigengap_orientation_contract": {
+        "PASS_requires_strictly_positive_margin": true,
+        "bound_formula": "1e_minus_12_times_max_1_abs_selected_abs_following",
+        "component_ordinal": "selected_eigen_ordinal_j",
+        "every_published_spectrum_hash_reconstructed_from_chained_rows": true,
+        "failure_hash_cardinality": "failing_chart_ordinal_plus_int_terminal_j_equals_15",
+        "observed_binary64": [
+          "selected_eigenvalue_lambda_j",
+          "following_eigenvalue_lambda_j_plus_1",
+          "absolute_gap",
+          "scale_max_1_abs_selected_abs_following"
+        ],
+        "order": "chart_major_then_eigen_ordinal_0_through_15",
+        "partial_spectrum_hash_policy": "option_A",
+        "partial_unreached_spectrum_preimage_forbidden": true,
+        "predicate_id": "strict_relative_eigengap",
+        "relative_tolerance_binary64": "3d719799812dea11",
+        "selected_atlas_cardinality": "K_chart_times_16",
+        "signed_margin": "absolute_gap_minus_bound",
+        "spectrum_hashes_only_for_complete_16_row_charts": true,
+        "terminal_failure_inventory": "all_prior_charts_times_16_PASS_then_current_chart_ordinals_before_j_PASS_then_first_FAIL_j"
+      },
+      "encoding": "lowercase_big_endian_binary64_bits_for_observations_bounds_and_signed_margins_including_nonfinite_classes",
+      "gate_evidence_required_fields": [
+        "schema",
+        "gate_id",
+        "predicate_id",
+        "status",
+        "chart_ordinal",
+        "component_ordinal",
+        "global_row_ordinal",
+        "observed_binary64",
+        "bound_binary64",
+        "signed_margin_binary64",
+        "receipt_sha256"
+      ],
+      "hash_only_rejected_candidate_diagnostics_forbidden": true,
+      "radius_contract": {
+        "bound_binary64": "0000000000000000",
+        "cardinality_when_reached": "K_chart",
+        "nonfinite_classification_required": true,
+        "observed_binary64": [
+          "published_radius_squared"
+        ],
+        "order": "chart_ordinal_0_through_K_chart_minus_1",
+        "predicate_id": "finite_and_positive_radius_squared",
+        "radius_numerator_unfloored_value_and_floor_not_exposed_or_claimed": true,
+        "signed_margin": "published_radius_squared_minus_zero"
+      },
+      "reject_retains_exact_prior_PASS_prefix_plus_terminal_evidence": true,
+      "soft_occupancy_contract": {
+        "complete_scan_canonical_inventory": [
+          "K_chart_per_chart_minimum_nonnegative_membership",
+          "one_global_worst_membership_simplex_residual",
+          "K_chart_per_chart_positive_soft_occupancy_mass"
+        ],
+        "early_scan_terminal_predicates": [
+          {
+            "predicate_id": "finite_membership",
+            "status": "NONFINITE"
+          },
+          {
+            "predicate_id": "nonnegative_membership",
+            "status": "NEGATIVE"
+          },
+          {
+            "predicate_id": "membership_simplex_absolute_residual",
+            "status": "RESIDUAL_EXCEEDS_BOUND"
+          }
+        ],
+        "finite_membership_PASS_rows_not_emitted": true,
+        "minimum_membership_bound_binary64": "0000000000000000",
+        "minimum_membership_is_per_chart_not_global": true,
+        "minimum_membership_row_fields": [
+          "chart_ordinal",
+          "global_row_ordinal",
+          "minimum_finite_membership",
+          "zero_bound",
+          "membership_minus_zero_margin"
+        ],
+        "simplex_atol_binary64": "3d719799812dea11",
+        "simplex_effective_bound_binary64": "3d819799812dea11",
+        "simplex_row_fields": [
+          "global_row_ordinal",
+          "row_membership_sum",
+          "absolute_residual_from_one",
+          "effective_bound",
+          "bound_minus_residual_margin"
+        ],
+        "simplex_rtol_binary64": "3d719799812dea11",
+        "soft_occupancy_bound_binary64": "0000000000000000",
+        "soft_occupancy_row_fields": [
+          "chart_ordinal",
+          "soft_occupancy_mass",
+          "zero_bound",
+          "mass_minus_zero_margin"
+        ]
+      },
+      "unreached_gate_evidence_forbidden": true
+    },
+    "prompt_text_token_ids_and_raw_tensors_forbidden": true,
+    "seeds_and_all_12_Lloyd_pass_receipts_required": true,
+    "selected_K_feature_width_and_atlas_sha256_required": true,
+    "selection_receipt_sha256_enters_A_stage_and_all_later_stage_chains": true,
+    "source_kernel_resource_config_and_runtime_hashes_required": true
+  },
+  "setup_id": "gemma3-chart-native-neighbor-v2",
+  "setup_receipt": {
+    "activations_captured": false,
+    "atlas_fitted": false,
+    "chart_count_selected": false,
+    "model_weights_loaded": false,
+    "neighbor_graph_built": false,
+    "prompt_data_opened": false,
+    "scientific_result_present": false,
+    "tensor_library_imported": false,
+    "transports_fitted": false
+  },
+  "setup_sha256": "f786a320c9a646f7141d1832913c11149297b09d3d01eca033acfe1fd9cb7f50",
+  "unchanged_intrinsic_atlas_contract": {
+    "canonical_basis_sign_rule_unchanged": true,
+    "deterministic_weighted_farthest_initialization": true,
+    "eigenvalue_tie_relative_tolerance": 1e-12,
+    "every_selected_eigenvalue_to_following_gap_required": true,
+    "fit_pool_balanced_mass_total": 1.0,
+    "fit_pool_rows_per_mode": 24732,
+    "fit_pool_total_rows": 939816,
+    "fit_pool_weighting": "equal_mode_then_equal_family_then_equal_example_then_equal_row_within_example",
+    "fixed_float64_CPU_reduction_order": true,
+    "full_rank_SPD_tangent_plus_isotropic_orthogonal_metric_required": true,
+    "hidden_width": 640,
+    "lloyd_iteration_count": 12,
+    "membership_temperature": 1.0,
+    "minimum_balanced_hard_occupancy_weight": 0.005,
+    "minimum_hard_rows_per_chart": 17,
+    "occupancy_equality_at_0_005_passes": true,
+    "radius_floor_fraction": 1e-08,
+    "ridge_scale_floor": 1e-12,
+    "tangent_rank": 16,
+    "transport_fisher_energy_floor": 1e-12,
+    "transport_relative_ridge": 0.001,
+    "variance_floor_fraction": 1e-08
+  }
+}
