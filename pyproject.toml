@@ -149,6 +149,7 @@ fisher-graph-gemma-layer-agnostic-compression-worker = "fisher_graph.gemma3_laye
 fisher-graph-gemma-fisher-activation-chart-setup = "fisher_graph_fisher_activation_chart_setup:main"
 fisher-graph-gemma-fisher-activation-chart-worker = "fisher_graph.gemma3_fisher_activation_chart_whole_model_experiment:main"
 fisher-graph-gemma-joint-cross-block-whole-model-dev = "fisher_graph.gemma3_joint_cross_block_whole_model_experiment:main"
+fisher-graph-gemma-attention-transport-abc = "fisher_graph.gemma3_attention_transport_experiment:main"
 fisher-graph-gemma-exact-edge-sidecar-setup = "fisher_graph_exact_edge_sidecar_setup:main"
 fisher-graph-gemma-exact-edge-sidecar-dev = "fisher_graph.gemma3_exact_edge_sidecar_experiment:main"
 fisher-graph-gemma-causal-carrier-transport-setup = "fisher_graph_causal_carrier_transport_setup:main"
