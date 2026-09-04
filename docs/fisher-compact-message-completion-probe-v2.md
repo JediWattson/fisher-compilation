@@ -1,4 +1,4 @@
-# Fisher Compact-Message Completion Probe v2: P0/K Implementation Profile
+# Fisher Compact-Message Completion Probe v2: P0/K and Public-Synthetic Profile
 
 ## Status and authority
 
@@ -7,16 +7,21 @@ This is a scoped implementation and readiness record for
 scientific specification. The user-supplied base v2 specification and its
 non-conflicting E-, F-, G-, H-, I-, and J-series amendments remain
 authoritative for a future scientific campaign. The K-series below records
-the additional mechanical closure enforced by the model-free kernel.
-Normative terms such as **must**, **may**, and **must not** are binding within
-this implemented P0/K scope.
+the additional mechanical closure enforced by the durable protocol kernel,
+and the public-synthetic stack qualifies the P1--P12 mechanics without making
+a scientific claim. Normative terms such as **must**, **may**, and **must not**
+are binding within these implemented scopes.
 
-There are two deliberately separate scopes:
+There are three deliberately separate scopes:
 
 - **Current corpus campaign:** P0 provenance preflight only. It must terminate
   `development_complete_independent_data_unavailable` without constructing a
   scientific split, loading a model, capturing activations, fitting a
   representation, or evaluating the hypothesis.
+- **Public-synthetic qualification:** deterministic generated tensors exercise
+  the P1--P12 artifact, capture, representation, model, evaluation, support,
+  and terminal machinery. They do not use the target model or any protected
+  corpus and cannot establish a scientific result or guard claim.
 - **Future D2 campaign:** a new campaign may proceed beyond P0 only after a
   genuinely new, independently eligible D2 corpus is supplied. The future
   K-series mechanical subset specified here has a model-free authorization,
@@ -24,13 +29,43 @@ There are two deliberately separate scopes:
   synthetic qualification. That kernel does not make a D2 corpus exist and
   does not authorize or execute a scientific campaign.
 
+### Separate public-synthetic qualification command
+
+The synthetic qualification stack has its own explicit entry point; the
+current-corpus P0 command and its defaults are unchanged:
+
+```bash
+fisher-graph-compact-message-completion-synthetic-qualification \
+  --profile quick \
+  /tmp/fisher-cmc-synthetic-quick-001
+```
+
+The output root is required and must be fresh: it must not already exist and
+cannot be under `.local-runs` or a corpus directory. `quick` runs shortened
+optimizer schedules for mechanical feedback: it reaches measured synthetic
+P11, schema-exercises P12 in memory, and intentionally registers neither a
+candidate nor a terminal tail. `exact` runs the frozen full schedules, but
+remains public/synthetic qualification only. The command emits a JSON summary
+that explicitly marks scientific-claim and guard-claim eligibility false,
+target-model execution false, and protected-panel access false. Neither
+profile is a scientific result, guard result, or substitute for a future
+eligible D2 campaign.
+
 ### Implementation and execution record
 
-The current-P0 runner and the model-free future-D2 protocol kernel are
-implemented in this repository. The corrected P0 transaction is qualified
-only with synthetic reserve fixtures: it durably claims the one decode,
-publishes and byte-binds the sanitized receipt, and only then commits the
-aggregate and per-item `retired_exposed` transitions.
+The current-P0 runner, durable future-D2 protocol kernel, and isolated
+public-synthetic P1--P12 qualification stack are implemented in this
+repository. The corrected P0 transaction is qualified only with synthetic
+reserve fixtures: it durably claims the one decode, publishes and byte-binds
+the sanitized receipt, and only then commits the aggregate and per-item
+`retired_exposed` transitions.
+
+The full-schedule public-synthetic execution completed 12,350 initial-model
+optimizer updates and 4,000 all-fit refit updates, then closed after P8 as
+`development_complete_refit_instability` because the non-selecting tune replay
+exceeded the frozen inclusive two-percent limit. It correctly created no P9
+development freeze, development-confirm authorization, candidate, protected
+access, guard result, or scientific result.
 
 One real local P0 attempt predates that correction. Its nine artifacts are at
 `.local-runs/google--gemma-3-270m/fisher-compact-message-completion-probe-v2`
@@ -379,21 +414,21 @@ SQLite record, or renamed corpus simulates that boundary.
 | --- | --- |
 | Corrected P0 transaction | Implemented and conformantly qualified with synthetic fixtures; permanently blocked from reopening the exhausted real reserve |
 | Preserved real P0 attempt | Exact nine-artifact byte audit supported; legacy registry v1; explicitly nonconformant |
-| K authorization, row-index, and shard plan | Model-free ledger mechanics implemented for synthetic qualification |
-| Safetensors evidence | Existing-file parser, row-ID/tensor alignment, plan-order rederivation, and mutation checks implemented; no model-produced shard writer |
-| K recovery, failures, prefixes, and terminal tail | Model-free mechanics implemented subject to the verification record below |
-| External scientific artifacts | Framing, durability, byte hash, materialization order, and prefix closure enforced; each scientific artifact's domain schema remains the producer's responsibility |
-| D2 corpus and splits | Not supplied or implemented |
-| Model/tokenizer/runtime/source builders and actual capture | Not implemented or run |
-| O1/O2, locator/codec/representation fitting, numerical estimators, J models, ablations, and O7 | Not implemented or run |
+| K authorization, row-index, and shard plan | Durable mechanics implemented and exercised by synthetic qualification |
+| Safetensors evidence | Writer/parser, row-ID/tensor alignment, plan-order rederivation, mutation detection, and capture recovery implemented for synthetic tensors |
+| K recovery, failures, prefixes, and terminal tail | Implemented with strict reached-prefix closure and atomic final-manifest-last terminalization |
+| External scientific artifacts | Strict per-artifact schemas, dependency hashes, direct body-reference cross-bindings, materialization order, and prefix closure implemented |
+| Public-synthetic identities, splits, and capture | Deterministic P1--P3 fixtures and source-safe capture implemented; no protected corpus access |
+| Public-synthetic representation and evaluation | O1/O2, locators/codecs, lower-K fallback, operator references, M2/oracles, J models, refit/replay, frozen bundles, development evaluation, O7, support, and reporting-only power projection implemented |
+| D2 corpus, target-model adapter, and target-model execution | Not supplied, implemented, or run |
 | Private guard/evaluator | Not present; no local component has guard authority |
 
-K1-K7 are normative for the ledger and verifier portions of the model-free
-future-D2 kernel, while K8's reason registry and failure taxonomy are enforced
-mechanically. K8's operator-reference calculation and lower-K scientific
-producer behavior remain part of the unimplemented scientific pipeline. All
-of this is dormant in the current P0 path, and the omitted detailed scientific
-clauses in the base v2 and E-J specifications remain future requirements.
+K1-K7 are normative for the ledger, verifier, and public-synthetic producer
+stack, while K8's deleted reason, failure taxonomy, positive-only
+operator-reference calculation, and lower-K behavior are enforced
+mechanically. All of this remains isolated from the current P0 path. A real D2
+campaign still requires the corpus/model-specific adapter and every applicable
+scientific acceptance condition in the base v2 and E-J specifications.
 
 ## K-series mechanical closure for future D2
 
@@ -707,31 +742,35 @@ but no category may be collapsed away.
 | **Total** | **54** | |
 
 The corrected P0 implementation exercises the applicable P0 categories only
-with synthetic fixtures. The model-free K test suite exercises the mechanical
-subsets identified in the implementation boundary; it does not cover the
-absent corpus/model/scientific pipeline. The full 54-category acceptance set
-therefore has not passed.
+with synthetic fixtures. The public-synthetic suite exercises the P1--P12
+pipeline against deterministic generated tensors, including model and
+numerical mechanics, but it does not execute an eligible D2 corpus through the
+target model. The full 54-category real scientific acceptance campaign
+therefore has not run or passed.
 
 ## Verification and readiness statement
 
 The corrected P0 implementation is synthetically qualified, while the real
 P0 endpoint is permanently closed and its preserved result is audit-only. The
-model-free K-series kernel is mechanically qualified for its documented
-scope. An independent static review found no remaining correctness blocker or
-scientific/numerical overclaim, and independently ran the final focused suite:
+durable K-series kernel and public-synthetic P1--P12 stack are mechanically
+qualified for their documented scope. The final verification record is listed
+below; it is not evidence for a real D2 scientific campaign:
 
 | Verification set | Result |
 | --- | ---: |
 | Corrected P0 synthetic fixtures | 36 passed |
-| Model-free K protocol | 121 passed |
-| Combined new suite, Python 3.14 with warnings as errors | 157 passed |
+| Durable P0/K protocol and terminal mechanics | 133 passed |
+| Additional public-synthetic P1--P12 stack | 202 passed |
+| Complete compact-message suite, Python 3.14 with warnings as errors | 371 passed |
 
-The root-checkout validation additionally ran 187 selected existing
-local-chart, capture, probe, carrier, fidelity, lowering, autonomous-residual,
-and X4/H4 factorial regressions. The final combined selected run was therefore
-344 passed with Python warnings treated as errors. This is a focused
-regression selection, not the unimplemented 54-category scientific acceptance
-campaign.
+The repository-wide warnings-as-errors diagnostic was also run to completion,
+but is not reported as passing. Unrelated legacy `torch.func.jvp` paths enter
+PyTorch's unsupported Python 3.14 `torch.jit.script` decomposition loader and
+promote its deprecation warning to an error; representative affected tests
+pass when that warning is not promoted. One sealed historical attention report
+also rejects the `pyproject.toml` drift introduced by the earlier compact-message
+P0 command registration. Neither baseline issue is counted as compact-message
+acceptance evidence, and neither was bypassed or silently rewritten here.
 
 The preserved real P0 verifier also succeeds as a byte audit while reporting
 `contract_conformant = false`, verification mode
@@ -742,5 +781,5 @@ execution.
 
 None of this authorizes a scientific run with the current A/B/C/D corpus set.
 Future D2 execution remains contingent on new eligible data, a new campaign,
-implementation of the corpus/model-specific scientific pipeline, and the
-complete applicable qualification suite.
+a real corpus/model adapter and target-model execution, and the complete
+applicable qualification suite.

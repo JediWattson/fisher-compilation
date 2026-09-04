@@ -47,6 +47,7 @@ __all__ = [
     "CURRENT_P0_CAMPAIGN_ID",
     "CURRENT_P0_TERMINAL_STATE",
     "FUTURE_D2_CAMPAIGN_SCOPE",
+    "SYNTHETIC_QUALIFICATION_CAMPAIGN_SCOPE",
     "PRIMARY_FAILURE_RECEIPT_SCHEMA",
     "SUPPORT_FAILURE_RECEIPT_SCHEMA",
     "TERMINAL_STATE_SCHEMA",
@@ -115,6 +116,13 @@ CURRENT_P0_TERMINAL_STATE = (
 )
 CURRENT_P0_CAMPAIGN_ID = "fisher-compact-message-completion-v2-current-abcd-p0"
 FUTURE_D2_CAMPAIGN_SCOPE = "future_separately_initialized_D2_campaign"
+SYNTHETIC_QUALIFICATION_CAMPAIGN_SCOPE = "synthetic_qualification_only"
+_CAMPAIGN_SCOPES = frozenset(
+    {
+        FUTURE_D2_CAMPAIGN_SCOPE,
+        SYNTHETIC_QUALIFICATION_CAMPAIGN_SCOPE,
+    }
+)
 
 AUTHORIZATION_SCHEMA = (
     "fisher_graph.fisher_compact_message_completion.authorization.v1"
@@ -176,6 +184,13 @@ _ROW_SEQUENCE_DOMAIN = (
 _ROW_INDEX_PAYLOAD_DOMAIN = (
     b"fisher-compact-message-completion/evaluation-row-index-payload/v1\x00"
 )
+_CONTENT_SET_DOMAIN = b"fisher-compact-message-completion/content-set/v1"
+_ANALYSIS_UNIT_SET_DOMAIN = (
+    b"fisher-compact-message-completion/analysis-unit-set/v1"
+)
+_PARTITION_COMMITMENT_DOMAIN = (
+    b"fisher-compact-message-completion/partition/v1"
+)
 _AUTHORIZATION_DOMAIN = (
     b"fisher-compact-message-completion/capture-authorization/v1\x00"
 )
@@ -205,6 +220,9 @@ _TERMINAL_SUCCESS_DOMAIN = (
 )
 _TERMINAL_FAILURE_DOMAIN = (
     b"fisher-compact-message-completion/capture-failure/v1\x00"
+)
+_DEVELOPMENT_OUTCOME_DOMAIN = (
+    b"fisher-compact-message-completion/development-outcome/v1\x00"
 )
 _ROW_INDEX_FAILURE_DOMAIN = (
     b"fisher-compact-message-completion/row-index-failure/v1\x00"
@@ -288,9 +306,29 @@ class TerminalState(str, Enum):
     DEVELOPMENT_COMPLETE_INSUFFICIENT_SUPPORT = (
         "development_complete_insufficient_support"
     )
+    DEVELOPMENT_COMPLETE_REFIT_INSTABILITY = (
+        "development_complete_refit_instability"
+    )
+    DEVELOPMENT_COMPLETE_NEGATIVE_J4 = "development_complete_negative_j4"
+    DEVELOPMENT_COMPLETE_ATTENTION_OUTPUT_NOT_READY = (
+        "development_complete_attention_output_not_ready"
+    )
     DEVELOPMENT_COMPLETE_NO_ELIGIBLE_GUARD = (
         "development_complete_no_eligible_guard"
     )
+
+
+_DEVELOPMENT_OUTCOME_REASON_CODES: dict[TerminalState, str] = {
+    TerminalState.DEVELOPMENT_COMPLETE_REFIT_INSTABILITY: (
+        "all_fit_tune_replay_exceeded_two_percent"
+    ),
+    TerminalState.DEVELOPMENT_COMPLETE_NEGATIVE_J4: (
+        "development_screen_conjunction_failed"
+    ),
+    TerminalState.DEVELOPMENT_COMPLETE_ATTENTION_OUTPUT_NOT_READY: (
+        "o2q_or_o7_fidelity_gate_failed"
+    ),
+}
 
 
 class SupportStatus(str, Enum):
@@ -340,6 +378,7 @@ class SupportFailureReason(str, Enum):
     INSUFFICIENT_INDEPENDENT_CHART_SUPPORT = (
         "insufficient_independent_chart_support"
     )
+    EXCESSIVE_OUT_OF_SUPPORT_RATE = "excessive_out_of_support_rate"
 
 
 _SUPPORT_STAGE_CONTRACT: dict[
@@ -390,6 +429,11 @@ _SUPPORT_STAGE_CONTRACT: dict[
         "development_confirm",
         CampaignPrefix.P10,
         CampaignPrefix.P11,
+    ),
+    "development_confirm_post_evaluation_support": (
+        "development_confirm",
+        CampaignPrefix.P11,
+        CampaignPrefix.P12,
     ),
 }
 
@@ -884,7 +928,11 @@ def _normalize_identifier_sequence(
 
 @dataclass(frozen=True, slots=True, init=False)
 class SupportFailureSpec:
-    """Sanitized, fully bound J3/K5 insufficient-support evidence."""
+    """Sanitized, fully bound J3/K5 insufficient-support evidence.
+
+    For development-confirm stages, ``active_chart_ids`` is the frozen set of
+    materially active source charts to which the four-unit floor applies.
+    """
 
     campaign_id: str
     partition_role: str
@@ -901,6 +949,8 @@ class SupportFailureSpec:
     active_chart_ids: tuple[str, ...]
     expected_head_ids: tuple[str, ...]
     fallback_attempts: tuple[str, ...]
+    out_of_support_token_count: int | None
+    evaluated_token_count: int | None
 
     def __init__(
         self,
@@ -920,6 +970,8 @@ class SupportFailureSpec:
         active_chart_ids: Iterable[str] = (),
         expected_head_ids: Iterable[str] = (),
         fallback_attempts: Iterable[str] = (),
+        out_of_support_token_count: int | None = None,
+        evaluated_token_count: int | None = None,
     ) -> None:
         campaign = _validate_identifier(campaign_id, label="campaign_id")
         if campaign == CURRENT_P0_CAMPAIGN_ID:
@@ -1043,6 +1095,18 @@ class SupportFailureSpec:
                 fallback_attempts, label="fallback_attempts"
             ),
         )
+        for value, label in (
+            (out_of_support_token_count, "out_of_support_token_count"),
+            (evaluated_token_count, "evaluated_token_count"),
+        ):
+            if value is not None:
+                _validate_uint64(value, label=label)
+        object.__setattr__(
+            self,
+            "out_of_support_token_count",
+            out_of_support_token_count,
+        )
+        object.__setattr__(self, "evaluated_token_count", evaluated_token_count)
         try:
             expected_role, expected_completed, expected_active = (
                 _SUPPORT_STAGE_CONTRACT[self.support_stage]
@@ -1059,10 +1123,17 @@ class SupportFailureSpec:
             raise ProtocolSchemaError(
                 "support stage, partition, and reached prefixes are inconsistent"
             )
-        chart_total = sum(count for _, count in self.chart_counts)
-        head_total = sum(
-            count for _, count in self.chart_head_validation_counts
-        )
+        if (
+            self.reason_code
+            is not SupportFailureReason.EXCESSIVE_OUT_OF_SUPPORT_RATE
+            and (
+                self.out_of_support_token_count is not None
+                or self.evaluated_token_count is not None
+            )
+        ):
+            raise ProtocolSchemaError(
+                "out-of-support token counts are reserved for the excessive-rate reason"
+            )
         if self.reason_code is SupportFailureReason.ZERO_FIT_MONITOR_CHART_SUPPORT:
             chart_counts = dict(self.chart_counts)
             head_counts = dict(self.chart_head_validation_counts)
@@ -1117,6 +1188,33 @@ class SupportFailureSpec:
                     "fallback exhaustion requires attempted K values and fallback evidence"
                 )
         elif self.reason_code is SupportFailureReason.INSUFFICIENT_INDEPENDENT_CHART_SUPPORT:
+            chart_counts = dict(self.chart_counts)
+            head_counts = dict(self.chart_head_validation_counts)
+            expected_head_count_keys = {
+                f"{chart_id}__{head_id}"
+                for chart_id in self.active_chart_ids
+                for head_id in self.expected_head_ids
+            }
+            development_stage = self.support_stage in {
+                "development_confirm_support",
+                "development_confirm_chart_head_support",
+                "development_confirm_post_evaluation_support",
+            }
+            if development_stage:
+                development_count = dict(self.analysis_unit_counts).get(
+                    "development_confirm"
+                )
+                threshold_failed = (
+                    development_count is not None
+                    and (
+                        development_count < 18
+                        or any(count < 4 for count in chart_counts.values())
+                    )
+                )
+            else:
+                threshold_failed = any(
+                    count < 2 for count in chart_counts.values()
+                )
             if (
                 self.support_stage
                 not in {
@@ -1126,14 +1224,39 @@ class SupportFailureSpec:
                     "mandatory_chart_head_support_checks",
                     "development_confirm_support",
                     "development_confirm_chart_head_support",
+                    "development_confirm_post_evaluation_support",
                 }
-                or chart_total == 0
-                or head_total == 0
+                or not self.active_chart_ids
+                or not self.expected_head_ids
+                or set(chart_counts) != set(self.active_chart_ids)
+                or set(head_counts) != expected_head_count_keys
+                or not threshold_failed
             ):
                 raise ProtocolSchemaError(
-                    "insufficient chart support requires nonzero chart/head validation evidence"
+                    "insufficient chart support requires an exact frozen "
+                    "chart/head count matrix and a failed support threshold"
                 )
-
+        elif self.reason_code is SupportFailureReason.EXCESSIVE_OUT_OF_SUPPORT_RATE:
+            if (
+                self.support_stage
+                not in {
+                    "development_confirm_support",
+                    "development_confirm_chart_head_support",
+                    "development_confirm_post_evaluation_support",
+                }
+                or not self.analysis_unit_counts
+                or not self.sequence_counts
+                or self.out_of_support_token_count is None
+                or self.evaluated_token_count is None
+                or self.evaluated_token_count == 0
+                or self.out_of_support_token_count > self.evaluated_token_count
+                or self.out_of_support_token_count * 10
+                <= self.evaluated_token_count
+            ):
+                raise ProtocolSchemaError(
+                    "excessive out-of-support rate requires development-confirm "
+                    "unit/sequence evidence and exact token counts above ten percent"
+                )
     @staticmethod
     def _count_dict(value: tuple[tuple[str, int], ...]) -> dict[str, JsonValue]:
         return {key: count for key, count in value}
@@ -1161,6 +1284,8 @@ class SupportFailureSpec:
             ),
             "partition_role": self.partition_role,
             "reason_code": self.reason_code.value,
+            "out_of_support_token_count": self.out_of_support_token_count,
+            "evaluated_token_count": self.evaluated_token_count,
             "sequence_counts": self._count_dict(self.sequence_counts),
             "support_stage": self.support_stage,
         }
@@ -1220,8 +1345,6 @@ _RESOURCE_REASONS = frozenset(
         "time_resource_limit",
     }
 )
-_FORBIDDEN_SUPPORT_REASON = "zero_fit_monitor_chart_head_support"
-
 _SAFE_FAILURE_DETAIL_KEYS = frozenset(
     {
         "artifact_name",
@@ -1332,6 +1455,29 @@ _ALWAYS_RAW_PROTECTED_KEYS = frozenset(
         "target_token_ids",
     }
 )
+_SAFE_PUBLIC_PROTECTED_METADATA_KEYS = frozenset(
+    {
+        # Frozen scientific metadata fields.  Their schemas contain only
+        # dimensions, ranks, rules, booleans, or file/hash identities; none is
+        # a model-input payload despite containing a protected-word token.
+        "completion_target_null_passed",
+        # This is a derived scalar diagnostic, not captured completion data.
+        "coefficient_completion_mse",
+        "full_prompt_shadow",
+        "message_dimension",
+        "message_rank",
+        "message_rank_per_head",
+        "message_reference_scale",
+        "message_roundtrip_passed",
+        "prompt_tail_rule",
+        "retained_message_dimension",
+        "special_tokens_map_file",
+        "transported_message_dimension",
+        # Exact artifact names appear as keys inside dependency_hashes.
+        "message_sketch_manifest_p32.json",
+        "o7_attention_output_completion_results.json",
+    }
+)
 
 
 def _is_protected_raw_value_key(key: str) -> bool:
@@ -1339,6 +1485,8 @@ def _is_protected_raw_value_key(key: str) -> bool:
         return False
     if key in _ALWAYS_RAW_PROTECTED_KEYS:
         return True
+    if key in _SAFE_PUBLIC_PROTECTED_METADATA_KEYS:
+        return False
     return not key.endswith(_SAFE_PROTECTED_METADATA_SUFFIXES)
 
 
@@ -1539,12 +1687,6 @@ def classify_failure(reason_code: str) -> FailureDisposition:
             reason_code,
             FailureClass.RESOURCE_LIMIT,
             TerminalState.DEVELOPMENT_COMPLETE_RESOURCE_LIMITED,
-        )
-    if reason_code == _FORBIDDEN_SUPPORT_REASON:
-        raise ProtocolSchemaError(
-            "zero_fit_monitor_chart_head_support is forbidden; missing heads "
-            "are missing_head_in_validation_rows and absent supported pairs are "
-            "insufficient_independent_chart_support"
         )
     raise ProtocolSchemaError(f"unknown failure reason_code {reason_code!r}")
 
@@ -2000,12 +2142,262 @@ def row_index_payload_sha256(payload: RowIndexPayload) -> str:
     ).hexdigest()
 
 
+_COMMON_AUTHORIZATION_BINDING_KEYS = frozenset(
+    {
+        "semantic_canonicalization_spec_sha256",
+        "corpus_role_classification_sha256",
+        "independence_protocol_sha256",
+        "split_manifest_sha256",
+        "source_inventory_sha256",
+        "model_identity_sha256",
+        "model_immutable_revision",
+        "model_weight_file_byte_sha256s",
+        "model_config_byte_sha256",
+        "tokenizer_identity_sha256",
+        "tokenizer_file_byte_sha256s",
+        "tokenizer_config_byte_sha256",
+        "special_vocabulary_map_byte_sha256",
+        "carrier_identity_sha256",
+        "h4_carrier_byte_sha256",
+        "runtime_identity_sha256",
+        "execution_budget_sha256",
+        "row_derivation_protocol_artifact_sha256",
+        "row_derivation_protocol_semantic_sha256",
+        "canonical_content_sha256s",
+        "content_set_sha256",
+        "analysis_unit_commitments",
+        "analysis_unit_set_sha256",
+        "expected_sequence_count",
+        "expected_analysis_unit_count",
+        "row_count",
+        "row_index_payload_sha256",
+        "partition_commitment",
+        "maximum_rows_per_shard",
+        "capture_schema_hash",
+        "capture_implementation_hash",
+    }
+)
+_TUNE_AUTHORIZATION_BINDING_KEYS = frozenset(
+    {
+        "campaign_root_sha256",
+        "selection_representation_manifest_sha256",
+        "codec_protocol_sha256",
+        "ceiling_gate_protocol_sha256",
+    }
+)
+_DEVELOPMENT_AUTHORIZATION_BINDING_KEYS = frozenset(
+    {
+        "campaign_root_sha256",
+        "frozen_representation_manifest_sha256",
+        "selected_codec_artifact_sha256",
+        "selected_codec_id",
+        "candidate_bundle_byte_sha256",
+        "comparator_bundle_byte_sha256",
+        "candidate_bundle_metadata_sha256",
+        "candidate_bundle_metadata_canonical_payload_sha256",
+        "frozen_b_star_model_id",
+        "frozen_b_star_artifact_sha256",
+        "nonselecting_tune_replay_sha256",
+        "nonselecting_tune_replay_result_sha256",
+        "development_eligibility_protocol_sha256",
+    }
+)
+_COMMON_AUTHORIZATION_SHA_KEYS = frozenset(
+    {
+        key
+        for key in _COMMON_AUTHORIZATION_BINDING_KEYS
+        if key.endswith("_sha256") or key.endswith("_hash")
+    }
+    - {"model_weight_file_byte_sha256s", "tokenizer_file_byte_sha256s"}
+)
+
+
+def _f19_set_sha256(values: Sequence[str], *, domain: bytes, label: str) -> str:
+    digests = [
+        _raw_digest(value, label=f"{label}[{index}]")
+        for index, value in enumerate(values)
+    ]
+    if not digests:
+        raise ProtocolSchemaError(f"{label} must not be empty")
+    if len(set(digests)) != len(digests):
+        raise ProtocolSchemaError(f"{label} must not contain duplicates")
+    ordered = sorted(digests)
+    return hashlib.sha256(
+        domain + b"\0" + struct.pack(">Q", len(ordered)) + b"".join(ordered)
+    ).hexdigest()
+
+
+def _f19_partition_commitment(
+    partition_role: str,
+    *,
+    content_set_sha256: str,
+    analysis_unit_set_sha256: str,
+) -> str:
+    role = _validate_partition_role(partition_role)
+    return hashlib.sha256(
+        _PARTITION_COMMITMENT_DOMAIN
+        + b"\0"
+        + role.encode("utf-8")
+        + b"\0"
+        + _raw_digest(content_set_sha256, label="content_set_sha256")
+        + _raw_digest(analysis_unit_set_sha256, label="analysis_unit_set_sha256")
+    ).hexdigest()
+
+
+def _validate_authorization_bindings(
+    partition_role: str,
+    bindings: Mapping[str, JsonValue],
+    *,
+    row_derivation_protocol_hash: str,
+    expected_row_count: int | None,
+    expected_row_index_payload_sha256: str | None,
+) -> None:
+    required = set(_COMMON_AUTHORIZATION_BINDING_KEYS)
+    if partition_role == "tune":
+        required.update(_TUNE_AUTHORIZATION_BINDING_KEYS)
+    elif partition_role == "development_confirm":
+        required.update(_DEVELOPMENT_AUTHORIZATION_BINDING_KEYS)
+    missing = sorted(required - set(bindings))
+    if missing:
+        raise ProtocolSchemaError(
+            f"frozen_bindings missing required {partition_role} keys: {missing!r}"
+        )
+
+    sha_keys = set(_COMMON_AUTHORIZATION_SHA_KEYS)
+    if partition_role == "tune":
+        sha_keys.update(_TUNE_AUTHORIZATION_BINDING_KEYS)
+    elif partition_role == "development_confirm":
+        sha_keys.update(
+            key
+            for key in _DEVELOPMENT_AUTHORIZATION_BINDING_KEYS
+            if key.endswith("_sha256")
+        )
+    for key in sorted(sha_keys):
+        _validate_sha256(bindings[key], label=f"frozen_bindings.{key}")
+    _validate_sha256(
+        bindings["model_immutable_revision"],
+        label="frozen_bindings.model_immutable_revision",
+    )
+
+    for key in ("model_weight_file_byte_sha256s", "tokenizer_file_byte_sha256s"):
+        values = bindings[key]
+        if not isinstance(values, list) or not values:
+            raise ProtocolSchemaError(f"frozen_bindings.{key} must be nonempty")
+        for index, value in enumerate(values):
+            _validate_sha256(value, label=f"frozen_bindings.{key}[{index}]")
+
+    content_values = bindings["canonical_content_sha256s"]
+    unit_values = bindings["analysis_unit_commitments"]
+    if not isinstance(content_values, list) or not isinstance(unit_values, list):
+        raise ProtocolSchemaError(
+            "frozen content and analysis-unit identities must be arrays"
+        )
+    for label, values in (
+        ("canonical_content_sha256s", content_values),
+        ("analysis_unit_commitments", unit_values),
+    ):
+        for index, value in enumerate(values):
+            _validate_sha256(value, label=f"frozen_bindings.{label}[{index}]")
+        if values != sorted(set(values)):
+            raise ProtocolSchemaError(
+                f"frozen_bindings.{label} must be unique and raw-digest ordered"
+            )
+
+    sequence_count = _validate_uint64(
+        bindings["expected_sequence_count"],
+        label="frozen_bindings.expected_sequence_count",
+    )
+    unit_count = _validate_uint64(
+        bindings["expected_analysis_unit_count"],
+        label="frozen_bindings.expected_analysis_unit_count",
+    )
+    row_count = _validate_uint64(
+        bindings["row_count"], label="frozen_bindings.row_count"
+    )
+    maximum_rows = _validate_uint64(
+        bindings["maximum_rows_per_shard"],
+        label="frozen_bindings.maximum_rows_per_shard",
+    )
+    if (
+        sequence_count == 0
+        or unit_count == 0
+        or row_count == 0
+        or maximum_rows == 0
+        or maximum_rows > _MAXIMUM_SHARD_ROWS
+    ):
+        raise ProtocolSchemaError(
+            "frozen authorization counts and shard limit must be positive and bounded"
+        )
+    if sequence_count != len(content_values) or unit_count != len(unit_values):
+        raise ProtocolSchemaError(
+            "frozen sequence/unit counts contradict their individual identities"
+        )
+
+    content_set = _f19_set_sha256(
+        content_values,
+        domain=_CONTENT_SET_DOMAIN,
+        label="frozen_bindings.canonical_content_sha256s",
+    )
+    unit_set = _f19_set_sha256(
+        unit_values,
+        domain=_ANALYSIS_UNIT_SET_DOMAIN,
+        label="frozen_bindings.analysis_unit_commitments",
+    )
+    if bindings["content_set_sha256"] != content_set:
+        raise ProtocolSchemaError("frozen content-set commitment mismatch")
+    if bindings["analysis_unit_set_sha256"] != unit_set:
+        raise ProtocolSchemaError("frozen analysis-unit-set commitment mismatch")
+    if bindings["partition_commitment"] != _f19_partition_commitment(
+        partition_role,
+        content_set_sha256=content_set,
+        analysis_unit_set_sha256=unit_set,
+    ):
+        raise ProtocolSchemaError("frozen partition commitment mismatch")
+    if bindings["row_derivation_protocol_semantic_sha256"] != (
+        row_derivation_protocol_hash
+    ):
+        raise ProtocolSchemaError(
+            "row-derivation semantic hash differs from the authorization"
+        )
+    if expected_row_count is not None and bindings["row_count"] != expected_row_count:
+        raise ProtocolSchemaError(
+            "precomputed row count differs from the frozen binding"
+        )
+    if (
+        expected_row_index_payload_sha256 is not None
+        and bindings["row_index_payload_sha256"]
+        != expected_row_index_payload_sha256
+    ):
+        raise ProtocolSchemaError(
+            "precomputed row-index payload differs from the frozen binding"
+        )
+    if partition_role == "development_confirm":
+        _validate_identifier(
+            bindings["selected_codec_id"],
+            label="frozen_bindings.selected_codec_id",
+        )
+        _validate_identifier(
+            bindings["frozen_b_star_model_id"],
+            label="frozen_bindings.frozen_b_star_model_id",
+        )
+        if (
+            bindings["candidate_bundle_metadata_sha256"]
+            != bindings["candidate_bundle_metadata_canonical_payload_sha256"]
+            or bindings["nonselecting_tune_replay_sha256"]
+            != bindings["nonselecting_tune_replay_result_sha256"]
+        ):
+            raise ProtocolSchemaError(
+                "development authorization duplicate identity bindings disagree"
+            )
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class AuthorizationSpec:
     """Strict semantic authorization, including Mode-A ordered binding."""
 
     partition_role: str
     campaign_id: str
+    campaign_scope: str
     expected_row_set_mode: AuthorizationMode
     row_derivation_protocol_hash: str
     authorization_nonce: str
@@ -2028,6 +2420,7 @@ class AuthorizationSpec:
         expected_row_count: int | None,
         expected_row_index_payload_sha256: str | None,
         frozen_bindings: Mapping[str, object],
+        campaign_scope: str = FUTURE_D2_CAMPAIGN_SCOPE,
     ) -> None:
         role = _validate_partition_role(partition_role)
         campaign = _validate_identifier(campaign_id, label="campaign_id")
@@ -2035,6 +2428,11 @@ class AuthorizationSpec:
             raise ProtocolSchemaError(
                 "the current P0 campaign is reserved and cannot be authorized; "
                 "initialize a distinct future D2 campaign"
+            )
+        scope = _validate_identifier(campaign_scope, label="campaign_scope")
+        if scope not in _CAMPAIGN_SCOPES:
+            raise ProtocolSchemaError(
+                "campaign_scope must be the future-D2 or synthetic-qualification scope"
             )
         try:
             mode = AuthorizationMode(expected_row_set_mode)
@@ -2046,8 +2444,6 @@ class AuthorizationSpec:
         )
         nonce = _validate_identifier(authorization_nonce, label="authorization_nonce")
         normalized_bindings = _normalize_safe_bindings(frozen_bindings)
-        bindings_bytes = canonical_json_bytes(normalized_bindings)
-
         if mode is AuthorizationMode.PRECOMPUTED:
             if expected_row_set_sha256 is None:
                 raise ProtocolSchemaError(
@@ -2101,8 +2497,18 @@ class AuthorizationSpec:
             count = None
             payload_hash = None
 
+        _validate_authorization_bindings(
+            role,
+            normalized_bindings,
+            row_derivation_protocol_hash=protocol_hash,
+            expected_row_count=count,
+            expected_row_index_payload_sha256=payload_hash,
+        )
+        bindings_bytes = canonical_json_bytes(normalized_bindings)
+
         object.__setattr__(self, "partition_role", role)
         object.__setattr__(self, "campaign_id", campaign)
+        object.__setattr__(self, "campaign_scope", scope)
         object.__setattr__(self, "expected_row_set_mode", mode)
         object.__setattr__(self, "row_derivation_protocol_hash", protocol_hash)
         object.__setattr__(self, "authorization_nonce", nonce)
@@ -2126,7 +2532,7 @@ class AuthorizationSpec:
         return {
             "authorization_nonce": self.authorization_nonce,
             "campaign_id": self.campaign_id,
-            "campaign_scope": FUTURE_D2_CAMPAIGN_SCOPE,
+            "campaign_scope": self.campaign_scope,
             "expected_ordered_row_sequence_sha256": (
                 self.expected_ordered_row_sequence_sha256
             ),
@@ -3696,11 +4102,12 @@ def classify_chart_head_support(
             item.analysis_unit_id
         )
     pair_support = tuple(
-        (chart_id, head_id, len(units))
-        for (chart_id, head_id), units in sorted(support.items())
+        (chart_id, head_id, len(support.get((chart_id, head_id), set())))
+        for chart_id in active_charts
+        for head_id in expected_heads
     )
     qualifying = sum(count >= required for _, _, count in pair_support)
-    if qualifying == 0:
+    if qualifying != len(pair_support):
         return ChartHeadSupportDecision(
             status=SupportStatus.INSUFFICIENT_SUPPORT,
             terminal_state=TerminalState.DEVELOPMENT_COMPLETE_INSUFFICIENT_SUPPORT,
@@ -3709,7 +4116,7 @@ def classify_chart_head_support(
             chart_valid_row_count=len(chart_valid),
             missing_head_row_count=0,
             required_distinct_units_per_pair=required,
-            qualifying_pair_count=0,
+            qualifying_pair_count=qualifying,
             pair_support=pair_support,
         )
     return ChartHeadSupportDecision(
@@ -3845,6 +4252,279 @@ class ArtifactClosure:
     @property
     def valid(self) -> bool:
         return not self.missing_names and not self.forbidden_present_names
+
+
+def _stored_authorization_bindings(panel: sqlite3.Row) -> dict[str, JsonValue]:
+    try:
+        payload = json.loads(bytes(panel["authorization_semantic_payload"]).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as error:
+        raise _failure_exception(
+            "authorization_mismatch", "stored authorization payload is malformed"
+        ) from error
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("frozen_bindings"), dict
+    ):
+        raise _failure_exception(
+            "authorization_mismatch", "stored authorization bindings are malformed"
+        )
+    bindings = payload["frozen_bindings"]
+    assert isinstance(bindings, dict)
+    return bindings
+
+
+def _validate_row_index_authorization_bindings(
+    payload: RowIndexPayload, bindings: Mapping[str, JsonValue]
+) -> None:
+    sequence_units: dict[str, str] = {}
+    for row in payload.rows:
+        existing = sequence_units.setdefault(
+            row.canonical_sequence_hash, row.analysis_unit_commitment
+        )
+        if existing != row.analysis_unit_commitment:
+            raise _failure_exception(
+                "malformed_sequence_identity",
+                "one canonical sequence maps to multiple analysis units",
+            )
+    content_values = sorted(sequence_units)
+    unit_values = sorted(set(sequence_units.values()))
+    content_set = _f19_set_sha256(
+        content_values,
+        domain=_CONTENT_SET_DOMAIN,
+        label="committed canonical content hashes",
+    )
+    unit_set = _f19_set_sha256(
+        unit_values,
+        domain=_ANALYSIS_UNIT_SET_DOMAIN,
+        label="committed analysis-unit commitments",
+    )
+    observed = (
+        content_values,
+        content_set,
+        unit_values,
+        unit_set,
+        len(content_values),
+        len(unit_values),
+        payload.row_count,
+        payload.payload_sha256,
+        _f19_partition_commitment(
+            payload.partition_role,
+            content_set_sha256=content_set,
+            analysis_unit_set_sha256=unit_set,
+        ),
+    )
+    expected = (
+        bindings["canonical_content_sha256s"],
+        bindings["content_set_sha256"],
+        bindings["analysis_unit_commitments"],
+        bindings["analysis_unit_set_sha256"],
+        bindings["expected_sequence_count"],
+        bindings["expected_analysis_unit_count"],
+        bindings["row_count"],
+        bindings["row_index_payload_sha256"],
+        bindings["partition_commitment"],
+    )
+    if observed != expected:
+        raise _failure_exception(
+            "authorization_mismatch",
+            "committed row index differs from frozen content/unit authorization",
+        )
+
+
+_COMMON_AUTHORIZATION_ARTIFACT_BINDINGS = {
+    "semantic_canonicalization_spec_sha256": "semantic_canonicalization_spec.json",
+    "corpus_role_classification_sha256": "corpus_role_classification.json",
+    "independence_protocol_sha256": "independence_protocol.json",
+    "split_manifest_sha256": "split_manifest.json",
+    "source_inventory_sha256": "source_inventory.json",
+    "model_identity_sha256": "model_identity.json",
+    "carrier_identity_sha256": "fisher_carrier_identity.json",
+    "runtime_identity_sha256": "runtime_identity.json",
+    "execution_budget_sha256": "execution_budget.json",
+    "row_derivation_protocol_artifact_sha256": "row_derivation_protocol.json",
+}
+_TUNE_AUTHORIZATION_ARTIFACT_BINDINGS = {
+    "campaign_root_sha256": "campaign_root.json",
+    "selection_representation_manifest_sha256": (
+        "selection_representation_manifest.json"
+    ),
+    "codec_protocol_sha256": "codec_protocol.json",
+    "ceiling_gate_protocol_sha256": "ceiling_gate_protocol.json",
+}
+_DEVELOPMENT_AUTHORIZATION_ARTIFACT_BINDINGS = {
+    "campaign_root_sha256": "campaign_root.json",
+    "frozen_representation_manifest_sha256": (
+        "frozen_representation_manifest.json"
+    ),
+    "selected_codec_artifact_sha256": "selected_codec.json",
+    "candidate_bundle_byte_sha256": "candidate_bundle.safetensors",
+    "comparator_bundle_byte_sha256": "comparator_bundle.safetensors",
+    "candidate_bundle_metadata_sha256": "candidate_bundle_metadata.json",
+    "candidate_bundle_metadata_canonical_payload_sha256": (
+        "candidate_bundle_metadata.json"
+    ),
+    "frozen_b_star_artifact_sha256": "frozen_B_star.json",
+    "nonselecting_tune_replay_sha256": "nonselecting_tune_replay.json",
+    "nonselecting_tune_replay_result_sha256": "nonselecting_tune_replay.json",
+    "development_eligibility_protocol_sha256": (
+        "development_eligibility_protocol.json"
+    ),
+}
+
+
+def _campaign_inventory_content(
+    connection: sqlite3.Connection, name: str
+) -> tuple[bytes, str]:
+    row = connection.execute(
+        "SELECT * FROM campaign_artifact_inventory WHERE name = ?", (name,)
+    ).fetchone()
+    if row is None:
+        raise _failure_exception(
+            "authorization_mismatch",
+            f"authorization dependency {name!r} is not registered",
+        )
+    source_kind = row["source_kind"]
+    if source_kind == "external_reached_artifact_bytes":
+        if row["persisted_content"] is None:
+            raise _failure_exception(
+                "artifact_hash_mismatch", f"artifact {name!r} lost persisted bytes"
+            )
+        content = bytes(row["persisted_content"])
+    elif source_kind in {"external_reached_artifact_file", "capture_shard_file"}:
+        if row["source_path"] is None:
+            raise _failure_exception(
+                "artifact_hash_mismatch", f"artifact {name!r} lost its source path"
+            )
+        try:
+            content = Path(row["source_path"]).read_bytes()
+        except OSError as error:
+            raise _failure_exception(
+                "artifact_hash_mismatch", f"artifact {name!r} cannot be reopened"
+            ) from error
+    elif source_kind in {"ledger_artifact", "campaign_terminal_artifact"}:
+        artifact_row = connection.execute(
+            "SELECT content FROM artifacts WHERE name = ?", (name,)
+        ).fetchone()
+        if artifact_row is None:
+            raise _failure_exception(
+                "artifact_hash_mismatch", f"ledger artifact {name!r} is missing"
+            )
+        content = bytes(artifact_row["content"])
+    else:
+        raise _failure_exception(
+            "artifact_hash_mismatch", f"artifact {name!r} has unknown source kind"
+        )
+    digest = artifact_sha256(content)
+    if digest != row["byte_sha256"]:
+        raise _failure_exception(
+            "artifact_hash_mismatch", f"artifact {name!r} changed after registration"
+        )
+    return content, digest
+
+
+def _scientific_artifact_body(content: bytes, *, name: str) -> Mapping[str, object]:
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise _failure_exception(
+            "authorization_mismatch", f"authorization dependency {name!r} is not JSON"
+        ) from error
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("artifact_name") != name
+        or not isinstance(payload.get("body"), Mapping)
+    ):
+        raise _failure_exception(
+            "authorization_mismatch",
+            f"authorization dependency {name!r} has no bound body",
+        )
+    body = payload["body"]
+    assert isinstance(body, Mapping)
+    return body
+
+
+def _validate_registered_authorization_bindings(
+    connection: sqlite3.Connection, specification: AuthorizationSpec
+) -> None:
+    bindings = specification.frozen_bindings
+    artifact_bindings = dict(_COMMON_AUTHORIZATION_ARTIFACT_BINDINGS)
+    if specification.partition_role == "tune":
+        artifact_bindings.update(_TUNE_AUTHORIZATION_ARTIFACT_BINDINGS)
+    elif specification.partition_role == "development_confirm":
+        artifact_bindings.update(_DEVELOPMENT_AUTHORIZATION_ARTIFACT_BINDINGS)
+
+    contents: dict[str, bytes] = {}
+    for binding_key, artifact_name in artifact_bindings.items():
+        if artifact_name not in contents:
+            contents[artifact_name], observed_hash = _campaign_inventory_content(
+                connection, artifact_name
+            )
+        else:
+            observed_hash = artifact_sha256(contents[artifact_name])
+        if bindings[binding_key] != observed_hash:
+            raise _failure_exception(
+                "authorization_mismatch",
+                f"frozen binding {binding_key!r} differs from {artifact_name!r}",
+            )
+
+    model = _scientific_artifact_body(
+        contents["model_identity.json"], name="model_identity.json"
+    )
+    carrier = _scientific_artifact_body(
+        contents["fisher_carrier_identity.json"],
+        name="fisher_carrier_identity.json",
+    )
+    row_protocol = _scientific_artifact_body(
+        contents["row_derivation_protocol.json"],
+        name="row_derivation_protocol.json",
+    )
+    try:
+        nested_observed = {
+            "model_immutable_revision": model["immutable_revision"],
+            "model_weight_file_byte_sha256s": [
+                item["artifact_byte_sha256"] for item in model["weight_files"]
+            ],
+            "model_config_byte_sha256": model["config_file"][
+                "artifact_byte_sha256"
+            ],
+            "tokenizer_identity_sha256": row_protocol["tokenizer_identity_sha256"],
+            "tokenizer_file_byte_sha256s": [
+                item["artifact_byte_sha256"] for item in model["tokenizer_files"]
+            ],
+            "tokenizer_config_byte_sha256": model["tokenizer_config_file"][
+                "artifact_byte_sha256"
+            ],
+            "special_vocabulary_map_byte_sha256": model[
+                "special_tokens_map_file"
+            ]["artifact_byte_sha256"],
+            "h4_carrier_byte_sha256": carrier["carrier_byte_sha256"],
+        }
+    except (KeyError, TypeError) as error:
+        raise _failure_exception(
+            "authorization_mismatch",
+            "model/tokenizer/carrier authorization dependency is malformed",
+        ) from error
+    for key, observed in nested_observed.items():
+        if bindings[key] != observed:
+            raise _failure_exception(
+                "authorization_mismatch",
+                f"frozen nested identity {key!r} differs from its artifact",
+            )
+
+    if specification.partition_role == "development_confirm":
+        selected = _scientific_artifact_body(
+            contents["selected_codec.json"], name="selected_codec.json"
+        )
+        frozen_b = _scientific_artifact_body(
+            contents["frozen_B_star.json"], name="frozen_B_star.json"
+        )
+        if (
+            bindings["selected_codec_id"] != selected.get("codec_id")
+            or bindings["frozen_b_star_model_id"] != frozen_b.get("model_id")
+        ):
+            raise _failure_exception(
+                "authorization_mismatch",
+                "selected codec or frozen B* identity differs from its artifact",
+            )
 
 
 class ProtocolLedger:
@@ -5409,9 +6089,30 @@ class ProtocolLedger:
         )
         if terminal_state is TerminalState.DEVELOPMENT_COMPLETE_NO_ELIGIBLE_GUARD:
             qualification = (
-                "Development-confirm succeeded only within the frozen metric. "
-                "No compatible evaluator-controlled private guard exists, so "
-                "this is a development candidate and not a guard claim."
+                "The ledger records a development-confirm success disposition "
+                "only within the frozen metric. Its scientific evidentiary "
+                "meaning remains contingent on separately bound campaign "
+                "provenance. No compatible evaluator-controlled private guard "
+                "exists, so this is a development candidate and not a guard claim."
+            )
+        elif terminal_state is TerminalState.DEVELOPMENT_COMPLETE_REFIT_INSTABILITY:
+            qualification = (
+                "The non-selecting tune replay exceeded the frozen two-percent "
+                "stability limit. Development-confirm was not authorized and no "
+                "development candidate or guard claim exists."
+            )
+        elif terminal_state is TerminalState.DEVELOPMENT_COMPLETE_NEGATIVE_J4:
+            qualification = (
+                "The frozen development comparison conjunction did not establish "
+                "J4. No development candidate or guard claim exists."
+            )
+        elif (
+            terminal_state
+            is TerminalState.DEVELOPMENT_COMPLETE_ATTENTION_OUTPUT_NOT_READY
+        ):
+            qualification = (
+                "The frozen attention-output fidelity conjunction did not pass. "
+                "No development candidate or guard claim exists."
             )
         else:
             qualification = (
@@ -5427,7 +6128,9 @@ class ProtocolLedger:
             f"Active prefix: `{active_prefix.name}`\n\n"
             f"Reason: `{reason_code}`\n\n"
             f"{qualification} No raw prompt, response, token, or "
-            "protected panel content is included.\n"
+            "protected panel content is included. This terminal record does "
+            "not itself establish a scientific result or guard claim; that "
+            "status is contingent on separately bound campaign provenance.\n"
         )
         return report.encode("utf-8")
 
@@ -6292,6 +6995,181 @@ class ProtocolLedger:
                 existing = False
         return self._load_transaction(transaction_id, idempotent=existing)
 
+    def finalize_development_outcome(
+        self,
+        *,
+        campaign_id: str,
+        terminal_state: TerminalState | str,
+        reason_code: str,
+    ) -> CampaignTerminalResult:
+        """Finalize a frozen non-success development outcome at its exact prefix.
+
+        Refit instability closes after the complete P8 prefix and before any P9
+        development-confirm freeze.  Negative-J4 and attention-output outcomes
+        close after the complete P11 prefix and omit only P12's successful
+        candidate manifest.  These scientific-screen dispositions deliberately
+        use neither a mechanical failure receipt nor a support-failure receipt;
+        insufficient support must instead use :meth:`finalize_support_failure`.
+        """
+
+        campaign = _validate_identifier(campaign_id, label="campaign_id")
+        reason = _validate_identifier(reason_code, label="reason_code")
+        try:
+            outcome = (
+                terminal_state
+                if isinstance(terminal_state, TerminalState)
+                else TerminalState(terminal_state)
+            )
+        except ValueError as error:
+            raise ProtocolSchemaError(
+                "terminal_state is not a registered development outcome"
+            ) from error
+        contexts = {
+            TerminalState.DEVELOPMENT_COMPLETE_REFIT_INSTABILITY: (
+                "tune",
+                CampaignPrefix.P8,
+                CampaignPrefix.P9,
+                "refit_instability",
+            ),
+            TerminalState.DEVELOPMENT_COMPLETE_NEGATIVE_J4: (
+                "development_confirm",
+                CampaignPrefix.P11,
+                CampaignPrefix.P12,
+                "negative_j4",
+            ),
+            TerminalState.DEVELOPMENT_COMPLETE_ATTENTION_OUTPUT_NOT_READY: (
+                "development_confirm",
+                CampaignPrefix.P11,
+                CampaignPrefix.P12,
+                "attention_output_not_ready",
+            ),
+        }
+        if outcome not in contexts:
+            raise ProtocolSchemaError(
+                "terminal_state is not a non-success development outcome"
+            )
+        partition_role, completed, active, outcome_kind = contexts[outcome]
+        expected_reason = _DEVELOPMENT_OUTCOME_REASON_CODES[outcome]
+        if reason != expected_reason:
+            raise ProtocolSchemaError(
+                "reason_code does not match the development terminal state"
+            )
+        omitted = {
+            name: outcome_kind
+            for name in sorted(_PREFIX_MANDATORY_ARTIFACTS[active])
+        }
+        identity_hash = hashlib.sha256(
+            _DEVELOPMENT_OUTCOME_DOMAIN
+            + canonical_json_bytes(
+                {
+                    "active_prefix": active.name,
+                    "campaign_id": campaign,
+                    "last_completed_prefix": completed.name,
+                    "omitted_active_artifacts": _omission_records(omitted),
+                    "partition_role": partition_role,
+                    "reason_code": reason,
+                    "terminal_state": outcome.value,
+                }
+            )
+        ).hexdigest()
+        with self._immediate_transaction() as connection:
+            phase = connection.execute(
+                "SELECT value FROM protocol_metadata "
+                "WHERE key = 'global_terminal_phase'"
+            ).fetchone()
+            if phase is not None:
+                state_row = connection.execute(
+                    "SELECT value FROM protocol_metadata "
+                    "WHERE key = 'global_terminal_state'"
+                ).fetchone()
+                identity_row = connection.execute(
+                    "SELECT value FROM protocol_metadata "
+                    "WHERE key = 'global_terminal_identity_sha256'"
+                ).fetchone()
+                transaction_row = connection.execute(
+                    "SELECT value FROM protocol_metadata "
+                    "WHERE key = 'global_terminal_closure_transaction_id'"
+                ).fetchone()
+                role_row = connection.execute(
+                    "SELECT value FROM protocol_metadata "
+                    "WHERE key = 'global_terminal_partition_role'"
+                ).fetchone()
+                if (
+                    phase["value"] != "finalized"
+                    or state_row is None
+                    or state_row["value"] != outcome.value
+                    or identity_row is None
+                    or identity_row["value"] != identity_hash
+                    or transaction_row is None
+                    or role_row is None
+                    or role_row["value"] != partition_role
+                ):
+                    raise ProtocolStateError(
+                        "campaign already has a different global terminal"
+                    )
+                transaction_id = transaction_row["value"]
+                existing = True
+            else:
+                self._ensure_no_global_terminal(connection)
+                panel = self._required_panel(connection, partition_role)
+                if (
+                    panel["campaign_id"] != campaign
+                    or CaptureState(panel["state"])
+                    is not CaptureState.CONSUMED_SUCCESS
+                ):
+                    raise ProtocolStateError(
+                        "development outcome requires its consumed source panel"
+                    )
+                live = connection.execute(
+                    "SELECT partition_role FROM panels WHERE state IN (?, ?, ?, ?)",
+                    (
+                        CaptureState.AUTHORIZED.value,
+                        CaptureState.ROW_INDEX_COMMITTED.value,
+                        CaptureState.ROW_INDEX_FAILED.value,
+                        CaptureState.CAPTURE_STARTED.value,
+                    ),
+                ).fetchone()
+                if live is not None:
+                    raise ProtocolStateError(
+                        "development outcome cannot strand a live capture"
+                    )
+                transaction_id, _ = self._commit_campaign_terminal_tail(
+                    connection,
+                    campaign_id=campaign,
+                    partition_role=partition_role,
+                    terminal_state=outcome,
+                    reason_code=reason,
+                    last_completed_prefix=completed,
+                    active_prefix=active,
+                    omitted_active_artifacts=omitted,
+                    transaction_kind="development_outcome_terminal",
+                    transaction_identity_sha256=identity_hash,
+                    support_spec=None,
+                    require_mechanical_primary=False,
+                )
+                for key, value in (
+                    ("global_terminal_state", outcome.value),
+                    ("global_terminal_identity_sha256", identity_hash),
+                    ("global_terminal_transaction_id", transaction_id),
+                    ("global_terminal_origin_transaction_id", transaction_id),
+                    ("global_terminal_partition_role", partition_role),
+                ):
+                    connection.execute(
+                        "INSERT INTO protocol_metadata(key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (key, value),
+                    )
+                existing = False
+        return self._load_campaign_terminal_result(
+            transaction_id,
+            campaign_id=campaign,
+            terminal_state=outcome,
+            last_completed_prefix=completed,
+            active_prefix=active,
+            omitted_active_artifacts=omitted,
+            idempotent=existing,
+        )
+
     def finalize_successful_campaign(
         self,
         *,
@@ -6653,6 +7531,7 @@ class ProtocolLedger:
             "support_terminal_finalization": None,
             "campaign_terminal_closure": None,
             "successful_campaign_terminal": None,
+            "development_outcome_terminal": None,
         }
         if transaction_kind not in expected_states:
             raise ProtocolSchemaError("unknown durable transaction kind")
@@ -6665,6 +7544,7 @@ class ProtocolLedger:
             "support_terminal_finalization",
             "campaign_terminal_closure",
             "successful_campaign_terminal",
+            "development_outcome_terminal",
         } and state_before != state_after:
             raise ProtocolSchemaError(
                 "campaign-terminal transaction must preserve panel state"
@@ -6845,6 +7725,7 @@ class ProtocolLedger:
             "support_terminal_finalization": "terminal_transaction_id",
             "campaign_terminal_closure": "terminal_transaction_id",
             "successful_campaign_terminal": "terminal_transaction_id",
+            "development_outcome_terminal": "terminal_transaction_id",
         }[transaction_kind]
         for value in payloads.values():
             if transaction_id_field in value and value[transaction_id_field] != transaction_id:
@@ -7196,7 +8077,9 @@ class ProtocolLedger:
                 "chart_head_validation_counts",
                 "fallback_attempts",
                 "expected_head_ids",
+                "evaluated_token_count",
                 "last_completed_prefix",
+                "out_of_support_token_count",
                 "partition_role",
                 "reason_code",
                 "sequence_counts",
@@ -7212,6 +8095,42 @@ class ProtocolLedger:
                         "specification": {
                             key: value.get(key) for key in specification_keys
                         },
+                    }
+                )
+            ).hexdigest()
+        elif transaction_kind == "development_outcome_terminal":
+            value = payloads["terminal_state.json"]
+            try:
+                durable_outcome = TerminalState(str(value.get("terminal_state")))
+            except ValueError as error:
+                raise ProtocolSchemaError(
+                    "development outcome terminal state changed"
+                ) from error
+            expected_reason = _DEVELOPMENT_OUTCOME_REASON_CODES.get(
+                durable_outcome
+            )
+            if (
+                expected_reason is None
+                or value.get("reason_code") != expected_reason
+            ):
+                raise ProtocolSchemaError(
+                    "development outcome reason differs from terminal state"
+                )
+            recomputed_identity = hashlib.sha256(
+                _DEVELOPMENT_OUTCOME_DOMAIN
+                + canonical_json_bytes(
+                    {
+                        "active_prefix": value.get("active_prefix"),
+                        "campaign_id": value.get("campaign_id"),
+                        "last_completed_prefix": value.get(
+                            "last_completed_prefix"
+                        ),
+                        "omitted_active_artifacts": value.get(
+                            "omitted_active_artifacts"
+                        ),
+                        "partition_role": value.get("partition_role"),
+                        "reason_code": value.get("reason_code"),
+                        "terminal_state": value.get("terminal_state"),
                     }
                 )
             ).hexdigest()
@@ -7306,6 +8225,7 @@ class ProtocolLedger:
             "campaign_terminal_closure",
             "support_terminal_finalization",
             "successful_campaign_terminal",
+            "development_outcome_terminal",
         }
         if internal_receipt_only:
             if receipt_artifacts:
@@ -7456,6 +8376,26 @@ class ProtocolLedger:
         role = specification.partition_role
         authorization_hash = specification.authorization_hash
         with self._immediate_transaction() as connection:
+            self._ensure_no_global_terminal(connection)
+            authorization_prefix = _AUTHORIZATION_PREFIX_BY_PARTITION[role]
+            present_names = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM campaign_artifact_inventory"
+                ).fetchall()
+            }
+            required_predecessors = {
+                name
+                for prefix in CampaignPrefix
+                if prefix.value < authorization_prefix.value
+                for name in _PREFIX_MANDATORY_ARTIFACTS[prefix]
+            }
+            if not required_predecessors <= present_names:
+                raise ProtocolStateError(
+                    f"cannot materialize {authorization_prefix.name} before all "
+                    "mandatory predecessor artifacts"
+                )
+            _validate_registered_authorization_bindings(connection, specification)
             existing = connection.execute(
                 "SELECT * FROM panels WHERE partition_role = ?", (role,)
             ).fetchone()
@@ -7592,6 +8532,8 @@ class ProtocolLedger:
                         "row_derivation_protocol_hash_mismatch",
                         "row index uses a different derivation protocol",
                     )
+                bindings = _stored_authorization_bindings(panel)
+                _validate_row_index_authorization_bindings(payload, bindings)
                 mode = AuthorizationMode(panel["expected_row_set_mode"])
                 if mode is AuthorizationMode.PRECOMPUTED:
                     expected = (
@@ -8103,6 +9045,15 @@ class ProtocolLedger:
                         "shard_plan_mismatch",
                         "shard plan differs from the committed row index",
                     )
+                bindings = _stored_authorization_bindings(panel)
+                if (
+                    plan.maximum_rows_per_shard
+                    != bindings["maximum_rows_per_shard"]
+                ):
+                    raise _failure_exception(
+                        "shard_plan_mismatch",
+                        "shard plan limit differs from the frozen authorization",
+                    )
                 transaction_id = self._new_transaction_id()
                 plan_artifact = self._artifact(
                     name=f"capture_shard_plan_{role}.json",
@@ -8232,6 +9183,16 @@ class ProtocolLedger:
                     raise _failure_exception(
                         "shard_plan_mismatch",
                         "started shard plan differs from the frozen plan artifact",
+                    )
+                bindings = _stored_authorization_bindings(panel)
+                if (
+                    schema_hash != bindings["capture_schema_hash"]
+                    or implementation_hash
+                    != bindings["capture_implementation_hash"]
+                ):
+                    raise _failure_exception(
+                        "capture_attempt_identity_mismatch",
+                        "capture implementation differs from frozen authorization",
                     )
                 attempt_id = self._new_capture_attempt_id()
                 transaction_id = self._new_transaction_id()

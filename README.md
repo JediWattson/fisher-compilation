@@ -590,7 +590,7 @@ not a broader candidate search against the held families.
 | Toy and Gemma adapters with semantic activation catalogs, variable-length prefill inputs, and source fingerprints | Additional model-family adapters and a stable backend-neutral symbolic sequence IR |
 | Named source and compiled activation capture through one instrumentation contract | Broader compiled-site coverage and distributed Fisher collection for larger models |
 | Exact and streaming Fisher analysis, parameter clustering, computational modes, generator plans, and causal edges | Robust mode selection and nonlinear transport that transfers across families and layers |
-| Authenticated modal compiler artifacts with affine and state-conditioned polynomial edges, all-at-once traversal, incremental traversal, Gemma device execution, strict conditional-edge promotion, and family-disjoint guard assessment | Explicit hidden-state chart/membership artifacts and a conditional message fit that improves both geometric flow and downstream behavior |
+| Authenticated modal compiler artifacts plus a public-synthetic compact-message stack with explicit chart/membership artifacts and conditional message models | Real-corpus, target-model confirmation that conditional message fits improve both geometric flow and downstream behavior |
 | Manifest-aware compiled/native dispatch with capability checks and source fallback | Cache ownership, cache-aware decode, sliding-window kernels, and efficient dynamic GPU lowering |
 | Progressive map→mutate→guard control flow with separated fit, selection, assessment, and reserved roles | Downstream-qualified whole-model compression, measured end-to-end GPU latency, and fresh task validation |
 
@@ -611,6 +611,9 @@ pip install -e ".[dev]"
 python -m pytest
 fisher-graph-experiment
 fisher-graph-verify
+fisher-graph-compact-message-completion-synthetic-qualification \
+  --profile quick \
+  /tmp/fisher-cmc-synthetic-quick-001
 ```
 
 Regenerate the committed figures:
@@ -653,6 +656,9 @@ specialized experiment commands are documented in
   routing contracts, and clean V2 validation.
 - [Recursive modal hierarchy](docs/recursive-modal-hierarchy.md) — L3→L4
   generator, spectral, wavelet, and provider work.
+- [Compact-message completion probe v2](docs/fisher-compact-message-completion-probe-v2.md) —
+  P0 provenance closure, durable K-series mechanics, and isolated public-synthetic
+  P1--P12 qualification.
 - [Historical research log](RESEARCH_LOG.md) — prior experiments, rejected
   variants, detailed metrics, and command archive.
 
@@ -677,6 +683,14 @@ Source-safe reports commit aggregates, hashes, provenance, and explicit claim
 boundaries. Model data and large tensors remain local. Passing a local
 reconstruction gate does not automatically authorize serving, compression,
 speed, or whole-model claims.
+
+Compact-message synthetic outputs are explicitly scoped as
+`synthetic_qualification_only`. Artifact envelopes mark
+`scientific_claim_eligible=false`, `target_model_execution_performed=false`,
+and `protected_panel_accessed=false`; the CLI summary also marks
+`guard_claim_eligible=false`. A synthetic terminal outcome—including a P8
+refit-instability result—is mechanical qualification evidence, not scientific
+evidence about the target model.
 
 ## Repository layout
 
