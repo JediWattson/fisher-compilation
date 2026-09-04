@@ -165,6 +165,7 @@ fisher-graph-gemma-l3-l4-progressive-a-pilot = "fisher_graph.gemma3_l3_l4_progre
 fisher-graph-gemma-l3-l4-progressive-a-campaign = "fisher_graph.gemma3_l3_l4_progressive_a_campaign:main"
 fisher-graph-gemma-l3-l4-progressive-a-rotate-guard = "fisher_graph.gemma3_l3_l4_progressive_a_guard_rotation:main"
 fisher-graph-gemma-l3-l4-progressive-a-expand-fit = "fisher_graph.gemma3_l3_l4_progressive_a_fit_expansion:main"
+fisher-graph-gemma-local-chart-probe = "fisher_graph.gemma3_fisher_local_chart_probe:main"
 fisher-graph-gemma-l3-l4-h4-incremental-signal-fit = "fisher_graph.gemma3_l3_l4_h4_incremental_signal_diagnostic:main"
 fisher-graph-gemma-l3-l4-h4-damping-fit = "fisher_graph.gemma3_l3_l4_h4_incremental_signal_diagnostic:damping_main"
 fisher-graph-gemma-l3-l4-h4-damping-materialize = "fisher_graph.gemma3_l3_l4_h4_damping_materialization:main"
