@@ -1,0 +1,1245 @@
+{
+  "$defs": {
+    "finiteDifferenceSweep": {
+      "maxItems": 5,
+      "minItems": 5,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "relative_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "step": {
+              "const": 0.01
+            }
+          },
+          "required": [
+            "step",
+            "absolute_error",
+            "relative_error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "relative_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "step": {
+              "const": 0.001
+            }
+          },
+          "required": [
+            "step",
+            "absolute_error",
+            "relative_error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "relative_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "step": {
+              "const": 0.0001
+            }
+          },
+          "required": [
+            "step",
+            "absolute_error",
+            "relative_error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "relative_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "step": {
+              "const": 1e-05
+            }
+          },
+          "required": [
+            "step",
+            "absolute_error",
+            "relative_error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "relative_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "step": {
+              "const": 1e-06
+            }
+          },
+          "required": [
+            "step",
+            "absolute_error",
+            "relative_error"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "hasNumericalEvidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "contains": {
+            "$ref": "#/$defs/hasNumericalEvidence"
+          },
+          "type": "array"
+        },
+        {
+          "not": {
+            "additionalProperties": {
+              "not": {
+                "$ref": "#/$defs/hasNumericalEvidence"
+              }
+            }
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "urn:fisher-graph:fisher-response-geometry-probe-v1:report",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Execution completion is not model-facing scientific evidence or a chart-success claim. Numerical gates must be checked independently.",
+  "properties": {
+    "config": {
+      "const": {
+        "bootstrap_replicates": 256,
+        "chart_count": 3,
+        "epsilon": 1e-06,
+        "evaluation_families": 6,
+        "fd_steps": [
+          0.01,
+          0.001,
+          0.0001,
+          1e-05,
+          1e-06
+        ],
+        "finite_radii": [
+          0.001,
+          0.01,
+          0.1
+        ],
+        "kmeans_iterations": 32,
+        "message_rank": 3,
+        "message_width": 8,
+        "metric_rtol": 1e-12,
+        "numerical_tolerances": {
+          "analytic_jvp_atol": 1e-10,
+          "analytic_jvp_rtol": 1e-09,
+          "bfloat16_jvp_atol": 0.15,
+          "bfloat16_jvp_rtol": 0.15,
+          "fd_best_relative_error": 1e-06,
+          "fp16_jvp_atol": 0.02,
+          "fp16_jvp_rtol": 0.03,
+          "fp32_jvp_atol": 2e-05,
+          "fp32_jvp_rtol": 0.0002,
+          "radial_atol": 1e-10
+        },
+        "output_rank": 3,
+        "residual_width": 6,
+        "rows_per_family": 8,
+        "seed": 1729,
+        "state_rank": 2,
+        "support_radius_multiplier": 1.5,
+        "train_families": 12
+      }
+    },
+    "config_sha256": {
+      "const": "d223c18c27808d011ec00e1f7dd58b8275b9a6694192f4fde55c47eea93e36c0"
+    },
+    "evidence_boundary": {
+      "const": {
+        "accuracy_better_than_exact_reference_claim": false,
+        "compression_or_speedup_claim": false,
+        "deployed_execution_modified": false,
+        "evidence_class": "synthetic_qualification_only",
+        "experiment": "normalization_response_qualification",
+        "guard_consumed": false,
+        "live_attention_executed": false,
+        "model_facing_scientific_evidence": false,
+        "model_loaded": false,
+        "p0_status": "development_complete_independent_data_unavailable",
+        "protected_data_opened": false,
+        "reusable_attention_routing_geometry_claim": false
+      }
+    },
+    "protocol_id": {
+      "const": "fisher_response_geometry_probe_v1"
+    },
+    "schema": {
+      "const": "fisher_graph.fisher_response_geometry_probe.v1"
+    },
+    "sections": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_stability": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "measured"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "derivative_correctness": {
+          "$comment": "Measured scaled tolerance ratios are max(abs(a-b)/(atol+rtol*abs(b))). This schema checks internal consistency; independent tests establish numerical correctness.",
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "analytic_matches_autodiff": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "scaled_tolerance_errors": {
+                    "properties": {
+                      "analytic_matches_autodiff": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "analytic_matches_autodiff": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "dense_analytic_matches_autodiff": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "scaled_tolerance_errors": {
+                    "properties": {
+                      "dense_analytic_matches_autodiff": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "dense_analytic_matches_autodiff": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "radial_identity": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "scaled_tolerance_errors": {
+                    "properties": {
+                      "radial_identity": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "radial_identity": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "radial_autodiff_identity": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "scaled_tolerance_errors": {
+                    "properties": {
+                      "radial_autodiff_identity": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "radial_autodiff_identity": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "frozen_scale_adversary_rejected": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "scaled_tolerance_errors": {
+                    "properties": {
+                      "frozen_scale_adversary_rejected": {
+                        "exclusiveMinimum": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "frozen_scale_adversary_rejected": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "finite_difference_sweep": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "float64_finite_difference_sweep": {
+                    "contains": {
+                      "properties": {
+                        "relative_error": {
+                          "maximum": 1e-06
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "finite_difference_sweep": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "float32_cast_semantics": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "dtype_semantics": {
+                    "prefixItems": [
+                      {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "float32_cast_semantics": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "float16_cast_semantics": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "dtype_semantics": {
+                    "prefixItems": [
+                      {},
+                      {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "float16_cast_semantics": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "bfloat16_cast_semantics": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "dtype_semantics": {
+                    "prefixItems": [
+                      {},
+                      {},
+                      {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "bfloat16_cast_semantics": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "else": {
+                "properties": {
+                  "status": {
+                    "const": "failed"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "checks": {
+                    "properties": {
+                      "analytic_matches_autodiff": {
+                        "const": true
+                      },
+                      "bfloat16_cast_semantics": {
+                        "const": true
+                      },
+                      "dense_analytic_matches_autodiff": {
+                        "const": true
+                      },
+                      "finite_difference_sweep": {
+                        "const": true
+                      },
+                      "float16_cast_semantics": {
+                        "const": true
+                      },
+                      "float32_cast_semantics": {
+                        "const": true
+                      },
+                      "frozen_scale_adversary_rejected": {
+                        "const": true
+                      },
+                      "radial_autodiff_identity": {
+                        "const": true
+                      },
+                      "radial_identity": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "status": {
+                    "const": "passed"
+                  }
+                }
+              }
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "checks": {
+              "additionalProperties": false,
+              "properties": {
+                "analytic_matches_autodiff": {
+                  "type": "boolean"
+                },
+                "bfloat16_cast_semantics": {
+                  "type": "boolean"
+                },
+                "dense_analytic_matches_autodiff": {
+                  "type": "boolean"
+                },
+                "finite_difference_sweep": {
+                  "type": "boolean"
+                },
+                "float16_cast_semantics": {
+                  "type": "boolean"
+                },
+                "float32_cast_semantics": {
+                  "type": "boolean"
+                },
+                "frozen_scale_adversary_rejected": {
+                  "type": "boolean"
+                },
+                "radial_autodiff_identity": {
+                  "type": "boolean"
+                },
+                "radial_identity": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "analytic_matches_autodiff",
+                "dense_analytic_matches_autodiff",
+                "radial_identity",
+                "radial_autodiff_identity",
+                "frozen_scale_adversary_rejected",
+                "finite_difference_sweep",
+                "float32_cast_semantics",
+                "float16_cast_semantics",
+                "bfloat16_cast_semantics"
+              ],
+              "type": "object"
+            },
+            "dtype_semantics": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "allOf": [
+                    {
+                      "else": {
+                        "properties": {
+                          "passed": {
+                            "const": false
+                          }
+                        }
+                      },
+                      "if": {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "absolute_tolerance": {
+                      "const": 2e-05
+                    },
+                    "finite_difference_interpretation": {
+                      "const": "reported_only_cast_roundoff_can_dominate_small_steps"
+                    },
+                    "finite_difference_sweep": {
+                      "$ref": "#/$defs/finiteDifferenceSweep"
+                    },
+                    "input_projection_output_dtype": {
+                      "const": "float32"
+                    },
+                    "max_absolute_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "max_scaled_tolerance_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "normalizer_compute_dtype": {
+                      "const": "float32"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "relative_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "relative_tolerance": {
+                      "const": 0.0002
+                    }
+                  },
+                  "required": [
+                    "input_projection_output_dtype",
+                    "normalizer_compute_dtype",
+                    "max_absolute_jvp_error",
+                    "relative_jvp_error",
+                    "max_scaled_tolerance_error",
+                    "absolute_tolerance",
+                    "relative_tolerance",
+                    "passed",
+                    "finite_difference_sweep",
+                    "finite_difference_interpretation"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "allOf": [
+                    {
+                      "else": {
+                        "properties": {
+                          "passed": {
+                            "const": false
+                          }
+                        }
+                      },
+                      "if": {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "absolute_tolerance": {
+                      "const": 0.02
+                    },
+                    "finite_difference_interpretation": {
+                      "const": "reported_only_cast_roundoff_can_dominate_small_steps"
+                    },
+                    "finite_difference_sweep": {
+                      "$ref": "#/$defs/finiteDifferenceSweep"
+                    },
+                    "input_projection_output_dtype": {
+                      "const": "float16"
+                    },
+                    "max_absolute_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "max_scaled_tolerance_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "normalizer_compute_dtype": {
+                      "const": "float32"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "relative_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "relative_tolerance": {
+                      "const": 0.03
+                    }
+                  },
+                  "required": [
+                    "input_projection_output_dtype",
+                    "normalizer_compute_dtype",
+                    "max_absolute_jvp_error",
+                    "relative_jvp_error",
+                    "max_scaled_tolerance_error",
+                    "absolute_tolerance",
+                    "relative_tolerance",
+                    "passed",
+                    "finite_difference_sweep",
+                    "finite_difference_interpretation"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "allOf": [
+                    {
+                      "else": {
+                        "properties": {
+                          "passed": {
+                            "const": false
+                          }
+                        }
+                      },
+                      "if": {
+                        "properties": {
+                          "max_scaled_tolerance_error": {
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "passed": {
+                            "const": true
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "absolute_tolerance": {
+                      "const": 0.15
+                    },
+                    "finite_difference_interpretation": {
+                      "const": "reported_only_cast_roundoff_can_dominate_small_steps"
+                    },
+                    "finite_difference_sweep": {
+                      "$ref": "#/$defs/finiteDifferenceSweep"
+                    },
+                    "input_projection_output_dtype": {
+                      "const": "bfloat16"
+                    },
+                    "max_absolute_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "max_scaled_tolerance_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "normalizer_compute_dtype": {
+                      "const": "float32"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "relative_jvp_error": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "relative_tolerance": {
+                      "const": 0.15
+                    }
+                  },
+                  "required": [
+                    "input_projection_output_dtype",
+                    "normalizer_compute_dtype",
+                    "max_absolute_jvp_error",
+                    "relative_jvp_error",
+                    "max_scaled_tolerance_error",
+                    "absolute_tolerance",
+                    "relative_tolerance",
+                    "passed",
+                    "finite_difference_sweep",
+                    "finite_difference_interpretation"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "type": "array"
+            },
+            "float64_analytic_autodiff_max_absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "float64_dense_jacobian_max_absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "float64_finite_difference_sweep": {
+              "$ref": "#/$defs/finiteDifferenceSweep"
+            },
+            "radial_expected_norm": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "radial_frozen_scale_control_norm": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "radial_frozen_scale_error_norm": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "radial_identity_max_absolute_error": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "scaled_tolerance_errors": {
+              "additionalProperties": false,
+              "properties": {
+                "analytic_matches_autodiff": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "dense_analytic_matches_autodiff": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "frozen_scale_adversary_rejected": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "radial_autodiff_identity": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "radial_identity": {
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "analytic_matches_autodiff",
+                "dense_analytic_matches_autodiff",
+                "radial_identity",
+                "radial_autodiff_identity",
+                "frozen_scale_adversary_rejected"
+              ],
+              "type": "object"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed"
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "checks",
+            "scaled_tolerance_errors",
+            "float64_finite_difference_sweep",
+            "dtype_semantics",
+            "float64_analytic_autodiff_max_absolute_error",
+            "float64_dense_jacobian_max_absolute_error",
+            "radial_identity_max_absolute_error",
+            "radial_expected_norm",
+            "radial_frozen_scale_control_norm",
+            "radial_frozen_scale_error_norm"
+          ],
+          "type": "object"
+        },
+        "finite_update_fidelity": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "measured"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "response_subspace_adequacy": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "measured"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "router_feasibility": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "measured"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "runtime_and_storage_accounting": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/hasNumericalEvidence"
+            }
+          ],
+          "minProperties": 2,
+          "properties": {
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "measured"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "derivative_correctness",
+        "response_subspace_adequacy",
+        "chart_stability",
+        "finite_update_fidelity",
+        "router_feasibility",
+        "runtime_and_storage_accounting"
+      ],
+      "type": "object"
+    },
+    "source_manifest": {
+      "maxItems": 8,
+      "minItems": 8,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "src/fisher_response_geometry_probe_v1.py"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "src/fisher_graph/fisher_response_geometry_protocol.py"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "src/fisher_graph/fisher_response_geometry.py"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "src/fisher_graph/fisher_local_chart.py"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "examples/fisher_response_geometry_probe_v1.json"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "docs/fisher-response-geometry-probe-v1.md"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "docs/schemas/fisher_response_geometry_probe_v1_report.schema.json"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "const": "src/fisher_graph/gemma3_attention_generator.py"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      ],
+      "type": "array"
+    },
+    "status": {
+      "const": "synthetic_qualification_completed"
+    }
+  },
+  "required": [
+    "schema",
+    "protocol_id",
+    "status",
+    "evidence_boundary",
+    "config",
+    "config_sha256",
+    "source_manifest",
+    "sections"
+  ],
+  "title": "Synthetic normalization-response qualification report",
+  "type": "object"
+}
