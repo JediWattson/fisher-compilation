@@ -610,6 +610,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     use_ewc: bool = False,
     ewc_prior_weight: float = 0.1,
     shrinkage_kappa: float = 0.5,
+    pullback_weight: float = 0.0,
 ) -> dict[str, object]:
     """Fit, select, and checkpoint one guard-unopened Gemma candidate."""
 
@@ -779,12 +780,38 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
         f"nodes: fit {fragment_count} generators on layer {same_layer.layer_ordinal}"
     )
     pilots: dict[str, FittedModalGeneratorPilot] = {}
-    for fragment in same_layer.execution_order:
+    target_fragments = same_layer.target_fragments
+    source_fragment = same_layer.source_fragment
+    for fragment in (
+        (*target_fragments, source_fragment)
+        if (use_ewc and pullback_weight > 0.0)
+        else same_layer.execution_order
+    ):
         fragment_mode_ranks = tuple(
             rank for rank in modes if rank <= fragment.mode_count
         )
         if selected_mode_rank not in fragment_mode_ranks:
             raise ValueError("rank clipping removed selected_mode_rank")
+        pb_residuals: dict[str, Tensor] | None = None
+        pb_w = 0.0
+        if (
+            use_ewc
+            and pullback_weight > 0.0
+            and fragment.fragment_id == source_fragment.fragment_id
+        ):
+            pb_residuals = {}
+            for tf in target_fragments:
+                t_pilot = pilots[tf.fragment_id]
+                t_rows = fit_native.rows_by_fragment[tf.fragment_id]
+                t_teacher = t_pilot.lowering.computational_mode_basis.encode(
+                    t_rows.contributions
+                )
+                t_pred = t_pilot.lowering.coordinate_generator_plan.factors.apply(
+                    t_rows.inputs
+                )
+                pb_residuals[tf.fragment_id] = t_teacher - t_pred
+            pb_w = float(pullback_weight)
+
         pilots[fragment.fragment_id] = fit_layer_cluster_modal_generator(
             fit_native.rows_by_fragment[fragment.fragment_id],
             selection_native.rows_by_fragment[fragment.fragment_id],
@@ -802,6 +829,8 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
             generator_ranks=generators,
             selected_generator_rank=selected_generator_rank,
             ridge=generator_ridge,
+            pullback_target_residuals=pb_residuals,
+            pullback_weight=pb_w,
         )
     edgeless = build_edgeless_same_layer_graph(
         same_layer,
@@ -832,11 +861,48 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
         plan=edgeless,
         expected_row_keys=selection_native.row_keys,
     )
-    source_node, target_nodes, fit_corrections, _ = _flow_inputs(
+    source_node, target_nodes, fit_corrections, fit_decoders = _flow_inputs(
         fit_rows,
         edgeless,
     )
-    labels = _oracle_labels(fit_rows, edgeless)
+    if use_ewc and generator_ridge > 0.0:
+        # Remove the ridge-damped 640-D linear component (C_OLS - C_ridge) from
+        # fit_corrections so _oracle_labels and edge fitting operate strictly on
+        # the pure nonlinear MLP residual (C_teacher - C_OLS) without undoing
+        # the node generator ridge regularization.
+        clean_corrections: dict[str, Tensor] = {}
+        for name in target_nodes:
+            fid = edgeless.fragment_id_by_node[name]
+            f_rows = fit_native.rows_by_fragment[fid]
+            x_in = f_rows.inputs
+            w_in = f_rows.fisher_weights
+            w_norm = w_in * (float(x_in.shape[0]) / float(w_in.sum().item()))
+            x_mean = (x_in * w_norm.unsqueeze(1)).sum(dim=0) / float(x_in.shape[0])
+            y_corr = fit_corrections[name]
+            y_mean = (y_corr * w_norm.unsqueeze(1)).sum(dim=0) / float(x_in.shape[0])
+            x_c = x_in - x_mean
+            y_c = y_corr - y_mean
+            root_w = w_norm.sqrt().unsqueeze(1)
+            wx = x_c * root_w
+            wy = y_c * root_w
+            gram_x = (wx.T @ wx) / float(x_in.shape[0])
+            cross_xy = (wx.T @ wy) / float(x_in.shape[0])
+            ols_delta = torch.linalg.pinv(gram_x, hermitian=True) @ cross_xy
+            clean_corrections[name] = (y_corr - (y_mean + x_c @ ols_delta)).contiguous()
+        fit_corrections = clean_corrections
+        candidates_clean = torch.stack(
+            tuple(fit_corrections[name] @ fit_decoders[name] for name in target_nodes),
+            dim=1,
+        )
+        labels = teacher_flow_routing(
+            candidates_clean.sum(dim=1),
+            candidates_clean,
+            alignment_weight=1.0,
+            residual_weight=1.0,
+            temperature=1.0,
+        ).route_labels
+    else:
+        labels = _oracle_labels(fit_rows, edgeless)
     counts = torch.bincount(labels, minlength=len(target_nodes))
     if bool((counts == 0).any()):
         raise RuntimeError(
@@ -846,6 +912,12 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
         selection_rows.row_keys,
         selection_role,
     )
+    fit_route_weights = {
+        name: fit_native.rows_by_fragment[
+            edgeless.fragment_id_by_node[name]
+        ].fisher_weights
+        for name in target_nodes
+    }
     selection_weights = _target_fisher_weights(selection_native, edgeless)
 
     _progress(
@@ -864,6 +936,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
                         f"layer-{same_layer.layer_ordinal}.shape-flow-v1"
                     ),
                     router_validation_states=selection_rows.node_states[source_node],
+                    row_weights=fit_route_weights,
                     temperature=1.0,
                     top_k=1,
                     router_ridge=router_ridge,
@@ -1971,6 +2044,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.5,
     )
+    fit.add_argument(
+        "--pullback-weight",
+        type=float,
+        default=0.0,
+        help="weight of target-flow pullback-Fisher metric in source node generator",
+    )
     _add_corpus_arguments(fit)
     _add_runtime_arguments(fit)
 
@@ -2056,6 +2135,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             use_ewc=arguments.ewc,
             ewc_prior_weight=arguments.ewc_prior_weight,
             shrinkage_kappa=arguments.shrinkage_kappa,
+            pullback_weight=arguments.pullback_weight,
             **common,
         )
     elif arguments.command == "calibrate":

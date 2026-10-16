@@ -258,3 +258,24 @@ def test_pullback_fisher_source_chart_and_ewc_state_conditioned_modal_fit_beat_u
     assert loss_ewc < loss_unshrunk_1x
     assert loss_ewc < loss_uniform_05x
 
+    # Verify per-token Fisher row_weights and orthogonalize_global_linear support
+    token_weights = torch.rand(n_train, generator=gen, dtype=torch.float64) + 0.1
+    fit_ewc_weighted = fit_ewc_state_conditioned_modal_interactions(
+        train_z_pb,
+        train_targets,
+        train_labels,
+        source_node="src",
+        routing_group="grp",
+        router_validation_states=val_z_pb,
+        target_fisher_weights=fisher_weights,
+        row_weights=token_weights,
+        ewc_prior_weight=0.1,
+        shrinkage_kappa=1.0,
+        orthogonalize_global_linear=True,
+        quadratic_rank=2,
+        quadratic_steps=50,
+    )
+    assert len(fit_ewc_weighted.interactions) == 2
+    assert len(fit_ewc_weighted.ewc_diagnostics) == 2
+
+

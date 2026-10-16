@@ -1899,6 +1899,7 @@ def fit_modal_generator_rate_curve(
     bias_mac_policy: str = "count_bias_additions",
     selection_rule: str = "return_all",
     selected_rank: int | None = None,
+    pullback_output_metric: Tensor | None = None,
 ) -> ModalGeneratorRateCurve:
     """Fit a deterministic Fisher-weighted reduced-rank generator ladder.
 
@@ -2041,6 +2042,19 @@ def fit_modal_generator_rate_curve(
     output_covariance = (
         output_covariance + output_covariance.T
     ) / 2.0
+    if pullback_output_metric is not None:
+        pb_metric = _as_float64_matrix(
+            pullback_output_metric,
+            label="pullback_output_metric",
+        )
+        if pb_metric.shape != output_covariance.shape:
+            raise ValueError(
+                "pullback_output_metric must match [output_width, output_width]"
+            )
+        pb_sym = 0.5 * (pb_metric + pb_metric.T)
+        cov_trace = float(torch.trace(output_covariance).clamp_min(1e-30).item())
+        output_covariance = output_covariance + cov_trace * pb_sym
+        output_covariance = 0.5 * (output_covariance + output_covariance.T)
     eigenvalues, eigenvectors = torch.linalg.eigh(output_covariance)
     eigenvalues = eigenvalues.flip(dims=(0,)).clamp_min(0.0)
     directions = eigenvectors.flip(dims=(1,))

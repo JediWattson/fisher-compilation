@@ -876,6 +876,8 @@ def fit_layer_cluster_modal_generator(
     generator_ranks: Sequence[int],
     selected_generator_rank: int,
     ridge: float = 0.0,
+    pullback_target_residuals: Mapping[str, Tensor] | None = None,
+    pullback_weight: float = 0.0,
 ) -> FittedModalGeneratorPilot:
     """Fit both explicit ladders, then fold the selected decoder into runtime."""
 
@@ -963,6 +965,19 @@ def fit_layer_cluster_modal_generator(
     )
     fit_coordinates = basis.encode(fit_rows.contributions)
     eval_coordinates = basis.encode(eval_rows.contributions)
+    pullback_metric: Tensor | None = None
+    if pullback_target_residuals is not None and pullback_weight > 0.0:
+        from .state_conditioned_modal_fitting import pullback_fisher_source_chart
+
+        chart = pullback_fisher_source_chart(
+            fit_coordinates,
+            pullback_target_residuals,
+            rank=fit_coordinates.shape[1],
+        )
+        pb_raw = (chart.basis * chart.eigenvalues.clamp_min(0.0).unsqueeze(0)) @ chart.basis.T
+        pb_trace = float(torch.trace(pb_raw).clamp_min(1e-30).item())
+        pullback_metric = (float(pullback_weight) / pb_trace) * pb_raw
+
     generator_curve = fit_modal_generator_rate_curve(
         fit_rows.inputs,
         fit_coordinates,
@@ -977,6 +992,7 @@ def fit_layer_cluster_modal_generator(
         bias_mac_policy="matrix_multiplies_only",
         selection_rule="fixed_rank",
         selected_rank=selected_generator_rank,
+        pullback_output_metric=pullback_metric,
     )
     selected_coordinate_plan = generator_curve.selected_plan
     if selected_coordinate_plan is None:

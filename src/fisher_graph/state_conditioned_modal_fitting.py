@@ -647,6 +647,24 @@ class EWCStateConditionedModalInteractionFit:
         return sum(edge.macs_per_token for edge in self.interactions)
 
 
+def _normalize_row_weights(
+    row_weights: Tensor | None,
+    count: int,
+) -> Tensor:
+    """Return mean-one positive token Fisher weights with robust outlier tempering."""
+    if row_weights is None:
+        return torch.ones(count, dtype=torch.float64)
+    w = _finite_float64(row_weights, label="row_weights", ndim_min=1).reshape(-1)
+    if w.shape[0] != count or bool((w < 0.0).any()):
+        raise ValueError("row_weights must be nonnegative and match observation count")
+    total = float(w.sum().item())
+    if total <= 0.0:
+        return torch.ones(count, dtype=torch.float64)
+    mean_w = total / float(count)
+    tempered = w.clamp_max(10.0 * mean_w) + 0.1 * mean_w
+    return (tempered * (float(count) / float(tempered.sum().item()))).contiguous()
+
+
 def _fit_ewc_raw_affine_message(
     route_source: Tensor,
     route_target: Tensor,
@@ -655,16 +673,21 @@ def _fit_ewc_raw_affine_message(
     anchor_bias: Tensor,
     *,
     ewc_prior_weight: float,
+    route_row_weights: Tensor | None = None,
 ) -> tuple[Tensor, Tensor, float]:
-    """Fit EWC covariance-anchored affine parameters before post-polynomial shrinkage."""
+    """Fit EWC covariance-anchored affine parameters under token Fisher weights."""
     n_r = route_source.shape[0]
-    src_mean = route_source.mean(dim=0)
-    tgt_mean = route_target.mean(dim=0)
+    w = _normalize_row_weights(route_row_weights, n_r)
+    w_col = w.unsqueeze(1)
+    w_sum = float(w.sum().item())
+
+    src_mean = (route_source * w_col).sum(dim=0) / w_sum
+    tgt_mean = (route_target * w_col).sum(dim=0) / w_sum
     src_centered = route_source - src_mean
     tgt_centered = route_target - tgt_mean
 
-    local_cov = (src_centered.T @ src_centered) / float(n_r)
-    cross_cov = (src_centered.T @ tgt_centered) / float(n_r)
+    local_cov = ((src_centered * w_col).T @ src_centered) / w_sum
+    cross_cov = ((src_centered * w_col).T @ tgt_centered) / w_sum
 
     system = local_cov + ewc_prior_weight * global_source_covariance
     rhs = cross_cov + ewc_prior_weight * (global_source_covariance @ anchor_matrix)
@@ -693,20 +716,18 @@ def _compute_cross_block_ewc_gains(
     ewc_prior_weight: float,
     shrinkage_kappa: float,
     target_fisher_diag: Tensor | None = None,
+    route_row_weights: Tensor | None = None,
     block_count: int = 8,
 ) -> Tensor:
-    """Compute per-mode EWC Wiener shrinkage gains from cross-block (cross-family) OOF predictions.
-
-    Partitioning the training route rows into contiguous blocks (matching the contiguous
-    prompt-family structure of calibration streams) measures whether each output mode's
-    predicted flow transfers positively across unseen training blocks. Modes whose out-of-block
-    alignment is negative are zeroed out, while positively transferring modes receive their
-    empirical Gauss-Markov / EWC shrinkage factor in ``[0, 1]``.
-    """
+    """Compute per-mode EWC Wiener shrinkage gains from Fisher-weighted cross-block OOF predictions."""
     n_r, d = route_source.shape
     m = route_target.shape[1]
     if shrinkage_kappa <= 0.0:
         return torch.ones(m, dtype=torch.float64)
+
+    w = _normalize_row_weights(route_row_weights, n_r)
+    w_col = w.unsqueeze(1)
+    w_sum = float(w.sum().item())
 
     effective_blocks = min(block_count, n_r // max(2, d // 2))
     if effective_blocks >= 2:
@@ -726,26 +747,92 @@ def _compute_cross_block_ewc_gains(
                 anchor_matrix,
                 anchor_bias,
                 ewc_prior_weight=ewc_prior_weight,
+                route_row_weights=None if route_row_weights is None else route_row_weights[train_mask],
             )
             oof_pred[val_mask] = route_source[val_mask] @ mat_b + bias_b
 
-        # Positive cross-block correlation <oof_pred, target> / (||oof_pred||^2 + kappa * error)
-        cross_dot = (oof_pred * route_target).mean(dim=0).clamp_min(0.0)
-        pred_energy = oof_pred.square().mean(dim=0)
-        error_energy = (route_target - oof_pred).square().mean(dim=0)
+        cross_dot = ((oof_pred * route_target) * w_col).sum(dim=0).div(w_sum).clamp_min(0.0)
+        pred_energy = (oof_pred.square() * w_col).sum(dim=0).div(w_sum)
+        error_energy = ((route_target - oof_pred).square() * w_col).sum(dim=0).div(w_sum)
         if target_fisher_diag is not None:
             f_scale = target_fisher_diag / target_fisher_diag.mean().clamp_min(1e-12)
             error_energy = error_energy * f_scale
         oof_gains = cross_dot / (pred_energy + shrinkage_kappa * error_energy + 1e-30)
         return oof_gains.clamp(0.0, 1.0).contiguous()
 
-    signal_energy = raw_prediction.square().mean(dim=0)
-    error_energy = (route_target - raw_prediction).square().mean(dim=0)
+    signal_energy = (raw_prediction.square() * w_col).sum(dim=0).div(w_sum)
+    error_energy = ((route_target - raw_prediction).square() * w_col).sum(dim=0).div(w_sum)
     if target_fisher_diag is not None:
         f_scale = target_fisher_diag / target_fisher_diag.mean().clamp_min(1e-12)
         error_energy = error_energy * f_scale
     gains = signal_energy / (signal_energy + shrinkage_kappa * error_energy + 1e-30)
     return gains.clamp(0.0, 1.0).contiguous()
+
+
+def _fit_ewc_quadratic_output(
+    quad_features: Tensor,
+    residual_target: Tensor,
+    *,
+    ewc_prior_weight: float,
+    shrinkage_kappa: float,
+    Base_B: Tensor,
+    target_fisher_diag: Tensor | None = None,
+    route_row_weights: Tensor | None = None,
+    block_count: int = 8,
+) -> tuple[Tensor, Tensor]:
+    """Refit and EWC-shrink the quadratic output factor B under token Fisher weights and 8-block OOF."""
+    n_r, r = quad_features.shape
+    m = residual_target.shape[1]
+    w = _normalize_row_weights(route_row_weights, n_r)
+    w_col = w.unsqueeze(1)
+    w_sum = float(w.sum().item())
+
+    q_gram_global = ((quad_features * w_col).T @ quad_features) / w_sum
+    q_scale = max(float(torch.diagonal(q_gram_global).mean().item()), 1e-6)
+    prior_cov = q_gram_global + (ewc_prior_weight * q_scale) * torch.eye(r, dtype=torch.float64)
+
+    def solve_b(q_sub: Tensor, res_sub: Tensor, w_sub: Tensor) -> Tensor:
+        ws = float(w_sub.sum().item())
+        wc = w_sub.unsqueeze(1)
+        g_loc = ((q_sub * wc).T @ q_sub) / ws
+        c_loc = ((q_sub * wc).T @ res_sub) / ws
+        sys_mat = g_loc + ewc_prior_weight * prior_cov
+        rhs_mat = c_loc + ewc_prior_weight * (prior_cov @ Base_B)
+        return torch.linalg.solve(sys_mat, rhs_mat).contiguous()
+
+    raw_B = solve_b(quad_features, residual_target, w)
+    if shrinkage_kappa <= 0.0:
+        return raw_B, torch.ones(m, dtype=torch.float64)
+
+    effective_blocks = min(block_count, n_r // max(2, r))
+    if effective_blocks >= 2:
+        oof_quad = torch.zeros_like(residual_target)
+        boundaries = torch.linspace(0, n_r, steps=effective_blocks + 1, dtype=torch.int64)
+        all_idx = torch.arange(n_r, dtype=torch.int64)
+        for b in range(effective_blocks):
+            start, end = int(boundaries[b].item()), int(boundaries[b + 1].item())
+            val_mask = (all_idx >= start) & (all_idx < end)
+            train_mask = ~val_mask
+            if not bool(train_mask.any()) or not bool(val_mask.any()):
+                continue
+            b_fold = solve_b(quad_features[train_mask], residual_target[train_mask], w[train_mask])
+            oof_quad[val_mask] = quad_features[val_mask] @ b_fold
+
+        cross_dot = ((oof_quad * residual_target) * w_col).sum(dim=0).div(w_sum).clamp_min(0.0)
+        pred_energy = (oof_quad.square() * w_col).sum(dim=0).div(w_sum)
+        error_energy = ((residual_target - oof_quad).square() * w_col).sum(dim=0).div(w_sum)
+        if target_fisher_diag is not None:
+            f_scale = target_fisher_diag / target_fisher_diag.mean().clamp_min(1e-12)
+            error_energy = error_energy * f_scale
+        q_gains = cross_dot / (pred_energy + shrinkage_kappa * error_energy + 1e-30)
+        q_gains = q_gains.clamp(0.0, 1.0).contiguous()
+    else:
+        raw_pred = quad_features @ raw_B
+        sig_e = (raw_pred.square() * w_col).sum(dim=0).div(w_sum)
+        err_e = ((residual_target - raw_pred).square() * w_col).sum(dim=0).div(w_sum)
+        q_gains = (sig_e / (sig_e + shrinkage_kappa * err_e + 1e-30)).clamp(0.0, 1.0).contiguous()
+
+    return (raw_B * q_gains.unsqueeze(0)).contiguous(), q_gains
 
 
 def fit_ewc_state_conditioned_modal_interactions(
@@ -757,6 +844,7 @@ def fit_ewc_state_conditioned_modal_interactions(
     routing_group: str,
     router_validation_states: Tensor | None = None,
     target_fisher_weights: Mapping[str, Tensor] | None = None,
+    row_weights: Tensor | Mapping[str, Tensor] | None = None,
     temperature: float = 1.0,
     top_k: int = 1,
     router_ridge: float = 1e-3,
@@ -764,6 +852,7 @@ def fit_ewc_state_conditioned_modal_interactions(
     ewc_prior_weight: float = 0.1,
     shrinkage_kappa: float = 0.5,
     anchor_to_global_fit: bool = False,
+    orthogonalize_global_linear: bool = False,
     quadratic_rank: int = 0,
     quadratic_steps: int = 400,
     quadratic_learning_rate: float = 1e-2,
@@ -893,23 +982,78 @@ def fit_ewc_state_conditioned_modal_interactions(
             )
             fisher_diag = fw if fw.ndim == 1 else torch.diag(fw)
 
+        route_w: Tensor | None = None
+        full_w: Tensor | None = None
+        if isinstance(row_weights, Mapping):
+            if target_node in row_weights:
+                full_w = _finite_float64(
+                    row_weights[target_node],
+                    label=f"row_weights[{target_node!r}]",
+                    ndim_min=1,
+                ).reshape(-1)
+                if full_w.shape[0] != n_total:
+                    raise ValueError("row_weights entry length must match source observations")
+                route_w = full_w.index_select(0, selected)
+        elif row_weights is not None:
+            full_w = _finite_float64(row_weights, label="row_weights", ndim_min=1).reshape(-1)
+            if full_w.shape[0] != n_total:
+                raise ValueError("row_weights length must match source observations")
+            route_w = full_w.index_select(0, selected)
+
+        full_target = targets[target_node]
+        if orthogonalize_global_linear:
+            # Project out the global Fisher-weighted linear component on source_states
+            # so routed edges fit only piecewise route specialization and quadratic curvature,
+            # never undoing EWC/ridge regularization applied to the base node generators.
+            gw = _normalize_row_weights(full_w, n_total).unsqueeze(1)
+            gw_sum = float(gw.sum().item())
+            g_src_mean = (rows * gw).sum(dim=0) / gw_sum
+            g_tgt_mean = (full_target * gw).sum(dim=0) / gw_sum
+            g_src_c = rows - g_src_mean
+            g_tgt_c = full_target - g_tgt_mean
+            g_cov = ((g_src_c * gw).T @ g_src_c) / gw_sum + msg_ridge * torch.eye(d, dtype=torch.float64)
+            g_cross = ((g_src_c * gw).T @ g_tgt_c) / gw_sum
+            g_mat = torch.linalg.solve(g_cov, g_cross)
+            global_linear_fit = g_tgt_mean + g_src_c @ g_mat
+            effective_route_target = (full_target - global_linear_fit).index_select(0, selected)
+        else:
+            effective_route_target = route_target
+
         raw_matrix, raw_bias, unshrunk_mse = _fit_ewc_raw_affine_message(
             route_source,
-            route_target,
+            effective_route_target,
             global_cov,
             anchor_matrix,
             anchor_bias,
             ewc_prior_weight=ewc_weight,
+            route_row_weights=route_w,
         )
         raw_affine = route_source @ raw_matrix + raw_bias
+        affine_gains = _compute_cross_block_ewc_gains(
+            route_source,
+            effective_route_target,
+            raw_affine,
+            global_cov,
+            anchor_matrix,
+            anchor_bias,
+            ewc_prior_weight=ewc_weight,
+            shrinkage_kappa=kappa,
+            target_fisher_diag=fisher_diag,
+            route_row_weights=route_w,
+        )
+        matrix = (raw_matrix * affine_gains.unsqueeze(0)).contiguous()
+        bias = (raw_bias * affine_gains).contiguous()
+        affine = route_source @ matrix + bias
+
         left: Tensor | None = None
         right: Tensor | None = None
-        raw_output: Tensor | None = None
-        raw_prediction = raw_affine
+        output: Tensor | None = None
+        gains = affine_gains
+        prediction = affine
         if rank:
             sample = TangentPreservingQuadraticSample(
                 source_modes=route_source,
-                target_modes=route_target - raw_bias,
+                target_modes=effective_route_target - raw_bias,
                 logical_positions=torch.arange(route_source.shape[0], dtype=torch.int64),
                 valid_mask=torch.ones(route_source.shape[0], dtype=torch.bool),
             )
@@ -924,29 +1068,19 @@ def fit_ewc_state_conditioned_modal_interactions(
             )
             left = quadratic.A
             right = quadratic.C
-            raw_output = quadratic.B
-            raw_prediction = raw_affine + ((route_source @ left) * (route_source @ right)) @ raw_output
-
-        gains = _compute_cross_block_ewc_gains(
-            route_source,
-            route_target,
-            raw_prediction,
-            global_cov,
-            anchor_matrix,
-            anchor_bias,
-            ewc_prior_weight=ewc_weight,
-            shrinkage_kappa=kappa,
-            target_fisher_diag=fisher_diag,
-        )
-        matrix = (raw_matrix * gains.unsqueeze(0)).contiguous()
-        bias = (raw_bias * gains).contiguous()
-        output = None if raw_output is None else (raw_output * gains.unsqueeze(0)).contiguous()
-        affine = route_source @ matrix + bias
-        prediction = (
-            affine
-            if output is None or left is None or right is None
-            else affine + ((route_source @ left) * (route_source @ right)) @ output
-        )
+            quad_features = (route_source @ left) * (route_source @ right)
+            residual_after_affine = effective_route_target - affine
+            output, quad_gains = _fit_ewc_quadratic_output(
+                quad_features,
+                residual_after_affine,
+                ewc_prior_weight=ewc_weight,
+                shrinkage_kappa=kappa,
+                Base_B=quadratic.B,
+                target_fisher_diag=fisher_diag,
+                route_row_weights=route_w,
+            )
+            gains = 0.5 * (affine_gains + quad_gains)
+            prediction = affine + quad_features @ output
 
         affine_mse = float((affine - route_target).square().mean().item())
         polynomial_mse = float((prediction - route_target).square().mean().item())
