@@ -44,10 +44,15 @@ from .modal_generator_graph import (
 
 
 __all__ = [
+    "EWCStateConditionedEdgeDiagnostics",
+    "EWCStateConditionedModalInteractionFit",
+    "PullbackFisherSourceChart",
     "StateConditionedEdgeFitMetrics",
     "StateConditionedModalInteractionFit",
     "TeacherFlowRouting",
+    "fit_ewc_state_conditioned_modal_interactions",
     "fit_state_conditioned_modal_interactions",
+    "pullback_fisher_source_chart",
     "teacher_flow_routing",
 ]
 
@@ -505,3 +510,494 @@ def fit_state_conditioned_modal_interactions(
         router_fold_float32_max_abs_error=fold_error,
         router_fold_float32_tolerance=fold_tolerance,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class PullbackFisherSourceChart:
+    """Pullback-Fisher input chart basis projecting ambient hidden states to modal source coordinates."""
+
+    origin: Tensor
+    basis: Tensor
+    eigenvalues: Tensor
+    retained_pullback_energy_fraction: float
+
+    def encode(self, hidden_states: Tensor) -> Tensor:
+        states = _finite_float64(hidden_states, label="hidden_states", ndim_min=2)
+        if states.shape[-1] != self.basis.shape[0]:
+            raise ValueError("hidden_states width must match chart ambient width")
+        return ((states - self.origin) @ self.basis).to(dtype=hidden_states.dtype).contiguous()
+
+
+def pullback_fisher_source_chart(
+    ambient_states: Tensor,
+    target_messages: Mapping[str, Tensor],
+    *,
+    rank: int,
+    target_fisher_weights: Mapping[str, Tensor] | None = None,
+    ridge: float = 1e-6,
+) -> PullbackFisherSourceChart:
+    """Build a rank-``k`` source chart from the empirical pullback Fisher of target flows.
+
+    Instead of choosing the source basis purely by source activation variance or
+    codomain Fisher projection, this computes the linear pullback sensitivity
+    ``J_r = (H_c^T H_c + ridge I)^{-1} H_c^T Y_r`` for each target route ``r`` and
+    accumulates ``F_pb = sum_r J_r F_r J_r^T + ridge * Cov(H)`` so the retained
+    ``rank`` coordinates capture the input directions that drive Fisher-weighted
+    outgoing messages.
+    """
+    states = _finite_float64(ambient_states, label="ambient_states", ndim_min=2)
+    rows = states.reshape(-1, states.shape[-1])
+    n, d = rows.shape
+    chart_rank = _positive_int(rank, label="rank")
+    if chart_rank > d:
+        raise ValueError("rank cannot exceed ambient_states width")
+    reg = _positive_float(ridge, label="ridge")
+    if not isinstance(target_messages, Mapping) or not target_messages:
+        raise ValueError("target_messages must be a nonempty mapping")
+
+    origin = rows.mean(dim=0)
+    centered = rows - origin
+    cov_h = (centered.T @ centered) / float(n)
+    system = cov_h + reg * torch.eye(d, dtype=torch.float64)
+
+    pullback_metric = torch.zeros((d, d), dtype=torch.float64)
+    for name in sorted(target_messages):
+        target = _finite_float64(target_messages[name], label=f"target_messages[{name!r}]", ndim_min=2)
+        target_rows = target.reshape(-1, target.shape[-1])
+        if target_rows.shape[0] != n:
+            raise ValueError("target_messages must have the same number of observations as ambient_states")
+        target_centered = target_rows - target_rows.mean(dim=0)
+        cross = (centered.T @ target_centered) / float(n)
+        jacobian_t = torch.linalg.solve(system, cross)  # [d, m_r]
+        if target_fisher_weights is not None and name in target_fisher_weights:
+            weights = _finite_float64(
+                target_fisher_weights[name],
+                label=f"target_fisher_weights[{name!r}]",
+                ndim_min=1,
+            )
+            if weights.ndim == 1:
+                if weights.shape[0] != target_rows.shape[1] or bool((weights < 0).any()):
+                    raise ValueError("1D target_fisher_weights must be nonnegative and match target width")
+                pullback_metric = pullback_metric + (jacobian_t * weights.unsqueeze(0)) @ jacobian_t.T
+            elif weights.ndim == 2:
+                if weights.shape != (target_rows.shape[1], target_rows.shape[1]):
+                    raise ValueError("2D target_fisher_weights must be square and match target width")
+                pullback_metric = pullback_metric + jacobian_t @ weights @ jacobian_t.T
+            else:
+                raise ValueError("target_fisher_weights must be 1D diagonal or 2D matrix")
+        else:
+            pullback_metric = pullback_metric + jacobian_t @ jacobian_t.T
+
+    # Add a small state-covariance tie-breaker so null-response directions remain orthonormal and well-ordered.
+    total_metric = 0.5 * (pullback_metric + pullback_metric.T) + reg * cov_h
+    evals, evecs = torch.linalg.eigh(total_metric)
+    basis = evecs[:, -chart_rank:].flip(1).contiguous()
+    max_idx = basis.abs().argmax(dim=0)
+    signs = torch.where(basis[max_idx, torch.arange(chart_rank)] < 0, -1.0, 1.0)
+    basis = (basis * signs.unsqueeze(0)).contiguous()
+
+    pb_evals = torch.linalg.eigvalsh(0.5 * (pullback_metric + pullback_metric.T)).clamp_min(0.0)
+    total_pb = float(pb_evals.sum().item())
+    retained_pb = (
+        1.0
+        if total_pb <= 1e-30
+        else float(torch.trace(basis.T @ pullback_metric @ basis).clamp_min(0.0).item()) / total_pb
+    )
+    return PullbackFisherSourceChart(
+        origin=origin.contiguous(),
+        basis=basis,
+        eigenvalues=evals.flip(0).contiguous(),
+        retained_pullback_energy_fraction=min(1.0, max(0.0, retained_pb)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class EWCStateConditionedEdgeDiagnostics:
+    """Per-route EWC consolidation and Wiener/Fisher shrinkage diagnostics."""
+
+    target_node: str
+    observations: int
+    unshrunk_affine_mse: float
+    ewc_shrunk_affine_mse: float
+    polynomial_mse: float
+    mean_mode_shrinkage_gain: float
+    minimum_mode_shrinkage_gain: float
+    maximum_mode_shrinkage_gain: float
+
+
+@dataclass(frozen=True, slots=True)
+class EWCStateConditionedModalInteractionFit:
+    """Result of EWC-consolidated state-conditioned modal interaction fitting."""
+
+    interactions: tuple[StateConditionedModalGeneratorInteraction, ...]
+    router_metrics: RouterClassificationMetrics
+    edge_metrics: tuple[StateConditionedEdgeFitMetrics, ...]
+    ewc_diagnostics: tuple[EWCStateConditionedEdgeDiagnostics, ...]
+    route_counts: tuple[int, ...]
+    router_fold_audit_observations: int
+    router_fold_float32_max_abs_error: float
+    router_fold_float32_tolerance: float
+
+    @property
+    def parameter_count(self) -> int:
+        return sum(edge.parameter_count for edge in self.interactions)
+
+    @property
+    def dense_macs_per_token(self) -> int:
+        return sum(edge.macs_per_token for edge in self.interactions)
+
+
+def _fit_ewc_raw_affine_message(
+    route_source: Tensor,
+    route_target: Tensor,
+    global_source_covariance: Tensor,
+    anchor_matrix: Tensor,
+    anchor_bias: Tensor,
+    *,
+    ewc_prior_weight: float,
+) -> tuple[Tensor, Tensor, float]:
+    """Fit EWC covariance-anchored affine parameters before post-polynomial shrinkage."""
+    n_r = route_source.shape[0]
+    src_mean = route_source.mean(dim=0)
+    tgt_mean = route_target.mean(dim=0)
+    src_centered = route_source - src_mean
+    tgt_centered = route_target - tgt_mean
+
+    local_cov = (src_centered.T @ src_centered) / float(n_r)
+    cross_cov = (src_centered.T @ tgt_centered) / float(n_r)
+
+    system = local_cov + ewc_prior_weight * global_source_covariance
+    rhs = cross_cov + ewc_prior_weight * (global_source_covariance @ anchor_matrix)
+    raw_matrix = torch.linalg.solve(system, rhs).contiguous()
+    raw_bias = (tgt_mean - src_mean @ raw_matrix).contiguous()
+
+    intercept_trust = float(n_r) / (float(n_r) + ewc_prior_weight)
+    anchored_bias = (
+        intercept_trust * raw_bias
+        + (1.0 - intercept_trust) * (anchor_bias + src_mean @ (anchor_matrix - raw_matrix))
+    ).contiguous()
+
+    unshrunk_pred = route_source @ raw_matrix + anchored_bias
+    unshrunk_mse = float((unshrunk_pred - route_target).square().mean().item())
+    return raw_matrix, anchored_bias, unshrunk_mse
+
+
+def _compute_cross_block_ewc_gains(
+    route_source: Tensor,
+    route_target: Tensor,
+    raw_prediction: Tensor,
+    global_source_covariance: Tensor,
+    anchor_matrix: Tensor,
+    anchor_bias: Tensor,
+    *,
+    ewc_prior_weight: float,
+    shrinkage_kappa: float,
+    target_fisher_diag: Tensor | None = None,
+    block_count: int = 8,
+) -> Tensor:
+    """Compute per-mode EWC Wiener shrinkage gains from cross-block (cross-family) OOF predictions.
+
+    Partitioning the training route rows into contiguous blocks (matching the contiguous
+    prompt-family structure of calibration streams) measures whether each output mode's
+    predicted flow transfers positively across unseen training blocks. Modes whose out-of-block
+    alignment is negative are zeroed out, while positively transferring modes receive their
+    empirical Gauss-Markov / EWC shrinkage factor in ``[0, 1]``.
+    """
+    n_r, d = route_source.shape
+    m = route_target.shape[1]
+    if shrinkage_kappa <= 0.0:
+        return torch.ones(m, dtype=torch.float64)
+
+    effective_blocks = min(block_count, n_r // max(2, d // 2))
+    if effective_blocks >= 2:
+        oof_pred = torch.zeros_like(route_target)
+        boundaries = torch.linspace(0, n_r, steps=effective_blocks + 1, dtype=torch.int64)
+        all_idx = torch.arange(n_r, dtype=torch.int64)
+        for b in range(effective_blocks):
+            start, end = int(boundaries[b].item()), int(boundaries[b + 1].item())
+            val_mask = (all_idx >= start) & (all_idx < end)
+            train_mask = ~val_mask
+            if not bool(train_mask.any()) or not bool(val_mask.any()):
+                continue
+            mat_b, bias_b, _ = _fit_ewc_raw_affine_message(
+                route_source[train_mask],
+                route_target[train_mask],
+                global_source_covariance,
+                anchor_matrix,
+                anchor_bias,
+                ewc_prior_weight=ewc_prior_weight,
+            )
+            oof_pred[val_mask] = route_source[val_mask] @ mat_b + bias_b
+
+        # Positive cross-block correlation <oof_pred, target> / (||oof_pred||^2 + kappa * error)
+        cross_dot = (oof_pred * route_target).mean(dim=0).clamp_min(0.0)
+        pred_energy = oof_pred.square().mean(dim=0)
+        error_energy = (route_target - oof_pred).square().mean(dim=0)
+        if target_fisher_diag is not None:
+            f_scale = target_fisher_diag / target_fisher_diag.mean().clamp_min(1e-12)
+            error_energy = error_energy * f_scale
+        oof_gains = cross_dot / (pred_energy + shrinkage_kappa * error_energy + 1e-30)
+        return oof_gains.clamp(0.0, 1.0).contiguous()
+
+    signal_energy = raw_prediction.square().mean(dim=0)
+    error_energy = (route_target - raw_prediction).square().mean(dim=0)
+    if target_fisher_diag is not None:
+        f_scale = target_fisher_diag / target_fisher_diag.mean().clamp_min(1e-12)
+        error_energy = error_energy * f_scale
+    gains = signal_energy / (signal_energy + shrinkage_kappa * error_energy + 1e-30)
+    return gains.clamp(0.0, 1.0).contiguous()
+
+
+def fit_ewc_state_conditioned_modal_interactions(
+    source_states: Tensor,
+    target_messages: Mapping[str, Tensor],
+    route_labels: Tensor,
+    *,
+    source_node: str,
+    routing_group: str,
+    router_validation_states: Tensor | None = None,
+    target_fisher_weights: Mapping[str, Tensor] | None = None,
+    temperature: float = 1.0,
+    top_k: int = 1,
+    router_ridge: float = 1e-3,
+    message_ridge: float = 1e-4,
+    ewc_prior_weight: float = 0.1,
+    shrinkage_kappa: float = 0.5,
+    anchor_to_global_fit: bool = False,
+    quadratic_rank: int = 0,
+    quadratic_steps: int = 400,
+    quadratic_learning_rate: float = 1e-2,
+    quadratic_ridge: float = 1e-4,
+    seed: int = 0,
+) -> EWCStateConditionedModalInteractionFit:
+    """Fit state-conditioned modal interactions with EWC covariance anchoring and per-mode Fisher shrinkage.
+
+    Produces standard ``StateConditionedModalGeneratorInteraction`` artifacts with zero
+    serving overhead: the EWC precision-shrunk gains are folded algebraically into
+    ``message_matrix``, ``message_bias``, and ``quadratic_output``.
+    """
+    source = _finite_float64(source_states, label="source_states", ndim_min=2)
+    leading_shape = source.shape[:-1]
+    rows = source.reshape(-1, source.shape[-1])
+    n_total, d = rows.shape
+    if not isinstance(target_messages, Mapping) or len(target_messages) < 2:
+        raise ValueError("target_messages must contain at least two routes")
+    target_nodes = tuple(sorted(target_messages))
+    targets: dict[str, Tensor] = {}
+    for name in target_nodes:
+        value = _finite_float64(
+            target_messages[name],
+            label=f"target_messages[{name!r}]",
+            ndim_min=2,
+        )
+        if value.shape[:-1] != leading_shape:
+            raise ValueError("target messages must share source leading shape")
+        targets[name] = value.reshape(-1, value.shape[-1])
+
+    if (
+        not isinstance(route_labels, Tensor)
+        or route_labels.dtype not in (torch.int32, torch.int64)
+        or route_labels.shape != leading_shape
+    ):
+        raise ValueError("route_labels must be integer and match leading shape")
+    labels = route_labels.detach().to(device="cpu", dtype=torch.int64).reshape(-1)
+    routes = len(target_nodes)
+    if int(labels.min().item()) < 0 or int(labels.max().item()) >= routes:
+        raise ValueError("route_labels exceed the target route range")
+    counts_tensor = torch.bincount(labels, minlength=routes)
+    if bool((counts_tensor == 0).any()):
+        raise ValueError("every state-conditioned route needs assigned rows")
+    if type(top_k) is not int or top_k != 1:
+        raise ValueError("hard-label state-conditioned fitting currently requires top_k=1")
+
+    tau = _positive_float(temperature, label="temperature")
+    route_ridge = _positive_float(router_ridge, label="router_ridge")
+    msg_ridge = _positive_float(message_ridge, label="message_ridge")
+    ewc_weight = _nonnegative_float(ewc_prior_weight, label="ewc_prior_weight")
+    kappa = _nonnegative_float(shrinkage_kappa, label="shrinkage_kappa")
+    rank = _nonnegative_int(quadratic_rank, label="quadratic_rank")
+    steps = _positive_int(quadratic_steps, label="quadratic_steps")
+    learning_rate = _positive_float(quadratic_learning_rate, label="quadratic_learning_rate")
+    quad_ridge = _nonnegative_float(quadratic_ridge, label="quadratic_ridge")
+    fit_seed = _nonnegative_int(seed, label="seed")
+
+    router, router_metrics = fit_pointwise_causal_router(
+        rows,
+        labels,
+        route_count=routes,
+        ridge=route_ridge,
+    )
+    folded_weight = router.weight / router.feature_scale[:, None]
+    folded_bias = router.bias - (router.feature_mean / router.feature_scale) @ router.weight
+
+    audit_rows = rows
+    if router_validation_states is not None:
+        validation = _finite_float64(
+            router_validation_states,
+            label="router_validation_states",
+            ndim_min=2,
+        )
+        if validation.shape[-1] != d:
+            raise ValueError("router_validation_states must match the source width")
+        audit_rows = torch.cat((rows, validation.reshape(-1, d)), dim=0)
+
+    runtime_rows = audit_rows.to(dtype=torch.float32)
+    reference_logits = (
+        (runtime_rows - router.feature_mean.to(dtype=torch.float32))
+        / router.feature_scale.to(dtype=torch.float32)
+    ) @ router.weight.to(dtype=torch.float32) + router.bias.to(dtype=torch.float32)
+    folded_logits = runtime_rows @ folded_weight.to(dtype=torch.float32) + folded_bias.to(dtype=torch.float32)
+    if not bool(torch.isfinite(folded_logits).all()):
+        raise RuntimeError("folded state-conditioned router became non-finite")
+    fold_error = float((folded_logits - reference_logits).abs().max().item())
+    reference_scale = max(1.0, float(reference_logits.abs().max().item()))
+    fold_tolerance = 1e-6 + 1e-5 * reference_scale
+    if fold_error > fold_tolerance or not torch.equal(
+        folded_logits.argmax(dim=-1),
+        reference_logits.argmax(dim=-1),
+    ):
+        raise RuntimeError(
+            "folded state-conditioned router is not float32 route-stable; "
+            "center or rescale the source modal coordinates"
+        )
+
+    rows_centered = rows - rows.mean(dim=0)
+    global_cov = (rows_centered.T @ rows_centered) / float(n_total) + msg_ridge * torch.eye(d, dtype=torch.float64)
+
+    interactions: list[StateConditionedModalGeneratorInteraction] = []
+    metrics: list[StateConditionedEdgeFitMetrics] = []
+    ewc_diagnostics: list[EWCStateConditionedEdgeDiagnostics] = []
+
+    for route, target_node in enumerate(target_nodes):
+        selected = torch.nonzero(labels == route, as_tuple=False).flatten()
+        route_source = rows.index_select(0, selected)
+        route_target = targets[target_node].index_select(0, selected)
+        m_width = route_target.shape[1]
+
+        if anchor_to_global_fit:
+            anchor_matrix, anchor_bias = _fit_affine_message(
+                rows,
+                targets[target_node],
+                ridge=msg_ridge,
+            )
+        else:
+            anchor_matrix = torch.zeros((d, m_width), dtype=torch.float64)
+            anchor_bias = torch.zeros(m_width, dtype=torch.float64)
+
+        fisher_diag: Tensor | None = None
+        if target_fisher_weights is not None and target_node in target_fisher_weights:
+            fw = _finite_float64(
+                target_fisher_weights[target_node],
+                label=f"target_fisher_weights[{target_node!r}]",
+                ndim_min=1,
+            )
+            fisher_diag = fw if fw.ndim == 1 else torch.diag(fw)
+
+        raw_matrix, raw_bias, unshrunk_mse = _fit_ewc_raw_affine_message(
+            route_source,
+            route_target,
+            global_cov,
+            anchor_matrix,
+            anchor_bias,
+            ewc_prior_weight=ewc_weight,
+        )
+        raw_affine = route_source @ raw_matrix + raw_bias
+        left: Tensor | None = None
+        right: Tensor | None = None
+        raw_output: Tensor | None = None
+        raw_prediction = raw_affine
+        if rank:
+            sample = TangentPreservingQuadraticSample(
+                source_modes=route_source,
+                target_modes=route_target - raw_bias,
+                logical_positions=torch.arange(route_source.shape[0], dtype=torch.int64),
+                valid_mask=torch.ones(route_source.shape[0], dtype=torch.bool),
+            )
+            quadratic = fit_tangent_preserving_quadratic_edge(
+                (sample,),
+                base_kernel=raw_matrix.unsqueeze(0),
+                hidden_width=rank,
+                steps=steps,
+                learning_rate=learning_rate,
+                ridge=quad_ridge,
+                seed=fit_seed + route,
+            )
+            left = quadratic.A
+            right = quadratic.C
+            raw_output = quadratic.B
+            raw_prediction = raw_affine + ((route_source @ left) * (route_source @ right)) @ raw_output
+
+        gains = _compute_cross_block_ewc_gains(
+            route_source,
+            route_target,
+            raw_prediction,
+            global_cov,
+            anchor_matrix,
+            anchor_bias,
+            ewc_prior_weight=ewc_weight,
+            shrinkage_kappa=kappa,
+            target_fisher_diag=fisher_diag,
+        )
+        matrix = (raw_matrix * gains.unsqueeze(0)).contiguous()
+        bias = (raw_bias * gains).contiguous()
+        output = None if raw_output is None else (raw_output * gains.unsqueeze(0)).contiguous()
+        affine = route_source @ matrix + bias
+        prediction = (
+            affine
+            if output is None or left is None or right is None
+            else affine + ((route_source @ left) * (route_source @ right)) @ output
+        )
+
+        affine_mse = float((affine - route_target).square().mean().item())
+        polynomial_mse = float((prediction - route_target).square().mean().item())
+        improvement = 0.0 if affine_mse == 0.0 else (affine_mse - polynomial_mse) / affine_mse
+
+        interactions.append(
+            StateConditionedModalGeneratorInteraction(
+                source_node=source_node,
+                target_node=target_node,
+                routing_group=routing_group,
+                message_matrix=matrix,
+                message_bias=bias,
+                gate_weight=folded_weight[:, route],
+                gate_bias=folded_bias[route : route + 1],
+                quadratic_left=left,
+                quadratic_right=right,
+                quadratic_output=output,
+                temperature=tau,
+                top_k=top_k,
+            )
+        )
+        metrics.append(
+            StateConditionedEdgeFitMetrics(
+                target_node=target_node,
+                observations=int(selected.numel()),
+                affine_mse=affine_mse,
+                polynomial_mse=polynomial_mse,
+                polynomial_improvement_fraction=improvement,
+            )
+        )
+        ewc_diagnostics.append(
+            EWCStateConditionedEdgeDiagnostics(
+                target_node=target_node,
+                observations=int(selected.numel()),
+                unshrunk_affine_mse=unshrunk_mse,
+                ewc_shrunk_affine_mse=affine_mse,
+                polynomial_mse=polynomial_mse,
+                mean_mode_shrinkage_gain=float(gains.mean().item()),
+                minimum_mode_shrinkage_gain=float(gains.min().item()),
+                maximum_mode_shrinkage_gain=float(gains.max().item()),
+            )
+        )
+
+    return EWCStateConditionedModalInteractionFit(
+        interactions=tuple(interactions),
+        router_metrics=router_metrics,
+        edge_metrics=tuple(metrics),
+        ewc_diagnostics=tuple(ewc_diagnostics),
+        route_counts=tuple(int(value) for value in counts_tensor.tolist()),
+        router_fold_audit_observations=int(audit_rows.shape[0]),
+        router_fold_float32_max_abs_error=fold_error,
+        router_fold_float32_tolerance=fold_tolerance,
+    )
+

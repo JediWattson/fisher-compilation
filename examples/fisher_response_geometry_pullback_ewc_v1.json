@@ -1,0 +1,27 @@
+{
+  "chart_count": 3,
+  "epsilon": 1e-06,
+  "evaluation_families": 6,
+  "ewc_derivative_weight": 1.0,
+  "finite_radii": [
+    0.001,
+    0.01,
+    0.1
+  ],
+  "kmeans_iterations": 32,
+  "message_rank": 3,
+  "message_width": 8,
+  "metric_rtol": 1e-12,
+  "original_config_sha256": "d223c18c27808d011ec00e1f7dd58b8275b9a6694192f4fde55c47eea93e36c0",
+  "output_rank": 3,
+  "protocol_id": "fisher_response_geometry_pullback_ewc_v1",
+  "relative_constant_tolerance": 1e-12,
+  "reproduction_atol": 1e-12,
+  "reproduction_rtol": 1e-10,
+  "residual_width": 6,
+  "rows_per_family": 8,
+  "seed": 1729,
+  "state_rank": 2,
+  "support_radius_multiplier": 1.5,
+  "train_families": 12
+}

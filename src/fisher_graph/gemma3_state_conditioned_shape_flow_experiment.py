@@ -116,7 +116,9 @@ from .state_conditioned_modal_evaluation import (
     evaluate_state_conditioned_modal_flow,
 )
 from .state_conditioned_modal_fitting import (
+    EWCStateConditionedModalInteractionFit,
     StateConditionedModalInteractionFit,
+    fit_ewc_state_conditioned_modal_interactions,
     fit_state_conditioned_modal_interactions,
     teacher_flow_routing,
 )
@@ -427,8 +429,10 @@ def _evaluate_flow(
     )
 
 
-def _fit_metadata(fit: StateConditionedModalInteractionFit) -> dict[str, object]:
-    return {
+def _fit_metadata(
+    fit: StateConditionedModalInteractionFit | EWCStateConditionedModalInteractionFit,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "parameter_count": fit.parameter_count,
         "dense_macs_per_token": fit.dense_macs_per_token,
         "route_counts": fit.route_counts,
@@ -440,11 +444,16 @@ def _fit_metadata(fit: StateConditionedModalInteractionFit) -> dict[str, object]
         ),
         "router_fold_float32_tolerance": fit.router_fold_float32_tolerance,
     }
+    if isinstance(fit, EWCStateConditionedModalInteractionFit):
+        payload["ewc_diagnostics"] = tuple(
+            asdict(value) for value in fit.ewc_diagnostics
+        )
+    return payload
 
 
 def _dynamic_graph(
     edgeless: EdgelessSameLayerGraphPlan,
-    fit: StateConditionedModalInteractionFit,
+    fit: StateConditionedModalInteractionFit | EWCStateConditionedModalInteractionFit,
 ) -> ModalGeneratorGraphPlan:
     return ModalGeneratorGraphPlan(
         model_fingerprint=edgeless.graph_plan.model_fingerprint,
@@ -598,6 +607,9 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     message_ridge: float = DEFAULT_MESSAGE_RIDGE,
     quadratic_steps: int = DEFAULT_QUADRATIC_STEPS,
     minimum_nll_improvement: float = DEFAULT_MINIMUM_NLL_IMPROVEMENT,
+    use_ewc: bool = False,
+    ewc_prior_weight: float = 0.1,
+    shrinkage_kappa: float = 0.5,
 ) -> dict[str, object]:
     """Fit, select, and checkpoint one guard-unopened Gemma candidate."""
 
@@ -841,25 +853,50 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     )
     variants: list[dict[str, object]] = []
     for quadratic_rank in quadratic:
-        fitted = fit_state_conditioned_modal_interactions(
-            fit_rows.node_states[source_node],
-            fit_corrections,
-            labels,
-            source_node=source_node,
-            routing_group=(
-                f"layer-{same_layer.layer_ordinal}.shape-flow-v1"
-            ),
-            router_validation_states=selection_rows.node_states[source_node],
-            temperature=1.0,
-            top_k=1,
-            router_ridge=router_ridge,
-            message_ridge=message_ridge,
-            quadratic_rank=quadratic_rank,
-            quadratic_steps=quadratic_steps,
-            quadratic_learning_rate=1e-2,
-            quadratic_ridge=1e-6,
-            seed=17_000 + quadratic_rank,
-        )
+        if use_ewc:
+            fitted: StateConditionedModalInteractionFit | EWCStateConditionedModalInteractionFit = (
+                fit_ewc_state_conditioned_modal_interactions(
+                    fit_rows.node_states[source_node],
+                    fit_corrections,
+                    labels,
+                    source_node=source_node,
+                    routing_group=(
+                        f"layer-{same_layer.layer_ordinal}.shape-flow-v1"
+                    ),
+                    router_validation_states=selection_rows.node_states[source_node],
+                    temperature=1.0,
+                    top_k=1,
+                    router_ridge=router_ridge,
+                    message_ridge=max(message_ridge, 1e-6),
+                    ewc_prior_weight=ewc_prior_weight,
+                    shrinkage_kappa=shrinkage_kappa,
+                    quadratic_rank=quadratic_rank,
+                    quadratic_steps=quadratic_steps,
+                    quadratic_learning_rate=1e-2,
+                    quadratic_ridge=1e-6,
+                    seed=17_000 + quadratic_rank,
+                )
+            )
+        else:
+            fitted = fit_state_conditioned_modal_interactions(
+                fit_rows.node_states[source_node],
+                fit_corrections,
+                labels,
+                source_node=source_node,
+                routing_group=(
+                    f"layer-{same_layer.layer_ordinal}.shape-flow-v1"
+                ),
+                router_validation_states=selection_rows.node_states[source_node],
+                temperature=1.0,
+                top_k=1,
+                router_ridge=router_ridge,
+                message_ridge=message_ridge,
+                quadratic_rank=quadratic_rank,
+                quadratic_steps=quadratic_steps,
+                quadratic_learning_rate=1e-2,
+                quadratic_ridge=1e-6,
+                seed=17_000 + quadratic_rank,
+            )
         graph = _dynamic_graph(edgeless, fitted)
         flow = _evaluate_flow(
             fitted,
@@ -921,7 +958,10 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     chosen_graph = chosen["graph"]
     chosen_flow = chosen["flow"]
     chosen_rung = chosen["rung"]
-    assert isinstance(chosen_fit, StateConditionedModalInteractionFit)
+    assert isinstance(
+        chosen_fit,
+        (StateConditionedModalInteractionFit, EWCStateConditionedModalInteractionFit),
+    )
     assert isinstance(chosen_graph, ModalGeneratorGraphPlan)
     assert isinstance(chosen_flow, StateConditionedModalFlowEvaluation)
     assert isinstance(chosen_rung, Mapping)
@@ -1916,6 +1956,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_MINIMUM_NLL_IMPROVEMENT,
     )
+    fit.add_argument(
+        "--ewc",
+        action="store_true",
+        help="use EWC covariance prior and per-mode Fisher Wiener shrinkage",
+    )
+    fit.add_argument(
+        "--ewc-prior-weight",
+        type=float,
+        default=0.1,
+    )
+    fit.add_argument(
+        "--shrinkage-kappa",
+        type=float,
+        default=0.5,
+    )
     _add_corpus_arguments(fit)
     _add_runtime_arguments(fit)
 
@@ -1998,6 +2053,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             message_ridge=arguments.message_ridge,
             quadratic_steps=arguments.quadratic_steps,
             minimum_nll_improvement=arguments.minimum_nll_improvement,
+            use_ewc=arguments.ewc,
+            ewc_prior_weight=arguments.ewc_prior_weight,
+            shrinkage_kappa=arguments.shrinkage_kappa,
             **common,
         )
     elif arguments.command == "calibrate":
