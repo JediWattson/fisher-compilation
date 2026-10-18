@@ -1020,7 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
                 tokenizer,
                 corpus,
                 [f"opt{i}" for i in range(len(corpus))],
-                batch_size=4,
+                batch_size=16,
                 device=device,
             )
             fit_batches = tuple(item.model_inputs for item in keyed)
