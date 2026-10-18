@@ -76,11 +76,15 @@ Each fit command took about five seconds, including loading, captures,
 solving, and saving. These are single-run observations, not throughput
 benchmarks or guarantees about whole-system memory.
 
-The next fitting experiment should target MLP fidelity on separate training
-development data before composing changes across more layers. Keep these
-baseline artifacts fixed, predeclare the new comparison, and reserve fresh
-assessment articles for the next final check. Longer contexts, generation,
-and controlled timing remain separate checks.
+These initial results alone did not establish that lower teacher agreement
+harmed useful performance. The baseline artifacts were kept fixed for a
+broader evaluation before choosing further fitting changes.
+
+Follow-up: the [expanded evaluation](qwen3-mlx-expanded-evaluation.md) tested
+useful performance before attempting further fitting. It found a
+reading/science task regression despite similar text NLL, establishing a
+concrete task-retention target for further fitting. Free generation and
+controlled timing remain untested.
 
 ## Reproduce
 

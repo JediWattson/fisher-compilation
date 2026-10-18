@@ -252,3 +252,9 @@ separate diagnostic and validation panels. It includes teacher fidelity,
 observed next-token loss, parameter savings, and measured MLX allocation.
 This remains a bounded first experiment; broad task quality, end-to-end speed
 gains, and peak memory guarantees have not been established.
+
+The [expanded evaluation](qwen3-mlx-expanded-evaluation.md) scores 65,456
+fresh text targets at 512/2,048-token contexts and 96 constrained task
+questions. Similar text NLL concealed a joint-fit task regression, reproduced
+with a second execution path. These results distinguish useful task retention
+from agreement with the original model's token choices.

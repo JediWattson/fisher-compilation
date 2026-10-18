@@ -1,0 +1,2598 @@
+{
+  "panels": {
+    "512": {
+      "attention-only": {
+        "report_path": ".local-runs/qwen3-mlx-expanded-eval/attention-only-512.json",
+        "report_sha256": "02961a37d28cff1630b36bcde99a9d924d4aab2b2d3c043fcbf0fc1bab78f83e",
+        "per_token_sha256": "16feec7795927a20ee5e6fcbc9e26e2d9bf01a7450d4d1c0a96bccd3a4bfc629",
+        "aggregate": {
+          "teacher_nll": 3.067414541387978,
+          "student_nll": 3.071005600510045,
+          "teacher_kl_available": false,
+          "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+          "prediction_tokens": 32704,
+          "top1_agreement": 0.9499755381604696,
+          "teacher_ground_truth_top1_accuracy": 0.45407289628180036,
+          "student_ground_truth_top1_accuracy": 0.4535225048923679,
+          "nll_increase": 0.0035910591220669197
+        },
+        "article_bootstrap": {
+          "unit": "article",
+          "resamples": 5000,
+          "seed": 20261018,
+          "token_weighted_nll_delta": 0.003591059122066885,
+          "percentile_95_interval": [
+            0.0002692209020869295,
+            0.006984981146518953
+          ],
+          "article_delta_range": [
+            -0.04197984385630393,
+            0.05139633447456715
+          ],
+          "articles_with_positive_nll_delta": 36,
+          "article_count": 64,
+          "scope": "Descriptive stability within this fixed panel; selection was not a random population sample."
+        },
+        "position_quarters": [
+          {
+            "target_position_start": 0,
+            "target_position_end_exclusive": 128,
+            "prediction_tokens": 8128,
+            "nll_increase": 0.0010119565124586812,
+            "top1_agreement": 0.9525098425196851
+          },
+          {
+            "target_position_start": 128,
+            "target_position_end_exclusive": 256,
+            "prediction_tokens": 8192,
+            "nll_increase": 0.008760245400480926,
+            "top1_agreement": 0.9483642578125
+          },
+          {
+            "target_position_start": 256,
+            "target_position_end_exclusive": 384,
+            "prediction_tokens": 8192,
+            "nll_increase": 0.0032105572754517198,
+            "top1_agreement": 0.9498291015625
+          },
+          {
+            "target_position_start": 384,
+            "target_position_end_exclusive": 512,
+            "prediction_tokens": 8192,
+            "nll_increase": 0.0013613280607387424,
+            "top1_agreement": 0.94921875
+          }
+        ],
+        "per_example": [
+          {
+            "example_index": 0,
+            "example_sha256": "1bcd83ee19f7c6c4d0f66586cd214f3da577183dbd72aec58c9e5074577f0e2a",
+            "teacher_nll": 2.571915273797022,
+            "student_nll": 2.529935429940718,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9686888454011742,
+            "teacher_ground_truth_top1_accuracy": 0.5283757338551859,
+            "student_ground_truth_top1_accuracy": 0.538160469667319,
+            "nll_increase": -0.04197984385630393
+          },
+          {
+            "example_index": 1,
+            "example_sha256": "d8003100d496f799585b46ecfea2b4127215e4b3745f2b386bf66f1d4c7982dd",
+            "teacher_nll": 3.6658816141624975,
+            "student_nll": 3.658789084148967,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9432485322896281,
+            "teacher_ground_truth_top1_accuracy": 0.3933463796477495,
+            "student_ground_truth_top1_accuracy": 0.3776908023483366,
+            "nll_increase": -0.007092530013530496
+          },
+          {
+            "example_index": 2,
+            "example_sha256": "4030f573288ee0d3c263efde0ba9b0aa71a7e063c7a2dfd70d37febf043c2298",
+            "teacher_nll": 2.8912844368622963,
+            "student_nll": 2.91180714235847,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.42661448140900193,
+            "student_ground_truth_top1_accuracy": 0.41487279843444225,
+            "nll_increase": 0.020522705496173632
+          },
+          {
+            "example_index": 3,
+            "example_sha256": "6ad26e75f2d08b2135264779af5a21aaf9f202f1bb6e7037896f4ff9ebf541ae",
+            "teacher_nll": 2.9757847534000526,
+            "student_nll": 2.9831966616636154,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9334637964774951,
+            "teacher_ground_truth_top1_accuracy": 0.4344422700587084,
+            "student_ground_truth_top1_accuracy": 0.4344422700587084,
+            "nll_increase": 0.007411908263562861
+          },
+          {
+            "example_index": 4,
+            "example_sha256": "98c6a59dfe8419792e8b06d07a2586bc55b3806e81d89877a96cff37436995b2",
+            "teacher_nll": 2.943096065707869,
+            "student_nll": 2.942563782932707,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.47162426614481406,
+            "student_ground_truth_top1_accuracy": 0.4598825831702544,
+            "nll_increase": -0.0005322827751621517
+          },
+          {
+            "example_index": 5,
+            "example_sha256": "dec742bbcc01ea4a3b014f9f07a67fb5fac4e776ac3387377378575e76efdda8",
+            "teacher_nll": 3.308830436661752,
+            "student_nll": 3.3192494648076782,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9452054794520548,
+            "teacher_ground_truth_top1_accuracy": 0.3972602739726027,
+            "student_ground_truth_top1_accuracy": 0.4050880626223092,
+            "nll_increase": 0.010419028145926212
+          },
+          {
+            "example_index": 6,
+            "example_sha256": "c464d0b75fe143e4abe9a4a05c2d86f8c55befba3bbf40abe9a4c3ec4517416a",
+            "teacher_nll": 3.105202773779106,
+            "student_nll": 3.099078066428347,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.45596868884540115,
+            "student_ground_truth_top1_accuracy": 0.45596868884540115,
+            "nll_increase": -0.0061247073507590954
+          },
+          {
+            "example_index": 7,
+            "example_sha256": "3c9bf88ff1a40ded2f380e745b6dba2b973198685fcbada1a5132dc3e79f6a97",
+            "teacher_nll": 3.2910395284454883,
+            "student_nll": 3.3135719373968016,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9354207436399217,
+            "teacher_ground_truth_top1_accuracy": 0.4461839530332681,
+            "student_ground_truth_top1_accuracy": 0.44031311154598823,
+            "nll_increase": 0.022532408951313254
+          },
+          {
+            "example_index": 8,
+            "example_sha256": "39e36730101dfae5ce5806fe70a19cf88da675964791dc00271eb4e532d1cc03",
+            "teacher_nll": 3.612935945245851,
+            "student_nll": 3.6238302465987533,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.958904109589041,
+            "teacher_ground_truth_top1_accuracy": 0.37573385518590996,
+            "student_ground_truth_top1_accuracy": 0.3698630136986301,
+            "nll_increase": 0.010894301352902147
+          },
+          {
+            "example_index": 9,
+            "example_sha256": "bb2b28305c23ff696a1f6e1ffae4c79bf66276519344e6a3f901ebb81dbae25d",
+            "teacher_nll": 3.044129422032903,
+            "student_nll": 3.035620424378875,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9647749510763209,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.4735812133072407,
+            "nll_increase": -0.008508997654028239
+          },
+          {
+            "example_index": 10,
+            "example_sha256": "0c3f5ef21de9696f9d04a923e5b02e4ac2b058d325bd84eb848aff29ae4cf037",
+            "teacher_nll": 3.0182838290638188,
+            "student_nll": 3.006339200088889,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.45401174168297453,
+            "student_ground_truth_top1_accuracy": 0.4520547945205479,
+            "nll_increase": -0.01194462897492965
+          },
+          {
+            "example_index": 11,
+            "example_sha256": "94e7203de2b9608fc9f4c7f6182aa8c64e7b9e16b61108952c1dad715dd8bedd",
+            "teacher_nll": 3.216786048650275,
+            "student_nll": 3.2070257239145774,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9412915851272016,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.410958904109589,
+            "nll_increase": -0.009760324735697434
+          },
+          {
+            "example_index": 12,
+            "example_sha256": "cce053b743cc4dd6298e0b259cb6e4ac170049f8332626528d9e111d6759010a",
+            "teacher_nll": 3.584312371778395,
+            "student_nll": 3.594907562793351,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.410958904109589,
+            "student_ground_truth_top1_accuracy": 0.41682974559686886,
+            "nll_increase": 0.010595191014956207
+          },
+          {
+            "example_index": 13,
+            "example_sha256": "8e890cde8d279b74df67003d5701b520beff2ae850b39b6948c0f2294bbab854",
+            "teacher_nll": 2.90137669438252,
+            "student_nll": 2.900593434761182,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9608610567514677,
+            "teacher_ground_truth_top1_accuracy": 0.4657534246575342,
+            "student_ground_truth_top1_accuracy": 0.4598825831702544,
+            "nll_increase": -0.0007832596213379617
+          },
+          {
+            "example_index": 14,
+            "example_sha256": "36660b087db080e6730143618a689683a237e2199205ac5679fd60d4747fcd63",
+            "teacher_nll": 2.6412322833813335,
+            "student_nll": 2.6347240216578056,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9686888454011742,
+            "teacher_ground_truth_top1_accuracy": 0.4911937377690802,
+            "student_ground_truth_top1_accuracy": 0.4911937377690802,
+            "nll_increase": -0.006508261723527919
+          },
+          {
+            "example_index": 15,
+            "example_sha256": "3fb36a85d4962c88f438a82e6a4ca16e30934802d7f042679a9ff1227a6f59a5",
+            "teacher_nll": 3.326422293825392,
+            "student_nll": 3.3127623630829754,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.4227005870841487,
+            "student_ground_truth_top1_accuracy": 0.4246575342465753,
+            "nll_increase": -0.01365993074241656
+          },
+          {
+            "example_index": 16,
+            "example_sha256": "20f0847d36f5cc482f415940be860dc5d01cffd6b2c6c90d8e4f352d6bd4b81a",
+            "teacher_nll": 3.2126147201149897,
+            "student_nll": 3.225041887764828,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9647749510763209,
+            "teacher_ground_truth_top1_accuracy": 0.48532289628180036,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": 0.0124271676498382
+          },
+          {
+            "example_index": 17,
+            "example_sha256": "a6e2e9933c7ddb8ce05739ab142566815d69ac57baa8edb02ce63678df8699c6",
+            "teacher_nll": 3.545681576439546,
+            "student_nll": 3.542653382407709,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9275929549902152,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.4070450097847358,
+            "nll_increase": -0.0030281940318368505
+          },
+          {
+            "example_index": 18,
+            "example_sha256": "14deff22e0f387329a045d32290f398a23c72018f27a131be6fa2b6b0f8f3ac1",
+            "teacher_nll": 3.3209428432636297,
+            "student_nll": 3.3318390612966162,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9510763209393346,
+            "teacher_ground_truth_top1_accuracy": 0.40117416829745595,
+            "student_ground_truth_top1_accuracy": 0.40313111545988256,
+            "nll_increase": 0.010896218032986571
+          },
+          {
+            "example_index": 19,
+            "example_sha256": "ac8d1a3a5e8be1d365df01bcb3e77063477c9f797a51905ea533d3bb1aceac95",
+            "teacher_nll": 3.786315903038428,
+            "student_nll": 3.8377122375129953,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9569471624266145,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.4090019569471624,
+            "nll_increase": 0.05139633447456715
+          },
+          {
+            "example_index": 20,
+            "example_sha256": "8aaddf69e10a31dee6310d4b4d98ff8db3ce60aed27ddd53a33a2e711616f643",
+            "teacher_nll": 3.647952016319081,
+            "student_nll": 3.6561549740994748,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9510763209393346,
+            "teacher_ground_truth_top1_accuracy": 0.40313111545988256,
+            "student_ground_truth_top1_accuracy": 0.4070450097847358,
+            "nll_increase": 0.008202957780393927
+          },
+          {
+            "example_index": 21,
+            "example_sha256": "bff2b1b5d217fcf845737793e153f87eb8393590675b4b698297fe97453b8403",
+            "teacher_nll": 3.5611586412105076,
+            "student_nll": 3.5582515880786274,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9452054794520548,
+            "teacher_ground_truth_top1_accuracy": 0.38747553816046965,
+            "student_ground_truth_top1_accuracy": 0.3835616438356164,
+            "nll_increase": -0.0029070531318802217
+          },
+          {
+            "example_index": 22,
+            "example_sha256": "ece7efff4fc18183ace6a3d98e55ad9f484fbcfc1a9f3e6e34c86f4aebbfe7bf",
+            "teacher_nll": 3.23605848525135,
+            "student_nll": 3.2274281414054378,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.436399217221135,
+            "student_ground_truth_top1_accuracy": 0.44031311154598823,
+            "nll_increase": -0.008630343845912325
+          },
+          {
+            "example_index": 23,
+            "example_sha256": "e0ca36d3c63be9a6dc0c30973944663d96227c0f1f34231d02d1cae1e11d802b",
+            "teacher_nll": 3.1399617727022116,
+            "student_nll": 3.1550479933706983,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9647749510763209,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.4774951076320939,
+            "nll_increase": 0.01508622066848675
+          },
+          {
+            "example_index": 24,
+            "example_sha256": "a9dc433dd74f8ac24792726da9442bb8ab8fa88317497b1b125af0d0aaef1d49",
+            "teacher_nll": 3.7501768030065845,
+            "student_nll": 3.7396712928368854,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9452054794520548,
+            "teacher_ground_truth_top1_accuracy": 0.38551859099804303,
+            "student_ground_truth_top1_accuracy": 0.3776908023483366,
+            "nll_increase": -0.01050551016969914
+          },
+          {
+            "example_index": 25,
+            "example_sha256": "a4ce38e61c0e25a7b9a986954e768669e10e5af12119e410280a210a9f0c367b",
+            "teacher_nll": 3.0946587564427324,
+            "student_nll": 3.0895510634330856,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.958904109589041,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.46966731898238745,
+            "nll_increase": -0.005107693009646752
+          },
+          {
+            "example_index": 26,
+            "example_sha256": "70d4c4b116357608657f48cb95097637a32ada8b390743af27b48e1bf1a1a8c6",
+            "teacher_nll": 3.855600340259052,
+            "student_nll": 3.8669863008473015,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.923679060665362,
+            "teacher_ground_truth_top1_accuracy": 0.37573385518590996,
+            "student_ground_truth_top1_accuracy": 0.3776908023483366,
+            "nll_increase": 0.011385960588249588
+          },
+          {
+            "example_index": 27,
+            "example_sha256": "24dfc71547e5bf9aec8b0954f91a8085f8dd666f9276daf9ea619a5247ff0af4",
+            "teacher_nll": 2.880620930292835,
+            "student_nll": 2.8964432307652066,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.46966731898238745,
+            "student_ground_truth_top1_accuracy": 0.46966731898238745,
+            "nll_increase": 0.01582230047237143
+          },
+          {
+            "example_index": 28,
+            "example_sha256": "4b023eaee9c02b26ba5c8c5973b71e5627995038e34a90215c9670082b48385f",
+            "teacher_nll": 3.1016521827115473,
+            "student_nll": 3.090790565699747,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.4735812133072407,
+            "nll_increase": -0.010861617011800107
+          },
+          {
+            "example_index": 29,
+            "example_sha256": "f8a99b993f31d66638f554370987b4b32089c224d718a47a9d99007ddf2c82af",
+            "teacher_nll": 3.4326793498955595,
+            "student_nll": 3.4395927683014693,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9334637964774951,
+            "teacher_ground_truth_top1_accuracy": 0.3913894324853229,
+            "student_ground_truth_top1_accuracy": 0.3972602739726027,
+            "nll_increase": 0.006913418405909866
+          },
+          {
+            "example_index": 30,
+            "example_sha256": "55a68e7af4ed6f11607b56a7b03cac756cb51ccb10d2b449b71fb404620a84af",
+            "teacher_nll": 2.4758878957968635,
+            "student_nll": 2.495449622316603,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9510763209393346,
+            "teacher_ground_truth_top1_accuracy": 0.5401174168297456,
+            "student_ground_truth_top1_accuracy": 0.5322896281800391,
+            "nll_increase": 0.01956172651973942
+          },
+          {
+            "example_index": 31,
+            "example_sha256": "0e65c7f3f842cc2f057e61aa400120f7dc0face0324871a1ee80d983358640cb",
+            "teacher_nll": 2.8799895717673105,
+            "student_nll": 2.901065837613757,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.4892367906066536,
+            "student_ground_truth_top1_accuracy": 0.48140900195694714,
+            "nll_increase": 0.021076265846446507
+          },
+          {
+            "example_index": 32,
+            "example_sha256": "1446a63f473464b7799db01a2c375300b490067bd88431eb97e7a5256eef5275",
+            "teacher_nll": 2.9948199471848818,
+            "student_nll": 2.980696411282116,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.4892367906066536,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": -0.014123535902765827
+          },
+          {
+            "example_index": 33,
+            "example_sha256": "54f177a5f5049622fe4e4ee07e37dc352f023b4e323f5abc18b063f448e8e532",
+            "teacher_nll": 2.5570343842478414,
+            "student_nll": 2.5633638087084147,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.5048923679060665,
+            "nll_increase": 0.006329424460573385
+          },
+          {
+            "example_index": 34,
+            "example_sha256": "6f9f8f1997e05ae0e58856089f71654b86c22d001b10e3807f2f91e0f7c7119b",
+            "teacher_nll": 3.408155418888697,
+            "student_nll": 3.4194574822651664,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9628180039138943,
+            "teacher_ground_truth_top1_accuracy": 0.4050880626223092,
+            "student_ground_truth_top1_accuracy": 0.3972602739726027,
+            "nll_increase": 0.011302063376469551
+          },
+          {
+            "example_index": 35,
+            "example_sha256": "45eebf48776e2f7556c11413013c60f8b4fcb484a2dfd656e0bf1d1e4647c35c",
+            "teacher_nll": 2.771506382294597,
+            "student_nll": 2.7573148611706997,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.958904109589041,
+            "teacher_ground_truth_top1_accuracy": 0.5068493150684932,
+            "student_ground_truth_top1_accuracy": 0.5009784735812133,
+            "nll_increase": -0.01419152112389721
+          },
+          {
+            "example_index": 36,
+            "example_sha256": "2e984bc4363ded14be0813ea4a085658b9447c14d0b7bfda1a5376f03a2c59a1",
+            "teacher_nll": 2.731833280649204,
+            "student_nll": 2.7294409503675485,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9510763209393346,
+            "teacher_ground_truth_top1_accuracy": 0.4794520547945205,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": -0.0023923302816553083
+          },
+          {
+            "example_index": 37,
+            "example_sha256": "cf035f0ff4195db394225df05514e4e6e4c97c63bf8a951fa68c24a41c342db3",
+            "teacher_nll": 3.337616485625564,
+            "student_nll": 3.3374149860001356,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9608610567514677,
+            "teacher_ground_truth_top1_accuracy": 0.44227005870841485,
+            "student_ground_truth_top1_accuracy": 0.44227005870841485,
+            "nll_increase": -0.0002014996254282586
+          },
+          {
+            "example_index": 38,
+            "example_sha256": "b5a81367e3ddc65fd0eee2f1b8a51e48d05bf0f810c3960b4da7120ae1d19536",
+            "teacher_nll": 2.6768127000961752,
+            "student_nll": 2.678505959109551,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.49510763209393344,
+            "nll_increase": 0.001693259013375581
+          },
+          {
+            "example_index": 39,
+            "example_sha256": "51ab674811f93d4c3468b3cee20a322cff58024e581f01cdbf0e5ef74dfb1f25",
+            "teacher_nll": 2.6270108642876733,
+            "student_nll": 2.6398273438156936,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9569471624266145,
+            "teacher_ground_truth_top1_accuracy": 0.547945205479452,
+            "student_ground_truth_top1_accuracy": 0.5420743639921722,
+            "nll_increase": 0.012816479528020341
+          },
+          {
+            "example_index": 40,
+            "example_sha256": "be47184b4abc1b0905b5378f139a8f46b1def8c11bc0e96611ecbec27fc1bebc",
+            "teacher_nll": 2.948942882440795,
+            "student_nll": 2.9544000065723277,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9569471624266145,
+            "teacher_ground_truth_top1_accuracy": 0.4383561643835616,
+            "student_ground_truth_top1_accuracy": 0.4481409001956947,
+            "nll_increase": 0.0054571241315328756
+          },
+          {
+            "example_index": 41,
+            "example_sha256": "f457a71aee689b53b2b80b5b25673e9d41d7b0e04d2e5c4fefb0b020a22c7a96",
+            "teacher_nll": 2.7991157539203444,
+            "student_nll": 2.788204769798921,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.4774951076320939,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": -0.01091098412142344
+          },
+          {
+            "example_index": 42,
+            "example_sha256": "634b4be7dd4a87fbba7a700a459944df328936e9b27bf3ed78ec0727ef018cb5",
+            "teacher_nll": 2.324964691281552,
+            "student_nll": 2.334851737125046,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.5459882583170255,
+            "student_ground_truth_top1_accuracy": 0.5538160469667319,
+            "nll_increase": 0.009887045843493869
+          },
+          {
+            "example_index": 43,
+            "example_sha256": "9e73a6f312d11058dc5a815992019c70090cd96506eba68c5180ea55ab6c62be",
+            "teacher_nll": 2.484389530935866,
+            "student_nll": 2.4881416813501405,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9569471624266145,
+            "teacher_ground_truth_top1_accuracy": 0.5440313111545988,
+            "student_ground_truth_top1_accuracy": 0.5401174168297456,
+            "nll_increase": 0.0037521504142743467
+          },
+          {
+            "example_index": 44,
+            "example_sha256": "461209f29f65d08c49b30d499247845e7543c7520fe7a90028d2c0a1f8eb8117",
+            "teacher_nll": 2.379326956612723,
+            "student_nll": 2.3822221513363715,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9412915851272016,
+            "teacher_ground_truth_top1_accuracy": 0.49706457925636005,
+            "student_ground_truth_top1_accuracy": 0.5009784735812133,
+            "nll_increase": 0.002895194723648409
+          },
+          {
+            "example_index": 45,
+            "example_sha256": "475c6e56cb68c2aae73f9f21b4b2c955270096d23a2fa21b5ffcf069f7db4845",
+            "teacher_nll": 3.067558575982917,
+            "student_nll": 3.068426232981822,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9549902152641878,
+            "teacher_ground_truth_top1_accuracy": 0.4246575342465753,
+            "student_ground_truth_top1_accuracy": 0.42857142857142855,
+            "nll_increase": 0.0008676569989050087
+          },
+          {
+            "example_index": 46,
+            "example_sha256": "cfdbf482a1c42378377dea153ecd39712660b6780566bef9f4c4b9ab8fc6ffe5",
+            "teacher_nll": 3.6124393925974747,
+            "student_nll": 3.601572331617023,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9432485322896281,
+            "teacher_ground_truth_top1_accuracy": 0.3913894324853229,
+            "student_ground_truth_top1_accuracy": 0.39921722113502933,
+            "nll_increase": -0.010867060980451537
+          },
+          {
+            "example_index": 47,
+            "example_sha256": "6ca5e740134061818d4ae67aa9f63da2d6f3242cf1c59a1e2d1fc4503db054ab",
+            "teacher_nll": 3.4303968545275425,
+            "student_nll": 3.4271990744335077,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9295499021526419,
+            "teacher_ground_truth_top1_accuracy": 0.39921722113502933,
+            "student_ground_truth_top1_accuracy": 0.410958904109589,
+            "nll_increase": -0.003197780094034819
+          },
+          {
+            "example_index": 48,
+            "example_sha256": "67e601886231f97d13a404ee993fa82ff46b6958ad3cf9513c8c81008e6c8856",
+            "teacher_nll": 2.9579850250960797,
+            "student_nll": 2.9721344688400597,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.4637964774951076,
+            "nll_increase": 0.014149443743979973
+          },
+          {
+            "example_index": 49,
+            "example_sha256": "549cf71c4b4febe0f210849e974be107151bd55953bb9934337a0c949d3d7609",
+            "teacher_nll": 2.818201354338465,
+            "student_nll": 2.8261525495644886,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.4911937377690802,
+            "student_ground_truth_top1_accuracy": 0.48140900195694714,
+            "nll_increase": 0.00795119522602361
+          },
+          {
+            "example_index": 50,
+            "example_sha256": "2e2a77b288c458d1676be3010391f9ef886798115b281853db17086c5714320f",
+            "teacher_nll": 2.5507948160638083,
+            "student_nll": 2.5387275027668874,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9608610567514677,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.487279843444227,
+            "nll_increase": -0.0120673132969209
+          },
+          {
+            "example_index": 51,
+            "example_sha256": "6543908d7d7bdfd9975112ebe9002ccc7ddd220115951c37fe0378ac1a32efd6",
+            "teacher_nll": 2.8805108676917865,
+            "student_nll": 2.877287256274438,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.958904109589041,
+            "teacher_ground_truth_top1_accuracy": 0.48532289628180036,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": -0.003223611417348504
+          },
+          {
+            "example_index": 52,
+            "example_sha256": "1f1d9a2174015897c291b48d4ac2cb8a4e45e8742f778bd864173fe9c391c674",
+            "teacher_nll": 2.9121077046702286,
+            "student_nll": 2.91103066110331,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.949119373776908,
+            "teacher_ground_truth_top1_accuracy": 0.4657534246575342,
+            "student_ground_truth_top1_accuracy": 0.46966731898238745,
+            "nll_increase": -0.0010770435669185119
+          },
+          {
+            "example_index": 53,
+            "example_sha256": "208296ba06bb34ed66beaa5eea50d238a042326770ac89fbd7c569ee5c3353d4",
+            "teacher_nll": 3.156384940250046,
+            "student_nll": 3.1579369360220175,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9549902152641878,
+            "teacher_ground_truth_top1_accuracy": 0.47162426614481406,
+            "student_ground_truth_top1_accuracy": 0.4735812133072407,
+            "nll_increase": 0.001551995771971626
+          },
+          {
+            "example_index": 54,
+            "example_sha256": "ce23c15e7d1b8d7066510c851a5b13e96f46fec8559b090436f505dacaa8f3c6",
+            "teacher_nll": 2.832387103026627,
+            "student_nll": 2.861230611334575,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9334637964774951,
+            "teacher_ground_truth_top1_accuracy": 0.4598825831702544,
+            "student_ground_truth_top1_accuracy": 0.4637964774951076,
+            "nll_increase": 0.028843508307947907
+          },
+          {
+            "example_index": 55,
+            "example_sha256": "7c191551b393b96099996e4b70fc8e7df19d41882da24bae2748a495f19d5ca8",
+            "teacher_nll": 2.6370189577166117,
+            "student_nll": 2.65009503075288,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.5009784735812133,
+            "student_ground_truth_top1_accuracy": 0.4911937377690802,
+            "nll_increase": 0.013076073036268454
+          },
+          {
+            "example_index": 56,
+            "example_sha256": "2193d7b67824181a07fe3e68e4f9b8f12151876ce98c4e089e8d9b5a32a40352",
+            "teacher_nll": 3.1791441146641564,
+            "student_nll": 3.180982869665217,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9530332681017613,
+            "teacher_ground_truth_top1_accuracy": 0.4500978473581213,
+            "student_ground_truth_top1_accuracy": 0.4500978473581213,
+            "nll_increase": 0.0018387550010605658
+          },
+          {
+            "example_index": 57,
+            "example_sha256": "4c96eae333a13abab71194898bcc155a97be15de941f989d8e09bae5a5fbf507",
+            "teacher_nll": 2.825380763895591,
+            "student_nll": 2.8338474863429357,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9647749510763209,
+            "teacher_ground_truth_top1_accuracy": 0.44422700587084146,
+            "student_ground_truth_top1_accuracy": 0.4500978473581213,
+            "nll_increase": 0.008466722447344921
+          },
+          {
+            "example_index": 58,
+            "example_sha256": "c8d2f49b558c619ffc337e0daae8007647e25c008668a1a2f66719dfba59d641",
+            "teacher_nll": 2.763827700904204,
+            "student_nll": 2.79138583353121,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.958904109589041,
+            "teacher_ground_truth_top1_accuracy": 0.45596868884540115,
+            "student_ground_truth_top1_accuracy": 0.4481409001956947,
+            "nll_increase": 0.027558132627005794
+          },
+          {
+            "example_index": 59,
+            "example_sha256": "783ae31e5f7499ca55a33e0a2e661ace3b4724012dba6966ea218d75fd13dd49",
+            "teacher_nll": 3.1503549657922436,
+            "student_nll": 3.1483854155717763,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9217221135029354,
+            "teacher_ground_truth_top1_accuracy": 0.4383561643835616,
+            "student_ground_truth_top1_accuracy": 0.4344422700587084,
+            "nll_increase": -0.0019695502204672977
+          },
+          {
+            "example_index": 60,
+            "example_sha256": "bf2fa95334d08db0102d1f3f667b1c65acd31c111572bb5b957489a53e0d7592",
+            "teacher_nll": 2.9797069732456993,
+            "student_nll": 2.9795848768051356,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9628180039138943,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.46771037181996084,
+            "nll_increase": -0.0001220964405637126
+          },
+          {
+            "example_index": 61,
+            "example_sha256": "5ec3149f29b8fb64687b1a1f5570f0a41bedb9f5271632e099a37892949ac027",
+            "teacher_nll": 2.783615862553367,
+            "student_nll": 2.7996341291005833,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9373776908023483,
+            "teacher_ground_truth_top1_accuracy": 0.46771037181996084,
+            "student_ground_truth_top1_accuracy": 0.47162426614481406,
+            "nll_increase": 0.016018266547216164
+          },
+          {
+            "example_index": 62,
+            "example_sha256": "71bc6e8ec2d979193dbe7579ccd01abd322334619ac83f3ba3c1e545af6cfb9f",
+            "teacher_nll": 3.033067813358195,
+            "student_nll": 3.035911991171641,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9471624266144814,
+            "teacher_ground_truth_top1_accuracy": 0.4520547945205479,
+            "student_ground_truth_top1_accuracy": 0.45596868884540115,
+            "nll_increase": 0.002844177813445814
+          },
+          {
+            "example_index": 63,
+            "example_sha256": "30730ceda091981271792a9b055d7ebd3982d73b687775307f6204cf7441ff34",
+            "teacher_nll": 3.681652024300831,
+            "student_nll": 3.7013165311570737,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9256360078277887,
+            "teacher_ground_truth_top1_accuracy": 0.4070450097847358,
+            "student_ground_truth_top1_accuracy": 0.40313111545988256,
+            "nll_increase": 0.01966450685624288
+          }
+        ],
+        "corpus": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-expanded-eval/corpus/assessment_512.jsonl",
+          "sha256": "612ee2a6b42b2c27b8558b2eac19cad32f5e6fa0e058350b3d1be4fbe92327c6",
+          "limits": {
+            "max_examples": 64,
+            "max_length": 512,
+            "max_tokens": 32768
+          },
+          "prepared_sha256": "c2a6dd2831bbc3b3c7a7c8ae699fa261226803210c051c6873a49bff99df08d1",
+          "examples": 64,
+          "physical_tokens": 32768,
+          "prediction_tokens": 32704,
+          "disjointness": {
+            "status": "verified_exact_sequence_disjoint",
+            "definition": "exact valid token sequences truncated at max_length",
+            "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+          }
+        },
+        "artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28790,
+              "sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3432792164,
+              "sha256": "36a0e4401934a0910de840b259f8c6fd9e66269bd6de27e740de8df362509bbd"
+            }
+          ],
+          "sha256": "b6b2543ddd7cf0cffbc1eddfba14a1a54787b6bc89971f6d6de3663ad085a43b"
+        },
+        "teacher_artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28418,
+              "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3441180670,
+              "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+            }
+          ],
+          "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+        },
+        "peak_mlx_memory_bytes": 4017689616,
+        "parameter_storage": {
+          "bytes": 3432761344,
+          "bytes_by_dtype": {
+            "mlx.core.bfloat16": 3432761344
+          },
+          "scalar_count": 1716380672,
+          "unique_array_count": 312,
+          "identity_definition": "distinct MLX array objects; views may share storage"
+        }
+      },
+      "attention-and-mlp": {
+        "report_path": ".local-runs/qwen3-mlx-expanded-eval/attention-and-mlp-512.json",
+        "report_sha256": "cf1d4830e15afcf5041978cdd2f83e590383e3cd44fd5ce99b47907ce5effaeb",
+        "per_token_sha256": "96c0d1c02fa34021f96918e2e9ab937ad53d42cc9e4bed1e8c433bfb64b41a39",
+        "aggregate": {
+          "teacher_nll": 3.067414541387978,
+          "student_nll": 3.0596468037471847,
+          "teacher_kl_available": false,
+          "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+          "prediction_tokens": 32704,
+          "top1_agreement": 0.8721257338551859,
+          "teacher_ground_truth_top1_accuracy": 0.45407289628180036,
+          "student_ground_truth_top1_accuracy": 0.45000611545988256,
+          "nll_increase": -0.007767737640793193
+        },
+        "article_bootstrap": {
+          "unit": "article",
+          "resamples": 5000,
+          "seed": 20261018,
+          "token_weighted_nll_delta": -0.007767737640793347,
+          "percentile_95_interval": [
+            -0.016096789809764037,
+            0.0005879411586867906
+          ],
+          "article_delta_range": [
+            -0.0898890859226893,
+            0.06161719618944739
+          ],
+          "articles_with_positive_nll_delta": 28,
+          "article_count": 64,
+          "scope": "Descriptive stability within this fixed panel; selection was not a random population sample."
+        },
+        "position_quarters": [
+          {
+            "target_position_start": 0,
+            "target_position_end_exclusive": 128,
+            "prediction_tokens": 8128,
+            "nll_increase": -0.0006338180754128403,
+            "top1_agreement": 0.8761072834645669
+          },
+          {
+            "target_position_start": 128,
+            "target_position_end_exclusive": 256,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.011067708837799728,
+            "top1_agreement": 0.869140625
+          },
+          {
+            "target_position_start": 256,
+            "target_position_end_exclusive": 384,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.005729311960749328,
+            "top1_agreement": 0.8721923828125
+          },
+          {
+            "target_position_start": 384,
+            "target_position_end_exclusive": 512,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.013584377942606807,
+            "top1_agreement": 0.87109375
+          }
+        ],
+        "per_example": [
+          {
+            "example_index": 0,
+            "example_sha256": "1bcd83ee19f7c6c4d0f66586cd214f3da577183dbd72aec58c9e5074577f0e2a",
+            "teacher_nll": 2.571915273797022,
+            "student_nll": 2.482026187874333,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9080234833659491,
+            "teacher_ground_truth_top1_accuracy": 0.5283757338551859,
+            "student_ground_truth_top1_accuracy": 0.5342465753424658,
+            "nll_increase": -0.0898890859226893
+          },
+          {
+            "example_index": 1,
+            "example_sha256": "d8003100d496f799585b46ecfea2b4127215e4b3745f2b386bf66f1d4c7982dd",
+            "teacher_nll": 3.6658816141624975,
+            "student_nll": 3.6019386060083916,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8277886497064579,
+            "teacher_ground_truth_top1_accuracy": 0.3933463796477495,
+            "student_ground_truth_top1_accuracy": 0.38943248532289626,
+            "nll_increase": -0.06394300815410592
+          },
+          {
+            "example_index": 2,
+            "example_sha256": "4030f573288ee0d3c263efde0ba9b0aa71a7e063c7a2dfd70d37febf043c2298",
+            "teacher_nll": 2.8912844368622963,
+            "student_nll": 2.881658990789066,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8532289628180039,
+            "teacher_ground_truth_top1_accuracy": 0.42661448140900193,
+            "student_ground_truth_top1_accuracy": 0.4187866927592955,
+            "nll_increase": -0.009625446073230126
+          },
+          {
+            "example_index": 3,
+            "example_sha256": "6ad26e75f2d08b2135264779af5a21aaf9f202f1bb6e7037896f4ff9ebf541ae",
+            "teacher_nll": 2.9757847534000526,
+            "student_nll": 2.9291304048959987,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8688845401174168,
+            "teacher_ground_truth_top1_accuracy": 0.4344422700587084,
+            "student_ground_truth_top1_accuracy": 0.4344422700587084,
+            "nll_increase": -0.04665434850405381
+          },
+          {
+            "example_index": 4,
+            "example_sha256": "98c6a59dfe8419792e8b06d07a2586bc55b3806e81d89877a96cff37436995b2",
+            "teacher_nll": 2.943096065707869,
+            "student_nll": 2.91311868156239,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8884540117416829,
+            "teacher_ground_truth_top1_accuracy": 0.47162426614481406,
+            "student_ground_truth_top1_accuracy": 0.45792563600782776,
+            "nll_increase": -0.029977384145479125
+          },
+          {
+            "example_index": 5,
+            "example_sha256": "dec742bbcc01ea4a3b014f9f07a67fb5fac4e776ac3387377378575e76efdda8",
+            "teacher_nll": 3.308830436661752,
+            "student_nll": 3.2735921482750583,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8297455968688845,
+            "teacher_ground_truth_top1_accuracy": 0.3972602739726027,
+            "student_ground_truth_top1_accuracy": 0.39921722113502933,
+            "nll_increase": -0.03523828838669374
+          },
+          {
+            "example_index": 6,
+            "example_sha256": "c464d0b75fe143e4abe9a4a05c2d86f8c55befba3bbf40abe9a4c3ec4517416a",
+            "teacher_nll": 3.105202773779106,
+            "student_nll": 3.054195788508525,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8884540117416829,
+            "teacher_ground_truth_top1_accuracy": 0.45596868884540115,
+            "student_ground_truth_top1_accuracy": 0.44422700587084146,
+            "nll_increase": -0.051006985270580785
+          },
+          {
+            "example_index": 7,
+            "example_sha256": "3c9bf88ff1a40ded2f380e745b6dba2b973198685fcbada1a5132dc3e79f6a97",
+            "teacher_nll": 3.2910395284454883,
+            "student_nll": 3.3101448238245896,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8473581213307241,
+            "teacher_ground_truth_top1_accuracy": 0.4461839530332681,
+            "student_ground_truth_top1_accuracy": 0.4324853228962818,
+            "nll_increase": 0.019105295379101328
+          },
+          {
+            "example_index": 8,
+            "example_sha256": "39e36730101dfae5ce5806fe70a19cf88da675964791dc00271eb4e532d1cc03",
+            "teacher_nll": 3.612935945245851,
+            "student_nll": 3.6205883007460145,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.863013698630137,
+            "teacher_ground_truth_top1_accuracy": 0.37573385518590996,
+            "student_ground_truth_top1_accuracy": 0.3639921722113503,
+            "nll_increase": 0.007652355500163299
+          },
+          {
+            "example_index": 9,
+            "example_sha256": "bb2b28305c23ff696a1f6e1ffae4c79bf66276519344e6a3f901ebb81dbae25d",
+            "teacher_nll": 3.044129422032903,
+            "student_nll": 3.0017652455607973,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8767123287671232,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.4637964774951076,
+            "nll_increase": -0.042364176472105886
+          },
+          {
+            "example_index": 10,
+            "example_sha256": "0c3f5ef21de9696f9d04a923e5b02e4ac2b058d325bd84eb848aff29ae4cf037",
+            "teacher_nll": 3.0182838290638188,
+            "student_nll": 2.9877851863196683,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.898238747553816,
+            "teacher_ground_truth_top1_accuracy": 0.45401174168297453,
+            "student_ground_truth_top1_accuracy": 0.461839530332681,
+            "nll_increase": -0.030498642744150484
+          },
+          {
+            "example_index": 11,
+            "example_sha256": "94e7203de2b9608fc9f4c7f6182aa8c64e7b9e16b61108952c1dad715dd8bedd",
+            "teacher_nll": 3.216786048650275,
+            "student_nll": 3.1849322179058994,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.863013698630137,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.41291585127201563,
+            "nll_increase": -0.03185383074437542
+          },
+          {
+            "example_index": 12,
+            "example_sha256": "cce053b743cc4dd6298e0b259cb6e4ac170049f8332626528d9e111d6759010a",
+            "teacher_nll": 3.584312371778395,
+            "student_nll": 3.598363155954738,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8767123287671232,
+            "teacher_ground_truth_top1_accuracy": 0.410958904109589,
+            "student_ground_truth_top1_accuracy": 0.3972602739726027,
+            "nll_increase": 0.01405078417634309
+          },
+          {
+            "example_index": 13,
+            "example_sha256": "8e890cde8d279b74df67003d5701b520beff2ae850b39b6948c0f2294bbab854",
+            "teacher_nll": 2.90137669438252,
+            "student_nll": 2.947610302680626,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8551859099804305,
+            "teacher_ground_truth_top1_accuracy": 0.4657534246575342,
+            "student_ground_truth_top1_accuracy": 0.4383561643835616,
+            "nll_increase": 0.04623360829810608
+          },
+          {
+            "example_index": 14,
+            "example_sha256": "36660b087db080e6730143618a689683a237e2199205ac5679fd60d4747fcd63",
+            "teacher_nll": 2.6412322833813335,
+            "student_nll": 2.6376816363250675,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8904109589041096,
+            "teacher_ground_truth_top1_accuracy": 0.4911937377690802,
+            "student_ground_truth_top1_accuracy": 0.4735812133072407,
+            "nll_increase": -0.0035506470562660652
+          },
+          {
+            "example_index": 15,
+            "example_sha256": "3fb36a85d4962c88f438a82e6a4ca16e30934802d7f042679a9ff1227a6f59a5",
+            "teacher_nll": 3.326422293825392,
+            "student_nll": 3.359840859638968,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8806262230919765,
+            "teacher_ground_truth_top1_accuracy": 0.4227005870841487,
+            "student_ground_truth_top1_accuracy": 0.42857142857142855,
+            "nll_increase": 0.03341856581357616
+          },
+          {
+            "example_index": 16,
+            "example_sha256": "20f0847d36f5cc482f415940be860dc5d01cffd6b2c6c90d8e4f352d6bd4b81a",
+            "teacher_nll": 3.2126147201149897,
+            "student_nll": 3.235760089702569,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.898238747553816,
+            "teacher_ground_truth_top1_accuracy": 0.48532289628180036,
+            "student_ground_truth_top1_accuracy": 0.4774951076320939,
+            "nll_increase": 0.02314536958757918
+          },
+          {
+            "example_index": 17,
+            "example_sha256": "a6e2e9933c7ddb8ce05739ab142566815d69ac57baa8edb02ce63678df8699c6",
+            "teacher_nll": 3.545681576439546,
+            "student_nll": 3.5494882131975922,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8806262230919765,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.4070450097847358,
+            "nll_increase": 0.0038066367580462668
+          },
+          {
+            "example_index": 18,
+            "example_sha256": "14deff22e0f387329a045d32290f398a23c72018f27a131be6fa2b6b0f8f3ac1",
+            "teacher_nll": 3.3209428432636297,
+            "student_nll": 3.2941314842836262,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8590998043052838,
+            "teacher_ground_truth_top1_accuracy": 0.40117416829745595,
+            "student_ground_truth_top1_accuracy": 0.3972602739726027,
+            "nll_increase": -0.02681135898000342
+          },
+          {
+            "example_index": 19,
+            "example_sha256": "ac8d1a3a5e8be1d365df01bcb3e77063477c9f797a51905ea533d3bb1aceac95",
+            "teacher_nll": 3.786315903038428,
+            "student_nll": 3.7024132454231995,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8747553816046967,
+            "teacher_ground_truth_top1_accuracy": 0.4090019569471624,
+            "student_ground_truth_top1_accuracy": 0.41682974559686886,
+            "nll_increase": -0.08390265761522864
+          },
+          {
+            "example_index": 20,
+            "example_sha256": "8aaddf69e10a31dee6310d4b4d98ff8db3ce60aed27ddd53a33a2e711616f643",
+            "teacher_nll": 3.647952016319081,
+            "student_nll": 3.619075261916666,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8277886497064579,
+            "teacher_ground_truth_top1_accuracy": 0.40313111545988256,
+            "student_ground_truth_top1_accuracy": 0.3835616438356164,
+            "nll_increase": -0.02887675440241466
+          },
+          {
+            "example_index": 21,
+            "example_sha256": "bff2b1b5d217fcf845737793e153f87eb8393590675b4b698297fe97453b8403",
+            "teacher_nll": 3.5611586412105076,
+            "student_nll": 3.606262953547349,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8649706457925636,
+            "teacher_ground_truth_top1_accuracy": 0.38747553816046965,
+            "student_ground_truth_top1_accuracy": 0.36007827788649704,
+            "nll_increase": 0.045104312336841534
+          },
+          {
+            "example_index": 22,
+            "example_sha256": "ece7efff4fc18183ace6a3d98e55ad9f484fbcfc1a9f3e6e34c86f4aebbfe7bf",
+            "teacher_nll": 3.23605848525135,
+            "student_nll": 3.216442255591226,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8845401174168297,
+            "teacher_ground_truth_top1_accuracy": 0.436399217221135,
+            "student_ground_truth_top1_accuracy": 0.4461839530332681,
+            "nll_increase": -0.019616229660123885
+          },
+          {
+            "example_index": 23,
+            "example_sha256": "e0ca36d3c63be9a6dc0c30973944663d96227c0f1f34231d02d1cae1e11d802b",
+            "teacher_nll": 3.1399617727022116,
+            "student_nll": 3.173642093188142,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9001956947162426,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.4755381604696673,
+            "nll_increase": 0.033680320485930615
+          },
+          {
+            "example_index": 24,
+            "example_sha256": "a9dc433dd74f8ac24792726da9442bb8ab8fa88317497b1b125af0d0aaef1d49",
+            "teacher_nll": 3.7501768030065845,
+            "student_nll": 3.7588993957131343,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8747553816046967,
+            "teacher_ground_truth_top1_accuracy": 0.38551859099804303,
+            "student_ground_truth_top1_accuracy": 0.3776908023483366,
+            "nll_increase": 0.008722592706549737
+          },
+          {
+            "example_index": 25,
+            "example_sha256": "a4ce38e61c0e25a7b9a986954e768669e10e5af12119e410280a210a9f0c367b",
+            "teacher_nll": 3.0946587564427324,
+            "student_nll": 3.091060597369349,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8943248532289628,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.45401174168297453,
+            "nll_increase": -0.0035981590733835667
+          },
+          {
+            "example_index": 26,
+            "example_sha256": "70d4c4b116357608657f48cb95097637a32ada8b390743af27b48e1bf1a1a8c6",
+            "teacher_nll": 3.855600340259052,
+            "student_nll": 3.838633050190726,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8238747553816047,
+            "teacher_ground_truth_top1_accuracy": 0.37573385518590996,
+            "student_ground_truth_top1_accuracy": 0.37377690802348335,
+            "nll_increase": -0.01696729006832598
+          },
+          {
+            "example_index": 27,
+            "example_sha256": "24dfc71547e5bf9aec8b0954f91a8085f8dd666f9276daf9ea619a5247ff0af4",
+            "teacher_nll": 2.880620930292835,
+            "student_nll": 2.8538579138291094,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.837573385518591,
+            "teacher_ground_truth_top1_accuracy": 0.46966731898238745,
+            "student_ground_truth_top1_accuracy": 0.4794520547945205,
+            "nll_increase": -0.02676301646372581
+          },
+          {
+            "example_index": 28,
+            "example_sha256": "4b023eaee9c02b26ba5c8c5973b71e5627995038e34a90215c9670082b48385f",
+            "teacher_nll": 3.1016521827115473,
+            "student_nll": 3.089730214232801,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.898238747553816,
+            "teacher_ground_truth_top1_accuracy": 0.4755381604696673,
+            "student_ground_truth_top1_accuracy": 0.461839530332681,
+            "nll_increase": -0.011921968478746159
+          },
+          {
+            "example_index": 29,
+            "example_sha256": "f8a99b993f31d66638f554370987b4b32089c224d718a47a9d99007ddf2c82af",
+            "teacher_nll": 3.4326793498955595,
+            "student_nll": 3.4328054625927353,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.821917808219178,
+            "teacher_ground_truth_top1_accuracy": 0.3913894324853229,
+            "student_ground_truth_top1_accuracy": 0.3953033268101761,
+            "nll_increase": 0.00012611269717588414
+          },
+          {
+            "example_index": 30,
+            "example_sha256": "55a68e7af4ed6f11607b56a7b03cac756cb51ccb10d2b449b71fb404620a84af",
+            "teacher_nll": 2.4758878957968635,
+            "student_nll": 2.477801153104599,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8845401174168297,
+            "teacher_ground_truth_top1_accuracy": 0.5401174168297456,
+            "student_ground_truth_top1_accuracy": 0.5342465753424658,
+            "nll_increase": 0.0019132573077356163
+          },
+          {
+            "example_index": 31,
+            "example_sha256": "0e65c7f3f842cc2f057e61aa400120f7dc0face0324871a1ee80d983358640cb",
+            "teacher_nll": 2.8799895717673105,
+            "student_nll": 2.9201343260165995,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.87279843444227,
+            "teacher_ground_truth_top1_accuracy": 0.4892367906066536,
+            "student_ground_truth_top1_accuracy": 0.4755381604696673,
+            "nll_increase": 0.04014475424928898
+          },
+          {
+            "example_index": 32,
+            "example_sha256": "1446a63f473464b7799db01a2c375300b490067bd88431eb97e7a5256eef5275",
+            "teacher_nll": 2.9948199471848818,
+            "student_nll": 2.9879158975560136,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8767123287671232,
+            "teacher_ground_truth_top1_accuracy": 0.4892367906066536,
+            "student_ground_truth_top1_accuracy": 0.48532289628180036,
+            "nll_increase": -0.0069040496288681474
+          },
+          {
+            "example_index": 33,
+            "example_sha256": "54f177a5f5049622fe4e4ee07e37dc352f023b4e323f5abc18b063f448e8e532",
+            "teacher_nll": 2.5570343842478414,
+            "student_nll": 2.5798461245930593,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9158512720156555,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.5088062622309197,
+            "nll_increase": 0.022811740345217935
+          },
+          {
+            "example_index": 34,
+            "example_sha256": "6f9f8f1997e05ae0e58856089f71654b86c22d001b10e3807f2f91e0f7c7119b",
+            "teacher_nll": 3.408155418888697,
+            "student_nll": 3.3661548330825837,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.898238747553816,
+            "teacher_ground_truth_top1_accuracy": 0.4050880626223092,
+            "student_ground_truth_top1_accuracy": 0.40117416829745595,
+            "nll_increase": -0.04200058580611321
+          },
+          {
+            "example_index": 35,
+            "example_sha256": "45eebf48776e2f7556c11413013c60f8b4fcb484a2dfd656e0bf1d1e4647c35c",
+            "teacher_nll": 2.771506382294597,
+            "student_nll": 2.7756171217170014,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8864970645792564,
+            "teacher_ground_truth_top1_accuracy": 0.5068493150684932,
+            "student_ground_truth_top1_accuracy": 0.5088062622309197,
+            "nll_increase": 0.004110739422404475
+          },
+          {
+            "example_index": 36,
+            "example_sha256": "2e984bc4363ded14be0813ea4a085658b9447c14d0b7bfda1a5376f03a2c59a1",
+            "teacher_nll": 2.731833280649204,
+            "student_nll": 2.759883048249784,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8943248532289628,
+            "teacher_ground_truth_top1_accuracy": 0.4794520547945205,
+            "student_ground_truth_top1_accuracy": 0.47162426614481406,
+            "nll_increase": 0.0280497676005802
+          },
+          {
+            "example_index": 37,
+            "example_sha256": "cf035f0ff4195db394225df05514e4e6e4c97c63bf8a951fa68c24a41c342db3",
+            "teacher_nll": 3.337616485625564,
+            "student_nll": 3.352782572318896,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.898238747553816,
+            "teacher_ground_truth_top1_accuracy": 0.44227005870841485,
+            "student_ground_truth_top1_accuracy": 0.4324853228962818,
+            "nll_increase": 0.015166086693332304
+          },
+          {
+            "example_index": 38,
+            "example_sha256": "b5a81367e3ddc65fd0eee2f1b8a51e48d05bf0f810c3960b4da7120ae1d19536",
+            "teacher_nll": 2.6768127000961752,
+            "student_nll": 2.7017959064700134,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9060665362035225,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.487279843444227,
+            "nll_increase": 0.024983206373838218
+          },
+          {
+            "example_index": 39,
+            "example_sha256": "51ab674811f93d4c3468b3cee20a322cff58024e581f01cdbf0e5ef74dfb1f25",
+            "teacher_nll": 2.6270108642876733,
+            "student_nll": 2.6578030147664466,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8845401174168297,
+            "teacher_ground_truth_top1_accuracy": 0.547945205479452,
+            "student_ground_truth_top1_accuracy": 0.5420743639921722,
+            "nll_increase": 0.030792150478773372
+          },
+          {
+            "example_index": 40,
+            "example_sha256": "be47184b4abc1b0905b5378f139a8f46b1def8c11bc0e96611ecbec27fc1bebc",
+            "teacher_nll": 2.948942882440795,
+            "student_nll": 2.937342205159585,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8904109589041096,
+            "teacher_ground_truth_top1_accuracy": 0.4383561643835616,
+            "student_ground_truth_top1_accuracy": 0.4461839530332681,
+            "nll_increase": -0.011600677281209837
+          },
+          {
+            "example_index": 41,
+            "example_sha256": "f457a71aee689b53b2b80b5b25673e9d41d7b0e04d2e5c4fefb0b020a22c7a96",
+            "teacher_nll": 2.7991157539203444,
+            "student_nll": 2.8043282652554447,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9021526418786693,
+            "teacher_ground_truth_top1_accuracy": 0.4774951076320939,
+            "student_ground_truth_top1_accuracy": 0.48336594911937375,
+            "nll_increase": 0.005212511335100256
+          },
+          {
+            "example_index": 42,
+            "example_sha256": "634b4be7dd4a87fbba7a700a459944df328936e9b27bf3ed78ec0727ef018cb5",
+            "teacher_nll": 2.324964691281552,
+            "student_nll": 2.2899878179023876,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.9021526418786693,
+            "teacher_ground_truth_top1_accuracy": 0.5459882583170255,
+            "student_ground_truth_top1_accuracy": 0.5538160469667319,
+            "nll_increase": -0.03497687337916444
+          },
+          {
+            "example_index": 43,
+            "example_sha256": "9e73a6f312d11058dc5a815992019c70090cd96506eba68c5180ea55ab6c62be",
+            "teacher_nll": 2.484389530935866,
+            "student_nll": 2.46720850397696,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8688845401174168,
+            "teacher_ground_truth_top1_accuracy": 0.5440313111545988,
+            "student_ground_truth_top1_accuracy": 0.5342465753424658,
+            "nll_increase": -0.01718102695890611
+          },
+          {
+            "example_index": 44,
+            "example_sha256": "461209f29f65d08c49b30d499247845e7543c7520fe7a90028d2c0a1f8eb8117",
+            "teacher_nll": 2.379326956612723,
+            "student_nll": 2.348566215798813,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8590998043052838,
+            "teacher_ground_truth_top1_accuracy": 0.49706457925636005,
+            "student_ground_truth_top1_accuracy": 0.50293542074364,
+            "nll_increase": -0.030760740813910115
+          },
+          {
+            "example_index": 45,
+            "example_sha256": "475c6e56cb68c2aae73f9f21b4b2c955270096d23a2fa21b5ffcf069f7db4845",
+            "teacher_nll": 3.067558575982917,
+            "student_nll": 3.084431719173424,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8943248532289628,
+            "teacher_ground_truth_top1_accuracy": 0.4246575342465753,
+            "student_ground_truth_top1_accuracy": 0.41682974559686886,
+            "nll_increase": 0.016873143190506923
+          },
+          {
+            "example_index": 46,
+            "example_sha256": "cfdbf482a1c42378377dea153ecd39712660b6780566bef9f4c4b9ab8fc6ffe5",
+            "teacher_nll": 3.6124393925974747,
+            "student_nll": 3.5707842869767936,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8454011741682974,
+            "teacher_ground_truth_top1_accuracy": 0.3913894324853229,
+            "student_ground_truth_top1_accuracy": 0.3913894324853229,
+            "nll_increase": -0.04165510562068109
+          },
+          {
+            "example_index": 47,
+            "example_sha256": "6ca5e740134061818d4ae67aa9f63da2d6f3242cf1c59a1e2d1fc4503db054ab",
+            "teacher_nll": 3.4303968545275425,
+            "student_nll": 3.3827353998173004,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8140900195694716,
+            "teacher_ground_truth_top1_accuracy": 0.39921722113502933,
+            "student_ground_truth_top1_accuracy": 0.41487279843444225,
+            "nll_increase": -0.04766145471024208
+          },
+          {
+            "example_index": 48,
+            "example_sha256": "67e601886231f97d13a404ee993fa82ff46b6958ad3cf9513c8c81008e6c8856",
+            "teacher_nll": 2.9579850250960797,
+            "student_nll": 2.9466729770667865,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8532289628180039,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.4500978473581213,
+            "nll_increase": -0.011312048029293198
+          },
+          {
+            "example_index": 49,
+            "example_sha256": "549cf71c4b4febe0f210849e974be107151bd55953bb9934337a0c949d3d7609",
+            "teacher_nll": 2.818201354338465,
+            "student_nll": 2.7910234074303317,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8786692759295499,
+            "teacher_ground_truth_top1_accuracy": 0.4911937377690802,
+            "student_ground_truth_top1_accuracy": 0.4774951076320939,
+            "nll_increase": -0.027177946908133244
+          },
+          {
+            "example_index": 50,
+            "example_sha256": "2e2a77b288c458d1676be3010391f9ef886798115b281853db17086c5714320f",
+            "teacher_nll": 2.5507948160638083,
+            "student_nll": 2.5548693587868647,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8962818003913894,
+            "teacher_ground_truth_top1_accuracy": 0.49902152641878667,
+            "student_ground_truth_top1_accuracy": 0.48532289628180036,
+            "nll_increase": 0.004074542723056407
+          },
+          {
+            "example_index": 51,
+            "example_sha256": "6543908d7d7bdfd9975112ebe9002ccc7ddd220115951c37fe0378ac1a32efd6",
+            "teacher_nll": 2.8805108676917865,
+            "student_nll": 2.9290846359939726,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8845401174168297,
+            "teacher_ground_truth_top1_accuracy": 0.48532289628180036,
+            "student_ground_truth_top1_accuracy": 0.4755381604696673,
+            "nll_increase": 0.04857376830218607
+          },
+          {
+            "example_index": 52,
+            "example_sha256": "1f1d9a2174015897c291b48d4ac2cb8a4e45e8742f778bd864173fe9c391c674",
+            "teacher_nll": 2.9121077046702286,
+            "student_nll": 2.900078573805479,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8590998043052838,
+            "teacher_ground_truth_top1_accuracy": 0.4657534246575342,
+            "student_ground_truth_top1_accuracy": 0.46966731898238745,
+            "nll_increase": -0.01202913086474977
+          },
+          {
+            "example_index": 53,
+            "example_sha256": "208296ba06bb34ed66beaa5eea50d238a042326770ac89fbd7c569ee5c3353d4",
+            "teacher_nll": 3.156384940250046,
+            "student_nll": 3.13854806903757,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.87279843444227,
+            "teacher_ground_truth_top1_accuracy": 0.47162426614481406,
+            "student_ground_truth_top1_accuracy": 0.4794520547945205,
+            "nll_increase": -0.017836871212475902
+          },
+          {
+            "example_index": 54,
+            "example_sha256": "ce23c15e7d1b8d7066510c851a5b13e96f46fec8559b090436f505dacaa8f3c6",
+            "teacher_nll": 2.832387103026627,
+            "student_nll": 2.8940042992160744,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8434442270058709,
+            "teacher_ground_truth_top1_accuracy": 0.4598825831702544,
+            "student_ground_truth_top1_accuracy": 0.4481409001956947,
+            "nll_increase": 0.06161719618944739
+          },
+          {
+            "example_index": 55,
+            "example_sha256": "7c191551b393b96099996e4b70fc8e7df19d41882da24bae2748a495f19d5ca8",
+            "teacher_nll": 2.6370189577166117,
+            "student_nll": 2.6676641079777608,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8864970645792564,
+            "teacher_ground_truth_top1_accuracy": 0.5009784735812133,
+            "student_ground_truth_top1_accuracy": 0.5048923679060665,
+            "nll_increase": 0.030645150261149112
+          },
+          {
+            "example_index": 56,
+            "example_sha256": "2193d7b67824181a07fe3e68e4f9b8f12151876ce98c4e089e8d9b5a32a40352",
+            "teacher_nll": 3.1791441146641564,
+            "student_nll": 3.15267389674476,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8884540117416829,
+            "teacher_ground_truth_top1_accuracy": 0.4500978473581213,
+            "student_ground_truth_top1_accuracy": 0.45596868884540115,
+            "nll_increase": -0.02647021791939652
+          },
+          {
+            "example_index": 57,
+            "example_sha256": "4c96eae333a13abab71194898bcc155a97be15de941f989d8e09bae5a5fbf507",
+            "teacher_nll": 2.825380763895591,
+            "student_nll": 2.8177280612654414,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8708414872798435,
+            "teacher_ground_truth_top1_accuracy": 0.44422700587084146,
+            "student_ground_truth_top1_accuracy": 0.4520547945205479,
+            "nll_increase": -0.007652702630149388
+          },
+          {
+            "example_index": 58,
+            "example_sha256": "c8d2f49b558c619ffc337e0daae8007647e25c008668a1a2f66719dfba59d641",
+            "teacher_nll": 2.763827700904204,
+            "student_nll": 2.7348886702625252,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8864970645792564,
+            "teacher_ground_truth_top1_accuracy": 0.45596868884540115,
+            "student_ground_truth_top1_accuracy": 0.4520547945205479,
+            "nll_increase": -0.028939030641678798
+          },
+          {
+            "example_index": 59,
+            "example_sha256": "783ae31e5f7499ca55a33e0a2e661ace3b4724012dba6966ea218d75fd13dd49",
+            "teacher_nll": 3.1503549657922436,
+            "student_nll": 3.1809603995306386,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8551859099804305,
+            "teacher_ground_truth_top1_accuracy": 0.4383561643835616,
+            "student_ground_truth_top1_accuracy": 0.4383561643835616,
+            "nll_increase": 0.03060543373839497
+          },
+          {
+            "example_index": 60,
+            "example_sha256": "bf2fa95334d08db0102d1f3f667b1c65acd31c111572bb5b957489a53e0d7592",
+            "teacher_nll": 2.9797069732456993,
+            "student_nll": 2.9810737714375537,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8884540117416829,
+            "teacher_ground_truth_top1_accuracy": 0.4637964774951076,
+            "student_ground_truth_top1_accuracy": 0.4598825831702544,
+            "nll_increase": 0.0013667981918543681
+          },
+          {
+            "example_index": 61,
+            "example_sha256": "5ec3149f29b8fb64687b1a1f5570f0a41bedb9f5271632e099a37892949ac027",
+            "teacher_nll": 2.783615862553367,
+            "student_nll": 2.8373587117503067,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8258317025440313,
+            "teacher_ground_truth_top1_accuracy": 0.46771037181996084,
+            "student_ground_truth_top1_accuracy": 0.4755381604696673,
+            "nll_increase": 0.05374284919693961
+          },
+          {
+            "example_index": 62,
+            "example_sha256": "71bc6e8ec2d979193dbe7579ccd01abd322334619ac83f3ba3c1e545af6cfb9f",
+            "teacher_nll": 3.033067813358195,
+            "student_nll": 2.983137524524547,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8454011741682974,
+            "teacher_ground_truth_top1_accuracy": 0.4520547945205479,
+            "student_ground_truth_top1_accuracy": 0.4344422700587084,
+            "nll_increase": -0.04993028883364792
+          },
+          {
+            "example_index": 63,
+            "example_sha256": "30730ceda091981271792a9b055d7ebd3982d73b687775307f6204cf7441ff34",
+            "teacher_nll": 3.681652024300831,
+            "student_nll": 3.59593579540514,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 511,
+            "top1_agreement": 0.8297455968688845,
+            "teacher_ground_truth_top1_accuracy": 0.4070450097847358,
+            "student_ground_truth_top1_accuracy": 0.3933463796477495,
+            "nll_increase": -0.08571622889569097
+          }
+        ],
+        "corpus": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-expanded-eval/corpus/assessment_512.jsonl",
+          "sha256": "612ee2a6b42b2c27b8558b2eac19cad32f5e6fa0e058350b3d1be4fbe92327c6",
+          "limits": {
+            "max_examples": 64,
+            "max_length": 512,
+            "max_tokens": 32768
+          },
+          "prepared_sha256": "c2a6dd2831bbc3b3c7a7c8ae699fa261226803210c051c6873a49bff99df08d1",
+          "examples": 64,
+          "physical_tokens": 32768,
+          "prediction_tokens": 32704,
+          "disjointness": {
+            "status": "verified_exact_sequence_disjoint",
+            "definition": "exact valid token sequences truncated at max_length",
+            "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+          }
+        },
+        "artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28799,
+              "sha256": "940fb193804e5feb69b0bc56fb8a536d4f4f1d9b2fd8d50b33894e6cb1e762f1"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3366247187,
+              "sha256": "ea2ef4ad768624e44ba3f9d4cb8994b9a9052faeb2405150fc36788c39b58db3"
+            }
+          ],
+          "sha256": "c95fed0ab49eec49244c16788fc07bf12bc1c9be27c2c59739f8eb152953e07f"
+        },
+        "teacher_artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28418,
+              "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3441180670,
+              "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+            }
+          ],
+          "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+        },
+        "peak_mlx_memory_bytes": 3951144224,
+        "parameter_storage": {
+          "bytes": 3366215952,
+          "bytes_by_dtype": {
+            "mlx.core.bfloat16": 3366215952
+          },
+          "scalar_count": 1683107976,
+          "unique_array_count": 316,
+          "identity_definition": "distinct MLX array objects; views may share storage"
+        }
+      }
+    },
+    "2048": {
+      "attention-only": {
+        "report_path": ".local-runs/qwen3-mlx-expanded-eval/attention-only-2048.json",
+        "report_sha256": "52ad96bd70f7c4ea800ffda6756b382b2417589ef2b75a0e169d330a11c36571",
+        "per_token_sha256": "807489cdb479f5bf71244221361ab38c771f0c155c517058a7b17c1e86afbf62",
+        "aggregate": {
+          "teacher_nll": 2.880302307281951,
+          "student_nll": 2.8818293464259512,
+          "teacher_kl_available": false,
+          "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+          "prediction_tokens": 32752,
+          "top1_agreement": 0.9471177332681974,
+          "teacher_ground_truth_top1_accuracy": 0.4664142647777235,
+          "student_ground_truth_top1_accuracy": 0.4664447972642892,
+          "nll_increase": 0.0015270391440003195
+        },
+        "article_bootstrap": {
+          "unit": "article",
+          "resamples": 5000,
+          "seed": 20261018,
+          "token_weighted_nll_delta": 0.001527039144000625,
+          "percentile_95_interval": [
+            -0.0025147170651000843,
+            0.004758149802568263
+          ],
+          "article_delta_range": [
+            -0.02194685067091573,
+            0.01341651484159101
+          ],
+          "articles_with_positive_nll_delta": 12,
+          "article_count": 16,
+          "scope": "Descriptive stability within this fixed panel; selection was not a random population sample."
+        },
+        "position_quarters": [
+          {
+            "target_position_start": 0,
+            "target_position_end_exclusive": 512,
+            "prediction_tokens": 8176,
+            "nll_increase": 0.009975587085268502,
+            "top1_agreement": 0.952421722113503
+          },
+          {
+            "target_position_start": 512,
+            "target_position_end_exclusive": 1024,
+            "prediction_tokens": 8192,
+            "nll_increase": 0.001852385699748993,
+            "top1_agreement": 0.9461669921875
+          },
+          {
+            "target_position_start": 1024,
+            "target_position_end_exclusive": 1536,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.005273354006931186,
+            "top1_agreement": 0.945068359375
+          },
+          {
+            "target_position_start": 1536,
+            "target_position_end_exclusive": 2048,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.0004299611318856478,
+            "top1_agreement": 0.94482421875
+          }
+        ],
+        "per_example": [
+          {
+            "example_index": 0,
+            "example_sha256": "4f8f9acab4f68ecbbee2ab607171944944884e09782262794f8fb6048521e726",
+            "teacher_nll": 2.628994730663812,
+            "student_nll": 2.6319775830610355,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9531021006350757,
+            "teacher_ground_truth_top1_accuracy": 0.5168539325842697,
+            "student_ground_truth_top1_accuracy": 0.5153883732291158,
+            "nll_increase": 0.00298285239722329
+          },
+          {
+            "example_index": 1,
+            "example_sha256": "c3731ccdfdc21398ef2a1f2defe2fd36bd96e569e0d3066b75cd6658d6092354",
+            "teacher_nll": 2.7959291707846265,
+            "student_nll": 2.79458605072588,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9428431851489986,
+            "teacher_ground_truth_top1_accuracy": 0.4763067904250122,
+            "student_ground_truth_top1_accuracy": 0.48216902784562776,
+            "nll_increase": -0.001343120058746372
+          },
+          {
+            "example_index": 2,
+            "example_sha256": "f40210b5f1bd59fa35b9981772b4e1ce3e8efa0cbd87c95b6798756ecba2c303",
+            "teacher_nll": 2.4787856406215116,
+            "student_nll": 2.4864186075878654,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9487054225696141,
+            "teacher_ground_truth_top1_accuracy": 0.512457254518808,
+            "student_ground_truth_top1_accuracy": 0.5134342940889106,
+            "nll_increase": 0.007632966966353738
+          },
+          {
+            "example_index": 3,
+            "example_sha256": "8bc1658245487c10a45ff467753cb7563513f46d5d4b0bd5af59a7e2b0f03389",
+            "teacher_nll": 2.7187599718832773,
+            "student_nll": 2.7189593843908266,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9487054225696141,
+            "teacher_ground_truth_top1_accuracy": 0.48216902784562776,
+            "student_ground_truth_top1_accuracy": 0.48314606741573035,
+            "nll_increase": 0.0001994125075492903
+          },
+          {
+            "example_index": 4,
+            "example_sha256": "49a464be8b35877121f48a12151084ea729b0a2047377ca334eb586101bc0a12",
+            "teacher_nll": 2.8039176066910634,
+            "student_nll": 2.8091084578588177,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.953590620420127,
+            "teacher_ground_truth_top1_accuracy": 0.466047874938935,
+            "student_ground_truth_top1_accuracy": 0.462628236443576,
+            "nll_increase": 0.005190851167754307
+          },
+          {
+            "example_index": 5,
+            "example_sha256": "51a9d00604567d41981af537a973fa345718264d308906e37aea9d50c394d7c2",
+            "teacher_nll": 3.394388867402927,
+            "student_nll": 3.3724420167320113,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9394235466536395,
+            "teacher_ground_truth_top1_accuracy": 0.4142647777234978,
+            "student_ground_truth_top1_accuracy": 0.4142647777234978,
+            "nll_increase": -0.02194685067091573
+          },
+          {
+            "example_index": 6,
+            "example_sha256": "7424ea5758d61b6f56dc116b59c1e3370a1bd8d8268f6a931a2801f2999fcefc",
+            "teacher_nll": 2.7500697752296137,
+            "student_nll": 2.7578287157246004,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9506595017098193,
+            "teacher_ground_truth_top1_accuracy": 0.47239863214460187,
+            "student_ground_truth_top1_accuracy": 0.4748412310698583,
+            "nll_increase": 0.00775894049498671
+          },
+          {
+            "example_index": 7,
+            "example_sha256": "e978c22bccbc6a9a8d7eeb1ca176df3c2ee907c2825dbd9736468a933dd0605f",
+            "teacher_nll": 2.8410308280687655,
+            "student_nll": 2.8429286548668546,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9487054225696141,
+            "teacher_ground_truth_top1_accuracy": 0.4689789936492428,
+            "student_ground_truth_top1_accuracy": 0.4675134342940889,
+            "nll_increase": 0.0018978267980891417
+          },
+          {
+            "example_index": 8,
+            "example_sha256": "6fc209671f378d972a1dcc1cabfb639b76618344d5f6c2a6b01e17e15a2c74ec",
+            "teacher_nll": 2.463560552555116,
+            "student_nll": 2.467606466691204,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9501709819247679,
+            "teacher_ground_truth_top1_accuracy": 0.537371763556424,
+            "student_ground_truth_top1_accuracy": 0.5368832437713728,
+            "nll_increase": 0.0040459141360877915
+          },
+          {
+            "example_index": 9,
+            "example_sha256": "7b5afc093dabfadb93ea96ebc3e8b27e99c5295f669cbef8e8517b19858ce95f",
+            "teacher_nll": 2.9245621923941427,
+            "student_nll": 2.919039668953005,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9433317049340498,
+            "teacher_ground_truth_top1_accuracy": 0.47337567171470446,
+            "student_ground_truth_top1_accuracy": 0.4689789936492428,
+            "nll_increase": -0.005522523441137572
+          },
+          {
+            "example_index": 10,
+            "example_sha256": "025cc18203af78b2eeb1da3fdf9582c82e150158f95cd682fb2b5018a476ff70",
+            "teacher_nll": 3.1645529672001187,
+            "student_nll": 3.1779694820417097,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9428431851489986,
+            "teacher_ground_truth_top1_accuracy": 0.41279921836834393,
+            "student_ground_truth_top1_accuracy": 0.407914020517831,
+            "nll_increase": 0.01341651484159101
+          },
+          {
+            "example_index": 11,
+            "example_sha256": "bcb5117aae0a2f88814295d5d10b51043a749e208584aa058d64206f5a46c521",
+            "teacher_nll": 2.9603007670198935,
+            "student_nll": 2.964485105562047,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9457743038593063,
+            "teacher_ground_truth_top1_accuracy": 0.4596971177332682,
+            "student_ground_truth_top1_accuracy": 0.466047874938935,
+            "nll_increase": 0.004184338542153387
+          },
+          {
+            "example_index": 12,
+            "example_sha256": "25cce74c47731d077d295b5abb93de3a263c654e92a50317ba29398f5a79374c",
+            "teacher_nll": 3.040429375727234,
+            "student_nll": 3.043783482307915,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9472398632144602,
+            "teacher_ground_truth_top1_accuracy": 0.4289203712750366,
+            "student_ground_truth_top1_accuracy": 0.4298974108451392,
+            "nll_increase": 0.0033541065806810266
+          },
+          {
+            "example_index": 13,
+            "example_sha256": "453add06244ed6917ea2ca81a66ae5068c652098d3cfc64898f646afd0db903f",
+            "teacher_nll": 3.0074572141542046,
+            "student_nll": 3.006984314687903,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.945285784074255,
+            "teacher_ground_truth_top1_accuracy": 0.43917928676111384,
+            "student_ground_truth_top1_accuracy": 0.4396678065461651,
+            "nll_increase": -0.00047289946630169055
+          },
+          {
+            "example_index": 14,
+            "example_sha256": "effa4b28bf6df5d5075e443ffbe8b018607af99cfc393a3a72f716547051b7c2",
+            "teacher_nll": 3.3771044997162627,
+            "student_nll": 3.377344930003082,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9345383488031265,
+            "teacher_ground_truth_top1_accuracy": 0.41719589643380556,
+            "student_ground_truth_top1_accuracy": 0.4176844162188569,
+            "nll_increase": 0.00024043028681930423
+          },
+          {
+            "example_index": 15,
+            "example_sha256": "c98575c8f67f92d311e096f55db83cc09839f695663383642aa71efb75455842",
+            "teacher_nll": 2.734992756398643,
+            "student_nll": 2.7378066216204653,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.9589643380556913,
+            "teacher_ground_truth_top1_accuracy": 0.4846116267708842,
+            "student_ground_truth_top1_accuracy": 0.48265754763067903,
+            "nll_increase": 0.0028138652218223648
+          }
+        ],
+        "corpus": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-expanded-eval/corpus/assessment_2048.jsonl",
+          "sha256": "927ed3a6c796b5e08190f20fff7d43fc82a56f83a31c64c377a95771f81e9410",
+          "limits": {
+            "max_examples": 16,
+            "max_length": 2048,
+            "max_tokens": 32768
+          },
+          "prepared_sha256": "00da3cc7842b4f933acf44778677a81e18b18679938eb83194302f41d6ad4b9e",
+          "examples": 16,
+          "physical_tokens": 32768,
+          "prediction_tokens": 32752,
+          "disjointness": {
+            "status": "verified_exact_sequence_disjoint",
+            "definition": "exact valid token sequences truncated at max_length",
+            "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+          }
+        },
+        "artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28790,
+              "sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3432792164,
+              "sha256": "36a0e4401934a0910de840b259f8c6fd9e66269bd6de27e740de8df362509bbd"
+            }
+          ],
+          "sha256": "b6b2543ddd7cf0cffbc1eddfba14a1a54787b6bc89971f6d6de3663ad085a43b"
+        },
+        "teacher_artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28418,
+              "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3441180670,
+              "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+            }
+          ],
+          "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+        },
+        "peak_mlx_memory_bytes": 4907882326,
+        "parameter_storage": {
+          "bytes": 3432761344,
+          "bytes_by_dtype": {
+            "mlx.core.bfloat16": 3432761344
+          },
+          "scalar_count": 1716380672,
+          "unique_array_count": 312,
+          "identity_definition": "distinct MLX array objects; views may share storage"
+        }
+      },
+      "attention-and-mlp": {
+        "report_path": ".local-runs/qwen3-mlx-expanded-eval/attention-and-mlp-2048.json",
+        "report_sha256": "4c46e495bc12d48bc7edb612251411fab87ddff646367b9eec8852eeab59bb2b",
+        "per_token_sha256": "0ffad383555c7545cfde1fda2e1f9c039e2625f5d3875357aa5b619c8801a41b",
+        "aggregate": {
+          "teacher_nll": 2.880302307281951,
+          "student_nll": 2.878792625522986,
+          "teacher_kl_available": false,
+          "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+          "prediction_tokens": 32752,
+          "top1_agreement": 0.8715192965315095,
+          "teacher_ground_truth_top1_accuracy": 0.4664142647777235,
+          "student_ground_truth_top1_accuracy": 0.46088788470933073,
+          "nll_increase": -0.0015096817589648204
+        },
+        "article_bootstrap": {
+          "unit": "article",
+          "resamples": 5000,
+          "seed": 20261018,
+          "token_weighted_nll_delta": -0.001509681758964515,
+          "percentile_95_interval": [
+            -0.01594598326571815,
+            0.012522551265208903
+          ],
+          "article_delta_range": [
+            -0.05431127431745564,
+            0.05081844236656208
+          ],
+          "articles_with_positive_nll_delta": 8,
+          "article_count": 16,
+          "scope": "Descriptive stability within this fixed panel; selection was not a random population sample."
+        },
+        "position_quarters": [
+          {
+            "target_position_start": 0,
+            "target_position_end_exclusive": 512,
+            "prediction_tokens": 8176,
+            "nll_increase": 6.93750241497958e-05,
+            "top1_agreement": 0.8729207436399217
+          },
+          {
+            "target_position_start": 512,
+            "target_position_end_exclusive": 1024,
+            "prediction_tokens": 8192,
+            "nll_increase": 0.006531187915243208,
+            "top1_agreement": 0.8714599609375
+          },
+          {
+            "target_position_start": 1024,
+            "target_position_end_exclusive": 1536,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.0027577460277825594,
+            "top1_agreement": 0.867919921875
+          },
+          {
+            "target_position_start": 1536,
+            "target_position_end_exclusive": 2048,
+            "prediction_tokens": 8192,
+            "nll_increase": -0.009878459852188826,
+            "top1_agreement": 0.873779296875
+          }
+        ],
+        "per_example": [
+          {
+            "example_index": 0,
+            "example_sha256": "4f8f9acab4f68ecbbee2ab607171944944884e09782262794f8fb6048521e726",
+            "teacher_nll": 2.628994730663812,
+            "student_nll": 2.650366044242497,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8754274548119199,
+            "teacher_ground_truth_top1_accuracy": 0.5168539325842697,
+            "student_ground_truth_top1_accuracy": 0.5207620908646801,
+            "nll_increase": 0.021371313578685047
+          },
+          {
+            "example_index": 1,
+            "example_sha256": "c3731ccdfdc21398ef2a1f2defe2fd36bd96e569e0d3066b75cd6658d6092354",
+            "teacher_nll": 2.7959291707846265,
+            "student_nll": 2.7564213179237504,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8749389350268686,
+            "teacher_ground_truth_top1_accuracy": 0.4763067904250122,
+            "student_ground_truth_top1_accuracy": 0.48510014655593553,
+            "nll_increase": -0.0395078528608761
+          },
+          {
+            "example_index": 2,
+            "example_sha256": "f40210b5f1bd59fa35b9981772b4e1ce3e8efa0cbd87c95b6798756ecba2c303",
+            "teacher_nll": 2.4787856406215116,
+            "student_nll": 2.5296040829880737,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8803126526624329,
+            "teacher_ground_truth_top1_accuracy": 0.512457254518808,
+            "student_ground_truth_top1_accuracy": 0.512457254518808,
+            "nll_increase": 0.05081844236656208
+          },
+          {
+            "example_index": 3,
+            "example_sha256": "8bc1658245487c10a45ff467753cb7563513f46d5d4b0bd5af59a7e2b0f03389",
+            "teacher_nll": 2.7187599718832773,
+            "student_nll": 2.738576279655572,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8920371275036639,
+            "teacher_ground_truth_top1_accuracy": 0.48216902784562776,
+            "student_ground_truth_top1_accuracy": 0.4836345872007816,
+            "nll_increase": 0.019816307772294817
+          },
+          {
+            "example_index": 4,
+            "example_sha256": "49a464be8b35877121f48a12151084ea729b0a2047377ca334eb586101bc0a12",
+            "teacher_nll": 2.8039176066910634,
+            "student_nll": 2.789290536713705,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8651685393258427,
+            "teacher_ground_truth_top1_accuracy": 0.466047874938935,
+            "student_ground_truth_top1_accuracy": 0.4518808011724475,
+            "nll_increase": -0.01462706997735852
+          },
+          {
+            "example_index": 5,
+            "example_sha256": "51a9d00604567d41981af537a973fa345718264d308906e37aea9d50c394d7c2",
+            "teacher_nll": 3.394388867402927,
+            "student_nll": 3.3466446973896633,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8446507083536883,
+            "teacher_ground_truth_top1_accuracy": 0.4142647777234978,
+            "student_ground_truth_top1_accuracy": 0.407914020517831,
+            "nll_increase": -0.0477441700132637
+          },
+          {
+            "example_index": 6,
+            "example_sha256": "7424ea5758d61b6f56dc116b59c1e3370a1bd8d8268f6a931a2801f2999fcefc",
+            "teacher_nll": 2.7500697752296137,
+            "student_nll": 2.7661462424147345,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.873961895456766,
+            "teacher_ground_truth_top1_accuracy": 0.47239863214460187,
+            "student_ground_truth_top1_accuracy": 0.4606741573033708,
+            "nll_increase": 0.01607646718512079
+          },
+          {
+            "example_index": 7,
+            "example_sha256": "e978c22bccbc6a9a8d7eeb1ca176df3c2ee907c2825dbd9736468a933dd0605f",
+            "teacher_nll": 2.8410308280687655,
+            "student_nll": 2.8339543410144206,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8881289692232536,
+            "teacher_ground_truth_top1_accuracy": 0.4689789936492428,
+            "student_ground_truth_top1_accuracy": 0.4694675134342941,
+            "nll_increase": -0.007076487054344938
+          },
+          {
+            "example_index": 8,
+            "example_sha256": "6fc209671f378d972a1dcc1cabfb639b76618344d5f6c2a6b01e17e15a2c74ec",
+            "teacher_nll": 2.463560552555116,
+            "student_nll": 2.4505563967974524,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8744504152418173,
+            "teacher_ground_truth_top1_accuracy": 0.537371763556424,
+            "student_ground_truth_top1_accuracy": 0.5266243282852956,
+            "nll_increase": -0.013004155757663671
+          },
+          {
+            "example_index": 9,
+            "example_sha256": "7b5afc093dabfadb93ea96ebc3e8b27e99c5295f669cbef8e8517b19858ce95f",
+            "teacher_nll": 2.9245621923941427,
+            "student_nll": 2.870250918076687,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8607718612603811,
+            "teacher_ground_truth_top1_accuracy": 0.47337567171470446,
+            "student_ground_truth_top1_accuracy": 0.4650708353688324,
+            "nll_increase": -0.05431127431745564
+          },
+          {
+            "example_index": 10,
+            "example_sha256": "025cc18203af78b2eeb1da3fdf9582c82e150158f95cd682fb2b5018a476ff70",
+            "teacher_nll": 3.1645529672001187,
+            "student_nll": 3.199254851720947,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8607718612603811,
+            "teacher_ground_truth_top1_accuracy": 0.41279921836834393,
+            "student_ground_truth_top1_accuracy": 0.40058622374206154,
+            "nll_increase": 0.03470188452082823
+          },
+          {
+            "example_index": 11,
+            "example_sha256": "bcb5117aae0a2f88814295d5d10b51043a749e208584aa058d64206f5a46c521",
+            "teacher_nll": 2.9603007670198935,
+            "student_nll": 2.9489920592389574,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8676111382510991,
+            "teacher_ground_truth_top1_accuracy": 0.4596971177332682,
+            "student_ground_truth_top1_accuracy": 0.45578895945285786,
+            "nll_increase": -0.011308707780936178
+          },
+          {
+            "example_index": 12,
+            "example_sha256": "25cce74c47731d077d295b5abb93de3a263c654e92a50317ba29398f5a79374c",
+            "teacher_nll": 3.040429375727234,
+            "student_nll": 3.043604543748342,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.873961895456766,
+            "teacher_ground_truth_top1_accuracy": 0.4289203712750366,
+            "student_ground_truth_top1_accuracy": 0.4201270151441133,
+            "nll_increase": 0.0031751680211082878
+          },
+          {
+            "example_index": 13,
+            "example_sha256": "453add06244ed6917ea2ca81a66ae5068c652098d3cfc64898f646afd0db903f",
+            "teacher_nll": 3.0074572141542046,
+            "student_nll": 3.007050243539815,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8759159745969711,
+            "teacher_ground_truth_top1_accuracy": 0.43917928676111384,
+            "student_ground_truth_top1_accuracy": 0.43771372740595993,
+            "nll_increase": -0.00040697061438965676
+          },
+          {
+            "example_index": 14,
+            "example_sha256": "effa4b28bf6df5d5075e443ffbe8b018607af99cfc393a3a72f716547051b7c2",
+            "teacher_nll": 3.3771044997162627,
+            "student_nll": 3.3808499947954633,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8553981436248168,
+            "teacher_ground_truth_top1_accuracy": 0.41719589643380556,
+            "student_ground_truth_top1_accuracy": 0.40840254030288226,
+            "nll_increase": 0.0037454950792006336
+          },
+          {
+            "example_index": 15,
+            "example_sha256": "c98575c8f67f92d311e096f55db83cc09839f695663383642aa71efb75455842",
+            "teacher_nll": 2.734992756398643,
+            "student_nll": 2.749119458107699,
+            "teacher_kl_available": false,
+            "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+            "prediction_tokens": 2047,
+            "top1_agreement": 0.8808011724474841,
+            "teacher_ground_truth_top1_accuracy": 0.4846116267708842,
+            "student_ground_truth_top1_accuracy": 0.4680019540791402,
+            "nll_increase": 0.014126701709056277
+          }
+        ],
+        "corpus": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-expanded-eval/corpus/assessment_2048.jsonl",
+          "sha256": "927ed3a6c796b5e08190f20fff7d43fc82a56f83a31c64c377a95771f81e9410",
+          "limits": {
+            "max_examples": 16,
+            "max_length": 2048,
+            "max_tokens": 32768
+          },
+          "prepared_sha256": "00da3cc7842b4f933acf44778677a81e18b18679938eb83194302f41d6ad4b9e",
+          "examples": 16,
+          "physical_tokens": 32768,
+          "prediction_tokens": 32752,
+          "disjointness": {
+            "status": "verified_exact_sequence_disjoint",
+            "definition": "exact valid token sequences truncated at max_length",
+            "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+          }
+        },
+        "artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28799,
+              "sha256": "940fb193804e5feb69b0bc56fb8a536d4f4f1d9b2fd8d50b33894e6cb1e762f1"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3366247187,
+              "sha256": "ea2ef4ad768624e44ba3f9d4cb8994b9a9052faeb2405150fc36788c39b58db3"
+            }
+          ],
+          "sha256": "c95fed0ab49eec49244c16788fc07bf12bc1c9be27c2c59739f8eb152953e07f"
+        },
+        "teacher_artifact": {
+          "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+          "kind": "mlx_qwen3",
+          "files": [
+            {
+              "name": "mlx_qwen3.json",
+              "size": 28418,
+              "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+            },
+            {
+              "name": "weights.safetensors",
+              "size": 3441180670,
+              "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+            }
+          ],
+          "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+        },
+        "peak_mlx_memory_bytes": 4841336934,
+        "parameter_storage": {
+          "bytes": 3366215952,
+          "bytes_by_dtype": {
+            "mlx.core.bfloat16": 3366215952
+          },
+          "scalar_count": 1683107976,
+          "unique_array_count": 316,
+          "identity_definition": "distinct MLX array objects; views may share storage"
+        }
+      }
+    }
+  },
+  "protocol_sha256": "bccfb149deba55ec1e63718ce13ef0c46ffdd4e2ab9a46287bc35c33a9bbb216",
+  "script_sha256": "6abc835ff6ed7c77fcb7246c1f60b4bcee73e068c791f96eb1b9df6e1467013d"
+}

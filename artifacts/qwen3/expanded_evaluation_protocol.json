@@ -1,0 +1,195 @@
+{
+  "format_version": 1,
+  "date": "2026-10-18",
+  "kind": "expanded_evaluation_of_frozen_single_block_fits",
+  "frozen_before_evaluation": true,
+  "source_commit": "4fb305d",
+  "model": "Qwen/Qwen3-1.7B",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "variants": {
+    "exact": {
+      "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+      "kind": "mlx_qwen3",
+      "files": [
+        {
+          "name": "mlx_qwen3.json",
+          "size": 28418,
+          "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+        },
+        {
+          "name": "weights.safetensors",
+          "size": 3441180670,
+          "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+        }
+      ],
+      "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+    },
+    "attention-only": {
+      "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+      "kind": "mlx_qwen3",
+      "files": [
+        {
+          "name": "mlx_qwen3.json",
+          "size": 28790,
+          "sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265"
+        },
+        {
+          "name": "weights.safetensors",
+          "size": 3432792164,
+          "sha256": "36a0e4401934a0910de840b259f8c6fd9e66269bd6de27e740de8df362509bbd"
+        }
+      ],
+      "sha256": "b6b2543ddd7cf0cffbc1eddfba14a1a54787b6bc89971f6d6de3663ad085a43b"
+    },
+    "attention-and-mlp": {
+      "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp",
+      "kind": "mlx_qwen3",
+      "files": [
+        {
+          "name": "mlx_qwen3.json",
+          "size": 28799,
+          "sha256": "940fb193804e5feb69b0bc56fb8a536d4f4f1d9b2fd8d50b33894e6cb1e762f1"
+        },
+        {
+          "name": "weights.safetensors",
+          "size": 3366247187,
+          "sha256": "ea2ef4ad768624e44ba3f9d4cb8994b9a9052faeb2405150fc36788c39b58db3"
+        }
+      ],
+      "sha256": "c95fed0ab49eec49244c16788fc07bf12bc1c9be27c2c59739f8eb152953e07f"
+    }
+  },
+  "unchanged_fit_scope": {
+    "layer_index": 13,
+    "total_decoder_layers": 28,
+    "new_fitting": false,
+    "new_optimization": false
+  },
+  "language_model_panels": {
+    "512": {
+      "sequences": 64,
+      "sequence_length": 512,
+      "scored_targets": 32704,
+      "source_mix": {
+        "validation": 28,
+        "test": 36
+      }
+    },
+    "2048": {
+      "sequences": 16,
+      "sequence_length": 2048,
+      "scored_targets": 32752,
+      "source_mix": {
+        "validation": 16
+      }
+    },
+    "selection": "Reserve first16 eligible fresh validation articles for2048, remaining28 validation and first36 eligible test articles for512; deterministic nonzero midpoint windows.",
+    "exclusions": "All56 prior first-fit articles; panels mutually article-disjoint; reject any window containing a prior128-token window.",
+    "dataset_revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+    "context_comparison_limit": "Different article sets; differences between panels are not causal estimates of context length.",
+    "test_policy": "Previously untouched test data is consumed only for frozen assessment; no tuning or fitting."
+  },
+  "tasks": {
+    "count_per_dataset": 32,
+    "total": 96,
+    "datasets": [
+      "google/boolq",
+      "ybisk/piqa",
+      "allenai/ai2_arc:ARC-Easy"
+    ],
+    "selection": "First32 validation examples in source order from pinned revisions; no output-based selection or prompt tuning.",
+    "format": "Qwen chat template with enable_thinking=False; constrained single-token answer-letter scores; no prompt truncation.",
+    "scope": "Small custom task panel, not standard leaderboard scores or free-generation evaluation."
+  },
+  "metrics": {
+    "primary": [
+      "observed_next_token_NLL_delta",
+      "observed_next_token_accuracy",
+      "task_accuracy",
+      "paired_task_correct_to_wrong_and_wrong_to_correct"
+    ],
+    "secondary": [
+      "teacher_top1_agreement",
+      "parameter_storage",
+      "observed_peak_MLX_allocation"
+    ],
+    "KL": "Not calculated for expanded text panels: compact references retain target NLL and top1 only; first-fit dense KL remains available.",
+    "uncertainty": "Paired article bootstrap of token-weighted NLL delta,5000 resamples,seed20261018; descriptive for fixed panel, not population representativeness."
+  },
+  "precision": {
+    "weights": "bfloat16",
+    "logprobabilities": "float32",
+    "aggregation": "float64",
+    "MLX_ENABLE_TF32": "0",
+    "head_chunk_size": 128
+  },
+  "execution": "One artifact at a time in separate processes; CPU preparation and reference hashes frozen before GPU evaluation.",
+  "decision_scope": "Evaluate whether the existing approximation harms useful performance before choosing further fitting; no acceptance threshold or speed claim invented after results.",
+  "text_corpus_manifest": {
+    "path": "artifacts/qwen3/expanded_corpus_manifest.json",
+    "sha256": "215f675cf22ace9ef091470456415d5fb1a5f0b3d67b3e41597c4cbdcc3647b3"
+  },
+  "task_manifest": {
+    "path": "artifacts/qwen3/expanded_tasks_manifest.json",
+    "sha256": "7e939b6dfc8d689e2a44ee1b93f88c98b47b83b2cb59866de860fb8b119c4de7"
+  },
+  "scripts": {
+    "scripts/evaluate_qwen3_mlx_fit.py": "e0941c4fe22c31fa70f0439855a8b7337fa8a603501ffedf62e110142af1998b",
+    "scripts/prepare_qwen3_expanded_corpus.py": "5aedd355c27f7efae2cfca2125e6cb2a1beacd7a04347e2c7ed2c7d4b2a58455",
+    "scripts/evaluate_qwen3_mlx_tasks.py": "9cec5772d284d23738e97f4bd9ffc1fcc81f70d74da2de3858c86b2e36f8207b",
+    "scripts/summarize_qwen3_expanded_text.py": "6abc835ff6ed7c77fcb7246c1f60b4bcee73e068c791f96eb1b9df6e1467013d"
+  },
+  "environment": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.4",
+    "packages": {
+      "mlx": "0.32.0",
+      "numpy": "2.5.1",
+      "transformers": "5.14.1",
+      "tokenizers": "0.22.2"
+    },
+    "preparation_duckdb_version": "1.5.6"
+  },
+  "pre_evaluation_checks": {
+    "cpu_regressions_passed": 36,
+    "pretrained_compact_dense_smokes": [
+      {
+        "artifact": "exact",
+        "comparisons": [
+          {
+            "chunk": 128,
+            "top1_equal_count": 127,
+            "targets": 127,
+            "max_target_nll_error": 0.0
+          },
+          {
+            "chunk": 31,
+            "top1_equal_count": 127,
+            "targets": 127,
+            "max_target_nll_error": 0.0
+          }
+        ],
+        "scope": "Actual pretrained BF16 Metal dense versus compact scoring on one previous diagnostic window."
+      },
+      {
+        "artifact": "attention-and-mlp",
+        "comparisons": [
+          {
+            "chunk": 128,
+            "top1_equal_count": 127,
+            "targets": 127,
+            "max_target_nll_error": 0.0
+          },
+          {
+            "chunk": 31,
+            "top1_equal_count": 127,
+            "targets": 127,
+            "max_target_nll_error": 0.0
+          }
+        ],
+        "scope": "Actual pretrained BF16 Metal dense versus compact scoring on one previous diagnostic window."
+      }
+    ]
+  },
+  "receipt_finalization_note": "Experiment design, corpus files, and task manifest were fixed before GPU launch. These supplementary environment/script/task receipt fields were saved after the exact-reference process launched, before any candidate results were inspected; an unavailable DuckDB package-metadata query interrupted the first receipt write. DuckDB is needed only for preparation and its version comes from the preparation manifest."
+}
