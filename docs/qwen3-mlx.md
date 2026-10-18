@@ -246,7 +246,9 @@ MLX_ENABLE_TF32=0 python scripts/validate_qwen3_mlx.py mlx \
   --report /tmp/qwen3-mlx-validation.json
 ```
 
-No pretrained 1.7B reduced/chart fit quality, end-to-end speed gain, or peak
-memory guarantee has been established by this validation. Use held-out
-language-model loss and task behavior, followed by controlled timing, before
-accepting a fitted artifact for a workload.
+The [first pretrained single-block fit](qwen3-mlx-first-fit.md) now records
+attention-only and attention-plus-MLP fits on 4,096 calibration tokens, with
+separate diagnostic and validation panels. It includes teacher fidelity,
+observed next-token loss, parameter savings, and measured MLX allocation.
+This remains a bounded first experiment; broad task quality, end-to-end speed
+gains, and peak memory guarantees have not been established.

@@ -1,0 +1,1236 @@
+{
+  "format_version": 1,
+  "date": "2026-10-18",
+  "implementation_commit": "e5d1223485aa70d6d9481ebeac2674044d4131e7",
+  "protocol": {
+    "path": "artifacts/qwen3/first_fit_protocol.json",
+    "sha256": "1ee10665b0475d64b015e6d108443a32b95c97638af9efb71c4a04cc864fa10b"
+  },
+  "corpus_manifest": {
+    "path": "artifacts/qwen3/first_fit_corpus_manifest.json",
+    "sha256": "7dec8533df987ae88f4041c16b04d00e0dde54a8abf8894c5be56a5b16d484a9"
+  },
+  "scripts": {
+    "scripts/prepare_qwen3_fit_corpus.py": "22c1e21ec854e144c5d68e47302541a1076ae5eb99fc44319f1b37df0a9f511b",
+    "scripts/evaluate_qwen3_mlx_fit.py": "a922b76a1b110af56faac72fdc0e91fcaa4a02721eac9aef644d324bedaf654c"
+  },
+  "environment": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.4",
+    "packages": {
+      "mlx": "0.32.0",
+      "numpy": "2.5.1",
+      "transformers": "5.14.1",
+      "tokenizers": "0.22.2"
+    }
+  },
+  "validation": {
+    "evaluation_regression_tests": {
+      "passed": 7,
+      "command": ".venv/bin/python -m pytest -q -o addopts='' tests/test_evaluate_qwen3_mlx_fit.py"
+    },
+    "pretrained_metal_runs_completed": {
+      "conversion": 1,
+      "fits": 2,
+      "reference_panels": 2,
+      "candidate_panels": 4
+    }
+  },
+  "teacher_references": {
+    "diagnostic": {
+      "phase": "reference",
+      "artifact": {
+        "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+        "kind": "mlx_qwen3",
+        "files": [
+          {
+            "name": "mlx_qwen3.json",
+            "size": 28418,
+            "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+          },
+          {
+            "name": "weights.safetensors",
+            "size": 3441180670,
+            "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+          }
+        ],
+        "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+      },
+      "corpus": {
+        "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/diagnostic.jsonl",
+        "sha256": "747b8b763294d8cbf66573611e5a88e4a9c4344758c51f722e59d93261412923",
+        "limits": {
+          "max_examples": 8,
+          "max_length": 128,
+          "max_tokens": 1024
+        },
+        "prepared_sha256": "549d077953a3c376b2846bcaec2c1d2167c43a093345ce0d7ff6ef024b2c00e5",
+        "examples": 8,
+        "physical_tokens": 1024,
+        "prediction_tokens": 1016,
+        "disjointness": {
+          "status": "verified_exact_sequence_disjoint",
+          "definition": "exact valid token sequences truncated at max_length",
+          "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+        }
+      },
+      "precision": {
+        "weight_dtype": "preserved",
+        "log_probabilities": "float32",
+        "metric_accumulation": "float64 NumPy per token",
+        "mlx_enable_tf32": "0"
+      },
+      "parameter_storage": {
+        "bytes": 3441149952,
+        "bytes_by_dtype": {
+          "mlx.core.bfloat16": 3441149952
+        },
+        "unique_array_count": 310,
+        "identity_definition": "distinct MLX array objects; views may share storage"
+      },
+      "peak_mlx_memory_bytes": 3769640734,
+      "elapsed_seconds": 3.854339916986646,
+      "inference_and_reference_io_seconds": 1.4340397499909159,
+      "batch_size": 1,
+      "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+      "reference_manifest": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/reference-diagnostic/manifest.json"
+    },
+    "assessment": {
+      "phase": "reference",
+      "artifact": {
+        "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+        "kind": "mlx_qwen3",
+        "files": [
+          {
+            "name": "mlx_qwen3.json",
+            "size": 28418,
+            "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+          },
+          {
+            "name": "weights.safetensors",
+            "size": 3441180670,
+            "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+          }
+        ],
+        "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+      },
+      "corpus": {
+        "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/assessment.jsonl",
+        "sha256": "2cb538685ca0bf3f5fed157ecc0caa06c44d629a86ac60e72f666e55a6de5478",
+        "limits": {
+          "max_examples": 16,
+          "max_length": 128,
+          "max_tokens": 2048
+        },
+        "prepared_sha256": "d8161adcc6b7b9fa144e06e04339463932cf369bc1eeeb3557bde5ea93a6bb42",
+        "examples": 16,
+        "physical_tokens": 2048,
+        "prediction_tokens": 2032,
+        "disjointness": {
+          "status": "verified_exact_sequence_disjoint",
+          "definition": "exact valid token sequences truncated at max_length",
+          "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+        }
+      },
+      "precision": {
+        "weight_dtype": "preserved",
+        "log_probabilities": "float32",
+        "metric_accumulation": "float64 NumPy per token",
+        "mlx_enable_tf32": "0"
+      },
+      "parameter_storage": {
+        "bytes": 3441149952,
+        "bytes_by_dtype": {
+          "mlx.core.bfloat16": 3441149952
+        },
+        "scalar_count": 1720574976,
+        "unique_array_count": 310,
+        "identity_definition": "distinct MLX array objects; views may share storage"
+      },
+      "peak_mlx_memory_bytes": 3769640734,
+      "elapsed_seconds": 4.044589958008146,
+      "inference_and_reference_io_seconds": 1.9340066250006203,
+      "batch_size": 1,
+      "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+      "reference_manifest": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/reference-assessment/manifest.json"
+    }
+  },
+  "variants": {
+    "attention-only": {
+      "calibration_fit": {
+        "operation": "fit",
+        "mlx_enable_tf32": "0",
+        "runtime": "MLX",
+        "heldout_confirmation": false,
+        "source_artifact": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+        "source_metadata_sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24",
+        "corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee",
+        "tokenizer_path": null,
+        "calibration_examples": 32,
+        "calibration_physical_tokens": 4096,
+        "layers": [
+          13
+        ],
+        "solver": "mlx",
+        "solver_precision": "MLX float32 moments and CPU linear algebra",
+        "parameters_before": {
+          "scalar_count": 1720574976,
+          "scalars_by_dtype": {
+            "mlx.core.bfloat16": 1720574976
+          },
+          "layer_count": 28
+        },
+        "parameters_after": {
+          "scalar_count": 1716380672,
+          "scalars_by_dtype": {
+            "mlx.core.bfloat16": 1716380672
+          },
+          "layer_count": 28
+        },
+        "fits": [
+          {
+            "layer": 13,
+            "component": "attention",
+            "kind": "activation_weighted_attention_operator_pullback",
+            "solver": "mlx",
+            "capture_rows": 4096,
+            "input_rank": 1024,
+            "output_rank": 512,
+            "context_output_relative_error": 0.19674941897392273,
+            "moment_dtype": "float32",
+            "factorization_dtype": "float32",
+            "regression_accumulation_dtype": "float32",
+            "deployment_dtype": "mlx.core.bfloat16",
+            "heldout_confirmation": false,
+            "mlx_enable_tf32": "0"
+          }
+        ],
+        "trajectory": null,
+        "evaluation_scope": "calibration only; no held-out quality or speed claim"
+      },
+      "fit_resources": {
+        "elapsed_seconds": 4.963837999996031,
+        "peak_mlx_memory_bytes": 3436955648,
+        "process_max_rss_bytes_macos": 2443919360,
+        "scope": "one fit command, including source loading, captures, solver and artifact save",
+        "exit_code": 0
+      },
+      "scalars_removed_from_exact": 4194304,
+      "fraction_of_whole_model_removed": 0.0024377339311018784,
+      "parameter_bytes_removed_from_exact": 8388608,
+      "evaluations": {
+        "diagnostic": {
+          "phase": "evaluate",
+          "artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28790,
+                "sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3432792164,
+                "sha256": "36a0e4401934a0910de840b259f8c6fd9e66269bd6de27e740de8df362509bbd"
+              }
+            ],
+            "sha256": "b6b2543ddd7cf0cffbc1eddfba14a1a54787b6bc89971f6d6de3663ad085a43b"
+          },
+          "corpus": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/diagnostic.jsonl",
+            "sha256": "747b8b763294d8cbf66573611e5a88e4a9c4344758c51f722e59d93261412923",
+            "limits": {
+              "max_examples": 8,
+              "max_length": 128,
+              "max_tokens": 1024
+            },
+            "prepared_sha256": "549d077953a3c376b2846bcaec2c1d2167c43a093345ce0d7ff6ef024b2c00e5",
+            "examples": 8,
+            "physical_tokens": 1024,
+            "prediction_tokens": 1016,
+            "disjointness": {
+              "status": "verified_exact_sequence_disjoint",
+              "definition": "exact valid token sequences truncated at max_length",
+              "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+            }
+          },
+          "precision": {
+            "weight_dtype": "preserved",
+            "log_probabilities": "float32",
+            "metric_accumulation": "float64 NumPy per token",
+            "mlx_enable_tf32": "0"
+          },
+          "parameter_storage": {
+            "bytes": 3432761344,
+            "bytes_by_dtype": {
+              "mlx.core.bfloat16": 3432761344
+            },
+            "scalar_count": 1716380672,
+            "unique_array_count": 312,
+            "identity_definition": "distinct MLX array objects; views may share storage"
+          },
+          "peak_mlx_memory_bytes": 3761252126,
+          "elapsed_seconds": 3.8407700000097975,
+          "inference_and_reference_io_seconds": 1.6727306669927202,
+          "batch_size": 1,
+          "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+          "teacher_artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28418,
+                "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3441180670,
+                "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+              }
+            ],
+            "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+          },
+          "reference_manifest_sha256": "ccfcfe4f95d8153ac630c2cdc0db3bb84a2af1fd4d860e8c1a8919b76fb81606",
+          "aggregate": {
+            "teacher_kl": 0.007040236680825715,
+            "teacher_nll": 2.8885178885121983,
+            "student_nll": 2.897490063051539,
+            "prediction_tokens": 1016,
+            "top1_agreement": 0.9625984251968503,
+            "teacher_ground_truth_top1_accuracy": 0.4763779527559055,
+            "student_ground_truth_top1_accuracy": 0.47244094488188976,
+            "nll_increase": 0.008972174539340738
+          },
+          "per_example": [
+            {
+              "example_index": 0,
+              "example_sha256": "1fc6d39656344b795d4e986f173dcbec6ada24894270e3084fb5c797048149a9",
+              "teacher_kl": 0.005117377448393562,
+              "teacher_nll": 2.1023369286004012,
+              "student_nll": 2.098434253001776,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.5669291338582677,
+              "student_ground_truth_top1_accuracy": 0.5826771653543307,
+              "nll_increase": -0.003902675598625116
+            },
+            {
+              "example_index": 1,
+              "example_sha256": "2c85f0f092db77b379817f64378d2182dc3ad977d0df8b1dc36af4220dcf916a",
+              "teacher_kl": 0.006003605260519236,
+              "teacher_nll": 2.75136166670191,
+              "student_nll": 2.7708955899936947,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.968503937007874,
+              "teacher_ground_truth_top1_accuracy": 0.49606299212598426,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": 0.019533923291784827
+            },
+            {
+              "example_index": 2,
+              "example_sha256": "0b9dda4372657a7c03ff05d028a59132ce73e3bf93793189e1c424fd4d684ddc",
+              "teacher_kl": 0.005309705436300605,
+              "teacher_nll": 3.0459851242425873,
+              "student_nll": 3.0523955728125385,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.968503937007874,
+              "teacher_ground_truth_top1_accuracy": 0.4094488188976378,
+              "student_ground_truth_top1_accuracy": 0.41732283464566927,
+              "nll_increase": 0.00641044856995121
+            },
+            {
+              "example_index": 3,
+              "example_sha256": "aa4f2d2e3d61f6f9902944b69051f6b6eb77403815605a0b88a979c3d7ef4870",
+              "teacher_kl": 0.011966055734236014,
+              "teacher_nll": 2.758566593560647,
+              "student_nll": 2.73308644332285,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.952755905511811,
+              "teacher_ground_truth_top1_accuracy": 0.4881889763779528,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": -0.025480150237796817
+            },
+            {
+              "example_index": 4,
+              "example_sha256": "842ef24baa057fbbb681240e07715c3ad3dcd8a8a9b611e959777d2a4695a240",
+              "teacher_kl": 0.003630859668515884,
+              "teacher_nll": 3.5224354511170874,
+              "student_nll": 3.5494769989974855,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9763779527559056,
+              "teacher_ground_truth_top1_accuracy": 0.4566929133858268,
+              "student_ground_truth_top1_accuracy": 0.4566929133858268,
+              "nll_increase": 0.02704154788039803
+            },
+            {
+              "example_index": 5,
+              "example_sha256": "ed205a69c9784c0626dfde95e2bf18b6b4bbecb319da36d23af594305d950cd4",
+              "teacher_kl": 0.004224432477258102,
+              "teacher_nll": 2.8749919651061533,
+              "student_nll": 2.8765019319188876,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.952755905511811,
+              "teacher_ground_truth_top1_accuracy": 0.4566929133858268,
+              "student_ground_truth_top1_accuracy": 0.44881889763779526,
+              "nll_increase": 0.001509966812734298
+            },
+            {
+              "example_index": 6,
+              "example_sha256": "a51baa5103fa56d1cba2645b1c290424f39f2363a3a649ab2608c525edbcd58d",
+              "teacher_kl": 0.01634103552375636,
+              "teacher_nll": 2.8761902306023543,
+              "student_nll": 2.90095883467066,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.4645669291338583,
+              "student_ground_truth_top1_accuracy": 0.4566929133858268,
+              "nll_increase": 0.0247686040683055
+            },
+            {
+              "example_index": 7,
+              "example_sha256": "84739373e91147c0061bf14a944afb8d7468acca7be1bde276e7ab29d18b2f15",
+              "teacher_kl": 0.003728821897625959,
+              "teacher_nll": 3.176275148166446,
+              "student_nll": 3.1981708796944206,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.47244094488188976,
+              "student_ground_truth_top1_accuracy": 0.4566929133858268,
+              "nll_increase": 0.021895731527974416
+            }
+          ],
+          "per_token_metrics": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only-diagnostic.tokens.jsonl",
+          "per_token_metrics_sha256": "421553d9cce6063ba070d891bc7de1c3347d31e71af2f46408c90fa0973ee5a8"
+        },
+        "assessment": {
+          "phase": "evaluate",
+          "artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28790,
+                "sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3432792164,
+                "sha256": "36a0e4401934a0910de840b259f8c6fd9e66269bd6de27e740de8df362509bbd"
+              }
+            ],
+            "sha256": "b6b2543ddd7cf0cffbc1eddfba14a1a54787b6bc89971f6d6de3663ad085a43b"
+          },
+          "corpus": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/assessment.jsonl",
+            "sha256": "2cb538685ca0bf3f5fed157ecc0caa06c44d629a86ac60e72f666e55a6de5478",
+            "limits": {
+              "max_examples": 16,
+              "max_length": 128,
+              "max_tokens": 2048
+            },
+            "prepared_sha256": "d8161adcc6b7b9fa144e06e04339463932cf369bc1eeeb3557bde5ea93a6bb42",
+            "examples": 16,
+            "physical_tokens": 2048,
+            "prediction_tokens": 2032,
+            "disjointness": {
+              "status": "verified_exact_sequence_disjoint",
+              "definition": "exact valid token sequences truncated at max_length",
+              "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+            }
+          },
+          "precision": {
+            "weight_dtype": "preserved",
+            "log_probabilities": "float32",
+            "metric_accumulation": "float64 NumPy per token",
+            "mlx_enable_tf32": "0"
+          },
+          "parameter_storage": {
+            "bytes": 3432761344,
+            "bytes_by_dtype": {
+              "mlx.core.bfloat16": 3432761344
+            },
+            "scalar_count": 1716380672,
+            "unique_array_count": 312,
+            "identity_definition": "distinct MLX array objects; views may share storage"
+          },
+          "peak_mlx_memory_bytes": 3761252126,
+          "elapsed_seconds": 5.070080292003695,
+          "inference_and_reference_io_seconds": 2.961483999999473,
+          "batch_size": 1,
+          "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+          "teacher_artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28418,
+                "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3441180670,
+                "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+              }
+            ],
+            "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+          },
+          "reference_manifest_sha256": "da266c715d038a02b0ccbb070c81057c30afacc3952f16460e45bcb116e1db8a",
+          "aggregate": {
+            "teacher_kl": 0.006347417009980534,
+            "teacher_nll": 2.787522877764514,
+            "student_nll": 2.78978375046272,
+            "prediction_tokens": 2032,
+            "top1_agreement": 0.968996062992126,
+            "teacher_ground_truth_top1_accuracy": 0.5054133858267716,
+            "student_ground_truth_top1_accuracy": 0.5054133858267716,
+            "nll_increase": 0.0022608726982058513
+          },
+          "per_example": [
+            {
+              "example_index": 0,
+              "example_sha256": "76ccd4bb0d0700c38b9a5887bb344f0792a9b0eac41951725d15f72a3730a017",
+              "teacher_kl": 0.007901624807359465,
+              "teacher_nll": 2.511579288272407,
+              "student_nll": 2.53370779142605,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9763779527559056,
+              "teacher_ground_truth_top1_accuracy": 0.5433070866141733,
+              "student_ground_truth_top1_accuracy": 0.5354330708661418,
+              "nll_increase": 0.02212850315364312
+            },
+            {
+              "example_index": 1,
+              "example_sha256": "93bfc445723d130d80ee537e8439694d24b1a68b46bc0c0ca12dfc1d6f1cef7f",
+              "teacher_kl": 0.0025143009063401714,
+              "teacher_nll": 2.5640661585049367,
+              "student_nll": 2.5633178771011473,
+              "prediction_tokens": 127,
+              "top1_agreement": 1.0,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.44881889763779526,
+              "nll_increase": -0.0007482814037893526
+            },
+            {
+              "example_index": 2,
+              "example_sha256": "eafe47c6ae436ce9239687d13cc2f9e918f8555d52123fec368ac730b75d5c8c",
+              "teacher_kl": 0.0070689728575881764,
+              "teacher_nll": 3.6250315463449074,
+              "student_nll": 3.610367932657557,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.4015748031496063,
+              "student_ground_truth_top1_accuracy": 0.4094488188976378,
+              "nll_increase": -0.014663613687350363
+            },
+            {
+              "example_index": 3,
+              "example_sha256": "37e12376a24d438cca345f9253f6df5c2dc3c923ec29c25aef19ef11de998985",
+              "teacher_kl": 0.006388850858963248,
+              "teacher_nll": 2.200385611826979,
+              "student_nll": 2.221998590184009,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.968503937007874,
+              "teacher_ground_truth_top1_accuracy": 0.5984251968503937,
+              "student_ground_truth_top1_accuracy": 0.5984251968503937,
+              "nll_increase": 0.0216129783570298
+            },
+            {
+              "example_index": 4,
+              "example_sha256": "52cd739f7987ec798c7ceb20314fb306c7dc408bfd4e78c900157356075409c4",
+              "teacher_kl": 0.01571390103735622,
+              "teacher_nll": 1.5875394325556718,
+              "student_nll": 1.6107408268245187,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.6299212598425197,
+              "student_ground_truth_top1_accuracy": 0.6456692913385826,
+              "nll_increase": 0.02320139426884693
+            },
+            {
+              "example_index": 5,
+              "example_sha256": "a878e404b25a1429cd64ebc413ee40289a4a114974d9753ca7ce1502381a9b9c",
+              "teacher_kl": 0.003510447431547901,
+              "teacher_nll": 3.212570656002976,
+              "student_nll": 3.2174616761094943,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.984251968503937,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.44881889763779526,
+              "nll_increase": 0.004891020106518429
+            },
+            {
+              "example_index": 6,
+              "example_sha256": "2c779b82e215f60efbba0eef4b750ff21c2da5e32585b656b49e8900b8786099",
+              "teacher_kl": 0.006802526169581214,
+              "teacher_nll": 2.605906749334861,
+              "student_nll": 2.6065635080412615,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.937007874015748,
+              "teacher_ground_truth_top1_accuracy": 0.5669291338582677,
+              "student_ground_truth_top1_accuracy": 0.5590551181102362,
+              "nll_increase": 0.0006567587064005842
+            },
+            {
+              "example_index": 7,
+              "example_sha256": "577b12ddc5404bc358c58fc8d9bb2260c94c405eabc75e23589a3080a990fd70",
+              "teacher_kl": 0.005111320292715654,
+              "teacher_nll": 2.6563340885432685,
+              "student_nll": 2.674499076182448,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.968503937007874,
+              "teacher_ground_truth_top1_accuracy": 0.48031496062992124,
+              "student_ground_truth_top1_accuracy": 0.47244094488188976,
+              "nll_increase": 0.018164987639179397
+            },
+            {
+              "example_index": 8,
+              "example_sha256": "31198a39a7d5feb710eb4572159fc696acbec3a37b95b171c616e55428d1fe6a",
+              "teacher_kl": 0.0054209317927502885,
+              "teacher_nll": 2.921870374304103,
+              "student_nll": 2.9224933414008674,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.984251968503937,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.44881889763779526,
+              "nll_increase": 0.0006229670967643486
+            },
+            {
+              "example_index": 9,
+              "example_sha256": "d69e878cce99bfbbb75d3ba4d7eda250545c2b1162309ac61718c6fd32be3ade",
+              "teacher_kl": 0.005053496853252997,
+              "teacher_nll": 2.8891679208109697,
+              "student_nll": 2.8789694027637873,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.952755905511811,
+              "teacher_ground_truth_top1_accuracy": 0.5039370078740157,
+              "student_ground_truth_top1_accuracy": 0.5118110236220472,
+              "nll_increase": -0.010198518047182414
+            },
+            {
+              "example_index": 10,
+              "example_sha256": "35382a47568cf6abc91da3a70373113c6349a7bd3d625f74d714ed401f0f35b5",
+              "teacher_kl": 0.005219364724509397,
+              "teacher_nll": 2.861021567517378,
+              "student_nll": 2.8558540794793075,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.4881889763779528,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": -0.005167488038070545
+            },
+            {
+              "example_index": 11,
+              "example_sha256": "9de0fe38ff9663e07c13bb4b38382a6f15ad7794b2510d9c8dc3e1c58197cfc5",
+              "teacher_kl": 0.006780651457437705,
+              "teacher_nll": 2.5933897664227823,
+              "student_nll": 2.5889399671179105,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.952755905511811,
+              "teacher_ground_truth_top1_accuracy": 0.5433070866141733,
+              "student_ground_truth_top1_accuracy": 0.5669291338582677,
+              "nll_increase": -0.004449799304871771
+            },
+            {
+              "example_index": 12,
+              "example_sha256": "f6855b490a22c421dbd7cd0cecfab74796eecbee318b477df49ea23b8ae1d097",
+              "teacher_kl": 0.005076588509680821,
+              "teacher_nll": 2.83770936680591,
+              "student_nll": 2.835294528270331,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9606299212598425,
+              "teacher_ground_truth_top1_accuracy": 0.5196850393700787,
+              "student_ground_truth_top1_accuracy": 0.5196850393700787,
+              "nll_increase": -0.0024148385355791113
+            },
+            {
+              "example_index": 13,
+              "example_sha256": "ae408f48714ff6c10057d80ffee23829f83a8930907c17f5be5136cf8a6bd341",
+              "teacher_kl": 0.0076252818255551705,
+              "teacher_nll": 3.531112505695013,
+              "student_nll": 3.536400577214759,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9763779527559056,
+              "teacher_ground_truth_top1_accuracy": 0.49606299212598426,
+              "student_ground_truth_top1_accuracy": 0.4881889763779528,
+              "nll_increase": 0.005288071519746307
+            },
+            {
+              "example_index": 14,
+              "example_sha256": "3c76c13d32e85fbac93a427e30efcdbeb542f087deb550fd492d092ad69e0b84",
+              "teacher_kl": 0.005601719565519528,
+              "teacher_nll": 3.2189995022270623,
+              "student_nll": 3.2072512258694865,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.984251968503937,
+              "teacher_ground_truth_top1_accuracy": 0.5039370078740157,
+              "student_ground_truth_top1_accuracy": 0.5118110236220472,
+              "nll_increase": -0.011748276357575804
+            },
+            {
+              "example_index": 15,
+              "example_sha256": "ebd05c0c5018bea2c76aad3fec4ab523cb00c6a4a653502b97f6620c7539dd20",
+              "teacher_kl": 0.00576869306953059,
+              "teacher_nll": 2.783681509063,
+              "student_nll": 2.7726796067605806,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9763779527559056,
+              "teacher_ground_truth_top1_accuracy": 0.4645669291338583,
+              "student_ground_truth_top1_accuracy": 0.4409448818897638,
+              "nll_increase": -0.011001902302419264
+            }
+          ],
+          "per_token_metrics": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only-assessment.tokens.jsonl",
+          "per_token_metrics_sha256": "59671640235b087ffa9f9af08aaa84a4aa54ee53eec7f1e26d0fef2766481e9a"
+        }
+      }
+    },
+    "attention-and-mlp": {
+      "calibration_fit": {
+        "operation": "fit",
+        "mlx_enable_tf32": "0",
+        "runtime": "MLX",
+        "heldout_confirmation": false,
+        "source_artifact": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-only",
+        "source_metadata_sha256": "ecad31fe38e92ba34ee7e060b176da49e67b6eb472ba66afd8794ae37d394265",
+        "corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee",
+        "tokenizer_path": null,
+        "calibration_examples": 32,
+        "calibration_physical_tokens": 4096,
+        "layers": [
+          13
+        ],
+        "solver": "mlx",
+        "solver_precision": "MLX float32 moments and CPU linear algebra",
+        "parameters_before": {
+          "scalar_count": 1716380672,
+          "scalars_by_dtype": {
+            "mlx.core.bfloat16": 1716380672
+          },
+          "layer_count": 28
+        },
+        "parameters_after": {
+          "scalar_count": 1683107976,
+          "scalars_by_dtype": {
+            "mlx.core.bfloat16": 1683107976
+          },
+          "layer_count": 28
+        },
+        "fits": [
+          {
+            "layer": 13,
+            "component": "mlp",
+            "kind": "activation_chart_weighted_ridge",
+            "solver": "mlx",
+            "capture_rows": 4096,
+            "chart_count": 4,
+            "chart_rank": 16,
+            "generator_rank": 17,
+            "training_relative_error": 0.45865559577941895,
+            "geometry_moment_dtype": "float32",
+            "factorization_dtype": "float32",
+            "regression_accumulation_dtype": "float32",
+            "deployment_dtype": "mlx.core.bfloat16",
+            "fisher_row_weights_supplied": false,
+            "heldout_confirmation": false,
+            "mlx_enable_tf32": "0"
+          }
+        ],
+        "trajectory": null,
+        "evaluation_scope": "calibration only; no held-out quality or speed claim"
+      },
+      "fit_resources": {
+        "elapsed_seconds": 5.43080912498408,
+        "peak_mlx_memory_bytes": 3826417608,
+        "process_max_rss_bytes_macos": 2522726400,
+        "scope": "one fit command, including source loading, captures, solver and artifact save",
+        "exit_code": 0
+      },
+      "scalars_removed_from_exact": 37467000,
+      "fraction_of_whole_model_removed": 0.021775860118053932,
+      "parameter_bytes_removed_from_exact": 74934000,
+      "evaluations": {
+        "diagnostic": {
+          "phase": "evaluate",
+          "artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28799,
+                "sha256": "940fb193804e5feb69b0bc56fb8a536d4f4f1d9b2fd8d50b33894e6cb1e762f1"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3366247187,
+                "sha256": "ea2ef4ad768624e44ba3f9d4cb8994b9a9052faeb2405150fc36788c39b58db3"
+              }
+            ],
+            "sha256": "c95fed0ab49eec49244c16788fc07bf12bc1c9be27c2c59739f8eb152953e07f"
+          },
+          "corpus": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/diagnostic.jsonl",
+            "sha256": "747b8b763294d8cbf66573611e5a88e4a9c4344758c51f722e59d93261412923",
+            "limits": {
+              "max_examples": 8,
+              "max_length": 128,
+              "max_tokens": 1024
+            },
+            "prepared_sha256": "549d077953a3c376b2846bcaec2c1d2167c43a093345ce0d7ff6ef024b2c00e5",
+            "examples": 8,
+            "physical_tokens": 1024,
+            "prediction_tokens": 1016,
+            "disjointness": {
+              "status": "verified_exact_sequence_disjoint",
+              "definition": "exact valid token sequences truncated at max_length",
+              "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+            }
+          },
+          "precision": {
+            "weight_dtype": "preserved",
+            "log_probabilities": "float32",
+            "metric_accumulation": "float64 NumPy per token",
+            "mlx_enable_tf32": "0"
+          },
+          "parameter_storage": {
+            "bytes": 3366215952,
+            "bytes_by_dtype": {
+              "mlx.core.bfloat16": 3366215952
+            },
+            "scalar_count": 1683107976,
+            "unique_array_count": 316,
+            "identity_definition": "distinct MLX array objects; views may share storage"
+          },
+          "peak_mlx_memory_bytes": 3694706742,
+          "elapsed_seconds": 3.691773790982552,
+          "inference_and_reference_io_seconds": 1.5541128339827992,
+          "batch_size": 1,
+          "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+          "teacher_artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28418,
+                "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3441180670,
+                "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+              }
+            ],
+            "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+          },
+          "reference_manifest_sha256": "ccfcfe4f95d8153ac630c2cdc0db3bb84a2af1fd4d860e8c1a8919b76fb81606",
+          "aggregate": {
+            "teacher_kl": 0.05811651601696002,
+            "teacher_nll": 2.8885178885121983,
+            "student_nll": 2.879703854012677,
+            "prediction_tokens": 1016,
+            "top1_agreement": 0.8986220472440944,
+            "teacher_ground_truth_top1_accuracy": 0.4763779527559055,
+            "student_ground_truth_top1_accuracy": 0.4744094488188976,
+            "nll_increase": -0.008814034499521117
+          },
+          "per_example": [
+            {
+              "example_index": 0,
+              "example_sha256": "1fc6d39656344b795d4e986f173dcbec6ada24894270e3084fb5c797048149a9",
+              "teacher_kl": 0.05074501519940985,
+              "teacher_nll": 2.1023369286004012,
+              "student_nll": 2.218185830304003,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.937007874015748,
+              "teacher_ground_truth_top1_accuracy": 0.5669291338582677,
+              "student_ground_truth_top1_accuracy": 0.5826771653543307,
+              "nll_increase": 0.11584890170360174
+            },
+            {
+              "example_index": 1,
+              "example_sha256": "2c85f0f092db77b379817f64378d2182dc3ad977d0df8b1dc36af4220dcf916a",
+              "teacher_kl": 0.045819845101080024,
+              "teacher_nll": 2.75136166670191,
+              "student_nll": 2.7548262228177287,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9133858267716536,
+              "teacher_ground_truth_top1_accuracy": 0.49606299212598426,
+              "student_ground_truth_top1_accuracy": 0.49606299212598426,
+              "nll_increase": 0.003464556115818862
+            },
+            {
+              "example_index": 2,
+              "example_sha256": "0b9dda4372657a7c03ff05d028a59132ce73e3bf93793189e1c424fd4d684ddc",
+              "teacher_kl": 0.04900124045539584,
+              "teacher_nll": 3.0459851242425873,
+              "student_nll": 2.9746030522143747,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8976377952755905,
+              "teacher_ground_truth_top1_accuracy": 0.4094488188976378,
+              "student_ground_truth_top1_accuracy": 0.4409448818897638,
+              "nll_increase": -0.07138207202821256
+            },
+            {
+              "example_index": 3,
+              "example_sha256": "aa4f2d2e3d61f6f9902944b69051f6b6eb77403815605a0b88a979c3d7ef4870",
+              "teacher_kl": 0.0977595795350998,
+              "teacher_nll": 2.758566593560647,
+              "student_nll": 2.682693181075449,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8976377952755905,
+              "teacher_ground_truth_top1_accuracy": 0.4881889763779528,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": -0.07587341248519808
+            },
+            {
+              "example_index": 4,
+              "example_sha256": "842ef24baa057fbbb681240e07715c3ad3dcd8a8a9b611e959777d2a4695a240",
+              "teacher_kl": 0.03282728073827893,
+              "teacher_nll": 3.5224354511170874,
+              "student_nll": 3.610741667860136,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.889763779527559,
+              "teacher_ground_truth_top1_accuracy": 0.4566929133858268,
+              "student_ground_truth_top1_accuracy": 0.4409448818897638,
+              "nll_increase": 0.08830621674304862
+            },
+            {
+              "example_index": 5,
+              "example_sha256": "ed205a69c9784c0626dfde95e2bf18b6b4bbecb319da36d23af594305d950cd4",
+              "teacher_kl": 0.050377340636680513,
+              "teacher_nll": 2.8749919651061533,
+              "student_nll": 2.836856113644097,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.889763779527559,
+              "teacher_ground_truth_top1_accuracy": 0.4566929133858268,
+              "student_ground_truth_top1_accuracy": 0.4330708661417323,
+              "nll_increase": -0.03813585146205645
+            },
+            {
+              "example_index": 6,
+              "example_sha256": "a51baa5103fa56d1cba2645b1c290424f39f2363a3a649ab2608c525edbcd58d",
+              "teacher_kl": 0.1025285891205247,
+              "teacher_nll": 2.8761902306023543,
+              "student_nll": 2.8416861136128584,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8503937007874016,
+              "teacher_ground_truth_top1_accuracy": 0.4645669291338583,
+              "student_ground_truth_top1_accuracy": 0.4409448818897638,
+              "nll_increase": -0.03450411698949596
+            },
+            {
+              "example_index": 7,
+              "example_sha256": "84739373e91147c0061bf14a944afb8d7468acca7be1bde276e7ab29d18b2f15",
+              "teacher_kl": 0.03587323734921048,
+              "teacher_nll": 3.176275148166446,
+              "student_nll": 3.1180386505727693,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9133858267716536,
+              "teacher_ground_truth_top1_accuracy": 0.47244094488188976,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": -0.058236497593676884
+            }
+          ],
+          "per_token_metrics": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp-diagnostic.tokens.jsonl",
+          "per_token_metrics_sha256": "bbd637d7dbd78fe4fddce4c36f6761d0e19c2c1e546798a5f815edbdc7dd6019"
+        },
+        "assessment": {
+          "phase": "evaluate",
+          "artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28799,
+                "sha256": "940fb193804e5feb69b0bc56fb8a536d4f4f1d9b2fd8d50b33894e6cb1e762f1"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3366247187,
+                "sha256": "ea2ef4ad768624e44ba3f9d4cb8994b9a9052faeb2405150fc36788c39b58db3"
+              }
+            ],
+            "sha256": "c95fed0ab49eec49244c16788fc07bf12bc1c9be27c2c59739f8eb152953e07f"
+          },
+          "corpus": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/corpus/assessment.jsonl",
+            "sha256": "2cb538685ca0bf3f5fed157ecc0caa06c44d629a86ac60e72f666e55a6de5478",
+            "limits": {
+              "max_examples": 16,
+              "max_length": 128,
+              "max_tokens": 2048
+            },
+            "prepared_sha256": "d8161adcc6b7b9fa144e06e04339463932cf369bc1eeeb3557bde5ea93a6bb42",
+            "examples": 16,
+            "physical_tokens": 2048,
+            "prediction_tokens": 2032,
+            "disjointness": {
+              "status": "verified_exact_sequence_disjoint",
+              "definition": "exact valid token sequences truncated at max_length",
+              "calibration_corpus_sha256": "a671ee9ed6780aab0eab1e939053c61b1aac6043b0caaf43978ebe169f665eee"
+            }
+          },
+          "precision": {
+            "weight_dtype": "preserved",
+            "log_probabilities": "float32",
+            "metric_accumulation": "float64 NumPy per token",
+            "mlx_enable_tf32": "0"
+          },
+          "parameter_storage": {
+            "bytes": 3366215952,
+            "bytes_by_dtype": {
+              "mlx.core.bfloat16": 3366215952
+            },
+            "scalar_count": 1683107976,
+            "unique_array_count": 316,
+            "identity_definition": "distinct MLX array objects; views may share storage"
+          },
+          "peak_mlx_memory_bytes": 3694706742,
+          "elapsed_seconds": 5.056684833019972,
+          "inference_and_reference_io_seconds": 2.9722093750024214,
+          "batch_size": 1,
+          "scope": "frozen-corpus teacher-forced comparison; no quality threshold or throughput claim",
+          "teacher_artifact": {
+            "path": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/exact",
+            "kind": "mlx_qwen3",
+            "files": [
+              {
+                "name": "mlx_qwen3.json",
+                "size": 28418,
+                "sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24"
+              },
+              {
+                "name": "weights.safetensors",
+                "size": 3441180670,
+                "sha256": "4fcc784875b2deefc5bcf575357483f61bc840025acab175a64cd4d46f503bc4"
+              }
+            ],
+            "sha256": "756f317c3e9ad3bbb3d99fc1ed98a6eeba1407d678b949a6e9d35d382a29010b"
+          },
+          "reference_manifest_sha256": "da266c715d038a02b0ccbb070c81057c30afacc3952f16460e45bcb116e1db8a",
+          "aggregate": {
+            "teacher_kl": 0.06303908009910655,
+            "teacher_nll": 2.787522877764514,
+            "student_nll": 2.784950555309536,
+            "prediction_tokens": 2032,
+            "top1_agreement": 0.8922244094488189,
+            "teacher_ground_truth_top1_accuracy": 0.5054133858267716,
+            "student_ground_truth_top1_accuracy": 0.5014763779527559,
+            "nll_increase": -0.002572322454978071
+          },
+          "per_example": [
+            {
+              "example_index": 0,
+              "example_sha256": "76ccd4bb0d0700c38b9a5887bb344f0792a9b0eac41951725d15f72a3730a017",
+              "teacher_kl": 0.09497848738457648,
+              "teacher_nll": 2.511579288272407,
+              "student_nll": 2.435439868236151,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8661417322834646,
+              "teacher_ground_truth_top1_accuracy": 0.5433070866141733,
+              "student_ground_truth_top1_accuracy": 0.5354330708661418,
+              "nll_increase": -0.07613942003625596
+            },
+            {
+              "example_index": 1,
+              "example_sha256": "93bfc445723d130d80ee537e8439694d24b1a68b46bc0c0ca12dfc1d6f1cef7f",
+              "teacher_kl": 0.024676858185854123,
+              "teacher_nll": 2.5640661585049367,
+              "student_nll": 2.5004359117643102,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.952755905511811,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.48031496062992124,
+              "nll_increase": -0.06363024674062645
+            },
+            {
+              "example_index": 2,
+              "example_sha256": "eafe47c6ae436ce9239687d13cc2f9e918f8555d52123fec368ac730b75d5c8c",
+              "teacher_kl": 0.05546556331860894,
+              "teacher_nll": 3.6250315463449074,
+              "student_nll": 3.613155244842289,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8818897637795275,
+              "teacher_ground_truth_top1_accuracy": 0.4015748031496063,
+              "student_ground_truth_top1_accuracy": 0.4330708661417323,
+              "nll_increase": -0.011876301502618425
+            },
+            {
+              "example_index": 3,
+              "example_sha256": "37e12376a24d438cca345f9253f6df5c2dc3c923ec29c25aef19ef11de998985",
+              "teacher_kl": 0.052234292306484235,
+              "teacher_nll": 2.200385611826979,
+              "student_nll": 2.157164746382105,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.889763779527559,
+              "teacher_ground_truth_top1_accuracy": 0.5984251968503937,
+              "student_ground_truth_top1_accuracy": 0.5826771653543307,
+              "nll_increase": -0.043220865444874246
+            },
+            {
+              "example_index": 4,
+              "example_sha256": "52cd739f7987ec798c7ceb20314fb306c7dc408bfd4e78c900157356075409c4",
+              "teacher_kl": 0.14380944619623942,
+              "teacher_nll": 1.5875394325556718,
+              "student_nll": 1.6585651007224256,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8818897637795275,
+              "teacher_ground_truth_top1_accuracy": 0.6299212598425197,
+              "student_ground_truth_top1_accuracy": 0.6614173228346457,
+              "nll_increase": 0.07102566816675382
+            },
+            {
+              "example_index": 5,
+              "example_sha256": "a878e404b25a1429cd64ebc413ee40289a4a114974d9753ca7ce1502381a9b9c",
+              "teacher_kl": 0.031754358348346085,
+              "teacher_nll": 3.212570656002976,
+              "student_nll": 3.223332765534168,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8818897637795275,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.4251968503937008,
+              "nll_increase": 0.010762109531192277
+            },
+            {
+              "example_index": 6,
+              "example_sha256": "2c779b82e215f60efbba0eef4b750ff21c2da5e32585b656b49e8900b8786099",
+              "teacher_kl": 0.05685529902492038,
+              "teacher_nll": 2.605906749334861,
+              "student_nll": 2.6296800778606744,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.905511811023622,
+              "teacher_ground_truth_top1_accuracy": 0.5669291338582677,
+              "student_ground_truth_top1_accuracy": 0.5826771653543307,
+              "nll_increase": 0.023773328525813486
+            },
+            {
+              "example_index": 7,
+              "example_sha256": "577b12ddc5404bc358c58fc8d9bb2260c94c405eabc75e23589a3080a990fd70",
+              "teacher_kl": 0.06821785472356769,
+              "teacher_nll": 2.6563340885432685,
+              "student_nll": 2.697782441387026,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8818897637795275,
+              "teacher_ground_truth_top1_accuracy": 0.48031496062992124,
+              "student_ground_truth_top1_accuracy": 0.4645669291338583,
+              "nll_increase": 0.041448352843757696
+            },
+            {
+              "example_index": 8,
+              "example_sha256": "31198a39a7d5feb710eb4572159fc696acbec3a37b95b171c616e55428d1fe6a",
+              "teacher_kl": 0.07729113349426132,
+              "teacher_nll": 2.921870374304103,
+              "student_nll": 2.938639723409818,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8818897637795275,
+              "teacher_ground_truth_top1_accuracy": 0.44881889763779526,
+              "student_ground_truth_top1_accuracy": 0.44881889763779526,
+              "nll_increase": 0.016769349105715037
+            },
+            {
+              "example_index": 9,
+              "example_sha256": "d69e878cce99bfbbb75d3ba4d7eda250545c2b1162309ac61718c6fd32be3ade",
+              "teacher_kl": 0.03740000702024298,
+              "teacher_nll": 2.8891679208109697,
+              "student_nll": 2.8659031034454587,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8740157480314961,
+              "teacher_ground_truth_top1_accuracy": 0.5039370078740157,
+              "student_ground_truth_top1_accuracy": 0.49606299212598426,
+              "nll_increase": -0.023264817365511004
+            },
+            {
+              "example_index": 10,
+              "example_sha256": "35382a47568cf6abc91da3a70373113c6349a7bd3d625f74d714ed401f0f35b5",
+              "teacher_kl": 0.0662952862103721,
+              "teacher_nll": 2.861021567517378,
+              "student_nll": 2.7474258002333753,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.905511811023622,
+              "teacher_ground_truth_top1_accuracy": 0.4881889763779528,
+              "student_ground_truth_top1_accuracy": 0.4645669291338583,
+              "nll_increase": -0.11359576728400267
+            },
+            {
+              "example_index": 11,
+              "example_sha256": "9de0fe38ff9663e07c13bb4b38382a6f15ad7794b2510d9c8dc3e1c58197cfc5",
+              "teacher_kl": 0.05352632133721093,
+              "teacher_nll": 2.5933897664227823,
+              "student_nll": 2.6078457269142934,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8740157480314961,
+              "teacher_ground_truth_top1_accuracy": 0.5433070866141733,
+              "student_ground_truth_top1_accuracy": 0.5511811023622047,
+              "nll_increase": 0.0144559604915111
+            },
+            {
+              "example_index": 12,
+              "example_sha256": "f6855b490a22c421dbd7cd0cecfab74796eecbee318b477df49ea23b8ae1d097",
+              "teacher_kl": 0.05265066550597041,
+              "teacher_nll": 2.83770936680591,
+              "student_nll": 2.8956642150878906,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9212598425196851,
+              "teacher_ground_truth_top1_accuracy": 0.5196850393700787,
+              "student_ground_truth_top1_accuracy": 0.49606299212598426,
+              "nll_increase": 0.05795484828198072
+            },
+            {
+              "example_index": 13,
+              "example_sha256": "ae408f48714ff6c10057d80ffee23829f83a8930907c17f5be5136cf8a6bd341",
+              "teacher_kl": 0.09885212126052906,
+              "teacher_nll": 3.531112505695013,
+              "student_nll": 3.560991347305418,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8661417322834646,
+              "teacher_ground_truth_top1_accuracy": 0.49606299212598426,
+              "student_ground_truth_top1_accuracy": 0.47244094488188976,
+              "nll_increase": 0.029878841610405438
+            },
+            {
+              "example_index": 14,
+              "example_sha256": "3c76c13d32e85fbac93a427e30efcdbeb542f087deb550fd492d092ad69e0b84",
+              "teacher_kl": 0.04777751799935233,
+              "teacher_nll": 3.2189995022270623,
+              "student_nll": 3.2092236796701985,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.8976377952755905,
+              "teacher_ground_truth_top1_accuracy": 0.5039370078740157,
+              "student_ground_truth_top1_accuracy": 0.5039370078740157,
+              "nll_increase": -0.009775822556863822
+            },
+            {
+              "example_index": 15,
+              "example_sha256": "ebd05c0c5018bea2c76aad3fec4ab523cb00c6a4a653502b97f6620c7539dd20",
+              "teacher_kl": 0.04684006926916837,
+              "teacher_nll": 2.783681509063,
+              "student_nll": 2.817959132156973,
+              "prediction_tokens": 127,
+              "top1_agreement": 0.9133858267716536,
+              "teacher_ground_truth_top1_accuracy": 0.4645669291338583,
+              "student_ground_truth_top1_accuracy": 0.4251968503937008,
+              "nll_increase": 0.0342776230939732
+            }
+          ],
+          "per_token_metrics": "/Users/robertd/repos/fisher-graph-extract/.local-runs/qwen3-mlx-first-fit/attention-and-mlp-assessment.tokens.jsonl",
+          "per_token_metrics_sha256": "2452aeea1daa34c6ea47ad88f94b4a8e3dc6a916834207ce3d0f8a16cc25ea3c"
+        }
+      }
+    }
+  },
+  "interpretation": [
+    "One of 28 decoder blocks was fitted on 4096 calibration tokens; no trajectory optimization or empirical Fisher weighting was used.",
+    "Both candidates were frozen before assessment. No hyperparameter selection was performed on the validation panel.",
+    "Attention-only preserves closer teacher fidelity; adding the MLP chart fit increases teacher KL and changes more top choices.",
+    "Small negative NLL deltas are descriptive on this panel and do not establish an improvement.",
+    "Peak MLX memory is an observed allocator measure for these bounded runs, not whole-system memory or a guarantee.",
+    "No long-context, free-generation, multi-layer composition, task-accuracy, or throughput qualification was performed."
+  ]
+}
