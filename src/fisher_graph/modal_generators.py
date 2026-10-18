@@ -1900,6 +1900,7 @@ def fit_modal_generator_rate_curve(
     selection_rule: str = "return_all",
     selected_rank: int | None = None,
     pullback_output_metric: Tensor | None = None,
+    relative_ridge: float = 0.0,
 ) -> ModalGeneratorRateCurve:
     """Fit a deterministic Fisher-weighted reduced-rank generator ladder.
 
@@ -2025,8 +2026,12 @@ def fit_modal_generator_rate_curve(
     normalizer = float(fit_inputs.shape[0])
     gram = weighted_inputs.T @ weighted_inputs / normalizer
     cross = weighted_inputs.T @ weighted_targets / normalizer
-    if config.ridge:
-        gram = gram + config.ridge * torch.eye(
+    effective_ridge = float(config.ridge)
+    if relative_ridge > 0.0:
+        mean_diag = float(torch.diagonal(gram).mean().clamp_min(0.0).item())
+        effective_ridge = effective_ridge + float(relative_ridge) * mean_diag
+    if effective_ridge > 0.0:
+        gram = gram + effective_ridge * torch.eye(
             gram.shape[0],
             dtype=torch.float64,
         )

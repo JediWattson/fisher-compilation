@@ -878,6 +878,7 @@ def fit_layer_cluster_modal_generator(
     ridge: float = 0.0,
     pullback_target_residuals: Mapping[str, Tensor] | None = None,
     pullback_weight: float = 0.0,
+    relative_ridge: float = 0.0,
 ) -> FittedModalGeneratorPilot:
     """Fit both explicit ladders, then fold the selected decoder into runtime."""
 
@@ -993,6 +994,7 @@ def fit_layer_cluster_modal_generator(
         selection_rule="fixed_rank",
         selected_rank=selected_generator_rank,
         pullback_output_metric=pullback_metric,
+        relative_ridge=relative_ridge,
     )
     selected_coordinate_plan = generator_curve.selected_plan
     if selected_coordinate_plan is None:

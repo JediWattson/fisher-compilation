@@ -611,6 +611,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     ewc_prior_weight: float = 0.1,
     shrinkage_kappa: float = 0.5,
     pullback_weight: float = 0.0,
+    relative_generator_ridge: float = 0.0,
 ) -> dict[str, object]:
     """Fit, select, and checkpoint one guard-unopened Gemma candidate."""
 
@@ -831,6 +832,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
             ridge=generator_ridge,
             pullback_target_residuals=pb_residuals,
             pullback_weight=pb_w,
+            relative_ridge=relative_generator_ridge if use_ewc else 0.0,
         )
     edgeless = build_edgeless_same_layer_graph(
         same_layer,
@@ -865,7 +867,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
         fit_rows,
         edgeless,
     )
-    if use_ewc and generator_ridge > 0.0:
+    if use_ewc and (generator_ridge > 0.0 or relative_generator_ridge > 0.0):
         # Remove the ridge-damped 640-D linear component (C_OLS - C_ridge) from
         # fit_corrections so _oracle_labels and edge fitting operate strictly on
         # the pure nonlinear MLP residual (C_teacher - C_OLS) without undoing
@@ -2050,6 +2052,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="weight of target-flow pullback-Fisher metric in source node generator",
     )
+    fit.add_argument(
+        "--relative-generator-ridge",
+        type=float,
+        default=0.008,
+        help="scale-invariant trace-relative EWC ridge for node generators when --ewc is enabled",
+    )
     _add_corpus_arguments(fit)
     _add_runtime_arguments(fit)
 
@@ -2136,6 +2144,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             ewc_prior_weight=arguments.ewc_prior_weight,
             shrinkage_kappa=arguments.shrinkage_kappa,
             pullback_weight=arguments.pullback_weight,
+            relative_generator_ridge=arguments.relative_generator_ridge,
             **common,
         )
     elif arguments.command == "calibrate":
