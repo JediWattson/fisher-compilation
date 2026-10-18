@@ -30,6 +30,7 @@ from .base import (
     module_state_fingerprint,
 )
 from .gemma3 import Gemma3AttentionPrefixRun, Gemma3CausalLMAdapter
+from .qwen3 import Qwen3AttentionPrefixRun, Qwen3CausalLMAdapter
 from .toy import ToyTransformerAdapter, as_model_adapter
 
 __all__ = [
@@ -41,6 +42,8 @@ __all__ = [
     "FeedForwardSpec",
     "Gemma3AttentionPrefixRun",
     "Gemma3CausalLMAdapter",
+    "Qwen3AttentionPrefixRun",
+    "Qwen3CausalLMAdapter",
     "LayerBlockBoundaryPlan",
     "LayerSpec",
     "LengthPolicy",
