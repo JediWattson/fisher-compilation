@@ -382,13 +382,15 @@ def fit_pullback_ewc_shared_tied_lexical_factor(
     embed_scale: float = 1.0,
     ewc_prior_weight: float = 0.05,
 ) -> SharedTiedLexicalFactor:
-    """Fit a rank-``lexical_rank`` tied lexical factor under the ingress + egress Pullback-EWC metric."""
+    """Fit a rank-``lexical_rank`` tied lexical factor under the ingress + egress + active-token Pullback-EWC metric."""
     h0_list: list[Tensor] = []
     hfinal_list: list[Tensor] = []
+    active_ids: list[Tensor] = []
     with torch.no_grad():
         for batch in batches:
             seq = adapter.prepare_sequence(batch)
             valid = seq.query_valid_mask
+            active_ids.append(batch["input_ids"][valid].reshape(-1))
             h0 = exact_executor.lexical.ingress(batch["input_ids"])[valid].double()
             ex_out = exact_executor.execute(batch["input_ids"], seq)
             hf = exact_executor.terminal_norm(ex_out.output)[valid].double()
@@ -396,12 +398,16 @@ def fit_pullback_ewc_shared_tied_lexical_factor(
             hfinal_list.append(hf)
     h0_all = torch.cat(h0_list, dim=0)
     hf_all = torch.cat(hfinal_list, dim=0)
+    uniq_ids = torch.unique(torch.cat(active_ids, dim=0))
+    e_act = source_weight.detach()[uniq_ids].double()
+    g_act = e_act.T @ e_act
     g_in = h0_all.T @ h0_all
     g_out = hf_all.T @ hf_all
     g_emb = compute_tied_lexical_gram(source_weight)
     g_ewc = (
-        g_in / torch.trace(g_in).clamp_min(1e-12)
+        2.0 * (g_in / torch.trace(g_in).clamp_min(1e-12))
         + 2.0 * (g_out / torch.trace(g_out).clamp_min(1e-12))
+        + 2.0 * (g_act / torch.trace(g_act).clamp_min(1e-12))
         + float(ewc_prior_weight) * (g_emb / torch.trace(g_emb).clamp_min(1e-12))
     )
     return fit_shared_tied_lexical_factor(
@@ -417,25 +423,66 @@ def fit_pullback_ewc_reduced_attention_generator(
     norm_inputs: Tensor,
     contexts: Tensor,
     *,
+    op_outputs: Tensor | None = None,
+    row_weights: Tensor | None = None,
     input_rank: int = 256,
     output_rank: int = 64,
-    ewc_prior_weight: float = 0.01,
+    ewc_prior_weight: float = 0.005,
 ) -> Gemma3AttentionGenerator:
-    """Compile a reduced-coordinate attention generator using Pullback-Fisher + EWC covariance anchoring."""
-    x = norm_inputs.double()
+    """Compile a reduced-coordinate attention generator using RMSNorm-Pullback + QK-norm EWC anchoring."""
+    n = max(1, int(norm_inputs.shape[0]))
+    if row_weights is not None:
+        w = row_weights.double()
+        w = w / w.mean().clamp_min(1e-12)
+        root_w = w.sqrt().unsqueeze(1)
+    else:
+        root_w = torch.ones((n, 1), dtype=torch.float64)
+
+    x = norm_inputs.double() * root_w
     c = contexts.double()
-    n = max(1, int(x.shape[0]))
-    qkv = torch.cat(
-        (exact_gen.q_weight, exact_gen.k_weight, exact_gen.v_weight),
-        dim=0,
-    ).detach().double()
+    if op_outputs is not None:
+        y = op_outputs.double()
+        s_y = y.square().mean(dim=1, keepdim=True).add(1e-6).sqrt()
+        c_tilde = (c / s_y) * root_w
+    else:
+        c_tilde = c * root_w
+
+    w_q = exact_gen.q_weight.detach().double()
+    w_k = exact_gen.k_weight.detach().double()
+    w_v = exact_gen.v_weight.detach().double()
+    w_o = exact_gen.output_decoder_weight.detach().double()
+    w_norm = (1.0 + exact_gen.output_norm_weight.detach().double()).abs().clamp_min(1e-3)
+    if exact_gen.q_norm_weight is not None and exact_gen.k_norm_weight is not None:
+        qn = (1.0 + exact_gen.q_norm_weight.detach().double()).abs().clamp_min(1e-3).repeat(
+            w_q.shape[0] // exact_gen.q_norm_weight.shape[0]
+        )
+        kn = (1.0 + exact_gen.k_norm_weight.detach().double()).abs().clamp_min(1e-3).repeat(
+            w_k.shape[0] // exact_gen.k_norm_weight.shape[0]
+        )
+        w_q_eff = w_q * qn.unsqueeze(1)
+        w_k_eff = w_k * kn.unsqueeze(1)
+    else:
+        w_q_eff, w_k_eff = w_q, w_k
+    repeats = w_o.shape[1] // w_v.shape[0]
+    w_v_rep = w_v.repeat(repeats, 1)
+    w_v_eff = (w_o * w_norm.unsqueeze(1)) @ w_v_rep
+
+    gq = w_q_eff.T @ w_q_eff
+    gk = w_k_eff.T @ w_k_eff
+    gv = w_v_eff.T @ w_v_eff
+    qkv_gram = (
+        gq / torch.trace(gq).clamp_min(1e-12)
+        + gk / torch.trace(gk).clamp_min(1e-12)
+        + 2.0 * (gv / torch.trace(gv).clamp_min(1e-12))
+    )
+
     cov_x = (x.T @ x) / float(n)
     mean_dx = float(torch.diagonal(cov_x).mean().clamp_min(1e-12).item())
     cov_x_reg = cov_x + float(ewc_prior_weight) * mean_dx * torch.eye(
         x.shape[1],
         dtype=torch.float64,
     )
-    pb_in = cov_x_reg @ (qkv.T @ qkv) @ cov_x_reg
+    pb_in = cov_x_reg @ qkv_gram @ cov_x_reg
     _, evecs_in = torch.linalg.eigh(0.5 * (pb_in + pb_in.T))
     input_basis = evecs_in[:, -input_rank:].flip(1).contiguous()
     max_in = input_basis.abs().argmax(dim=0)
@@ -453,13 +500,11 @@ def fit_pullback_ewc_reduced_attention_generator(
     sys_z = gram_z + reg_z * torch.eye(input_rank, dtype=torch.float64)
     rhs_x = (z.T @ x) / float(n) + reg_z * input_basis.T
     recon_proj = torch.linalg.solve(sys_z, rhs_x)
-    q_dec = (exact_gen.q_weight.detach().double() @ recon_proj.T).contiguous()
-    k_dec = (exact_gen.k_weight.detach().double() @ recon_proj.T).contiguous()
-    v_dec = (exact_gen.v_weight.detach().double() @ recon_proj.T).contiguous()
+    q_dec = (w_q @ recon_proj.T).contiguous()
+    k_dec = (w_k @ recon_proj.T).contiguous()
+    v_dec = (w_v @ recon_proj.T).contiguous()
 
-    w_o = exact_gen.output_decoder_weight.detach().double()
-    w_norm = (1.0 + exact_gen.output_norm_weight.detach().double()).abs().clamp_min(1e-3)
-    cov_c = (c.T @ c) / float(n)
+    cov_c = (c_tilde.T @ c_tilde) / float(n)
     mean_dc = float(torch.diagonal(cov_c).mean().clamp_min(1e-12).item())
     cov_c_reg = cov_c + float(ewc_prior_weight) * mean_dc * torch.eye(
         c.shape[1],
@@ -495,6 +540,78 @@ def fit_pullback_ewc_reduced_attention_generator(
     )
 
 
+def _ewc_pullback_chart_geometry(
+    inputs: Tensor,
+    residual_targets: Tensor,
+    weights: Tensor,
+    *,
+    chart_count: int = CHART_COUNT,
+    chart_rank: int = CHART_RANK,
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Compute chart centers and scales, then refine chart bases via EWC Pullback-Fisher."""
+    centers, _, scales, occupancy = _deterministic_chart_geometry(
+        inputs,
+        weights,
+        chart_count=chart_count,
+        chart_rank=chart_rank,
+    )
+    x = inputs.double()
+    r = residual_targets.double()
+    w = weights.double()
+    w = w / w.sum().clamp_min(1e-12)
+    x_c = x - (w.unsqueeze(1) * x).sum(dim=0)
+    r_c = r - (w.unsqueeze(1) * r).sum(dim=0)
+    cov_global = x_c.T @ (w.unsqueeze(1) * x_c)
+    cross_xr = x_c.T @ (w.unsqueeze(1) * r_c)
+    pb_global = cross_xr @ cross_xr.T
+    pb_global = pb_global * (
+        torch.trace(cov_global) / torch.trace(pb_global).clamp_min(1e-12)
+    )
+    prior_gram = 0.5 * cov_global + 0.5 * pb_global
+
+    disp = x.unsqueeze(1) - centers.double().unsqueeze(0)
+    dist_sq = disp.square().sum(dim=-1)
+    logits = -0.5 * dist_sq / (
+        scales.double().square().unsqueeze(0) * CHART_TEMPERATURE
+    )
+    memb = logits.softmax(dim=-1)
+
+    new_bases = torch.empty(
+        (chart_count, x.shape[1], chart_rank),
+        dtype=torch.float64,
+    )
+    for c in range(chart_count):
+        wc = w * memb[:, c]
+        wc_sum = float(wc.sum().item())
+        if wc_sum > 1e-12:
+            wc_norm = wc / wc_sum
+            dc = x - centers[c].double()
+            cov_c = dc.T @ (wc_norm.unsqueeze(1) * dc)
+            rc = r - (wc_norm.unsqueeze(1) * r).sum(dim=0)
+            cxr_c = dc.T @ (wc_norm.unsqueeze(1) * rc)
+            pb_c = cxr_c @ cxr_c.T
+            if float(torch.trace(pb_c).item()) > 1e-12:
+                pb_c = pb_c * (torch.trace(cov_c) / torch.trace(pb_c))
+            gram_c = 0.5 * cov_c + 0.5 * pb_c + 0.25 * prior_gram
+        else:
+            gram_c = prior_gram
+        _, evecs = torch.linalg.eigh(0.5 * (gram_c + gram_c.T))
+        b_c = evecs[:, -chart_rank:].flip(1).contiguous()
+        piv = b_c.abs().argmax(dim=0)
+        sgn = torch.where(
+            b_c[piv, torch.arange(chart_rank)] < 0,
+            -1.0,
+            1.0,
+        )
+        new_bases[c] = b_c * sgn.unsqueeze(0)
+    return (
+        centers,
+        new_bases.to(dtype=inputs.dtype).contiguous(),
+        scales,
+        occupancy,
+    )
+
+
 def fit_ewc_joint_cross_block_whole_model(
     *,
     adapter: Gemma3CausalLMAdapter,
@@ -508,6 +625,7 @@ def fit_ewc_joint_cross_block_whole_model(
     attention_output_rank: int = 64,
     generator_rank: int = 4,
     maximum_incoming_attention_sources_per_target_chart: int = 1,
+    fuse_mlp_modes: bool = False,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[tuple[Gemma3AttentionGenerator, ...], JointCrossBlockFitResult]:
     """Sequentially fit all 18 reduced attention generators, MLP charts, and EWC transports."""
@@ -550,17 +668,22 @@ def fit_ewc_joint_cross_block_whole_model(
         ex_gen = exact_attention[b]
         norm_list: list[Tensor] = []
         ctx_list: list[Tensor] = []
+        op_list: list[Tensor] = []
         with torch.no_grad():
             for s_state, seq in zip(states_per_batch, seqs_per_batch):
                 valid = seq.query_valid_mask
                 ex_run = ex_gen(s_state, seq)
                 norm_list.append(ex_run.normalized_input[valid])
                 ctx_list.append(ex_run.output_coordinates.values[valid])
+                op_list.append(ex_run.operator_output[valid])
 
+        raw_weights = _row_fisher_weights(captures[b])
         red_gen = fit_pullback_ewc_reduced_attention_generator(
             ex_gen,
             torch.cat(norm_list, dim=0),
             torch.cat(ctx_list, dim=0),
+            op_outputs=torch.cat(op_list, dim=0),
+            row_weights=raw_weights,
             input_rank=attention_input_rank,
             output_rank=attention_output_rank,
         )
@@ -571,6 +694,14 @@ def fit_ewc_joint_cross_block_whole_model(
         pkt_list: list[Tensor] = []
         mlp_mut_exact = exact_mlp_muts[b]
         source_mlp = adapter.source_module(adapter.layers[b].id).mlp
+        w_down = source_mlp.down_proj.weight.detach()
+        w_post = (1.0 + mlp_mut_exact.output_norm.weight.detach()).abs().clamp_min(0.05)
+        mode_decoder_weight = (
+            torch.diag(1.0 / w_post).contiguous()
+            if fuse_mlp_modes
+            else w_down
+        )
+
         with torch.no_grad():
             new_states: list[Tensor] = []
             for s_state, seq in zip(states_per_batch, seqs_per_batch):
@@ -593,15 +724,28 @@ def fit_ewc_joint_cross_block_whole_model(
                     approximate="tanh",
                 )
                 up = F.linear(norm_mlp_in, source_mlp.up_proj.weight)
-                mlp_feat_list.append((gate * up).cpu().float().contiguous())
+                feat = gate * up
+                if fuse_mlp_modes:
+                    feat = F.linear(feat, w_down) * w_post.unsqueeze(0)
+                mlp_feat_list.append(feat.cpu().float().contiguous())
             states_per_batch = new_states
 
         attention_packets[_attention_event_id(b)] = torch.cat(pkt_list, dim=0).contiguous()
         cand_inputs = torch.cat(mlp_in_list, dim=0).contiguous()
         cand_features = torch.cat(mlp_feat_list, dim=0).contiguous()
-        nat_features = captures[b].features.cpu().float()
-        blended_features = (0.75 * cand_features + 0.25 * nat_features).contiguous()
-        weights = _row_fisher_weights(captures[b])
+        nat_raw = captures[b].features.cpu().float()
+        nat_features = (
+            (F.linear(nat_raw, w_down) * w_post.unsqueeze(0)).contiguous()
+            if fuse_mlp_modes
+            else nat_raw
+        )
+        blended_features = (0.85 * cand_features + 0.15 * nat_features).contiguous()
+
+        with torch.no_grad():
+            y_raw = F.linear(nat_raw, w_down)
+            s_mlp_sq = y_raw.square().mean(dim=1).clamp_min(1e-4)
+            inv_s_sq = (s_mlp_sq.median() / s_mlp_sq).clamp(min=0.05, max=5.0)
+        weights = (raw_weights * inv_s_sq).clamp(min=0.05, max=20.0)
 
         in_std = cand_inputs.std(dim=0, keepdim=True).clamp_min(1e-3)
         aug_inputs = [cand_inputs]
@@ -609,21 +753,31 @@ def fit_ewc_joint_cross_block_whole_model(
         aug_weights = [weights]
         with torch.no_grad():
             for sigma in (0.04, 0.08, 0.12, 0.18, 0.25, 0.35):
-                for sign in (1.0, -1.0):
-                    noise = torch.randn(
-                        cand_inputs.shape,
-                        generator=probe_gen,
-                        dtype=torch.float32,
-                    ) * (sigma * in_std)
-                    x_p = (cand_inputs + sign * noise).contiguous()
-                    g_p = F.gelu(
-                        F.linear(x_p, source_mlp.gate_proj.weight),
-                        approximate="tanh",
-                    )
-                    u_p = F.linear(x_p, source_mlp.up_proj.weight)
-                    aug_inputs.append(x_p)
-                    aug_features.append((g_p * u_p).contiguous())
-                    aug_weights.append(0.30 * weights)
+                noise = torch.randn(
+                    cand_inputs.shape,
+                    generator=probe_gen,
+                    dtype=torch.float32,
+                ) * (sigma * in_std)
+                x_plus = (cand_inputs + noise).contiguous()
+                x_minus = (cand_inputs - noise).contiguous()
+                f_plus = F.gelu(
+                    F.linear(x_plus, source_mlp.gate_proj.weight),
+                    approximate="tanh",
+                ) * F.linear(x_plus, source_mlp.up_proj.weight)
+                f_minus = F.gelu(
+                    F.linear(x_minus, source_mlp.gate_proj.weight),
+                    approximate="tanh",
+                ) * F.linear(x_minus, source_mlp.up_proj.weight)
+                if fuse_mlp_modes:
+                    f_plus = F.linear(f_plus, w_down) * w_post.unsqueeze(0)
+                    f_minus = F.linear(f_minus, w_down) * w_post.unsqueeze(0)
+                df = 0.5 * (f_plus - f_minus)
+                aug_inputs.append(x_plus)
+                aug_features.append((blended_features + df).contiguous())
+                aug_weights.append(0.30 * weights)
+                aug_inputs.append(x_minus)
+                aug_features.append((blended_features - df).contiguous())
+                aug_weights.append(0.30 * weights)
 
         all_inputs = torch.cat(aug_inputs, dim=0)
         all_features = torch.cat(aug_features, dim=0)
@@ -635,37 +789,84 @@ def fit_ewc_joint_cross_block_whole_model(
             row_fisher_weights=all_weights,
             relative_ridge=0.015,
         )
-        centers, bases, scales, occupancy = _deterministic_chart_geometry(
+        base_cand = cand_inputs @ affine_weight.T + affine_bias
+        res_cand = (blended_features - base_cand).contiguous()
+        centers, bases, scales, occupancy = _ewc_pullback_chart_geometry(
             cand_inputs,
+            res_cand,
             weights,
             chart_count=CHART_COUNT,
             chart_rank=CHART_RANK,
         )
-        memberships_all, coordinates_all = _chart_membership_coordinates(
-            all_inputs,
+        memberships_0, coordinates_0 = _chart_membership_coordinates(
+            cand_inputs,
             centers,
             bases,
             scales,
             temperature=CHART_TEMPERATURE,
         )
-        base_all = all_inputs @ affine_weight.T + affine_bias
+        dom_chart = memberships_0.argmax(dim=1)
+        dom_bases = bases[dom_chart]
+        coord_std = coordinates_0.std(dim=0, keepdim=True).clamp_min(1e-2)
+        dom_std = coord_std[0, dom_chart, :]
+
+        c_aug_in = [cand_inputs]
+        c_aug_res = [res_cand]
+        c_aug_w = [weights]
+        with torch.no_grad():
+            for c_sigma in (0.10, 0.20, 0.35):
+                z_noise = torch.randn(
+                    (cand_inputs.shape[0], CHART_RANK),
+                    generator=probe_gen,
+                    dtype=torch.float32,
+                ) * (c_sigma * dom_std)
+                dx_chart = torch.einsum("nr,nkr->nk", z_noise, dom_bases).contiguous()
+                xp = (cand_inputs + dx_chart).contiguous()
+                xm = (cand_inputs - dx_chart).contiguous()
+                fp = F.gelu(
+                    F.linear(xp, source_mlp.gate_proj.weight),
+                    approximate="tanh",
+                ) * F.linear(xp, source_mlp.up_proj.weight)
+                fm = F.gelu(
+                    F.linear(xm, source_mlp.gate_proj.weight),
+                    approximate="tanh",
+                ) * F.linear(xm, source_mlp.up_proj.weight)
+                if fuse_mlp_modes:
+                    fp = F.linear(fp, w_down) * w_post.unsqueeze(0)
+                    fm = F.linear(fm, w_down) * w_post.unsqueeze(0)
+                rp = fp - (xp @ affine_weight.T + affine_bias)
+                rm = fm - (xm @ affine_weight.T + affine_bias)
+                c_aug_in.extend([xp, xm])
+                c_aug_res.extend([rp.contiguous(), rm.contiguous()])
+                c_aug_w.extend([0.25 * weights, 0.25 * weights])
+
+        chart_inputs_all = torch.cat(c_aug_in, dim=0)
+        chart_res_all = torch.cat(c_aug_res, dim=0)
+        chart_w_all = torch.cat(c_aug_w, dim=0)
+        memb_chart_all, coord_chart_all = _chart_membership_coordinates(
+            chart_inputs_all,
+            centers,
+            bases,
+            scales,
+            temperature=CHART_TEMPERATURE,
+        )
         dense, dense_metrics = fit_fisher_weighted_dense_chart_edge_bank(
-            memberships=memberships_all,
-            coordinates=coordinates_all,
-            base_modal_residual=all_features - base_all,
-            row_fisher_weights=all_weights,
-            relative_ridge=0.06,
+            memberships=memb_chart_all,
+            coordinates=coord_chart_all,
+            base_modal_residual=chart_res_all,
+            row_fisher_weights=chart_w_all,
+            relative_ridge=0.05,
         )
         local_encoder, mode_decoder, factor_metrics = factor_chart_edge_bank(
             dense,
             generator_rank,
         )
-        local_encoder = (0.75 * local_encoder).contiguous()
+        local_encoder = (0.65 * local_encoder).contiguous()
 
-        layer = Gemma3FactorizedChartGeneratorLayer(
+        temp_layer = Gemma3FactorizedChartGeneratorLayer(
             affine_weight=affine_weight,
             affine_bias=affine_bias,
-            mode_decoder_weight=source_mlp.down_proj.weight.detach(),
+            mode_decoder_weight=mode_decoder_weight,
             chart_centers=centers,
             chart_bases=bases,
             chart_distance_scales=scales,
@@ -678,8 +879,7 @@ def fit_ewc_joint_cross_block_whole_model(
             compiled_prefix_catalog_sha256=prefix_catalog,
         )
         with torch.no_grad():
-            local = layer.execute_with_incoming(cand_inputs)
-        mlp_generators.append(layer)
+            local = temp_layer.execute_with_incoming(cand_inputs)
 
         t_metrics: dict[str, object] = {
             "source_event_count": 0,
@@ -695,7 +895,7 @@ def fit_ewc_joint_cross_block_whole_model(
             fitted, t_metrics = fit_greedy_joint_cross_block_transports(
                 source_packets=earlier_attention,
                 target_memberships=local.memberships,
-                target_mode_decoders=layer.chart_mode_decoders,
+                target_mode_decoders=temp_layer.chart_mode_decoders,
                 target_modal_residual=target_residual,
                 row_fisher_weights=weights,
                 maximum_incoming_sources_per_target_chart=(
@@ -719,25 +919,12 @@ def fit_ewc_joint_cross_block_whole_model(
                 )
                 edge_obj = JointGraphCrossBlockTransportEdge(
                     spec=spec,
-                    transport_weight=(0.25 * edge.transport_weight).contiguous(),
+                    transport_weight=(0.20 * edge.transport_weight).contiguous(),
                 )
                 transports.append(edge_obj)
                 layer_transports.append(edge_obj)
 
-        layer_metrics[str(b)] = {
-            "row_count": len(rows),
-            "fit_trajectory": "sequential_pullback_ewc_development_v1",
-            "affine": affine_metrics,
-            "dense_chart": dense_metrics,
-            "factorization": factor_metrics,
-            "hard_chart_occupancy": occupancy.tolist(),
-            "local_modal_nrmse": _relative_rmse(
-                local.modal_states,
-                cand_features,
-            ),
-            "transport": t_metrics,
-        }
-
+        # 640-D Linear Orthogonalization of chart + transport contribution
         with torch.no_grad():
             inc_valid = torch.zeros(
                 (cand_inputs.shape[0], CHART_COUNT, generator_rank),
@@ -749,6 +936,51 @@ def fit_ewc_joint_cross_block_whole_model(
                 ]
                 msg = edge_obj(src_pkt)
                 inc_valid[:, edge_obj.spec.target_chart_index, :] += msg
+            full_exec = temp_layer.execute_with_incoming(cand_inputs, inc_valid)
+            nonlin_contrib = (full_exec.modal_states - base_cand).contiguous()
+            da_w, da_b, _ = fit_fisher_weighted_affine_base(
+                inputs=cand_inputs,
+                modal_states=nonlin_contrib,
+                row_fisher_weights=weights,
+                relative_ridge=0.10,
+            )
+            affine_weight = (affine_weight - da_w).contiguous()
+            affine_bias = (affine_bias - da_b).contiguous()
+
+        layer = Gemma3FactorizedChartGeneratorLayer(
+            affine_weight=affine_weight,
+            affine_bias=affine_bias,
+            mode_decoder_weight=mode_decoder_weight,
+            chart_centers=centers,
+            chart_bases=bases,
+            chart_distance_scales=scales,
+            local_generator_encoders=local_encoder,
+            chart_mode_decoders=mode_decoder,
+            chart_temperature=CHART_TEMPERATURE,
+            model_fingerprint=model_fingerprint,
+            layer_ordinal=b,
+            fit_row_identity_sha256=row_sha256,
+            compiled_prefix_catalog_sha256=prefix_catalog,
+        )
+        with torch.no_grad():
+            local_final = layer.execute_with_incoming(cand_inputs)
+        mlp_generators.append(layer)
+
+        layer_metrics[str(b)] = {
+            "row_count": len(rows),
+            "fit_trajectory": "sequential_pullback_ewc_development_v1",
+            "affine": affine_metrics,
+            "dense_chart": dense_metrics,
+            "factorization": factor_metrics,
+            "hard_chart_occupancy": occupancy.tolist(),
+            "local_modal_nrmse": _relative_rmse(
+                local_final.modal_states,
+                cand_features,
+            ),
+            "transport": t_metrics,
+        }
+
+        with torch.no_grad():
             offset = 0
             new_states_after_mlp: list[Tensor] = []
             for s_state, seq in zip(states_per_batch, seqs_per_batch):

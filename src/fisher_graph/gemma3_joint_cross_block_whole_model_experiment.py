@@ -207,6 +207,7 @@ def _compile_joint_executors(
     maximum_attention_sources_per_target_chart: int,
     transport_relative_ridge: float,
     use_ewc: bool = False,
+    fuse_mlp_modes: bool = False,
 ) -> _JointCandidateBundle:
     """Fit and compile the candidate after the exact gate has passed."""
 
@@ -237,6 +238,7 @@ def _compile_joint_executors(
             maximum_incoming_attention_sources_per_target_chart=(
                 maximum_attention_sources_per_target_chart
             ),
+            fuse_mlp_modes=fuse_mlp_modes,
             progress=_progress,
         )
     else:
@@ -1260,6 +1262,7 @@ def run_gemma3_joint_cross_block_whole_model_experiment(
     ),
     transport_relative_ridge: float = DEFAULT_TRANSPORT_RELATIVE_RIDGE,
     use_ewc: bool = False,
+    fuse_mlp_modes: bool = False,
 ) -> dict[str, object]:
     """Fit and evaluate the joint standalone development candidate."""
 
@@ -1392,6 +1395,7 @@ def run_gemma3_joint_cross_block_whole_model_experiment(
                 ),
                 transport_relative_ridge=float(transport_relative_ridge),
                 use_ewc=use_ewc,
+                fuse_mlp_modes=fuse_mlp_modes,
             )
             candidate = candidate_bundle.compilation
             candidate_manifest = candidate.executor.architecture_manifest()
@@ -1573,6 +1577,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use Pullback-Fisher + EWC sequential trajectory fitting across all 39 events",
     )
+    parser.add_argument(
+        "--fuse-mlp-modes",
+        action="store_true",
+        help="fuse MLP chart modes into the 640-D post-norm residual space (39.1%% whole-model reduction)",
+    )
     return parser
 
 
@@ -1597,6 +1606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         transport_relative_ridge=args.transport_relative_ridge,
         use_ewc=args.ewc,
+        fuse_mlp_modes=args.fuse_mlp_modes,
     )
     return 0
 
