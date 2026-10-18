@@ -169,6 +169,8 @@ def _module_weight(module: nn.Module | None, label: str) -> Tensor:
 
 def qwen3_config_from_layer_spec(
     layer: LayerSpec,
+    *,
+    invocation_id: str | None = None,
 ) -> Qwen3AttentionGeneratorConfig:
     """Generator config from an adapter ``LayerSpec``.
 
@@ -198,7 +200,7 @@ def qwen3_config_from_layer_spec(
         return norm
 
     return Qwen3AttentionGeneratorConfig(
-        invocation_id=semantics.stages[0].id,
+        invocation_id=invocation_id or semantics.stages[0].id,
         residual_width=layer.residual_width,
         attention=layer.attention,
         input_norm=_stored(semantics.attention_input_norm),
@@ -217,6 +219,8 @@ def qwen3_config_from_layer_spec(
 def build_qwen3_exact_attention_generator(
     adapter: object,
     layer_id: str,
+    *,
+    invocation_id: str | None = None,
 ) -> Qwen3AttentionGenerator:
     """Extract an exact attention generator from a live Qwen 3 layer module.
 
@@ -226,7 +230,9 @@ def build_qwen3_exact_attention_generator(
     """
 
     layer_spec = adapter.layer(layer_id)
-    config = qwen3_config_from_layer_spec(layer_spec)
+    config = qwen3_config_from_layer_spec(
+        layer_spec, invocation_id=invocation_id
+    )
     module = adapter.source_module(layer_id)
     self_attn = getattr(module, "self_attn", None)
     input_norm = getattr(module, "input_layernorm", None)
