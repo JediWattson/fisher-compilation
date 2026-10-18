@@ -64,7 +64,9 @@ from .gemma3_joint_cross_block_compiler import (
 )
 from .gemma3_joint_cross_block_model_fit import (
     JointCrossBlockFitResult,
+    fit_ewc_joint_cross_block_whole_model,
     fit_joint_cross_block_mlp_charts,
+    fit_pullback_ewc_shared_tied_lexical_factor,
 )
 from .gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment import (
     DEFAULT_PANEL_PATH,
@@ -204,39 +206,68 @@ def _compile_joint_executors(
     mlp_generator_rank: int,
     maximum_attention_sources_per_target_chart: int,
     transport_relative_ridge: float,
+    use_ewc: bool = False,
 ) -> _JointCandidateBundle:
     """Fit and compile the candidate after the exact gate has passed."""
 
     exact_attention = _exact_attention_catalog(exact_control)
-    reduced_attention = tuple(
-        compile_svd_reduced_attention_generator(
-            item,
-            input_rank=attention_input_rank,
-            output_rank=attention_output_rank,
-        )
-        for item in exact_attention
-    )
     _, _, source_weight, embed_scale = _source_lexical_modules(adapter)
-    lexical = fit_shared_tied_lexical_factor(
-        source_weight,
-        lexical_rank,
-        embed_scale=embed_scale,
-    )
-    if not isinstance(lexical, SharedTiedLexicalFactor) or lexical.is_exact:
-        raise RuntimeError("joint candidate lexical boundary was not compressed")
-    fit = fit_joint_cross_block_mlp_charts(
-        adapter=adapter,
-        batches=fit_batches,
-        batch_row_keys=fit_batch_row_keys,
-        attention_generators=reduced_attention,
-        model_fingerprint=adapter.model_fingerprint(),
-        generator_rank=mlp_generator_rank,
-        maximum_incoming_attention_sources_per_target_chart=(
-            maximum_attention_sources_per_target_chart
-        ),
-        transport_relative_ridge=transport_relative_ridge,
-        progress=_progress,
-    )
+    if use_ewc:
+        lexical = fit_pullback_ewc_shared_tied_lexical_factor(
+            adapter=adapter,
+            exact_executor=exact_control.executor,
+            batches=fit_batches,
+            source_weight=source_weight,
+            lexical_rank=lexical_rank,
+            embed_scale=embed_scale,
+        )
+        if not isinstance(lexical, SharedTiedLexicalFactor) or lexical.is_exact:
+            raise RuntimeError("joint candidate lexical boundary was not compressed")
+        reduced_attention, fit = fit_ewc_joint_cross_block_whole_model(
+            adapter=adapter,
+            exact_executor=exact_control.executor,
+            lexical=lexical,
+            exact_attention=exact_attention,
+            batches=fit_batches,
+            batch_row_keys=fit_batch_row_keys,
+            model_fingerprint=adapter.model_fingerprint(),
+            attention_input_rank=attention_input_rank,
+            attention_output_rank=attention_output_rank,
+            generator_rank=mlp_generator_rank,
+            maximum_incoming_attention_sources_per_target_chart=(
+                maximum_attention_sources_per_target_chart
+            ),
+            progress=_progress,
+        )
+    else:
+        reduced_attention = tuple(
+            compile_svd_reduced_attention_generator(
+                item,
+                input_rank=attention_input_rank,
+                output_rank=attention_output_rank,
+            )
+            for item in exact_attention
+        )
+        lexical = fit_shared_tied_lexical_factor(
+            source_weight,
+            lexical_rank,
+            embed_scale=embed_scale,
+        )
+        if not isinstance(lexical, SharedTiedLexicalFactor) or lexical.is_exact:
+            raise RuntimeError("joint candidate lexical boundary was not compressed")
+        fit = fit_joint_cross_block_mlp_charts(
+            adapter=adapter,
+            batches=fit_batches,
+            batch_row_keys=fit_batch_row_keys,
+            attention_generators=reduced_attention,
+            model_fingerprint=adapter.model_fingerprint(),
+            generator_rank=mlp_generator_rank,
+            maximum_incoming_attention_sources_per_target_chart=(
+                maximum_attention_sources_per_target_chart
+            ),
+            transport_relative_ridge=transport_relative_ridge,
+            progress=_progress,
+        )
     compilation = compile_gemma3_joint_cross_block_candidate(
         adapter,
         lexical=lexical,
@@ -1228,6 +1259,7 @@ def run_gemma3_joint_cross_block_whole_model_experiment(
         DEFAULT_MAXIMUM_ATTENTION_SOURCES_PER_TARGET_CHART
     ),
     transport_relative_ridge: float = DEFAULT_TRANSPORT_RELATIVE_RIDGE,
+    use_ewc: bool = False,
 ) -> dict[str, object]:
     """Fit and evaluate the joint standalone development candidate."""
 
@@ -1359,6 +1391,7 @@ def run_gemma3_joint_cross_block_whole_model_experiment(
                     maximum_attention_sources_per_target_chart
                 ),
                 transport_relative_ridge=float(transport_relative_ridge),
+                use_ewc=use_ewc,
             )
             candidate = candidate_bundle.compilation
             candidate_manifest = candidate.executor.architecture_manifest()
@@ -1535,6 +1568,11 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_TRANSPORT_RELATIVE_RIDGE,
     )
+    parser.add_argument(
+        "--ewc",
+        action="store_true",
+        help="use Pullback-Fisher + EWC sequential trajectory fitting across all 39 events",
+    )
     return parser
 
 
@@ -1558,6 +1596,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.maximum_attention_sources_per_target_chart
         ),
         transport_relative_ridge=args.transport_relative_ridge,
+        use_ewc=args.ewc,
     )
     return 0
 
