@@ -654,6 +654,37 @@ Available interactively as `/optimize [lam alpha beta]` (and `/optimize
 revert`) in `gemma3_ewc_interactive_harness.py`; regression coverage in
 `tests/test_surgical_trajectory_refit.py`.
 
+### 6. Incremental causal decode (`gemma3_incremental_decode.py`)
+
+`JointGraphDecodeSession` converts the 39-event executor from teacher-forced
+scoring into O(T) autoregressive generation. The event specs declare
+`token_local` or `causal_prefix_mixer` dependency, and transports are
+`same_token` by construction, so once a position has passed an event its
+state can never change again — incremental decode recomputes nothing, it is
+the same math reordered, not an approximation:
+
+* **Cache**: per attention mutation, the rotated+normed keys and values
+  (`~36 KB/token` across all 18 events, kvh=1 x hd=256 x 2 tensors).
+* **Prefill**: one batched causal pass over the prompt; per-attention-event
+  key/value derivation reuses `encode_input` +
+  `forward_from_coordinates` (the audited code path).
+* **Step**: ingress -> 36 mutations on a `[1, hidden]` carrier (MLPs run the
+  unchanged `execute_with_incoming`; attention scores the new query against
+  the cached prefix, including sliding-window masking) -> terminal norm ->
+  egress.
+
+Measured on CPU (`bsz=1`): **~16 ms/token** decode step vs ~118 ms for the
+naive re-forward (**~7x per step**, constant in T while the naive loop grows
+linearly); prefill ~90 ms. Strict parity in
+`tests/test_incremental_decode.py`: prefill logits match
+`executor.execute` and six greedy decode steps reproduce teacher-forced
+logits with identical argmax. The interactive harness uses the session
+automatically for `39-event` executor modes when no equalizer mutes are
+active; the native comparison arm now uses HF `past_key_values` for the
+same reason (~40 ms/token). Mutes, shadow interventions, `hybrid-ewc`
+route-solving and `block-ewc` replay still run the audited full-forward
+path.
+
 ## Earlier Gemma result: V20q token-VJP refit
 
 V20p showed that the existing one-boundary runtime can express a genuinely

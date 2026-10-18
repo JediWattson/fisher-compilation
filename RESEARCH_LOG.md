@@ -3912,3 +3912,54 @@ report = surgical_trajectory_refit(
 )
 PY
 ```
+
+---
+
+## 2026-10-18: Incremental causal decode for the 39-event executor
+(`gemma3_incremental_decode.py`)
+
+**Motivation.** Generation was the deferred protocol item
+(`decode_and_kv_cache: deferred_to_future_protocol`): the harness ran a full
+39-event teacher-forced pass per produced token — O(T^2) at ~120 ms/step and
+growing. We measured the executor to be dispatch-bound (~1M MACs/event but
+~1000 small kernel calls/forward), so neither MPS (0.3x + knife-edge logit
+divergence 14.8) nor eager MLX (~70x slower per-step materialization) could
+help. The unlock is algorithmic: every event spec declares `token_local` or
+`causal_prefix_mixer`, and transports are `same_token` only, so each
+position's per-event state is immutable once computed.
+
+**Implementation.** `JointGraphDecodeSession.prefill` runs one batched causal
+pass and, per attention mutation, derives the immutable rotated keys +
+values from the transported input packet (identical expressions to
+`_execute_coordinates`, then `forward_from_coordinates` for the audited
+forward half). `step(token)` runs the schedule on a `[1, hidden]` carrier:
+MLP mutations go through the unchanged `execute_with_incoming` on a
+one-token `SequenceContext(phase="decode")`; attention uses a sibling decode
+path (encode -> transported packet -> q/k/v -> cache append -> scores vs
+cached prefix with sliding-window mask -> output decode) because
+`Gemma3AttentionGenerator._validate_sequence` explicitly rejects
+`phase != "prefill"`. A fresh `_JointGraphMessageSession` per token
+reproduces publish/consume semantics — transports never cross positions, so
+no transport state is retained between steps.
+
+**Cache**: per attention event, `key_rot [B,kvh,S,hd]` + `value [B,kvh,S,hd]`
+— ~36 KB/token over 18 events.
+
+**Verification** (`tests/test_incremental_decode.py`): prefill logits match
+`executor.execute` (rtol 1e-4 / atol 1e-5); six greedy decode steps match
+the teacher-forced reference on the grown sequence with identical argmax at
+every step.
+
+**Measured** (CPU, bsz=1, prompt=6tok, 12 decode steps):
+
+| Path | per-token | notes |
+|---|---:|---|
+| naive re-forward | ~118 ms | O(T) per step, grows with prefix |
+| incremental step | ~16 ms | ~7x faster per step, flat in T |
+| prefill (6tok) | ~90 ms | one batched causal pass |
+| native HF + `past_key_values` | ~40 ms | comparison arm, same trick |
+
+The harness uses the session automatically for `39-event*` executor modes
+with no active equalizer mutes; `hybrid-ewc`/`block-ewc` runtime route
+solving, mutes and shadow interventions still run the audited full-forward
+path (incremental variants are a follow-up).

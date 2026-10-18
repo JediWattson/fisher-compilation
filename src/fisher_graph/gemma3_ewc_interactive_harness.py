@@ -42,6 +42,10 @@ from .gemma3_experiment import (
     resolve_gemma3_huggingface_paths,
     resolve_torch_device,
 )
+from .gemma3_incremental_decode import JointGraphDecodeSession
+from .gemma3_joint_cross_block_chart_executor import (
+    Gemma3JointCrossBlockChartExecutor,
+)
 from .gemma3_joint_cross_block_compiler import (
     compile_gemma3_joint_cross_block_candidate,
     compile_gemma3_joint_exact_control,
@@ -698,29 +702,57 @@ def run_prompt_comparison(
         print(f"{BOLD}{CYAN}│ Mutes :{RESET} {RED}{equalizer.summary()}{RESET}")
     print(f"{BOLD}{CYAN}└──────────────────────────────────────────────────────────────────────────────┘{RESET}")
 
-    # 1. Compiled EWC Generation
+    # 1. Compiled EWC Generation — incremental decode when the executor is a
+    # plain joint-graph chart executor (mutes/block-ewc keep the audited path)
     cand_ids = prompt_ids.clone()
     cand_new_tokens: list[int] = []
     first_cand_logits: Tensor | None = None
+    incremental = (
+        isinstance(executor, Gemma3JointCrossBlockChartExecutor)
+        and (equalizer is None or equalizer.is_empty())
+        and mode_label != "block-ewc-k8"
+    )
     t0 = time.perf_counter()
     print(f"  {BOLD}{GREEN}[Compiled EWC ({mode_label})]{RESET} ", end="", flush=True)
     print(f"{DIM}{prompt}{RESET}", end="", flush=True)
+    decode_session: JointGraphDecodeSession | None = None
     with torch.no_grad():
-        for step in range(max_new_tokens):
+        if incremental:
             batch = {
                 "input_ids": cand_ids,
                 "attention_mask": torch.ones_like(cand_ids),
             }
             seq = adapter.prepare_sequence(batch)
-            tok_strs = [tokenizer.decode([int(t)]) for t in cand_ids[0].tolist()]
-            logits = _execute_mode_logits(
-                executor,
-                cand_ids,
-                seq,
-                mode_label,
-                equalizer=equalizer,
-                token_strings=tok_strs,
+            decode_session, logits = JointGraphDecodeSession.prefill(
+                executor, cand_ids, seq
             )
+        for step in range(max_new_tokens):
+            if decode_session is not None:
+                if step > 0:
+                    logits = decode_session.step(
+                        torch.tensor(
+                            [[next_id]],
+                            dtype=cand_ids.dtype,
+                            device=cand_ids.device,
+                        )
+                    )
+            else:
+                batch = {
+                    "input_ids": cand_ids,
+                    "attention_mask": torch.ones_like(cand_ids),
+                }
+                seq = adapter.prepare_sequence(batch)
+                tok_strs = [
+                    tokenizer.decode([int(t)]) for t in cand_ids[0].tolist()
+                ]
+                logits = _execute_mode_logits(
+                    executor,
+                    cand_ids,
+                    seq,
+                    mode_label,
+                    equalizer=equalizer,
+                    token_strings=tok_strs,
+                )
             next_logits = logits[0, -1]
             if step == 0:
                 first_cand_logits = next_logits.detach().clone()
@@ -728,12 +760,12 @@ def run_prompt_comparison(
             cand_new_tokens.append(next_id)
             piece = tokenizer.decode([next_id])
             print(f"{BOLD}{GREEN}{piece}{RESET}", end="", flush=True)
+            if eos_id is not None and next_id == eos_id:
+                break
             cand_ids = torch.cat(
                 [cand_ids, torch.tensor([[next_id]], dtype=cand_ids.dtype)],
                 dim=1,
             )
-            if eos_id is not None and next_id == eos_id:
-                break
     cand_dt = time.perf_counter() - t0
     print(f"  {DIM}({len(cand_new_tokens)} tok, {cand_dt:.2f}s){RESET}")
 
@@ -746,12 +778,20 @@ def run_prompt_comparison(
         print(f"  {BOLD}{MAGENTA}[Native Gemma 3 270M]{pad}{RESET} ", end="", flush=True)
         print(f"{DIM}{prompt}{RESET}", end="", flush=True)
         with torch.no_grad():
+            past = None
+            step_ids = nat_ids
             for step in range(max_new_tokens):
-                batch = {
-                    "input_ids": nat_ids,
-                    "attention_mask": torch.ones_like(nat_ids),
+                call: dict[str, object] = {
+                    "input_ids": step_ids,
+                    "use_cache": True,
+                    "return_dict": True,
                 }
-                nat_out = adapter.forward(batch)
+                if past is not None:
+                    call["past_key_values"] = past
+                else:
+                    call["attention_mask"] = torch.ones_like(step_ids)
+                nat_out = adapter.module(**call)
+                past = nat_out.past_key_values
                 next_logits = nat_out.logits[0, -1]
                 if step == 0:
                     first_nat_logits = next_logits.detach().clone()
@@ -759,12 +799,11 @@ def run_prompt_comparison(
                 nat_new_tokens.append(next_id)
                 piece = tokenizer.decode([next_id])
                 print(f"{BOLD}{MAGENTA}{piece}{RESET}", end="", flush=True)
-                nat_ids = torch.cat(
-                    [nat_ids, torch.tensor([[next_id]], dtype=nat_ids.dtype)],
-                    dim=1,
-                )
                 if eos_id is not None and next_id == eos_id:
                     break
+                step_ids = torch.tensor(
+                    [[next_id]], dtype=nat_ids.dtype, device=nat_ids.device
+                )
         nat_dt = time.perf_counter() - t1
         print(f"  {DIM}({len(nat_new_tokens)} tok, {nat_dt:.2f}s){RESET}")
 
