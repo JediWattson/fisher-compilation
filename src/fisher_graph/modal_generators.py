@@ -1902,6 +1902,8 @@ def fit_modal_generator_rate_curve(
     pullback_output_metric: Tensor | None = None,
     relative_ridge: float = 0.0,
     input_subspace_projector: Tensor | None = None,
+    ewc_prior_coefficient: Tensor | None = None,
+    ewc_prior_relative_weight: float = 0.0,
 ) -> ModalGeneratorRateCurve:
     """Fit a deterministic Fisher-weighted reduced-rank generator ladder.
 
@@ -2027,10 +2029,22 @@ def fit_modal_generator_rate_curve(
     normalizer = float(fit_inputs.shape[0])
     gram = weighted_inputs.T @ weighted_inputs / normalizer
     cross = weighted_inputs.T @ weighted_targets / normalizer
+    mean_diag = float(torch.diagonal(gram).mean().clamp_min(0.0).item())
     effective_ridge = float(config.ridge)
     if relative_ridge > 0.0:
-        mean_diag = float(torch.diagonal(gram).mean().clamp_min(0.0).item())
         effective_ridge = effective_ridge + float(relative_ridge) * mean_diag
+    if ewc_prior_coefficient is not None and ewc_prior_relative_weight > 0.0:
+        prior_c = _as_float64_matrix(
+            ewc_prior_coefficient,
+            label="ewc_prior_coefficient",
+        )
+        if prior_c.shape != cross.shape:
+            raise ValueError(
+                "ewc_prior_coefficient must match [input_width, output_width]"
+            )
+        anchor_reg = float(ewc_prior_relative_weight) * mean_diag
+        effective_ridge = effective_ridge + anchor_reg
+        cross = cross + anchor_reg * prior_c
     if effective_ridge > 0.0:
         gram = gram + effective_ridge * torch.eye(
             gram.shape[0],

@@ -834,6 +834,9 @@ def fit_full_mlp_stack_generators(
     generator_ranks: Sequence[int],
     selected_generator_rank: int,
     ridge: float = 0.0,
+    relative_ridge: float = 0.0,
+    prior_dense_plan: ModalGeneratorPlan | None = None,
+    ewc_anchor_weight: float = 0.0,
 ) -> FullMLPStackGeneratorFit:
     """Fit fixed full-layer mode/generator ladders and a dense fused plan."""
 
@@ -943,6 +946,16 @@ def fit_full_mlp_stack_generators(
         # This coordinate analysis is bound to the aggregate layer record.
         parameter_cluster_fragment_sha256=superfragment.artifact_sha256,
     )
+    prior_coord_coeff: torch.Tensor | None = None
+    if prior_dense_plan is not None and ewc_anchor_weight > 0.0:
+        prior_dense = (
+            prior_dense_plan.factors.input_factor
+            @ prior_dense_plan.factors.output_factor
+        )
+        prior_coord_coeff = (
+            prior_dense @ selected_basis.encoder_basis
+        ).contiguous()
+
     coordinate_generators = fit_modal_generator_rate_curve(
         fit_rows.inputs,
         selected_basis.encode(fit_rows.contributions),
@@ -957,6 +970,9 @@ def fit_full_mlp_stack_generators(
         bias_mac_policy="matrix_multiplies_only",
         selection_rule="fixed_rank",
         selected_rank=selected_generator_rank,
+        relative_ridge=relative_ridge,
+        ewc_prior_coefficient=prior_coord_coeff,
+        ewc_prior_relative_weight=ewc_anchor_weight,
     )
     selected_coordinate_plan = coordinate_generators.selected_plan
     if selected_coordinate_plan is None:

@@ -671,6 +671,8 @@ def _sequentially_refit_layers(
     selected_generator_rank: int,
     generator_ridge: float,
     refit_start_layer: int = REFIT_START_LAYER,
+    relative_generator_ridge: float = 0.0,
+    ewc_anchor_weight: float = 0.0,
     trajectory_executor_factory: Callable[..., Any] = (
         FrozenFullMLPStackTrajectoryExecutor
     ),
@@ -749,6 +751,11 @@ def _sequentially_refit_layers(
             "selection": dict(plan_metrics(selection_rows, old_plan)),
         }
         superfragment = superfragment_plan.for_layer(ordinal)
+        fit_kwargs: dict[str, object] = {}
+        if relative_generator_ridge > 0.0 or ewc_anchor_weight > 0.0:
+            fit_kwargs["relative_ridge"] = float(relative_generator_ridge)
+            fit_kwargs["prior_dense_plan"] = old_plan
+            fit_kwargs["ewc_anchor_weight"] = float(ewc_anchor_weight)
         fitted = fit_layer(
             fit_rows,
             selection_rows,
@@ -764,6 +771,7 @@ def _sequentially_refit_layers(
             generator_ranks=tuple(generator_ranks),
             selected_generator_rank=selected_generator_rank,
             ridge=float(generator_ridge),
+            **fit_kwargs,
         )
         if fitted.superfragment.layer_ordinal != ordinal:
             raise ValueError("refitted generator describes the wrong layer")
@@ -953,6 +961,8 @@ def run_gemma3_full_mlp_stack_refit_experiment(
     tokenization_batch_size: int = DEFAULT_TOKENIZATION_BATCH_SIZE,
     vocabulary_chunk_size: int = DEFAULT_VOCABULARY_CHUNK_SIZE,
     refit_start_layer: int = REFIT_START_LAYER,
+    relative_generator_ridge: float = 0.0,
+    ewc_anchor_weight: float = 0.0,
 ) -> dict[str, object]:
     """Run and save the fixed-capacity sequential compiled-trajectory refit."""
 
@@ -1165,6 +1175,8 @@ def run_gemma3_full_mlp_stack_refit_experiment(
             selected_generator_rank=selected_generator_rank,
             generator_ridge=float(generator_ridge),
             refit_start_layer=refit_start_layer,
+            relative_generator_ridge=relative_generator_ridge,
+            ewc_anchor_weight=ewc_anchor_weight,
         )
     )
     executor = Gemma3FullMLPStackExecutor(adapter, final_replacements)
@@ -1442,6 +1454,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_VOCABULARY_CHUNK_SIZE,
     )
+    parser.add_argument(
+        "--relative-generator-ridge",
+        type=float,
+        default=0.0,
+        help="scale-invariant trace-relative EWC ridge for sequential layer refits",
+    )
+    parser.add_argument(
+        "--ewc-anchor-weight",
+        type=float,
+        default=0.0,
+        help="EWC prior weight anchoring sequential refits to the incumbent native-input generator",
+    )
     return parser
 
 
@@ -1461,6 +1485,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_length=arguments.max_length,
         tokenization_batch_size=arguments.tokenization_batch_size,
         vocabulary_chunk_size=arguments.vocabulary_chunk_size,
+        relative_generator_ridge=arguments.relative_generator_ridge,
+        ewc_anchor_weight=arguments.ewc_anchor_weight,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

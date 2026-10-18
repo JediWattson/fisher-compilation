@@ -19,6 +19,10 @@ from fisher_graph.fisher_response_geometry_pullback_ewc import (
     pullback_fisher_input_basis,
 )
 from fisher_graph.fisher_response_geometry_replay import load_replay
+from fisher_graph.modal_generators import (
+    ModalGeneratorBinding,
+    fit_modal_generator_rate_curve,
+)
 from fisher_graph.state_conditioned_modal_fitting import (
     fit_ewc_state_conditioned_modal_interactions,
     fit_shared_pullback_fisher_layer_chart,
@@ -297,6 +301,64 @@ def test_pullback_fisher_source_chart_and_ewc_state_conditioned_modal_fit_beat_u
     assert shared_chart.retained_pullback_energy_fraction > 0.85
     proj = shared_chart.projector()
     assert proj.shape == (ambient_width, ambient_width)
+
+    # Verify incumbent-anchored EWC in fit_modal_generator_rate_curve reduces held-out error under low-sample shift
+    binding = ModalGeneratorBinding.create(
+        generator_id="test.ewc.anchor",
+        input_kind="native_layer_input",
+        input_site="layer.10.mlp.input",
+        output_site="layer.10.mlp.output",
+        source_model_sha256="a" * 64,
+        input_catalog_sha256="b" * 64,
+        output_catalog_sha256="c" * 64,
+        cluster_plan_sha256="d" * 64,
+        fit_split_sha256="e" * 64,
+        eval_split_sha256="f" * 64,
+        target_kind="computational_mode_coordinates",
+        fisher_coupling_sha256="1" * 64,
+        computational_mode_basis_sha256="2" * 64,
+        parameter_cluster_fragment_sha256="3" * 64,
+    )
+    true_w = torch.randn(8, 4, generator=gen, dtype=torch.float64)
+    # Fit has low variance on last 4 coordinates, eval excites all 8
+    x_fit_shift = torch.randn(20, 8, generator=gen, dtype=torch.float64) * torch.tensor([1.0, 1.0, 1.0, 1.0, 0.02, 0.02, 0.02, 0.02], dtype=torch.float64)
+    y_fit_shift = x_fit_shift @ true_w + 0.05 * torch.randn(20, 4, generator=gen, dtype=torch.float64)
+    x_eval_shift = torch.randn(40, 8, generator=gen, dtype=torch.float64)
+    y_eval_shift = x_eval_shift @ true_w
+    w_fit_shift = torch.ones(20, dtype=torch.float64)
+    w_eval_shift = torch.ones(40, dtype=torch.float64)
+
+    curve_unanchored = fit_modal_generator_rate_curve(
+        x_fit_shift,
+        y_fit_shift,
+        w_fit_shift,
+        x_eval_shift,
+        y_eval_shift,
+        (4,),
+        binding=binding,
+        fisher_weights_eval=w_eval_shift,
+        ridge=1e-6,
+        selection_rule="fixed_rank",
+        selected_rank=4,
+    )
+    curve_ewc = fit_modal_generator_rate_curve(
+        x_fit_shift,
+        y_fit_shift,
+        w_fit_shift,
+        x_eval_shift,
+        y_eval_shift,
+        (4,),
+        binding=binding,
+        fisher_weights_eval=w_eval_shift,
+        ridge=1e-6,
+        selection_rule="fixed_rank",
+        selected_rank=4,
+        relative_ridge=0.005,
+        ewc_prior_coefficient=true_w,
+        ewc_prior_relative_weight=0.1,
+    )
+    assert curve_ewc.points[0].eval_metrics.weighted_nrmse < curve_unanchored.points[0].eval_metrics.weighted_nrmse * 0.25
+
 
 
 
