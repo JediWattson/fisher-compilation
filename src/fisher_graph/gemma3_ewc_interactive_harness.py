@@ -95,8 +95,8 @@ class HybridPullbackEWCExecutor(nn.Module):
         exact_executor: nn.Module,
         lexical: SharedTiedLexicalFactor,
         *,
-        k: int = 8,
-        min_per_head: int = 1,
+        k: int = 16,
+        min_per_head: int = 2,
         ewc_prior_weight: float = 0.05,
     ) -> None:
         super().__init__()
@@ -206,7 +206,7 @@ def load_or_compile_executor(
         lexical = _load_or_fit_lex512(
             adapter, exact.executor, tokenizer, rebuild=rebuild
         )
-        return HybridPullbackEWCExecutor(exact.executor, lexical, k=8, min_per_head=1)
+        return HybridPullbackEWCExecutor(exact.executor, lexical, k=16, min_per_head=2)
 
     fuse_mlp_modes = mode == "39-event-fused640"
     cache_file = _cache_path(mode)
