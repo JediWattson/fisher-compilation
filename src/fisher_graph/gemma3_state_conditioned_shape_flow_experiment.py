@@ -117,8 +117,10 @@ from .state_conditioned_modal_evaluation import (
 )
 from .state_conditioned_modal_fitting import (
     EWCStateConditionedModalInteractionFit,
+    SharedPullbackFisherLayerChart,
     StateConditionedModalInteractionFit,
     fit_ewc_state_conditioned_modal_interactions,
+    fit_shared_pullback_fisher_layer_chart,
     fit_state_conditioned_modal_interactions,
     teacher_flow_routing,
 )
@@ -612,6 +614,8 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     shrinkage_kappa: float = 0.5,
     pullback_weight: float = 0.0,
     relative_generator_ridge: float = 0.0,
+    shared_chart_rank: int | None = None,
+    shared_chart_orthogonal_shrinkage: float = 0.25,
 ) -> dict[str, object]:
     """Fit, select, and checkpoint one guard-unopened Gemma candidate."""
 
@@ -780,6 +784,35 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
     _progress(
         f"nodes: fit {fragment_count} generators on layer {same_layer.layer_ordinal}"
     )
+    shared_projector: Tensor | None = None
+    if shared_chart_rank is not None:
+        first_inputs = fit_native.rows_by_fragment[
+            same_layer.execution_order[0].fragment_id
+        ].inputs
+        frag_contribs = {
+            frag.fragment_id: fit_native.rows_by_fragment[
+                frag.fragment_id
+            ].contributions
+            for frag in same_layer.execution_order
+        }
+        frag_weights = {
+            frag.fragment_id: fit_native.rows_by_fragment[
+                frag.fragment_id
+            ].fisher_weights
+            for frag in same_layer.execution_order
+        }
+        shared_chart = fit_shared_pullback_fisher_layer_chart(
+            first_inputs,
+            frag_contribs,
+            frag_weights,
+            chart_rank=shared_chart_rank,
+            relative_ridge=(
+                relative_generator_ridge if relative_generator_ridge > 0.0 else 0.008
+            ),
+            orthogonal_shrinkage=shared_chart_orthogonal_shrinkage,
+        )
+        shared_projector = shared_chart.projector()
+
     pilots: dict[str, FittedModalGeneratorPilot] = {}
     target_fragments = same_layer.target_fragments
     source_fragment = same_layer.source_fragment
@@ -833,6 +866,7 @@ def fit_gemma3_state_conditioned_shape_flow_candidate(
             pullback_target_residuals=pb_residuals,
             pullback_weight=pb_w,
             relative_ridge=relative_generator_ridge if use_ewc else 0.0,
+            input_subspace_projector=shared_projector,
         )
     edgeless = build_edgeless_same_layer_graph(
         same_layer,
@@ -2058,6 +2092,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.008,
         help="scale-invariant trace-relative EWC ridge for node generators when --ewc is enabled",
     )
+    fit.add_argument(
+        "--shared-chart-rank",
+        type=int,
+        help="rank of shared Pullback-Fisher input chart pooled across layer fragments",
+    )
+    fit.add_argument(
+        "--shared-chart-orthogonal-shrinkage",
+        type=float,
+        default=0.25,
+        help="EWC shrinkage factor in [0, 1] for input directions outside the shared layer chart",
+    )
     _add_corpus_arguments(fit)
     _add_runtime_arguments(fit)
 
@@ -2145,6 +2190,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             shrinkage_kappa=arguments.shrinkage_kappa,
             pullback_weight=arguments.pullback_weight,
             relative_generator_ridge=arguments.relative_generator_ridge,
+            shared_chart_rank=arguments.shared_chart_rank,
+            shared_chart_orthogonal_shrinkage=(
+                arguments.shared_chart_orthogonal_shrinkage
+            ),
             **common,
         )
     elif arguments.command == "calibrate":

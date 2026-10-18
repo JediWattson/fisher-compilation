@@ -47,10 +47,12 @@ __all__ = [
     "EWCStateConditionedEdgeDiagnostics",
     "EWCStateConditionedModalInteractionFit",
     "PullbackFisherSourceChart",
+    "SharedPullbackFisherLayerChart",
     "StateConditionedEdgeFitMetrics",
     "StateConditionedModalInteractionFit",
     "TeacherFlowRouting",
     "fit_ewc_state_conditioned_modal_interactions",
+    "fit_shared_pullback_fisher_layer_chart",
     "fit_state_conditioned_modal_interactions",
     "pullback_fisher_source_chart",
     "teacher_flow_routing",
@@ -608,6 +610,107 @@ def pullback_fisher_source_chart(
         basis=basis,
         eigenvalues=evals.flip(0).contiguous(),
         retained_pullback_energy_fraction=min(1.0, max(0.0, retained_pb)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SharedPullbackFisherLayerChart:
+    """Shared hidden-state input chart pooled across all fragments in a layer."""
+
+    basis: Tensor
+    eigenvalues: Tensor
+    retained_pullback_energy_fraction: float
+    orthogonal_shrinkage: float
+
+    @property
+    def ambient_width(self) -> int:
+        return int(self.basis.shape[0])
+
+    @property
+    def chart_rank(self) -> int:
+        return int(self.basis.shape[1])
+
+    def projector(self) -> Tensor:
+        """Return the EWC subspace shrinkage operator Pi_chart + gamma_perp (I - Pi_chart)."""
+        d = self.ambient_width
+        pi = self.basis @ self.basis.T
+        if self.orthogonal_shrinkage == 0.0:
+            return pi.contiguous()
+        eye = torch.eye(d, dtype=torch.float64)
+        return (pi + self.orthogonal_shrinkage * (eye - pi)).contiguous()
+
+
+def fit_shared_pullback_fisher_layer_chart(
+    ambient_inputs: Tensor,
+    fragment_coordinates: Mapping[str, Tensor],
+    fragment_fisher_weights: Mapping[str, Tensor],
+    *,
+    chart_rank: int = 32,
+    relative_ridge: float = 0.008,
+    orthogonal_shrinkage: float = 0.25,
+) -> SharedPullbackFisherLayerChart:
+    """Fit a shared rank-``chart_rank`` Pullback-Fisher input chart across same-layer fragments."""
+    inputs = _finite_float64(ambient_inputs, label="ambient_inputs", ndim_min=2)
+    rows = inputs.reshape(-1, inputs.shape[-1])
+    n, d = rows.shape
+    rank = _positive_int(chart_rank, label="chart_rank")
+    if rank > d:
+        raise ValueError("chart_rank cannot exceed ambient input width")
+    rel_ridge = _nonnegative_float(relative_ridge, label="relative_ridge")
+    ortho = _nonnegative_float(orthogonal_shrinkage, label="orthogonal_shrinkage")
+    if ortho > 1.0:
+        raise ValueError("orthogonal_shrinkage must lie in [0, 1]")
+    if not isinstance(fragment_coordinates, Mapping) or not fragment_coordinates:
+        raise ValueError("fragment_coordinates must be a nonempty mapping")
+
+    pullback_total = torch.zeros((d, d), dtype=torch.float64)
+    for name in sorted(fragment_coordinates):
+        coords = _finite_float64(
+            fragment_coordinates[name],
+            label=f"fragment_coordinates[{name!r}]",
+            ndim_min=2,
+        ).reshape(n, -1)
+        weights = _finite_float64(
+            fragment_fisher_weights[name],
+            label=f"fragment_fisher_weights[{name!r}]",
+            ndim_min=1,
+        ).reshape(n)
+        w_sum = float(weights.sum().clamp_min(1e-30).item())
+        w_norm = weights * (float(n) / w_sum)
+        x_mean = (rows * w_norm.unsqueeze(1)).sum(dim=0) / float(n)
+        y_mean = (coords * w_norm.unsqueeze(1)).sum(dim=0) / float(n)
+        x_c = rows - x_mean
+        y_c = coords - y_mean
+        root_w = w_norm.sqrt().unsqueeze(1)
+        wx = x_c * root_w
+        wy = y_c * root_w
+        gram = (wx.T @ wx) / float(n)
+        cross = (wx.T @ wy) / float(n)
+        mean_diag = float(torch.diagonal(gram).mean().clamp_min(1e-12).item())
+        eff_ridge = max(rel_ridge, 1e-6) * mean_diag
+        coeff = torch.linalg.solve(
+            gram + eff_ridge * torch.eye(d, dtype=torch.float64),
+            cross,
+        )
+        # Weight each fragment's input pullback by its input covariance Gram @ coeff @ coeff^T @ Gram
+        pullback_f = (gram @ coeff) @ (coeff.T @ gram)
+        f_trace = float(torch.trace(pullback_f).clamp_min(1e-30).item())
+        pullback_total = pullback_total + pullback_f / f_trace
+
+    pullback_sym = 0.5 * (pullback_total + pullback_total.T)
+    evals, evecs = torch.linalg.eigh(pullback_sym)
+    basis = evecs[:, -rank:].flip(1).contiguous()
+    max_idx = basis.abs().argmax(dim=0)
+    signs = torch.where(basis[max_idx, torch.arange(rank)] < 0, -1.0, 1.0)
+    basis = (basis * signs.unsqueeze(0)).contiguous()
+    pos_evals = evals.clamp_min(0.0)
+    total_e = float(pos_evals.sum().item())
+    retained = 1.0 if total_e <= 1e-30 else float(pos_evals[-rank:].sum().item()) / total_e
+    return SharedPullbackFisherLayerChart(
+        basis=basis,
+        eigenvalues=evals.flip(0).contiguous(),
+        retained_pullback_energy_fraction=min(1.0, max(0.0, retained)),
+        orthogonal_shrinkage=ortho,
     )
 
 

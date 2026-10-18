@@ -21,6 +21,7 @@ from fisher_graph.fisher_response_geometry_pullback_ewc import (
 from fisher_graph.fisher_response_geometry_replay import load_replay
 from fisher_graph.state_conditioned_modal_fitting import (
     fit_ewc_state_conditioned_modal_interactions,
+    fit_shared_pullback_fisher_layer_chart,
     fit_state_conditioned_modal_interactions,
     pullback_fisher_source_chart,
 )
@@ -277,5 +278,25 @@ def test_pullback_fisher_source_chart_and_ewc_state_conditioned_modal_fit_beat_u
     )
     assert len(fit_ewc_weighted.interactions) == 2
     assert len(fit_ewc_weighted.ewc_diagnostics) == 2
+
+    # Verify shared Pullback-Fisher layer chart across fragments
+    shared_chart = fit_shared_pullback_fisher_layer_chart(
+        train_h,
+        train_targets,
+        {"route_a": token_weights, "route_b": token_weights},
+        chart_rank=4,
+        relative_ridge=0.008,
+        orthogonal_shrinkage=0.25,
+    )
+    assert shared_chart.basis.shape == (ambient_width, 4)
+    assert torch.allclose(
+        shared_chart.basis.T @ shared_chart.basis,
+        torch.eye(4, dtype=torch.float64),
+        atol=1e-12,
+    )
+    assert shared_chart.retained_pullback_energy_fraction > 0.85
+    proj = shared_chart.projector()
+    assert proj.shape == (ambient_width, ambient_width)
+
 
 

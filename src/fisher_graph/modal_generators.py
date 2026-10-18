@@ -1901,6 +1901,7 @@ def fit_modal_generator_rate_curve(
     selected_rank: int | None = None,
     pullback_output_metric: Tensor | None = None,
     relative_ridge: float = 0.0,
+    input_subspace_projector: Tensor | None = None,
 ) -> ModalGeneratorRateCurve:
     """Fit a deterministic Fisher-weighted reduced-rank generator ladder.
 
@@ -2039,6 +2040,16 @@ def fit_modal_generator_rate_curve(
         gram,
         hermitian=True,
     ) @ cross
+    if input_subspace_projector is not None:
+        proj = _as_float64_matrix(
+            input_subspace_projector,
+            label="input_subspace_projector",
+        )
+        if proj.shape != (gram.shape[0], gram.shape[0]):
+            raise ValueError(
+                "input_subspace_projector must match [input_width, input_width]"
+            )
+        full_coefficient = (proj @ full_coefficient).contiguous()
 
     # Under ridge, reduced-rank truncation must use the same penalized
     # coefficient metric as the full solve.  Omitting the ridge term here
