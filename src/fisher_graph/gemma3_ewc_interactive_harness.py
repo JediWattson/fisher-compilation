@@ -50,6 +50,10 @@ from .gemma3_joint_cross_block_model_fit import (
     fit_ewc_joint_cross_block_whole_model,
     fit_pullback_ewc_shared_tied_lexical_factor,
 )
+from .gemma3_joint_cross_block_whole_model_experiment import (
+    _evaluate_joint_executor,
+)
+from .gemma3_surgical_trajectory_refit import surgical_trajectory_refit
 from .gemma3_l10_l17_a5e_functional_mlp_channel_coalescing_experiment import (
     DEFAULT_PANEL_PATH,
     DEFAULT_REVISION,
@@ -815,6 +819,7 @@ def _print_banner(mode: str, xray: bool, equalizer: ModalEqualizerState) -> None
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/mute attn <layer> [head]{RESET}  Mute an attention layer (0..17) or head (0..3) {BOLD}{CYAN}║{RESET}")
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/mute mlp <layer>{RESET}          Mute an MLP layer (0..17)                      {BOLD}{CYAN}║{RESET}")
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/mute chart <layer> <id>{RESET}   Mute a specific MLP chart (0..7)               {BOLD}{CYAN}║{RESET}")
+    print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/optimize [lam a beta]{RESET}    Terminal-state EWC refit (default 0.3 1.0 10)  {BOLD}{CYAN}║{RESET}")
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/unmute{RESET}                    Restore all muted routes, charts, and layers   {BOLD}{CYAN}║{RESET}")
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/atlas [layer]{RESET}             Show emergent vocabulary motifs for charts 0..7{BOLD}{CYAN}║{RESET}")
     print(f"{BOLD}{CYAN}║{RESET}   • {YELLOW}/preset{RESET} | {YELLOW}/mode <m>{RESET} | {YELLOW}/tokens <N>{RESET} | {YELLOW}/temp <T>{RESET} | {YELLOW}/compare{RESET} | {YELLOW}/quit{RESET}         {BOLD}{CYAN}║{RESET}")
@@ -967,6 +972,7 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_banner(mode, xray, equalizer)
     last_prompt: str | None = None
+    prompt_history: list[str] = []
     while True:
         try:
             line = input(f"\n{BOLD}{CYAN}ewc-gemma ({mode})>{RESET} ").strip()
@@ -988,6 +994,62 @@ def main(argv: list[str] | None = None) -> int:
         if line == "/unmute":
             equalizer.clear()
             print(f"{GREEN}Cleared all mutes: {equalizer.summary()}{RESET}")
+            continue
+        if line.startswith("/optimize"):
+            parts = line.split()
+            if len(parts) > 1 and parts[1] == "revert":
+                executor = load_or_compile_executor(
+                    adapter,
+                    tokenizer,
+                    mode=mode,
+                    rebuild=False,
+                )
+                print(f"{YELLOW}Executor reloaded from cache -- refit discarded.{RESET}")
+                continue
+            try:
+                lam = float(parts[1]) if len(parts) > 1 else 0.3
+                alpha = float(parts[2]) if len(parts) > 2 else 1.0
+                beta = float(parts[3]) if len(parts) > 3 else 10.0
+            except ValueError:
+                print(f"{YELLOW}Usage: /optimize [anchor_lambda] [alpha] [pin_beta] | /optimize revert{RESET}")
+                continue
+            corpus = list(dict.fromkeys([*PRESET_PROMPTS, *prompt_history]))
+            print(f"{DIM}Terminal-state EWC refit on {len(corpus)} prompts "
+                  f"(lam={lam}, alpha={alpha}, beta={beta})...{RESET}", flush=True)
+            keyed = _tokenize_keyed_batches(
+                tokenizer,
+                corpus,
+                [f"opt{i}" for i in range(len(corpus))],
+                batch_size=4,
+                device=device,
+            )
+            fit_batches = tuple(item.model_inputs for item in keyed)
+            report = surgical_trajectory_refit(
+                adapter=adapter,
+                executor=executor,
+                batches=fit_batches,
+                rounds=1,
+                mode="terminal_last",
+                mlp_anchor_relative=lam,
+                terminal_alpha=alpha,
+                terminal_pin_strength=beta,
+                progress=lambda s: print(f"{DIM}  {s}{RESET}", flush=True),
+            )
+            layer = report["rounds"][-1]["layers"][-1]
+            metrics, _ = _evaluate_joint_executor(
+                adapter=adapter,
+                executor=executor,
+                batches=fit_batches,
+            )
+            cand = metrics["candidate"]
+            print(f"{GREEN}Terminal refit applied:{RESET} "
+                  f"delta_nrmse {layer['terminal_delta_nrmse_before']:.3f} -> "
+                  f"{layer['terminal_delta_nrmse_after']:.3f}, "
+                  f"drift {layer['weight_drift_fro']:.2f} Fro")
+            print(f"  {DIM}On-corpus: KL {cand['native_to_candidate_kl_per_query']:.4f} nats | "
+                  f"top1 {cand['top1_agreement_to_native'] * 100:.1f}% | "
+                  f"logit_nrmse {cand['logit_nrmse']:.4f}{RESET}")
+            print(f"  {DIM}(weights updated in-place; /optimize revert restores the cached artifact){RESET}")
             continue
         if line.startswith("/mute "):
             parts = line.split()
@@ -1068,6 +1130,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         last_prompt = line
+        if line not in prompt_history:
+            prompt_history.append(line)
         run_prompt_comparison(
             adapter,
             tokenizer,

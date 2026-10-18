@@ -3844,3 +3844,71 @@ python -m fisher_graph.gemma3_joint_cross_block_whole_model_experiment \
   --output .local-runs/google--gemma-3-270m/joint-lexical-attention-mlp-cross-block-ewc-fused640-dev-v1.json
 ```
 
+
+## Surgical trajectory refit (development-time teacher-assisted parameter polish)
+
+- **Objective**: close the residual compiled-vs-native gap on the published
+  `39-event-fused640` executor (`0.2943` KL / `76.60%` Top-1) by refitting
+  each mutation's linear producer/decoder parameters against the teacher,
+  evaluated **at the compiled trajectory's own residual states**.
+- Module: `src/fisher_graph/gemma3_surgical_trajectory_refit.py`.
+  Harness command: `/optimize [lam alpha beta]` (and `/optimize revert`).
+
+### Formulation that works
+
+- **Raw-operator targets.** Native `post_*_layernorm` gains include dead
+  channels (`w = -1` exactly) where the teacher concentrates raw operator
+  energy; dividing `delta/gain` there is `0/0`. Capture the *raw* operator
+  output `v = mlp(pre_ff_ln(state))` (or `self_attn(...)` pre-post-norm) --
+  verified bit-identical to hook captures (`max|diff| = 0.0`) -- and fit
+  `pre = v/rms(v)`.
+- **Gain-weighted decoded-space ridge.** Instead of lifting targets through
+  `pinv(W_dec)` into modal space (which amplifies weak singular directions),
+  solve `min_W ||Phi W A_eff - Y||^2 + lam||(W-W0)A_eff||^2 + lamw||W-W0||^2`
+  with `A_eff = W_dec^T diag(gain)`, exactly by joint eigendecomposition
+  (`_anchored_decoded_ridge`). Per-feature whitening normalizes the anchor
+  across heterogeneous blocks (`[n ; 1 ; emitted_1..8]`, 673 dims).
+- **rms-consistency pin** (the load-bearing detail): the gain-weighted loss
+  leaves dead/low-gain channels unconstrained, so solves inflated
+  `rms(pre)` 22x and post-normalization landed 22x under scale. Augmenting
+  the right-factor/target with `sqrt(beta)`-weighted plain decoded-space
+  incumbent pin (`[A_eff | sqrt(b) W_dec^T]` / `[Y | sqrt(b) pre_0]`) keeps
+  the row scale self-consistent -- stackable into the same Sylvester solve.
+
+### What we learned (all measured on the 30/30 fit/eval prompt split)
+
+- Compiled `state` tracks the native residual stream at `cos >= 0.998`
+  through all 18 blocks -- trajectory-conditioned fitting is sound.
+- The executor is **knife-edge sensitive**: `1e-5` iid noise on one layer's
+  `chart_mode_decoders` moves eval KL `0.2943 -> 0.86`. All refit magnitude
+  budgets must respect this basin width.
+- `per_layer` mode (native-delta matching): halves in-sample delta nrmse
+  (`0.070 -> 0.037`) but always degrades eval KL -- the correction direction
+  doesn't survive composition + eval-state features (mid-stack eval nrmse
+  `0.055 -> 0.74`).
+- `trajectory_snap` (native boundary targets at all 36 mutations): all 36
+  layers improve in-sample, eval collapses (`KL 0.94-2.4`) -- second-order
+  staleness compounds destructively; only a single-site correction has an
+  exactly-consistent target (the last mutation's input is unaffected by its
+  own update).
+- `terminal_last` mode (last MLP absorbs `h_native_final - state_pre`):
+  **`top1 0.7660 -> 0.8621` held-out** at `lam=0.3, alpha=1.0, beta=10`,
+  `logit_nrmse 0.2067 -> 0.2028`, `KL 0.2943 -> 0.3043`. On the union corpus
+  (all 60 prompts): `top1 0.8744 / KL 0.2219 / nrmse 0.1613`.
+- Shipped v2 artifact
+  `.local-runs/.../ewc-interactive-executor-39-event-fused640-terminalrefit-v2.pt`
+  = pristine executor + `terminal_last(0.3, 1.0, 10)` fit on the union panel.
+- Lineage: `local_generator_encoders` stay frozen so emitted transport
+  latents (the transport vocabulary) are bit-identical; refitted layers get
+  a refreshed `_artifact_sha256` so `assert_authenticated` stays valid.
+
+```bash
+# reproduce (development-time; teacher-assisted)
+python - <<'PY'
+report = surgical_trajectory_refit(
+    adapter=adapter, executor=executor, batches=fit_batches,
+    rounds=1, mode="terminal_last",
+    mlp_anchor_relative=0.3, terminal_alpha=1.0, terminal_pin_strength=10.0,
+)
+PY
+```

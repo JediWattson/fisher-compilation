@@ -620,6 +620,40 @@ sealed guard and `Calibration-B` qualification remain separate downstream gates,
 and logical MAC reductions do not claim wall-clock kernel latency without a
 dedicated backend benchmark.
 
+### 5. Surgical trajectory refit (teacher-assisted parameter polish, `gemma3_surgical_trajectory_refit.py`)
+
+A development-time optimizer that refits each compiled mutation's linear
+producer/decoder parameters against the teacher's *functional* per-layer
+output evaluated **at the compiled trajectory's own residual states**
+(native `self_attn`/`mlp` raw operator outputs captured with causal masks +
+RoPE; verified bit-identical to hook capture). Three findings mattered:
+
+* **Raw-operator targets, not gain-inverted deltas.** Post-norm gains contain
+  exactly-dead channels (`1 + w = 0`) where the teacher concentrates energy;
+  the identifiable target is `v / rms(v)` (raw operator output normalized).
+* **Gain-weighted decoded-space ridge.** Solving in *decoded* space
+  (`Phi W (W_dec^T diag(g))`), never lifting targets through `pinv(W_dec)`,
+  with an EWC incumbent anchor + a plain decoded-space pin (`beta`) that keeps
+  `rms(pre)` self-consistent -- without it, solves inflated the pre-norm row
+  scale 22x and post-normalization undershot by the same factor.
+* **Knife-edge basin.** `1e-5` noise on one `chart_mode_decoders` tensor moves
+  eval KL `0.2943 -> 0.86`; distributed refits (`per_layer`, `trajectory_snap`)
+  compound destructively across 36 mutations, so the winning geometry is a
+  **single terminal correction**: refit only the last MLP to emit
+  `h_native_final - state_pre` (exact -- its input is unaffected by its own
+  update). Refit keeps `local_generator_encoders` frozen, so emitted
+  transport latents (the graph's message vocabulary) are bit-identical.
+
+| Arm | ΔNLL | KL / query | Logit NRMSE | Top-1 Agreement |
+|---|---:|---:|---:|---:|
+| Fused-640 baseline (published v1) | `-0.0559` | `0.2943` | `0.2067` | `76.60%` (`311/406`) |
+| `terminal_last` refit `λ=0.3 α=1.0 β=10` (fit 30 → eval 30, held out) | — | `0.3043` | `0.2028` | **`86.21%`** (`350/406`) |
+| `terminal_last` refit, union corpus (`v2` artifact as shipped) | — | `0.2219` | `0.1613` | **`87.44%`** (`355/406` in-panel) |
+
+Available interactively as `/optimize [lam alpha beta]` (and `/optimize
+revert`) in `gemma3_ewc_interactive_harness.py`; regression coverage in
+`tests/test_surgical_trajectory_refit.py`.
+
 ## Earlier Gemma result: V20q token-VJP refit
 
 V20p showed that the existing one-boundary runtime can express a genuinely
