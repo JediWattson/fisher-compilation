@@ -3963,3 +3963,35 @@ The harness uses the session automatically for `39-event*` executor modes
 with no active equalizer mutes; `hybrid-ewc`/`block-ewc` runtime route
 solving, mutes and shadow interventions still run the audited full-forward
 path (incremental variants are a follow-up).
+
+## Batched incremental decode (ragged prompts, shared session)
+
+`JointGraphDecodeSession` now accepts left-padded batches: each row's
+validity mask must be nondecreasing (pad\* then real\*), pad state stays
+confined to masked prefix slots, and decode-step attention masks
+`key_valid_mask & sliding_window` per row. Logical positions derive from
+the mask cumsum (real tokens count 0..len_i-1 — the HF left-pad
+convention), so rotary and window distances are per-row correct.
+`batched_greedy_generate` packs a prompt list, prefills once, then steps
+all rows in lockstep; rows that emit EOS stop recording.
+
+**Verification**: `test_ragged_batch_decode_matches_teacher_forced` —
+three different-length prompts batched, each row's greedy chain equals its
+own teacher-forced reference exactly.
+
+**Measured** (CPU, 10-token generations, ragged batch): bsz=1 24 ms/step,
+bsz=4 37 ms/step, bsz=8 37 ms/step — GEMMs saturate so batch 8 gives ~5x
+aggregate throughput (~217 vs ~42 tok/s). `/preset`/`--presets` batch all
+six preset prompts automatically (greedy, unmoted only); native arm
+batches via HF `generate` with left-padding.
+
+## Lazy-MLX decode-step spike (real executor weights)
+
+Full 39-event decode step reimplemented as one lazy MLX graph
+(`/tmp/mlx_spike.py`, spike only — not integrated): real artifact weights,
+all 36 mutations, 136 transports, shared K/V caches with the torch
+session. Steady-state ~12.6 ms/step vs torch CPU ~16-23 ms (**~1.4-1.8x**),
+argmax matched 8/8 steps, max|logit diff| 0.005-0.013 (f32 Metal, not
+bit-exact — CPU stays the parity oracle). Step 0 pays ~54 ms Metal shader
+compile; per-shape recompiles are a risk as S grows. A real port is
+feasible but deferred — batched decode is the larger universal win.

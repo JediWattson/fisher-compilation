@@ -31,6 +31,8 @@ execution is verified by ``tests/test_incremental_decode.py``.
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -74,6 +76,7 @@ class JointGraphDecodeSession:
         self._device = device
         self._dtype = dtype
         self._length = 0
+        self._key_valid: Tensor | None = None
         self._attention_kv: dict[str, dict[str, Tensor]] = {}
         self._attention_mutations = [
             mutation
@@ -111,10 +114,10 @@ class JointGraphDecodeSession:
     ) -> tuple["JointGraphDecodeSession", Tensor]:
         """Run the event schedule over a prompt and return (session, logits).
 
-        ``sequence`` must describe the same batch/length as ``input_ids`` and
-        be fully valid (no padding): incremental decode assumes every
-        position is real because masked positions never publish transport
-        state.
+        ``sequence`` must describe the same batch/length as ``input_ids``.
+        Rows may be fully valid or left-padded (validity nondecreasing):
+        masked prefix positions never publish transport state and are never
+        attended, so pad state stays confined to its own slots.
         """
 
         if (
@@ -125,9 +128,19 @@ class JointGraphDecodeSession:
             != (sequence.batch_size, sequence.query_length)
         ):
             raise ValueError("input_ids must match the sequence context")
-        if not bool(sequence.query_valid_mask.all()):
+        # Left-padded batches are supported: each row's validity must be a
+        # nondecreasing mask (pad* then real*), so pad state stays confined
+        # to masked prefix slots and never reaches real queries.
+        left_pad_ok = bool(
+            (
+                sequence.query_valid_mask[:, 1:].long()
+                >= sequence.query_valid_mask[:, :-1].long()
+            ).all()
+        )
+        if not left_pad_ok:
             raise ValueError(
-                "incremental decode requires fully valid prefill positions"
+                "incremental decode requires fully valid or left-padded "
+                "prefill rows (attention_mask must be nondecreasing)"
             )
         session = cls(
             executor,
@@ -150,6 +163,7 @@ class JointGraphDecodeSession:
             cap = executor.final_logit_softcap
             logits = torch.tanh(logits / cap) * cap
         session._length = input_ids.shape[1]
+        session._key_valid = sequence.query_valid_mask.clone()
         return session, logits
 
     def step(self, token_ids: Tensor) -> Tensor:
@@ -164,25 +178,24 @@ class JointGraphDecodeSession:
             or token_ids.device != self._device
         ):
             raise ValueError("token_ids must be integer [batch, 1]")
-        position = self._length
-        key_length = self._length + 1
         batch = self._batch_size
+        new_key_valid = torch.cat(
+            (
+                self._key_valid,
+                torch.ones(batch, 1, dtype=torch.bool, device=self._device),
+            ),
+            dim=1,
+        )
+        # Per-row semantic positions derive from the validity mask: real
+        # tokens count 0..len_i-1 while left-pad slots sit at 0 (masked).
+        key_logical = (new_key_valid.long().cumsum(1) - 1).clamp(min=0)
         context = SequenceContext(
             query_valid_mask=torch.ones(
                 batch, 1, dtype=torch.bool, device=self._device
             ),
-            key_valid_mask=torch.ones(
-                batch, key_length, dtype=torch.bool, device=self._device
-            ),
-            logical_positions=torch.full(
-                (batch, 1),
-                position,
-                dtype=torch.int64,
-                device=self._device,
-            ),
-            key_logical_positions=torch.arange(
-                key_length, dtype=torch.int64, device=self._device
-            ).expand(batch, key_length),
+            key_valid_mask=new_key_valid,
+            logical_positions=key_logical[:, -1:],
+            key_logical_positions=key_logical,
             cache_positions=None,
             phase="decode",
             input_origin=SequenceInputOrigin(
@@ -198,7 +211,8 @@ class JointGraphDecodeSession:
         if self._executor.final_logit_softcap is not None:
             cap = self._executor.final_logit_softcap
             logits = torch.tanh(logits / cap) * cap
-        self._length = key_length
+        self._key_valid = new_key_valid
+        self._length += 1
         return logits
 
     def _new_message_session(self, valid_positions: Tensor):
@@ -398,17 +412,18 @@ class JointGraphDecodeSession:
             cap = float(generator.config.logit_softcap)
             scores = torch.tanh(scores / cap) * cap
         # Decode-step causal rule: every cached position precedes the new
-        # token; a sliding window additionally drops positions at distance
-        # >= window_size.  key_valid_mask is all-true by session invariant.
+        # token, so causality holds by construction; key_valid_mask drops
+        # left-pad slots and a sliding window drops distant positions.
+        allowed = sequence.key_valid_mask.unsqueeze(-2)
         if attention.window_size is not None:
             distance = (
                 sequence.logical_positions.unsqueeze(-1)
                 - sequence.key_logical_positions.unsqueeze(-2)
             )
-            allowed = distance < attention.window_size
-            scores = scores.masked_fill(
-                ~allowed.unsqueeze(1), torch.finfo(scores.dtype).min
-            )
+            allowed = allowed & (distance < attention.window_size)
+        scores = scores.masked_fill(
+            ~allowed.unsqueeze(1), torch.finfo(scores.dtype).min
+        )
         probabilities = F.softmax(
             scores, dim=-1, dtype=torch.float32
         ).to(dtype=query.dtype)
@@ -440,3 +455,89 @@ class JointGraphDecodeSession:
         )
         emitted = output_coordinates.unsqueeze(-2)
         return delta, emitted
+
+
+def batched_greedy_generate(
+    executor: Gemma3JointCrossBlockChartExecutor,
+    adapter: object,
+    tokenizer: object,
+    prompts: Sequence[str],
+    *,
+    max_new_tokens: int,
+    eos_id: int | None = None,
+) -> tuple[list[list[int]], JointGraphDecodeSession]:
+    """Greedy-decode a ragged batch of prompts in one decode session.
+
+    Prompts are left-padded to a common length (pad state stays confined to
+    masked slots, which real queries never attend), then all rows advance in
+    lockstep — each ``step`` call produces one token per row for the same
+    dispatch cost as a single-row step.  Rows that emit ``eos_id`` keep
+    stepping internally but stop recording.
+
+    Returns ``(per_prompt_new_tokens, session)``.
+    """
+
+    if not prompts:
+        raise ValueError("prompts must be nonempty")
+    encoded = [
+        tokenizer(prompt, return_tensors="pt")["input_ids"][0]
+        for prompt in prompts
+    ]
+    pad_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_id is None:
+        pad_id = 0
+    width = max(int(ids.shape[0]) for ids in encoded)
+    input_ids = torch.stack(
+        [
+            torch.cat(
+                (
+                    torch.full(
+                        (width - int(ids.shape[0]),),
+                        int(pad_id),
+                        dtype=torch.long,
+                    ),
+                    ids.long(),
+                )
+            )
+            for ids in encoded
+        ]
+    )
+    attention_mask = torch.stack(
+        [
+            torch.cat(
+                (
+                    torch.zeros(
+                        width - int(ids.shape[0]), dtype=torch.bool
+                    ),
+                    torch.ones(int(ids.shape[0]), dtype=torch.bool),
+                )
+            )
+            for ids in encoded
+        ]
+    )
+    position_ids = (attention_mask.long().cumsum(1) - 1).clamp(min=0)
+    sequence = adapter.prepare_sequence(
+        {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask.long(),
+            "position_ids": position_ids,
+        }
+    )
+    session, logits = JointGraphDecodeSession.prefill(
+        executor, input_ids, sequence
+    )
+    new_tokens: list[list[int]] = [[] for _ in prompts]
+    finished = [False] * len(prompts)
+    current = logits
+    for _ in range(max_new_tokens):
+        next_ids = current[:, -1].argmax(dim=-1)
+        for row, token in enumerate(next_ids.tolist()):
+            if finished[row]:
+                continue
+            new_tokens[row].append(int(token))
+            if eos_id is not None and int(token) == eos_id:
+                finished[row] = True
+        if eos_id is not None and all(finished):
+            break
+        current = session.step(next_ids.view(-1, 1))
+    return new_tokens, session

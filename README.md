@@ -685,6 +685,23 @@ same reason (~40 ms/token). Mutes, shadow interventions, `hybrid-ewc`
 route-solving and `block-ewc` replay still run the audited full-forward
 path.
 
+**Batched decode.** `batched_greedy_generate` runs a ragged batch of
+prompts through one shared session: prompts are left-padded (pad state
+stays confined to masked cache slots — real queries never attend it),
+then all rows step in lockstep, so one dispatch pass produces one token
+per row. Per-row key-validity masks and semantic positions derive from
+the validity mask via cumsum, matching HF left-pad conventions. Ragged
+parity is covered by
+`test_ragged_batch_decode_matches_teacher_forced` — each row's greedy
+chain equals its own teacher-forced reference.
+
+Measured on CPU (10-token generations, ragged batch): `bsz=1` 24 ms/step,
+`bsz=4` 37 ms/step, `bsz=8` 37 ms/step — the GEMMs saturate, so batch 8
+delivers **~5x aggregate throughput** (~217 tok/s vs ~42 at bsz=1) at the
+same dispatch cost. The harness `/preset` and `--presets` paths batch all
+six preset prompts automatically when greedy decoding and no mutes are
+active; the native arm batches via HF `generate` with left-padding.
+
 ## Earlier Gemma result: V20q token-VJP refit
 
 V20p showed that the existing one-boundary runtime can express a genuinely

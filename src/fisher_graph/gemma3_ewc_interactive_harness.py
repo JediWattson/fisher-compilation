@@ -42,7 +42,10 @@ from .gemma3_experiment import (
     resolve_gemma3_huggingface_paths,
     resolve_torch_device,
 )
-from .gemma3_incremental_decode import JointGraphDecodeSession
+from .gemma3_incremental_decode import (
+    JointGraphDecodeSession,
+    batched_greedy_generate,
+)
 from .gemma3_joint_cross_block_chart_executor import (
     Gemma3JointCrossBlockChartExecutor,
 )
@@ -834,6 +837,117 @@ def run_prompt_comparison(
         )
 
 
+def _batched_decode_eligible(
+    executor: object,
+    mode_label: str,
+    equalizer: ModalEqualizerState | None,
+    temperature: float,
+) -> bool:
+    return (
+        isinstance(executor, Gemma3JointCrossBlockChartExecutor)
+        and (equalizer is None or equalizer.is_empty())
+        and mode_label != "block-ewc-k8"
+        and temperature <= 0.0
+    )
+
+
+def run_presets_batched(
+    adapter: Gemma3CausalLMAdapter,
+    tokenizer: object,
+    executor: object,
+    prompts: list[str],
+    *,
+    max_new_tokens: int,
+    compare_native: bool,
+    mode_label: str,
+) -> None:
+    """Greedy-decode all prompts in one shared decode session.
+
+    Same math as the per-prompt path, but each ``step`` produces one token
+    per row for a single dispatch pass — ~5x aggregate throughput at batch 6.
+    """
+    eos_id = getattr(tokenizer, "eos_token_id", None)
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        cand_tokens, _ = batched_greedy_generate(
+            executor,
+            adapter,
+            tokenizer,
+            prompts,
+            max_new_tokens=max_new_tokens,
+            eos_id=eos_id,
+        )
+    cand_dt = time.perf_counter() - t0
+
+    nat_tokens: list[list[int]] | None = None
+    nat_dt = 0.0
+    if compare_native:
+        encoded = [
+            tokenizer(p, return_tensors="pt")["input_ids"][0]
+            for p in prompts
+        ]
+        pad_id = getattr(tokenizer, "pad_token_id", None) or 0
+        width = max(int(ids.shape[0]) for ids in encoded)
+        input_ids = torch.stack(
+            [
+                torch.cat(
+                    (
+                        torch.full(
+                            (width - int(ids.shape[0]),), int(pad_id), dtype=torch.long
+                        ),
+                        ids.long(),
+                    )
+                )
+                for ids in encoded
+            ]
+        ).to(next(adapter.module.parameters()).device)
+        attention_mask = torch.stack(
+            [
+                torch.cat(
+                    (
+                        torch.zeros(width - int(ids.shape[0]), dtype=torch.long),
+                        torch.ones(int(ids.shape[0]), dtype=torch.long),
+                    )
+                )
+                for ids in encoded
+            ]
+        ).to(input_ids.device)
+        t1 = time.perf_counter()
+        with torch.no_grad():
+            gen_out = adapter.module.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=int(pad_id),
+            )
+        nat_dt = time.perf_counter() - t1
+        nat_tokens = [
+            row[width:].tolist() for row in gen_out
+        ]
+
+    total = len(prompts)
+    for i, prompt in enumerate(prompts):
+        cand_text = tokenizer.decode(cand_tokens[i])
+        print(
+            f"\n{BOLD}{CYAN}│ Prompt:{RESET} {BOLD}{prompt}{RESET}\n"
+            f"  {BOLD}{GREEN}[Compiled EWC ({mode_label})]{RESET} {prompt}"
+            f"{BOLD}{GREEN}{cand_text}{RESET}"
+        )
+        if nat_tokens is not None:
+            nat_text = tokenizer.decode(nat_tokens[i])
+            print(
+                f"  {BOLD}{MAGENTA}[Native Gemma 3 270M]{' ' * max(0, len(mode_label) - 4)}{RESET} "
+                f"{prompt}{BOLD}{MAGENTA}{nat_text}{RESET}"
+            )
+    print(
+        f"\n  {DIM}batched: {total} prompts x ≤{max_new_tokens} tok — "
+        f"compiled {cand_dt:.2f}s"
+        + (f", native {nat_dt:.2f}s" if compare_native else "")
+        + f"{RESET}"
+    )
+
+
 def _print_banner(mode: str, xray: bool, equalizer: ModalEqualizerState) -> None:
     if mode == "hybrid-ewc":
         desc = "Pullback-EWC Lex512 (-33.2M params) + 18-Layer Block-EWC K=16 Sparse Attention"
@@ -989,19 +1103,30 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.presets:
         _print_banner(mode, xray, equalizer)
-        for preset in PRESET_PROMPTS:
-            run_prompt_comparison(
+        if _batched_decode_eligible(executor, mode, equalizer, temperature):
+            run_presets_batched(
                 adapter,
                 tokenizer,
                 executor,
-                preset,
+                list(PRESET_PROMPTS),
                 max_new_tokens=max_new_tokens,
-                temperature=temperature,
                 compare_native=compare_native,
                 mode_label=mode,
-                equalizer=equalizer,
-                xray=xray,
             )
+        else:
+            for preset in PRESET_PROMPTS:
+                run_prompt_comparison(
+                    adapter,
+                    tokenizer,
+                    executor,
+                    preset,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    compare_native=compare_native,
+                    mode_label=mode,
+                    equalizer=equalizer,
+                    xray=xray,
+                )
         return 0
 
     try:
@@ -1121,19 +1246,32 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"    {GREEN}Chart {c_id}{RESET}: {', '.join(repr(t) for t in toks) or '(unoccupied on calibration panel)'}")
             continue
         if line == "/preset":
-            for preset in PRESET_PROMPTS:
-                run_prompt_comparison(
+            if _batched_decode_eligible(
+                executor, mode, equalizer, temperature
+            ):
+                run_presets_batched(
                     adapter,
                     tokenizer,
                     executor,
-                    preset,
+                    list(PRESET_PROMPTS),
                     max_new_tokens=max_new_tokens,
-                    temperature=temperature,
                     compare_native=compare_native,
                     mode_label=mode,
-                    equalizer=equalizer,
-                    xray=xray,
                 )
+            else:
+                for preset in PRESET_PROMPTS:
+                    run_prompt_comparison(
+                        adapter,
+                        tokenizer,
+                        executor,
+                        preset,
+                        max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                        compare_native=compare_native,
+                        mode_label=mode,
+                        equalizer=equalizer,
+                        xray=xray,
+                    )
             continue
         if line == "/compare":
             compare_native = not compare_native

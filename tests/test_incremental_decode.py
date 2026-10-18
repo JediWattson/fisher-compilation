@@ -60,11 +60,11 @@ def executor_and_sequence():
         "attention_mask": torch.ones_like(input_ids),
     }
     sequence = adapter.prepare_sequence(batch)
-    return executor, adapter, input_ids, sequence
+    return executor, adapter, tokenizer, input_ids, sequence
 
 
 def test_prefill_logits_match_teacher_forced(executor_and_sequence):
-    executor, adapter, input_ids, sequence = executor_and_sequence
+    executor, adapter, _, input_ids, sequence = executor_and_sequence
     with torch.inference_mode():
         _, session_logits = JointGraphDecodeSession.prefill(
             executor, input_ids, sequence
@@ -78,7 +78,7 @@ def test_prefill_logits_match_teacher_forced(executor_and_sequence):
 
 
 def test_decode_steps_match_teacher_forced(executor_and_sequence):
-    executor, adapter, input_ids, sequence = executor_and_sequence
+    executor, adapter, _, input_ids, sequence = executor_and_sequence
     generated = input_ids.clone()
     step_logits: list[torch.Tensor] = []
     with torch.inference_mode():
@@ -117,3 +117,94 @@ def test_decode_steps_match_teacher_forced(executor_and_sequence):
         assert int(step[0, -1].argmax()) == int(
             reference[0, position].argmax()
         ), f"decode step {step_index} changed argmax"
+
+
+def test_ragged_batch_decode_matches_teacher_forced(executor_and_sequence):
+    """Left-padded batch decode must reproduce per-row teacher-forced runs.
+
+    Rows differ in length, so pad slots occupy shared cache positions;
+    pad state must stay masked out of every real query.
+    """
+    executor, adapter, tokenizer, _, _ = executor_and_sequence
+    tokenizer_prompts = [
+        "The capital of France is",  # 6 tokens (fixture prompt)
+        "Water boils at",  # shorter
+        "In a hole in the ground there lived a",  # longer
+    ]
+    encoded = [
+        tokenizer(p, return_tensors="pt")["input_ids"][0]
+        for p in tokenizer_prompts
+    ]
+    width = max(int(ids.shape[0]) for ids in encoded)
+    pad_id = tokenizer.pad_token_id or 0
+    input_ids = torch.stack(
+        [
+            torch.cat(
+                (
+                    torch.full(
+                        (width - int(ids.shape[0]),), pad_id, dtype=torch.long
+                    ),
+                    ids,
+                )
+            )
+            for ids in encoded
+        ]
+    )
+    attention_mask = torch.stack(
+        [
+            torch.cat(
+                (
+                    torch.zeros(width - int(ids.shape[0]), dtype=torch.bool),
+                    torch.ones(int(ids.shape[0]), dtype=torch.bool),
+                )
+            )
+            for ids in encoded
+        ]
+    )
+    position_ids = (attention_mask.long().cumsum(1) - 1).clamp(min=0)
+    sequence = adapter.prepare_sequence(
+        {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask.long(),
+            "position_ids": position_ids,
+        }
+    )
+
+    with torch.inference_mode():
+        session, logits = JointGraphDecodeSession.prefill(
+            executor, input_ids, sequence
+        )
+        generated = [[] for _ in tokenizer_prompts]
+        current = logits
+        for _ in range(DECODE_STEPS):
+            next_ids = current[:, -1].argmax(dim=-1)
+            for row, token in enumerate(next_ids.tolist()):
+                generated[row].append(int(token))
+            current = session.step(next_ids.view(-1, 1))
+
+    # Teacher-forced reference per row over its real (unpadded) tokens.
+    for row, (enc, gen) in enumerate(zip(encoded, generated)):
+        full_ids = torch.cat(
+            (enc.unsqueeze(0), torch.tensor(gen, dtype=torch.long).unsqueeze(0)),
+            dim=1,
+        )
+        ref_sequence = adapter.prepare_sequence(
+            {
+                "input_ids": full_ids,
+                "attention_mask": torch.ones_like(full_ids),
+            }
+        )
+        with torch.inference_mode():
+            reference = executor.execute(full_ids, ref_sequence)
+        if hasattr(reference, "logits"):
+            reference = reference.logits
+        prompt_len = int(enc.shape[0])
+        ref_gen = (
+            reference[0, prompt_len - 1 : prompt_len - 1 + len(gen)]
+            .argmax(dim=-1)
+            .tolist()
+        )
+        assert ref_gen == generated[row], (
+            f"row {row}: batched decode diverged from teacher-forced "
+            f"({generated[row]} != {ref_gen})"
+        )
