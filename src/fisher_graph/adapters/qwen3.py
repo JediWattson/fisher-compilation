@@ -65,6 +65,13 @@ def _finite_positive_float(value: object, *, name: str) -> float:
     return float(value)
 
 
+def _norm_epsilon(module: nn.Module, *, name: str) -> float:
+    """Read the live normalization option used by the source module."""
+
+    value = getattr(module, "variance_epsilon", getattr(module, "eps", None))
+    return _finite_positive_float(value, name=name)
+
+
 def _json_value(value: object) -> object:
     """Return a deterministic JSON-compatible view of simple config values."""
 
@@ -328,10 +335,6 @@ class Qwen3CausalLMAdapter(ModelAdapter):
             getattr(self._config, "intermediate_size", None),
             name="intermediate_size",
         )
-        norm_epsilon = _finite_positive_float(
-            getattr(self._config, "rms_norm_eps", None),
-            name="rms_norm_eps",
-        )
         activation = getattr(
             self._config,
             "hidden_act",
@@ -379,6 +382,25 @@ class Qwen3CausalLMAdapter(ModelAdapter):
 
         layers: list[LayerSpec] = []
         for index, layer_type in enumerate(self._layer_types):
+            source = self._source_layers[index]
+            input_epsilon = _norm_epsilon(
+                source.input_layernorm, name=f"layer.{index}.input_layernorm"
+            )
+            mlp_epsilon = _norm_epsilon(
+                source.post_attention_layernorm,
+                name=f"layer.{index}.post_attention_layernorm",
+            )
+            query_epsilon = _norm_epsilon(
+                source.self_attn.q_norm, name=f"layer.{index}.q_norm"
+            )
+            key_epsilon = _norm_epsilon(
+                source.self_attn.k_norm, name=f"layer.{index}.k_norm"
+            )
+            if query_epsilon != key_epsilon:
+                raise ValueError(
+                    f"Qwen 3 layer {index} Q/K norm epsilon values differ; "
+                    "the attention ABI requires a shared qk_norm spec"
+                )
             attention = AttentionSpec(
                 kind="global_causal",
                 query_heads=query_heads,
@@ -396,7 +418,7 @@ class Qwen3CausalLMAdapter(ModelAdapter):
             residual_norm = NormalizationSpec(
                 kind="rms_norm",
                 width=self._hidden_size,
-                epsilon=norm_epsilon,
+                epsilon=input_epsilon,
                 affine=True,
                 scale_parameterization="direct",
                 compute_dtype="float32",
@@ -404,7 +426,7 @@ class Qwen3CausalLMAdapter(ModelAdapter):
             qk_norm = NormalizationSpec(
                 kind="rms_norm",
                 width=head_dimension,
-                epsilon=norm_epsilon,
+                epsilon=query_epsilon,
                 affine=True,
                 scale_parameterization="direct",
                 compute_dtype="float32",
@@ -478,7 +500,14 @@ class Qwen3CausalLMAdapter(ModelAdapter):
                 attention_projection_bias=projection_bias,
                 attention_dropout=float(attention_dropout),
                 attention_logit_softcap=logit_softcap,
-                feed_forward_input_norm=residual_norm,
+                feed_forward_input_norm=NormalizationSpec(
+                    kind="rms_norm",
+                    width=self._hidden_size,
+                    epsilon=mlp_epsilon,
+                    affine=True,
+                    scale_parameterization="direct",
+                    compute_dtype="float32",
+                ),
                 feed_forward_output_norm=identity_norm,
                 feed_forward=FeedForwardSpec(
                     kind="gated_multiplicative",
@@ -691,7 +720,9 @@ class Qwen3CausalLMAdapter(ModelAdapter):
 
     @property
     def layers(self) -> tuple[LayerSpec, ...]:
-        return self._layers
+        # Norm epsilons are mutable execution options outside state_dict.
+        # Compilers and provenance must describe the modules being run now.
+        return self._build_layers()
 
     @property
     def segments(self) -> tuple[SegmentSpec, ...]:
@@ -996,8 +1027,10 @@ class Qwen3CausalLMAdapter(ModelAdapter):
                 heads,
                 head_dimension,
             )
-            trace.record(site, canonical)
-            return output
+            canonical = trace.record(site, canonical)
+            # Keep the captured view on the executed graph so its retained
+            # gradient is populated, rather than recording an unused branch.
+            return _replace_layer_output(output, canonical.reshape_as(value))
 
         def capture_qk_normalized(
             output: object,
@@ -1311,7 +1344,7 @@ class Qwen3CausalLMAdapter(ModelAdapter):
             active_sites = set(requested) | set(intervention_map)
             for layer, spec in zip(
                 self._source_layers,
-                self._layers,
+                self.layers,
                 strict=True,
             ):
 
@@ -1819,6 +1852,19 @@ class Qwen3CausalLMAdapter(ModelAdapter):
         layer = self.layer(layer_id)
         return self._source_layers[layer.ordinal]
 
+    def semantic_fingerprint(self) -> str:
+        # Layer specs include their live norm epsilons; terminal normalization
+        # has no LayerSpec, so bind its live epsilon explicitly as well.
+        payload = {
+            "adapter_semantics": super().semantic_fingerprint(),
+            "terminal_norm_epsilon": _norm_epsilon(
+                self._backbone.norm, name="terminal_norm"
+            ),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, allow_nan=False).encode("utf-8")
+        ).hexdigest()
+
     def execution_fingerprint(self) -> str:
         config_names = (
             "hidden_size",
@@ -1847,6 +1893,7 @@ class Qwen3CausalLMAdapter(ModelAdapter):
         scalar_names = (
             "p",
             "eps",
+            "variance_epsilon",
             "inplace",
             "attention_dropout",
             "scaling",

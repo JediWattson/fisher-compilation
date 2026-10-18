@@ -1,0 +1,54 @@
+{
+  "model": "Qwen/Qwen3-1.7B",
+  "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "dtype": "float32",
+  "batch_shape": [
+    2,
+    5
+  ],
+  "teacher": "HF PyTorch eager, sequential process",
+  "backend": "MLX Metal",
+  "prefill_seconds": 0.5422074160014745,
+  "decode_seconds": [
+    0.07868650002637878,
+    0.06974333300604485,
+    0.07006645799265243,
+    0.06987570799537934
+  ],
+  "valid_logit_max_errors": [
+    0.00023555755615234375,
+    6.914138793945312e-05,
+    5.7220458984375e-05,
+    0.00010347366333007812,
+    6.866455078125e-05
+  ],
+  "layer_input_max_error": 0.009765625,
+  "terminal_normalized_max_error": 0.0004482269287109375,
+  "last_token_argmax_matches": [
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "scope": "two short prompts and four teacher-forced cached steps; numerical parity smoke, not a quality benchmark",
+  "mlx_version": "0.32.0",
+  "torch_version": "2.13.0",
+  "transformers_version": "5.14.1",
+  "MLX_ENABLE_TF32": "0",
+  "last_token_decision_count": 10,
+  "validation_date": "2026-10-18",
+  "default_reduced_precision_comparison": {
+    "MLX_ENABLE_TF32": "unset",
+    "prefill_valid_logit_max_error": 0.04440498352050781,
+    "layer_input_max_error": 14.513671875,
+    "last_token_argmax_matches": 10
+  },
+  "timing_caveat": "single short smoke run with lazy outputs explicitly evaluated; not a benchmark or speedup claim",
+  "focused_tests": {
+    "reference_and_adapter_passed": 72,
+    "mlx_metal_runtime_fit_cli_passed": 46,
+    "total_passed": 118,
+    "bfloat16_fit_and_cache_dtype_preserved": true
+  }
+}

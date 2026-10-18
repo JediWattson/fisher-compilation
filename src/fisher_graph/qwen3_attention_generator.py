@@ -6,9 +6,9 @@ modules use the direct ``weight * normalized`` parameterization rather than
 Gemma's unit-offset ``(1 + weight) * normalized``.
 
 The generator's stored coefficients keep the established unit-offset
-convention so the shared fitting stack (``(1 + w)`` Fisher anchors,
-closed-form projections, serialized artifacts) needs no changes: direct
-source weights are converted to offset form (``w - 1``) at extraction.
+convention: direct source weights are converted to offset form (``w - 1``)
+at extraction. Reduced coefficients must use the Qwen factory below and
+the Qwen fitter in ``qwen3_model_fit`` to preserve identity delta norms.
 The absent delta norm is recorded as ``kind == "identity"`` in the config
 and carried as a vestigial zeros weight; ``_rms_norm`` passes values
 through unchanged under that kind.
@@ -26,6 +26,7 @@ from .gemma3_attention_generator import (
     ExactAttentionGeneratorCoefficients,
     Gemma3AttentionGenerator,
     Gemma3AttentionGeneratorConfig,
+    ReducedAttentionGeneratorCoefficients,
 )
 
 
@@ -280,3 +281,25 @@ def build_qwen3_exact_attention_generator(
         exact=coefficients,
         source_checkpoint_coefficients_retained=True,
     )
+
+
+def compile_qwen3_reduced_attention_generator(
+    config: Qwen3AttentionGeneratorConfig,
+    coefficients: ReducedAttentionGeneratorCoefficients,
+) -> Qwen3AttentionGenerator:
+    """Compile fitted coordinates while preserving Qwen's norm dispatch."""
+
+    if not isinstance(config, Qwen3AttentionGeneratorConfig):
+        raise TypeError("config must be Qwen3AttentionGeneratorConfig")
+    if not isinstance(coefficients, ReducedAttentionGeneratorCoefficients):
+        raise TypeError("coefficients must be ReducedAttentionGeneratorCoefficients")
+    return Qwen3AttentionGenerator(config, reduced=coefficients)
+
+
+__all__ = [
+    "Qwen3AttentionGenerator",
+    "Qwen3AttentionGeneratorConfig",
+    "build_qwen3_exact_attention_generator",
+    "compile_qwen3_reduced_attention_generator",
+    "qwen3_config_from_layer_spec",
+]

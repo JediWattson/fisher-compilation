@@ -9,12 +9,13 @@ carrier, and the observed-execution wrappers — is imported unchanged.
 
 What differs is only what the architecture differs on:
 
-* 28 decoder blocks instead of 18, hence a 59-event schedule
+* The default 28 decoder blocks yield a 59-event schedule
   (1 ingress + 56 mutations + 1 terminal norm + 1 egress) instead of 39.
+  Other positive layer counts use the same alternating topology.
 * Every attention event is ``global``: Qwen 3 dense has no sliding-window
   layers, no per-layer attention-type alternation, and no logit softcap.
-* Receipt and gradient-tape site inventories are parameterized by the
-  28-block/56-mutation layout.
+* Receipt, snapshot, and gradient-tape inventories follow the configured
+  layer count.
 
 The runtime consumes already-fitted modules.  It does not load Qwen,
 prompts, or a teacher, and it does not prescribe how Fisher rows or charts
@@ -44,6 +45,7 @@ from .gemma3_joint_cross_block_chart_executor import (
     JointGraphMutationRuntimeReceipt,
     JointGraphObservedBackboneExecution,
     JointGraphObservedExecution,
+    JointGraphScoreGradientBundle,
     JointGraphWholeModelExecution,
     _JointGraphMessageSession,
     _module_physical_spans,
@@ -70,7 +72,7 @@ QWEN3_JOINT_EXACT_CONTROL_ARM_ID = "qwen3_joint_exact_59_event_control"
 def build_qwen3_event_schedule(
     layer_count: int = QWEN3_JOINT_BLOCK_COUNT,
 ) -> tuple[JointGraphEventSpec, ...]:
-    """Build the deterministic 59-event schedule used by the Qwen 3 arm.
+    """Build the Qwen 3 schedule (59 events for the default 28 layers).
 
     The topology matches the Gemma schedule exactly — ingress, alternating
     attention/MLP mutations per block, terminal norm, egress — but every
@@ -165,18 +167,96 @@ def _qwen3_expected_auxiliary_gradient_site_ids(
     )
 
 
+def _qwen3_mutation_count(layer_count: int) -> int:
+    if type(layer_count) is not int or layer_count <= 0:
+        raise ValueError("layer_count must be positive")
+    return 2 * layer_count
+
+
+@dataclass(frozen=True, slots=True)
+class Qwen3JointGraphScoreGradientBundle(JointGraphScoreGradientBundle):
+    """Detached score gradients over the configured Qwen site inventory."""
+
+    layer_count: int = QWEN3_JOINT_BLOCK_COUNT
+
+    def __post_init__(self) -> None:
+        mutation_count = _qwen3_mutation_count(self.layer_count)
+        if tuple(self.site_gradients) != _qwen3_expected_observation_site_ids(
+            mutation_count
+        ):
+            raise ValueError("canonical score-gradient inventory drifted")
+        if tuple(self.auxiliary_gradients) != (
+            _qwen3_expected_auxiliary_gradient_site_ids(mutation_count)
+        ):
+            raise ValueError("auxiliary score-gradient inventory drifted")
+        for label, values in (
+            ("canonical", self.site_gradients),
+            ("auxiliary", self.auxiliary_gradients),
+        ):
+            if any(
+                not isinstance(value, Tensor)
+                or value.ndim != 3
+                or value.device.type != "cpu"
+                or value.dtype != torch.float32
+                or value.requires_grad
+                or not bool(torch.isfinite(value).all())
+                for value in values.values()
+            ):
+                raise ValueError(f"{label} score gradients are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class Qwen3JointGraphAttentionOperatorOutputSnapshot(
+    JointGraphAttentionOperatorOutputSnapshot
+):
+    """Detached attention output authenticated against the Qwen topology."""
+
+    layer_count: int = QWEN3_JOINT_BLOCK_COUNT
+
+    def __post_init__(self) -> None:
+        _qwen3_mutation_count(self.layer_count)
+        _require_id(self.site_id, label="site_id")
+        _require_id(self.event_id, label="event_id")
+        if (
+            type(self.block_ordinal) is not int
+            or not 0 <= self.block_ordinal < self.layer_count
+        ):
+            raise ValueError("attention operator block_ordinal is invalid")
+        if self.event_id != f"mutation.{2 * self.block_ordinal + 1}":
+            raise ValueError("attention operator event/block alignment drifted")
+        if self.site_id != f"{self.event_id}.operator_output":
+            raise ValueError("attention operator site_id drifted")
+        if (
+            not isinstance(self.values, Tensor)
+            or self.values.ndim != 3
+            or not self.values.is_floating_point()
+            or not bool(torch.isfinite(self.values).all())
+        ):
+            raise ValueError(
+                "attention operator output must be a finite floating rank-three tensor"
+            )
+        object.__setattr__(
+            self,
+            "values",
+            self.values.detach().to(device="cpu", copy=True).contiguous(),
+        )
+
+
 class Qwen3JointGraphEventGradientTape(JointGraphEventGradientTape):
     """One-use exact suffix-gradient tape sized for the Qwen 3 site inventory."""
 
-    __slots__ = ()
+    __slots__ = ("_layer_count",)
 
     def __init__(
         self,
         observations: Sequence[tuple[str, Tensor]],
         auxiliary_observations: Sequence[tuple[str, Tensor]],
+        *,
+        layer_count: int = QWEN3_JOINT_BLOCK_COUNT,
     ) -> None:
+        mutation_count = _qwen3_mutation_count(layer_count)
         materialized = tuple(observations)
-        expected = _qwen3_expected_observation_site_ids()
+        expected = _qwen3_expected_observation_site_ids(mutation_count)
         if tuple(site_id for site_id, _ in materialized) != expected:
             raise ValueError("event gradient tape site order drifted")
         tensors = tuple(value for _, value in materialized)
@@ -190,7 +270,9 @@ class Qwen3JointGraphEventGradientTape(JointGraphEventGradientTape):
         if len({id(value) for value in tensors}) != len(tensors):
             raise ValueError("event gradient tape tensors must be distinct")
         auxiliary = tuple(auxiliary_observations)
-        expected_auxiliary = _qwen3_expected_auxiliary_gradient_site_ids()
+        expected_auxiliary = _qwen3_expected_auxiliary_gradient_site_ids(
+            mutation_count
+        )
         if tuple(site_id for site_id, _ in auxiliary) != expected_auxiliary:
             raise ValueError("auxiliary gradient tape site order drifted")
         auxiliary_tensors = tuple(value for _, value in auxiliary)
@@ -212,13 +294,96 @@ class Qwen3JointGraphEventGradientTape(JointGraphEventGradientTape):
         self._auxiliary_site_ids = expected_auxiliary
         self._auxiliary_tensors = auxiliary_tensors
         self._consumed = False
+        self._layer_count = layer_count
+
+    def _gradient_bundle(
+        self,
+        canonical: Sequence[Tensor],
+        auxiliary: Sequence[Tensor],
+    ) -> Qwen3JointGraphScoreGradientBundle:
+        return Qwen3JointGraphScoreGradientBundle(
+            site_gradients={
+                site_id: self._cpu_gradient(gradient)
+                for site_id, gradient in zip(self._site_ids, canonical, strict=True)
+            },
+            auxiliary_gradients={
+                site_id: self._cpu_gradient(gradient)
+                for site_id, gradient in zip(
+                    self._auxiliary_site_ids, auxiliary, strict=True
+                )
+            },
+            layer_count=self._layer_count,
+        )
+
+    def score_gradients_with_auxiliary(
+        self, objective: Tensor
+    ) -> Qwen3JointGraphScoreGradientBundle:
+        """Consume one VJP over canonical sites and attention/terminal outputs."""
+        if self._consumed:
+            raise RuntimeError("event gradient tape was already consumed")
+        self._validate_objective(objective)
+        gradients = torch.autograd.grad(
+            objective,
+            (*self._tensors, *self._auxiliary_tensors),
+            allow_unused=False,
+            retain_graph=False,
+            create_graph=False,
+        )
+        self._consumed = True
+        self._tensors = ()
+        self._auxiliary_tensors = ()
+        canonical_count = len(self._site_ids)
+        return self._gradient_bundle(
+            gradients[:canonical_count], gradients[canonical_count:]
+        )
+
+    def score_gradients_from_terminal_normalized_output(
+        self, terminal_gradient: Tensor
+    ) -> Qwen3JointGraphScoreGradientBundle:
+        """Consume a logits-free VJP from an analytic terminal cotangent."""
+        if self._consumed:
+            raise RuntimeError("event gradient tape was already consumed")
+        terminal_output = self._auxiliary_tensors[-1]
+        if (
+            not isinstance(terminal_gradient, Tensor)
+            or terminal_gradient.shape != terminal_output.shape
+            or not terminal_gradient.is_floating_point()
+            or not bool(torch.isfinite(terminal_gradient).all())
+        ):
+            raise ValueError(
+                "terminal gradient must be a finite floating tensor with "
+                "the normalized-output shape"
+            )
+        cotangent = terminal_gradient.detach().to(
+            device=terminal_output.device, dtype=terminal_output.dtype
+        )
+        if not bool(torch.isfinite(cotangent).all()):
+            raise ValueError("terminal gradient is not finite in the execution dtype")
+        gradients = torch.autograd.grad(
+            terminal_output,
+            (*self._tensors, *self._auxiliary_tensors[:-1]),
+            grad_outputs=cotangent,
+            allow_unused=False,
+            retain_graph=False,
+            create_graph=False,
+        )
+        self._consumed = True
+        self._tensors = ()
+        self._auxiliary_tensors = ()
+        canonical_count = len(self._site_ids)
+        return self._gradient_bundle(
+            gradients[:canonical_count], (*gradients[canonical_count:], cotangent)
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class Qwen3JointGraphBackboneExecution(JointGraphBackboneExecution):
-    """Inspectable 58-event Qwen execution stopped before lexical egress."""
+    """Inspectable Qwen execution stopped before lexical egress."""
+
+    layer_count: int = QWEN3_JOINT_BLOCK_COUNT
 
     def __post_init__(self) -> None:
+        mutation_count = _qwen3_mutation_count(self.layer_count)
         if (
             not isinstance(self.output, Tensor)
             or self.output.ndim != 3
@@ -226,21 +391,22 @@ class Qwen3JointGraphBackboneExecution(JointGraphBackboneExecution):
             or self.normalized_output.shape != self.output.shape
         ):
             raise ValueError("joint graph backbone tensors are invalid")
-        if len(self.event_ids) != QWEN3_JOINT_EVENT_COUNT - 1:
-            raise ValueError("joint graph backbone did not execute 58 events")
-        if self.event_ids[-1] != "terminal.rmsnorm":
-            raise ValueError("joint graph backbone event boundary drifted")
+        expected_events = tuple(
+            event.event_id for event in build_qwen3_event_schedule(self.layer_count)
+        )[:-1]
+        if self.event_ids != expected_events:
+            raise ValueError("joint graph backbone event inventory drifted")
         expected_operator_sites = (
-            _qwen3_expected_auxiliary_gradient_site_ids()[:-1]
+            _qwen3_expected_auxiliary_gradient_site_ids(mutation_count)[:-1]
         )
         if (
             not isinstance(self.attention_operator_output_snapshots, tuple)
             or len(self.attention_operator_output_snapshots)
-            != QWEN3_JOINT_BLOCK_COUNT
+            != self.layer_count
             or any(
                 not isinstance(
                     snapshot,
-                    JointGraphAttentionOperatorOutputSnapshot,
+                    Qwen3JointGraphAttentionOperatorOutputSnapshot,
                 )
                 for snapshot in self.attention_operator_output_snapshots
             )
@@ -253,16 +419,17 @@ class Qwen3JointGraphBackboneExecution(JointGraphBackboneExecution):
                 snapshot.block_ordinal
                 for snapshot in self.attention_operator_output_snapshots
             )
-            != tuple(range(QWEN3_JOINT_BLOCK_COUNT))
+            != tuple(range(self.layer_count))
             or any(
                 snapshot.values.shape != self.normalized_output.shape
+                or snapshot.layer_count != self.layer_count
                 for snapshot in self.attention_operator_output_snapshots
             )
         ):
             raise ValueError(
                 "attention operator output snapshot inventory drifted"
             )
-        if self.carrier_version != QWEN3_JOINT_MUTATION_COUNT:
+        if self.carrier_version != mutation_count:
             raise ValueError("joint graph residual carrier did not close")
         if len(self.mutation_receipts) != self.carrier_version:
             raise ValueError("joint graph mutation receipts are incomplete")
@@ -272,6 +439,10 @@ class Qwen3JointGraphBackboneExecution(JointGraphBackboneExecution):
             item.mutation_id for item in self.mutation_receipts
         ):
             raise ValueError("operator and carrier receipt order disagrees")
+        if tuple(item.event_id for item in self.operator_receipts) != (
+            expected_events[1:-1]
+        ):
+            raise ValueError("operator receipt event inventory drifted")
         for label, values in (
             ("chart input", self.mutation_chart_input_sha256s),
             ("delta", self.mutation_delta_sha256s),
@@ -293,12 +464,18 @@ class Qwen3JointGraphBackboneExecution(JointGraphBackboneExecution):
 
 @dataclass(frozen=True, slots=True)
 class Qwen3JointGraphWholeModelExecution(JointGraphWholeModelExecution):
-    """Inspectable result of one complete 59-event Qwen graph traversal."""
+    """Inspectable result of one complete Qwen graph traversal."""
+
+    layer_count: int = QWEN3_JOINT_BLOCK_COUNT
 
     def __post_init__(self) -> None:
-        if len(self.event_ids) != QWEN3_JOINT_EVENT_COUNT:
-            raise ValueError("joint graph did not execute exactly 59 events")
-        if self.carrier_version != QWEN3_JOINT_MUTATION_COUNT:
+        mutation_count = _qwen3_mutation_count(self.layer_count)
+        expected_events = tuple(
+            event.event_id for event in build_qwen3_event_schedule(self.layer_count)
+        )
+        if self.event_ids != expected_events:
+            raise ValueError("joint graph event inventory drifted")
+        if self.carrier_version != mutation_count:
             raise ValueError("joint graph residual carrier did not close")
         if len(self.mutation_receipts) != self.carrier_version:
             raise ValueError("joint graph mutation receipts are incomplete")
@@ -308,6 +485,10 @@ class Qwen3JointGraphWholeModelExecution(JointGraphWholeModelExecution):
             item.mutation_id for item in self.mutation_receipts
         ):
             raise ValueError("operator and carrier receipt order disagrees")
+        if tuple(item.event_id for item in self.operator_receipts) != (
+            expected_events[1:-2]
+        ):
+            raise ValueError("operator receipt event inventory drifted")
         for label, values in (
             ("chart input", self.mutation_chart_input_sha256s),
             ("delta", self.mutation_delta_sha256s),
@@ -328,7 +509,7 @@ class Qwen3JointGraphWholeModelExecution(JointGraphWholeModelExecution):
 
 
 class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
-    """Standalone 59-event executor for a fitted joint Qwen 3 candidate.
+    """Standalone executor for a fitted Qwen candidate or an exact control.
 
     Inherits the Gemma executor's public surface so the incremental decode
     session and downstream tooling recognize it, but owns a Qwen schedule
@@ -508,6 +689,16 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
             cross_block_cross_family_count
         )
         self.eval().requires_grad_(False)
+
+    def architecture_manifest(self) -> dict[str, object]:
+        manifest = super().architecture_manifest()
+        manifest.update(
+            kind="qwen3_joint_cross_block_chart_executor",
+            candidate_arm=self.arm_id == QWEN3_JOINT_CHART_ARM_ID,
+            exact_control_arm=self.arm_id == QWEN3_JOINT_EXACT_CONTROL_ARM_ID,
+            layer_count=self._layer_count,
+        )
+        return manifest
 
     def _forward_components_impl(
         self,
@@ -778,7 +969,7 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
                                 "attention mutation omitted its operator output"
                             )
                         detached_attention_operator_outputs.append(
-                            JointGraphAttentionOperatorOutputSnapshot(
+                            Qwen3JointGraphAttentionOperatorOutputSnapshot(
                                 site_id=(
                                     f"{mutation.event_spec.event_id}.operator_output"
                                 ),
@@ -787,6 +978,7 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
                                     mutation.event_spec.block_ordinal
                                 ),
                                 values=operator_output,
+                                layer_count=self._layer_count,
                             )
                         )
                     if attention_route_factor_observer is not None:
@@ -848,11 +1040,13 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
             Qwen3JointGraphEventGradientTape(
                 live_observations,
                 live_auxiliary_observations,
+                layer_count=self._layer_count,
             )
             if retain_gradient_tape
             else None
         )
         common_execution = {
+            "layer_count": self._layer_count,
             "output": output,
             "normalized_output": normalized,
             "mutation_receipts": receipts,
@@ -924,8 +1118,10 @@ __all__ = [
     "QWEN3_JOINT_EXACT_CONTROL_ARM_ID",
     "QWEN3_JOINT_MUTATION_COUNT",
     "Qwen3JointCrossBlockChartExecutor",
+    "Qwen3JointGraphAttentionOperatorOutputSnapshot",
     "Qwen3JointGraphBackboneExecution",
     "Qwen3JointGraphEventGradientTape",
+    "Qwen3JointGraphScoreGradientBundle",
     "Qwen3JointGraphWholeModelExecution",
     "build_qwen3_event_schedule",
 ]

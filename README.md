@@ -764,17 +764,20 @@ not a broader candidate search against the held families.
 
 | Implemented | Remaining production or research gate |
 |---|---|
-| Toy and Gemma adapters with semantic activation catalogs, variable-length prefill inputs, and source fingerprints | Additional model-family adapters and a stable backend-neutral symbolic sequence IR |
+| Toy, Gemma and dense Qwen3 adapters with semantic activation catalogs, variable-length prefill inputs, and source fingerprints | Additional model-family adapters and a stable backend-neutral symbolic sequence IR |
 | Named source and compiled activation capture through one instrumentation contract | Broader compiled-site coverage and distributed Fisher collection for larger models |
 | Exact and streaming Fisher analysis, parameter clustering, computational modes, generator plans, and causal edges | Robust mode selection and nonlinear transport that transfers across families and layers |
 | Authenticated modal compiler artifacts plus a public-synthetic compact-message stack with explicit chart/membership artifacts and conditional message models | Real-corpus, target-model confirmation that conditional message fits improve both geometric flow and downstream behavior |
 | Manifest-aware compiled/native dispatch with capability checks and source fallback | Cache ownership, cache-aware decode, sliding-window kernels, and efficient dynamic GPU lowering |
 | Progressive map→mutate→guard control flow with separated fit, selection, assessment, and reserved roles | Downstream-qualified whole-model compression, measured end-to-end GPU latency, and fresh task validation |
 
-The Gemma adapter is currently prefill-only; cache-aware decode is not an
-implemented model-adapter capability. MLX and custom Metal paths exist as toy
-and boundary experiments, not as a complete Gemma runtime or general GPU
-speed claim.
+The Gemma adapter is currently prefill-only; its compiled executor has a
+separate cached decoder. Dense Qwen3 now has a standalone MLX runtime with
+prefill, batched cached decode, activation and score-gradient capture, reduced
+attention/chart fitting, and trajectory optimization. See [Qwen3 on MLX](docs/qwen3-mlx.md)
+for local conversion and fitting commands and the validation boundaries.
+The older Gemma MLX paths remain toy and boundary experiments; these additions
+do not establish a complete Gemma runtime or a general GPU speed claim.
 
 ## Quick start
 

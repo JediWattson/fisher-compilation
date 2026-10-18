@@ -1,0 +1,239 @@
+"""Real tiny Qwen integration for MLX captures, fits, and optimizer updates."""
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+
+from fisher_graph.mlx_qwen3_fit import (
+    anchored_ridge,
+    capture_empirical_token_fisher,
+    capture_parameter_fisher,
+    capture_runtime_rows,
+    fit_chart_mlp,
+    fit_reduced_attention,
+    optimize_trajectory,
+    weighted_moments,
+)
+
+
+def test_import_does_not_load_mlx():
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys; import fisher_graph.mlx_qwen3_fit; assert 'mlx.core' not in sys.modules"],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.fixture(scope="module")
+def mx():
+    from fisher_graph.mlx_executor import mlx_metal_is_usable
+    if not mlx_metal_is_usable():
+        pytest.skip("MLX/Metal is unavailable")
+    return pytest.importorskip("mlx.core")
+
+
+@pytest.fixture(scope="module")
+def qwen(mx):
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    from fisher_graph.mlx_qwen3 import MLXQwen3
+
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(482)
+        config = transformers.Qwen3Config(
+            vocab_size=32, hidden_size=16, intermediate_size=32,
+            num_hidden_layers=2, num_attention_heads=4,
+            num_key_value_heads=2, head_dim=4,
+            max_position_embeddings=64, tie_word_embeddings=True,
+            attention_dropout=0.0,
+        )
+        config._attn_implementation = "eager"
+        model = transformers.Qwen3ForCausalLM(config).eval().requires_grad_(False)
+    return MLXQwen3.from_hf(model), model
+
+
+def batches(mx):
+    return [{
+        "input_ids": mx.array([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=mx.int32),
+        "attention_mask": mx.array([[0, 1, 1, 1, 1], [1, 1, 1, 1, 1]]),
+    }, {
+        "input_ids": mx.array([[4, 7, 10, 15, 18], [1, 4, 8, 11, 19]], dtype=mx.int32),
+    }]
+
+
+def test_weighted_moments_and_precision_reference(mx):
+    x = mx.array([[1.0, 2.0], [3.0, -1.0], [9.0, 4.0]])
+    weights = mx.array([1.0, 2.0, 0.0])
+    stats = weighted_moments(x, weights)
+    xn, wn = np.asarray(x).astype(np.float64), np.asarray(weights).astype(np.float64) / 3
+    mean = (xn * wn[:, None]).sum(axis=0)
+    np.testing.assert_allclose(np.asarray(stats.mean), mean, atol=2e-6)
+    np.testing.assert_allclose(np.asarray(stats.covariance), (xn-mean).T @ ((xn-mean) * wn[:, None]), atol=2e-6)
+    y = x @ mx.array([[2.0], [-0.5]])
+    anchor = mx.array([[0.25], [1.0]])
+    native = anchored_ridge(x, y, row_weights=weights, anchor=anchor, relative_ridge=0.1)
+    reference = anchored_ridge(x, y, row_weights=weights, anchor=anchor, relative_ridge=0.1, solver="numpy_float64")
+    np.testing.assert_allclose(np.asarray(native), np.asarray(reference), rtol=3e-5, atol=3e-6)
+    with pytest.raises(ValueError, match="positive total mass"):
+        weighted_moments(x, mx.zeros((3,)))
+
+
+def test_captures_exclude_padding_and_are_real_runtime_rows(qwen, mx):
+    runtime, _ = qwen
+    data = batches(mx)
+    sites = ["attention.0.normalized", "attention.0.context", "mlp.0.normalized", "mlp.0.output"]
+    rows = capture_runtime_rows(runtime, data, sites)
+    assert all(value.shape == (19, 16) for value in rows.values())
+    direct = runtime(**data[0], capture=sites, return_logits=False)
+    valid = np.asarray(data[0]["attention_mask"]).astype(bool)
+    for site in sites:
+        np.testing.assert_allclose(np.asarray(rows[site][:9]), np.asarray(direct.captures[site])[valid], atol=1e-6)
+
+
+def test_full_rank_attention_fit_preserves_real_qwen_forward(qwen, mx):
+    runtime, _ = qwen
+    data = batches(mx)
+    rows = capture_runtime_rows(runtime, data, ["attention.0.normalized", "attention.0.context"])
+    original = np.asarray(runtime(**data[0]).logits)
+    result = fit_reduced_attention(runtime, 0, rows, input_rank=16, output_rank=16, relative_ridge=0.02)
+    actual = np.asarray(result.runtime(**data[0]).logits)
+    np.testing.assert_allclose(actual, original, rtol=3e-4, atol=3e-5)
+    assert result.report["context_output_relative_error"] < 2e-4
+    assert "attention.0.input_basis" not in runtime.parameters
+    assert result.runtime.parameters["attention.0.input_basis"].shape == (16, 16)
+
+
+def test_reduced_attention_and_chart_fit_produce_usable_runtime(qwen, mx):
+    runtime, _ = qwen
+    data = batches(mx)
+    attn_rows = capture_runtime_rows(runtime, data, ["attention.0.normalized", "attention.0.context"])
+    reduced = fit_reduced_attention(runtime, 0, attn_rows, input_rank=8, output_rank=6, solver="numpy_float64").runtime
+    rows = capture_runtime_rows(reduced, data, ["mlp.0.normalized", "mlp.0.output"])
+    fitted = fit_chart_mlp(reduced, 0, rows, chart_count=2, chart_rank=4, generator_rank=4, relative_ridge=0.01)
+    assert "mlp.0.gate_weight" not in fitted.runtime.parameters
+    assert "mlp.0.mode_decoder_weight" not in fitted.runtime.parameters
+    assert fitted.report["training_relative_error"] < 0.65
+    output = fitted.runtime(**data[0])
+    assert output.logits.shape == (2, 5, 32)
+    assert np.isfinite(np.asarray(output.logits)).all()
+    # Verify fitted regression and runtime share chart conventions.
+    actual = capture_runtime_rows(fitted.runtime, data, ["mlp.0.output"])["mlp.0.output"]
+    error = np.linalg.norm(np.asarray(actual - rows["mlp.0.output"])) / np.linalg.norm(np.asarray(rows["mlp.0.output"]))
+    assert error == pytest.approx(fitted.report["training_relative_error"], rel=1e-4)
+    with pytest.raises(ValueError, match="exact source"):
+        fit_reduced_attention(reduced, 0, attn_rows, input_rank=8, output_rank=6)
+
+
+def test_fisher_matches_native_qwen_token_score_gradient(qwen, mx):
+    runtime, model = qwen
+    torch = pytest.importorskip("torch")
+    ids = np.array([[1, 2, 3, 4]], dtype=np.int32)
+    actual = capture_empirical_token_fisher(
+        runtime, [{"input_ids": mx.array(ids)}], ["embedding"],
+        max_tokens=1, full_matrix=True,
+    )
+    embedding = model.model.embed_tokens(torch.tensor(ids)).detach().requires_grad_(True)
+    logits = model(inputs_embeds=embedding).logits
+    loss = torch.nn.functional.cross_entropy(logits[:, 0, :], torch.tensor([2]))
+    gradient = torch.autograd.grad(loss, embedding)[0].detach().numpy().reshape(-1, 16)
+    np.testing.assert_allclose(np.asarray(actual["diagonal"]["embedding"]), (gradient * gradient).sum(axis=0), rtol=4e-4, atol=2e-5)
+    np.testing.assert_allclose(np.asarray(actual["matrices"]["embedding"]), gradient.T @ gradient, rtol=5e-4, atol=2e-5)
+    assert actual["objective_count"] == 1
+    assert actual["cross_position_blocks_included"] is False
+    assert actual["mlx_enable_tf32"] == os.environ.get("MLX_ENABLE_TF32", "backend_default")
+
+
+def test_parameter_fisher_matches_native_and_supplies_optimizer_prior(qwen, mx):
+    runtime, model = qwen
+    torch = pytest.importorskip("torch")
+    name = "mlp.1.down_weight"
+    data = [{"input_ids": mx.array([[1, 2, 3, 4]])}]
+    actual = capture_parameter_fisher(runtime, data, [name], max_tokens=1)
+    weight = model.model.layers[1].mlp.down_proj.weight
+    weight.requires_grad_(True)
+    try:
+        logits = model(input_ids=torch.tensor([[1, 2, 3, 4]])).logits
+        loss = torch.nn.functional.cross_entropy(logits[:, 0, :], torch.tensor([2]))
+        gradient = torch.autograd.grad(loss, weight)[0].detach().numpy()
+    finally:
+        weight.requires_grad_(False)
+    np.testing.assert_allclose(np.asarray(actual["diagonal"][name]), gradient ** 2, rtol=5e-4, atol=1e-8)
+    assert actual["objective_count"] == 1
+    assert float(mx.sum(actual["diagonal"][name]).item()) > 0
+    perturbed = runtime.with_parameters({name: runtime.parameters[name] * 0.5})
+    fitted = optimize_trajectory(perturbed, runtime, data, parameter_names=[name], steps=2,
+                                 anchor_weight=0.01, fisher_diagonal=actual["diagonal"])
+    assert fitted.report["fisher_precision_supplied"]
+    with pytest.raises(ValueError, match="outside.*vocabulary"):
+        capture_parameter_fisher(runtime, [{"input_ids": mx.array([[1, 2]]), "labels": [[1, -5]]}], [name])
+
+
+@pytest.mark.parametrize("objective", ["terminal_mse", "teacher_kl"])
+def test_real_trajectory_adam_reduces_loss_without_changing_source(qwen, mx, objective):
+    runtime, _ = qwen
+    name = "mlp.1.down_weight"
+    original = np.asarray(runtime.parameters[name]).copy()
+    student = runtime.with_parameters({name: runtime.parameters[name] * 0.35})
+    before = np.asarray(student.parameters[name]).copy()
+    result = optimize_trajectory(
+        student, runtime, batches(mx), parameter_names=[name],
+        steps=15, learning_rate=0.003, objective=objective,
+        anchor_weight=1e-6, fisher_diagonal={name: mx.ones_like(student.parameters[name])},
+    )
+    assert result.report["best_training_loss"] < result.report["initial_training_loss"] * 0.8
+    assert result.report["fisher_precision_supplied"] is True
+    np.testing.assert_array_equal(np.asarray(runtime.parameters[name]), original)
+    np.testing.assert_array_equal(np.asarray(student.parameters[name]), before)
+    assert any(np.any(np.asarray(value) != before) for value in result.updates.values())
+    assert result.runtime.parameters["lexical.weight"] is student.parameters["lexical.weight"]
+    with pytest.raises(ValueError, match="exactly selected"):
+        optimize_trajectory(student, runtime, batches(mx), parameter_names=[name], fisher_diagonal={})
+
+
+def test_refit_rejects_existing_transport_vocabulary_change(qwen, mx):
+    runtime, _ = qwen
+    runtime = runtime.with_parameters({})
+    runtime.config["transports"] = [{"source": "attention.0", "target": "mlp.1"}]
+    with pytest.raises(ValueError, match="transport vocabulary"):
+        fit_reduced_attention(runtime, 0, {}, input_rank=8, output_rank=8)
+
+
+def test_bfloat16_fits_preserve_deployed_weights_hidden_and_cache(qwen, mx):
+    runtime, _ = qwen
+    runtime = runtime.with_parameters({name: value.astype(mx.bfloat16) for name, value in runtime.parameters.items()})
+    data = batches(mx)
+    captures = capture_runtime_rows(runtime, data, ["attention.0.normalized", "attention.0.context"])
+    attention = fit_reduced_attention(runtime, 0, captures, input_rank=8, output_rank=6)
+    assert all(value.dtype == mx.bfloat16 for value in attention.updates.values())
+    captures = capture_runtime_rows(attention.runtime, data, ["mlp.0.normalized", "mlp.0.output"])
+    charts = fit_chart_mlp(attention.runtime, 0, captures, chart_count=2, chart_rank=4)
+    assert all(value.dtype == mx.bfloat16 for value in charts.updates.values())
+    output = charts.runtime(**data[0])
+    assert output.hidden_states.dtype == mx.bfloat16
+    assert output.logits.dtype == mx.bfloat16
+    assert all(key.dtype == mx.bfloat16 and value.dtype == mx.bfloat16 for key, value in output.cache.key_values)
+    decoded = charts.runtime.decode(mx.array([[2], [3]]), output.cache)
+    assert decoded.hidden_states.dtype == mx.bfloat16
+    assert all(key.dtype == mx.bfloat16 and value.dtype == mx.bfloat16 for key, value in decoded.cache.key_values)
+    assert np.isfinite(np.asarray(decoded.logits.astype(mx.float32))).all()
+    assert charts.report["deployment_dtype"] == str(mx.bfloat16)
+
+
+@pytest.mark.parametrize("objective", ["terminal_mse", "teacher_kl"])
+def test_bfloat16_optimizer_initial_loss_matches_unmodified_runtime(qwen, mx, objective):
+    runtime, _ = qwen
+    runtime = runtime.with_parameters({name: value.astype(mx.bfloat16) for name, value in runtime.parameters.items()})
+    name = "mlp.1.down_weight"
+    result = optimize_trajectory(runtime, runtime, batches(mx), parameter_names=[name], steps=2, objective=objective)
+    assert result.report["initial_training_loss"] == 0.0
+    assert result.report["best_training_loss"] == 0.0
+    assert result.report["optimizer_master_dtype"] == "float32"
+    assert result.updates[name].dtype == mx.bfloat16
+    np.testing.assert_array_equal(np.asarray(result.updates[name].astype(mx.float32)), np.asarray(runtime.parameters[name].astype(mx.float32)))
+    output = result.runtime(**batches(mx)[0])
+    assert output.hidden_states.dtype == mx.bfloat16
+    assert all(key.dtype == mx.bfloat16 and value.dtype == mx.bfloat16 for key, value in output.cache.key_values)

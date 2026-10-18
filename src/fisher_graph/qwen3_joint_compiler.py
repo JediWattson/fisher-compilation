@@ -1,4 +1,4 @@
-"""Qwen 3 joint cross-block compiler: assemble a 58-event exact control.
+"""Qwen 3 joint cross-block compiler: assemble a 59-event exact control.
 
 Mirrors :func:`gemma3_joint_cross_block_compiler.compile_gemma3_joint_exact_control`
 for :class:`Qwen3CausalLMAdapter`.  The Gemma compiler is source-pinned to
@@ -15,6 +15,7 @@ the teacher bit-for-bit.
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 
 import torch
 from torch import Tensor, nn
@@ -114,7 +115,7 @@ def assemble_qwen3_joint_executor(
     arm_id: str,
     layer_count: int = QWEN3_JOINT_BLOCK_COUNT,
 ) -> Qwen3JointCrossBlockChartExecutor:
-    """Bind Qwen components into one standalone 58-event executor."""
+    """Bind Qwen components (59 events for the default 28 decoder layers)."""
 
     if not isinstance(adapter, Qwen3CausalLMAdapter):
         raise TypeError("adapter must be a Qwen3CausalLMAdapter")
@@ -179,7 +180,7 @@ def assemble_qwen3_joint_executor(
 def compile_qwen3_joint_exact_control(
     adapter: Qwen3CausalLMAdapter,
 ) -> Qwen3JointCrossBlockChartExecutor:
-    """Clone the loaded Qwen 3 into one exact, standalone 58-event executor."""
+    """Clone Qwen 3 into an exact executor (59 events for 28 layers)."""
 
     if not isinstance(adapter, Qwen3CausalLMAdapter):
         raise TypeError("adapter must be a Qwen3CausalLMAdapter")
