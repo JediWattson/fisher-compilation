@@ -525,6 +525,101 @@ layers 10 and 17 be composed. Explicit hidden-state charts and membership
 weights remain unimplemented; a shared chart ladder is the
 bounded capacity rung before adding more routes to layer 17.
 
+## Pullback-Fisher input charts and EWC consolidation (open development)
+
+A unified diagnosis across the synthetic response-chart fixture, single-layer
+and composed Gemma slices, the 18-MLP full stack, sparse attention, and the
+39-event whole-model joint executor showed that previous fidelity regressions
+stemmed from two shared causes:
+
+1. **Unweighted Euclidean / weight-SVD input truncation across `RMSNorm`
+   boundaries:** `RMSNorm` scale weights (`1 + w`) amplify specific low-singular-value
+   weight directions by up to `50x`, so unweighted SVD discards the exact
+   directions with the largest post-norm and downstream Pullback-Fisher
+   sensitivity.
+2. **Unanchored local pseudoinverse / OLS fits in low-occupancy directions:**
+   solving 640-D node, chart, or transport regressions on small calibration
+   splits (`fit40` or 408-token panels) inverts trailing Gram eigenvalues and
+   memorizes prompt-specific noise unless anchored by an **Elastic Weight
+   Consolidation (EWC)** precision prior.
+
+### 1. Synthetic response-geometry fixture (`fisher_response_geometry_pullback_ewc_v1`)
+
+Replacing the unweighted 3D Euclidean message basis `Q` (`33.67%` pullback
+Fisher energy retained) with the top-3 eigenvectors of the training pullback
+Fisher metric `E[R(m)^T D_G^T H_G D_G R(m)]` (`95.05%` pullback Fisher energy
+retained) and solving the closed-form 2-task EWC normal equations per chart
+([`fisher_response_geometry_pullback_ewc.py`](src/fisher_graph/fisher_response_geometry_pullback_ewc.py),
+[`evaluation.md`](artifacts/research/fisher-response-geometry-pullback-ewc-v1/evaluation.md))
+eliminates the routing/derivative trade-off at identical runtime storage:
+
+| Target (`all_rows`, `48` eval rows) | `activation_charts` | `response_charts` (`λ=0`) | `intercept_compatible` (`λ=1`, rt / oracle) | `pullback_ewc_response_charts` (`rt = direct = oracle`) |
+|---|---:|---:|---:|---:|
+| `residual_update` Fisher error | `0.136293` | `0.892656` | `0.269648` / `0.091452` | **`0.079460`** (`0.041704` on 38-row support) |
+| `derivative_action` Fisher error | `0.945532` | `1.011945` | `1.091190` / `0.652319` | **`0.715604`** (`0.418076` on 38-row support) |
+| Support / runtime = discovery | `48/48` (`100%`) | `38/48` (`75.0%`) | `48/48` (`81.2%`) | **`48/48` (`100.0%`)** |
+
+### 2. Single-layer (`L17`, `L10`), shared hidden-state chart, and two-layer (`L10 + L17`) open-development results
+
+Combining trace-relative EWC node generator ridge (`--relative-generator-ridge 0.008`),
+640-D linear orthogonalization of edge residuals, Fisher-weighted Cross-Block
+OOF EWC Wiener shrinkage (`--ewc`), and a shared Pullback-Fisher layer chart
+(`--shared-chart-rank 32` in [`state_conditioned_modal_fitting.py`](src/fisher_graph/state_conditioned_modal_fitting.py))
+yields single-stage promotion without selection-set gain sweeps:
+
+| Open-development scope (`google/gemma-3-270m`) | Arm | Edgeless NLL | Dynamic Graph NLL | Excess ΔNLL vs. Native | KL / token | Top-1 Agreement | Flow Weighted NRMSE |
+|---|---|---:|---:|---:|---:|---:|---:|
+| **Layer 17** (`133,187` params, `-69.8%`) | Original V1 (`1.0x` unshrunk) | `4.959437` | `4.962705` | `+0.068057` | *(regressed)* | *(regressed)* | `> 1.12` |
+| | Benchmark V2 (`0.5x` 2-stage sweep) | `4.959437` | `4.956374` | `+0.061726` | `0.112221` | `80.00%` | `1.0189` |
+| | **EWC Node-Ridge + Clean Edges (`--ewc`)** | `4.931476` | **`4.928223`** | **`+0.033574`** (`48.2%` gap recovered) | **`0.109545`** | **`81.89%`** | `1.0001` |
+| | **Shared Pullback Chart (`--shared-chart-rank 32 --ewc`)** | `4.942985` | **`4.937194`** (`+0.005791` edge gain) | `+0.042546` | **`0.101305`** (`r=4`) | **`82.64%`** | **`0.9950` (`< 1.0`)** |
+| **Layer 10** (`133,187` params, `-79.2%`) | Benchmark V2 (`0.25x` 2-stage sweep) | `5.125561` | `5.125391` | `+0.072700` | `0.070971` | `80.63%` | `1.0002` |
+| | **EWC Single-Stage (`--ewc`)** | `5.107620` | **`5.107471`** | **`+0.054780`** (`24.8%` gap recovered) | **`0.055314`** | **`83.51%`** | `1.0001` |
+| **Composed `L10 + L17`** (`L17` selection) | V2 Baseline (`L10 + L17`) | `5.048940` | `5.052920` (`-0.003980`) | `+0.158271` | `0.202004` | `72.08%` | — |
+| | **EWC Composed (`L10 + L17`)** | `4.997124` | **`4.992965`** (`+0.004159`) | **`+0.098317`** (`-37.9%`) | **`0.145971`** | **`79.25%`** | — |
+
+### 3. Full 18-MLP stack sequential refit & all-18-layer `Block-EWC K=8` sparse attention
+
+* **Full 18-MLP Stack (`56.02M` parameters saved = `20.90%` whole-model reduction, `79.17%` MLP matrix MAC reduction):**
+  Anchoring sequential compiled-prefix refits of layers `10..17` toward each
+  layer's native-input incumbent generator (`--ewc-anchor-weight 0.05 --relative-generator-ridge 0.005`
+  in [`gemma3_full_mlp_stack_refit_experiment.py`](src/fisher_graph/gemma3_full_mlp_stack_refit_experiment.py))
+  reduces selection NRMSE on **all `8/8` refitted layers** and cuts end-to-end
+  assessment excess ΔNLL from `+0.348476` (frozen) and `+0.149649` (unanchored
+  refit) to **`+0.121517`** (`65.1%` trajectory gap recovery, KL `0.203246 → 0.189373`).
+* **All-18-Layer `Block-EWC K=8` Sparse Attention ([`gemma3_attention_edge_block_ewc.py`](src/fisher_graph/gemma3_attention_edge_block_ewc.py)):**
+  Enforcing per-head minimum route support (`min_per_head=1`, `0%` starved
+  heads) with off-diagonal greedy residual selection and closed-form Block-EWC
+  simplex route reweighting raises 60-prompt all-layer `K=8` Top-1 agreement
+  from `63.3%–68.3%` (global output-energy / probability baselines) to **`80.0%`
+  (`48/60`)** and lowers centered logit NRMSE from `0.3033–0.3434` to **`0.2786`**.
+
+### 4. Standalone 39-event whole-model Pullback-EWC compilation (`26.68%` to `39.10%` parameter reduction, `71.41%` body MAC reduction)
+
+In [`gemma3_joint_cross_block_model_fit.py`](src/fisher_graph/gemma3_joint_cross_block_model_fit.py)
+and [`gemma3_joint_cross_block_whole_model_experiment.py`](src/fisher_graph/gemma3_joint_cross_block_whole_model_experiment.py),
+applying ingress/egress/active-token Pullback-EWC to the shared `rank=512`
+lexical factor, `RMSNorm`-pullback + `qk_norm` weighting to all 18 reduced
+attention generators (`256` in, `64` out), and Hessian-free antithetic EWC
+probing + Pullback chart bases + 640-D linear orthogonalization to all 18 MLP
+chart blocks and cross-block transports resolves the v1 whole-model collapse
+(`0.0%` Top-1, `+10.86` ΔNLL):
+
+| Whole-Model 39-Event Arm (`376` supervised tokens, `406` compared queries, `0` teacher calls) | Deployed Scalars (`%` Saved) | Body Matrix MACs / tok (`%` Saved) | ΔNLL vs. Native | KL / query | Logit NRMSE | Top-1 Agreement |
+|---|---:|---:|---:|---:|---:|---:|
+| **Exact 39-Event Control** | `268,098,176` (`0.00%`) | `100,270,080` (`0.00%`) | `0.000000` | `0.000000` | `0.000000` | `100.00%` (`406/406`) |
+| **Previous Joint Baseline (`v1`)** | `196,559,184` (`26.68%`) | `61,921,408` (`38.25%`) | `+10.863407` | `12.777117` | `1.215437` | `0.00%` (`0/406`) |
+| *Diagnostic:* **Pullback-EWC `Lex512` + Exact Body** | `234,871,424` (`12.39%`) | `100,270,080` (`0.00%`) | `-0.007195` | `0.039719` | `0.078122` | **`96.31%`** (`391/406`) |
+| *Diagnostic:* **Pullback-EWC `Lex512 + Attn(256,640)` + Exact MLPs** | `227,548,608` (`15.12%`) | `88,966,656` (`11.27%`) | `-0.025919` | `0.090781` | `0.131656` | **`94.09%`** (`382/406`) |
+| *Diagnostic:* **Pullback-EWC `Lex512 + Attn(256,64)` + Exact MLPs** | `223,354,304` (`16.69%`) | `82,722,816` (`17.50%`) | `-0.086110` | `0.170329` | `0.167875` | **`88.42%`** (`359/406`) |
+| **Full 39-Event Pullback-EWC (`--ewc`)** | **`196,559,184` (`26.68%`)** | **`61,921,408` (`38.25%`)** | **`-0.058087`** | **`0.293518`** | **`0.209296`** | **`77.34%` (`314/406`)** |
+| **Full 39-Event Fused-640 EWC (`--ewc --fuse-mlp-modes`)** | **`163,282,512` (`39.10%`)** | **`28,670,080` (`71.41%`)** | **`-0.055933`** | **`0.294331`** | **`0.206701`** | **`76.60%` (`311/406`)** |
+
+All Gemma EWC results above are open-development evidence (`heldout_confirmation=false`);
+sealed guard and `Calibration-B` qualification remain separate downstream gates,
+and logical MAC reductions do not claim wall-clock kernel latency without a
+dedicated backend benchmark.
+
 ## Earlier Gemma result: V20q token-VJP refit
 
 V20p showed that the existing one-boundary runtime can express a genuinely

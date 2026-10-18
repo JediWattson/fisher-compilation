@@ -3739,3 +3739,108 @@ and report
 `5c958c54fbcd55239cc1f5943dcb1bf138bbd4116233783bf7020e1023f4998a`.
 The local tensor is approximately 24 MiB because it retains all ten strict
 plan variants and diagnostics; it remains ignored under `.local-runs/`.
+
+## Pullback-Fisher input charts and EWC consolidation across synthetic, slice, stack, attention, and 39-event whole-model rungs
+
+This campaign tested whether replacing Euclidean / weight-SVD input charts with
+**Pullback-Fisher input geometry** and anchoring local node, chart, and edge
+solves with **Elastic Weight Consolidation (EWC)** resolves the compiler's
+runtime-routing, cross-family overfitting, and whole-model trajectory drift
+bottlenecks:
+
+1. **Synthetic Response-Geometry Pullback-EWC Rung (`src/fisher_response_geometry_pullback_ewc_v1.py`, `src/fisher_graph/fisher_response_geometry_pullback_ewc.py`):**
+   - Replaced Euclidean PCA of `train_m` (`33.67%` pullback Fisher energy
+     retained) with the top-3 eigenvectors of the training pullback-Fisher
+     metric (`95.05%` retained).
+   - Included domain localization alongside `[response, intercept]` discovery
+     features and solved the closed-form 2-task EWC normal equations per chart,
+     achieving `0.079460` all-row runtime `residual_update` Fisher error
+     (`0.041704` on the 38-row common mask), `0.715604` all-row
+     `derivative_action` error (`0.418076` on the 38-row mask), and `100.0%`
+     (`48/48`) runtime-to-discovery routing agreement.
+   - Checked-in artifacts:
+     [`artifacts/research/fisher-response-geometry-pullback-ewc-v1/`](artifacts/research/fisher-response-geometry-pullback-ewc-v1/evaluation.md).
+
+2. **State-Conditioned Modal Flow, Shared Layer Charts, and Two-Layer `L10 + L17` Composition (`src/fisher_graph/state_conditioned_modal_fitting.py`, `src/fisher_graph/gemma3_state_conditioned_shape_flow_experiment.py`):**
+   - Added `pullback_fisher_source_chart`, `fit_shared_pullback_fisher_layer_chart`,
+     `fit_ewc_state_conditioned_modal_interactions` (with 8-block Cross-Family
+     OOF EWC Wiener shrinkage), trace-relative EWC node generator ridge
+     (`--relative-generator-ridge 0.008`), and 640-D linear orthogonalization
+     of edge residuals.
+   - On Gemma 3 270M Layer 17 (`open_selection`), single-stage `--ewc` recovered
+     `48.2%` of the native NLL gap (`4.959437 -> 4.928223`, KL `0.109545`,
+     Top-1 `81.89%`); adding `--shared-chart-rank 32` improved NLL, KL
+     (`0.101305`), Top-1 (`82.64%`), Euclidean flow NRMSE (`0.9978 < 1.0`), and
+     weighted flow NRMSE (`0.9950 < 1.0`) simultaneously.
+   - On Layer 10, single-stage `--ewc` dropped selection NLL from `5.125561` to
+     `5.107471`, KL from `0.070971` to `0.055314`, and raised Top-1 from
+     `80.63%` to `83.51%`.
+   - When composed (`L10 + L17`), EWC turned V2's `-0.003980` edge NLL
+     regression into a `+0.004159` improvement, cut composed excess ΔNLL by
+     `37.9%` (`+0.158271 -> +0.098317`), dropped KL by `27.7%`
+     (`0.202004 -> 0.145971`), and raised Top-1 by `+7.17 pp` (`72.08% -> 79.25%`).
+
+3. **Full 18-MLP Stack Incumbent-Anchored EWC Sequential Refit (`src/fisher_graph/full_mlp_stack_generators.py`, `src/fisher_graph/gemma3_full_mlp_stack_refit_experiment.py`):**
+   - Anchored sequential compiled-prefix refits of layers `10..17` toward each
+     layer's native-input generator (`--ewc-anchor-weight 0.05 --relative-generator-ridge 0.005`),
+     improving selection weighted and unweighted NRMSE on all `8/8` refitted
+     layers and reducing 18-MLP assessment excess ΔNLL from `+0.149649` to
+     `+0.121517` (`65.1%` recovery of the `+0.348476` frozen gap) and KL from
+     `0.203246` to `0.189373` at `20.90%` whole-model parameter savings and
+     `79.17%` MLP matrix MAC savings.
+
+4. **All-18-Layer `Block-EWC K=8` Sparse Attention (`src/fisher_graph/gemma3_attention_edge_block_ewc.py`):**
+   - Implemented `select_block_ewc_attention_route_mask` (per-head minimum
+     support `min_per_head=1` + greedy off-diagonal residual reduction across
+     RMS-normalized value directions) and `solve_block_ewc_sparse_attention_weights`
+     (closed-form $m \times m$ Block-EWC normal equations anchored at
+     simplex-renormalized probabilities).
+   - Across all 60 prompts of the 18-layer exact replay, `Block-EWC K=8`
+     eliminated head starvation (`0.0%`), raised Top-1 agreement from
+     `63.3%–68.3%` to `80.0%` (`48/60`), and lowered centered logit NRMSE to
+     `0.2786`.
+
+5. **Standalone 39-Event Whole-Model Pullback-EWC Compiler (`src/fisher_graph/gemma3_joint_cross_block_model_fit.py`, `src/fisher_graph/gemma3_joint_cross_block_whole_model_experiment.py`):**
+   - Replaced unweighted lexical and attention weight-SVD plus one-shot native
+     MLP chart fitting with:
+     - `fit_pullback_ewc_shared_tied_lexical_factor` (ingress + egress +
+       active-token Pullback-EWC Gram matrix, raising `Lex512 + ExactBody`
+       Top-1 from `17.49%` to `96.31%` and cutting KL from `2.4271` to `0.0397`),
+     - `fit_pullback_ewc_reduced_attention_generator` (`RMSNorm`-pullback +
+       `qk_norm`-weighted `Attn(256, 64)`, raising `Lex512 + Attn + ExactMLP`
+       Top-1 from `0.49%` to `88.42%` and cutting KL from `8.9196` to `0.1703`),
+     - `fit_ewc_joint_cross_block_whole_model` (sequential trajectory compilation
+       with Hessian-free antithetic EWC probing, `_ewc_pullback_chart_geometry`,
+       16-D in-chart probing, and 640-D linear orthogonalization of chart and
+       transport contributions).
+   - At the exact `196,559,184`-parameter budget (`26.68%` whole-model
+     parameter reduction, `38.25%` body MAC reduction), `--ewc` improved
+     39-event evaluation from `0.00%` Top-1 (`+10.8634` ΔNLL, `12.7771` KL,
+     `1.2154` logit NRMSE) to **`77.34%` Top-1 (`-0.0581` ΔNLL, `0.2935` KL,
+     `0.2093` logit NRMSE)**.
+   - Adding `--fuse-mlp-modes` fuses `W_down` into the 640-D post-norm-weighted
+     residual space (`modes = 640`), removing an additional `33,276,672`
+     parameters (**`163,282,512` deployed scalars = `39.10%` whole-model
+     parameter reduction** and **`28,670,080` body matrix MACs/token = `71.41%`
+     body MAC reduction**) while achieving **`76.60%` Top-1 (`-0.0559` ΔNLL,
+     `0.2943` KL, `0.2067` logit NRMSE)**.
+
+```bash
+python src/fisher_response_geometry_pullback_ewc_v1.py inspect
+fisher-graph-gemma-state-conditioned-shape-flow fit \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --ewc \
+  --shrinkage-kappa 1.0 \
+  --shared-chart-rank 32 \
+  --output .local-runs/google--gemma-3-270m/state-conditioned-shape-flow-ewc-dev-v1.pt
+fisher-graph-gemma-full-mlp-refit-dev \
+  --revision 9b0cfec892e2bc2afd938c98eabe4e4a7b1e0ca1 \
+  --ewc-anchor-weight 0.05 \
+  --relative-generator-ridge 0.005 \
+  --output .local-runs/google--gemma-3-270m/modal-generator-full-mlp-stack-ewc-refit-dev-v1.pt
+python -m fisher_graph.gemma3_joint_cross_block_whole_model_experiment \
+  --ewc \
+  --fuse-mlp-modes \
+  --output .local-runs/google--gemma-3-270m/joint-lexical-attention-mlp-cross-block-ewc-fused640-dev-v1.json
+```
+
