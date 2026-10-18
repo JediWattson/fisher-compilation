@@ -19,6 +19,13 @@ from fisher_graph.fisher_response_geometry_pullback_ewc import (
     pullback_fisher_input_basis,
 )
 from fisher_graph.fisher_response_geometry_replay import load_replay
+from fisher_graph.gemma3_attention_edge_block_ewc import (
+    select_block_ewc_attention_route_mask,
+    solve_block_ewc_sparse_attention_weights,
+)
+from fisher_graph.gemma3_parts_first_attention_edge_fidelity import (
+    select_global_attention_route_mask,
+)
 from fisher_graph.modal_generators import (
     ModalGeneratorBinding,
     fit_modal_generator_rate_curve,
@@ -358,6 +365,89 @@ def test_pullback_fisher_source_chart_and_ewc_state_conditioned_modal_fit_beat_u
         ewc_prior_relative_weight=0.1,
     )
     assert curve_ewc.points[0].eval_metrics.weighted_nrmse < curve_unanchored.points[0].eval_metrics.weighted_nrmse * 0.25
+
+
+def test_block_ewc_attention_route_selection_and_reweighting() -> None:
+    """Verify Block-EWC prevents head starvation and beats naive zero-fill and renormalization."""
+    # Construct a 2-head, 1-query, 4-key attention problem where:
+    # - Head 0 has large raw value norms so global output-energy starves Head 1 at K=2
+    # - In Head 0, keys 0 and 1 are collinear while key 2 is orthogonal
+    probs = torch.tensor(
+        [[[[0.4, 0.3, 0.3, 0.0]], [[0.5, 0.5, 0.0, 0.0]]]],
+        dtype=torch.float32,
+    )  # [1, 2, 1, 4]
+    u_head0 = torch.tensor(
+        [
+            [3.0, 0.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0, 0.0],
+            [0.0, 3.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    u_head1 = torch.tensor(
+        [
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        dtype=torch.float32,
+    )
+    proj = torch.stack([u_head0, u_head1], dim=0).unsqueeze(0)  # [1, 2, 4, 4]
+    allowed = torch.tensor([[[True, True, True, True]]], dtype=torch.bool)
+    out_energy = (
+        probs.double().square() * proj.double().square().sum(dim=-1)[:, :, None, :]
+    ).float()
+
+    global_mask = select_global_attention_route_mask(
+        probs,
+        out_energy,
+        out_energy,
+        allowed,
+        ranker="route_output_energy",
+        k=2,
+        row_catalog_id="row0",
+        layer_ordinal=0,
+    )
+    # Global output-energy starves Head 1 completely at K=2
+    assert int(global_mask[0, 1, 0].sum().item()) == 0
+
+    ewc_mask = select_block_ewc_attention_route_mask(
+        probs,
+        proj,
+        allowed,
+        k=2,
+        min_per_head=1,
+    )
+    # Block-EWC guarantees both heads are active at K=2
+    assert int(ewc_mask[0, 0, 0].sum().item()) == 1
+    assert int(ewc_mask[0, 1, 0].sum().item()) == 1
+
+    # Verify Block-EWC optimal route reweighting beats both zero-fill and naive renormalization
+    w_ewc = solve_block_ewc_sparse_attention_weights(
+        probs,
+        proj,
+        allowed,
+        ewc_mask,
+        ewc_prior_weight=0.01,
+    )
+    dense_op = (probs.unsqueeze(-1) * proj[:, :, None, :, :]).sum(dim=(1, 3))
+    ewc_op = (w_ewc.unsqueeze(-1) * proj[:, :, None, :, :]).sum(dim=(1, 3))
+
+    zf_probs = probs.masked_fill(~global_mask, 0.0)
+    zf_op = (zf_probs.unsqueeze(-1) * proj[:, :, None, :, :]).sum(dim=(1, 3))
+
+    rn_mass = zf_probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+    rn_probs = torch.where(rn_mass > 0, zf_probs / rn_mass, 0.0)
+    rn_op = (rn_probs.unsqueeze(-1) * proj[:, :, None, :, :]).sum(dim=(1, 3))
+
+    err_ewc = float((ewc_op - dense_op).norm().item())
+    err_zf = float((zf_op - dense_op).norm().item())
+    err_rn = float((rn_op - dense_op).norm().item())
+    assert err_ewc < err_zf
+    assert err_ewc < err_rn
+
 
 
 

@@ -462,6 +462,12 @@ from .gemma3_modal_generator_graph_executor import (
     Gemma3ModalGeneratorGraphExecution,
     Gemma3ModalGeneratorGraphExecutor,
 )
+from .gemma3_attention_edge_block_ewc import (
+    block_ewc_sparse_attention_from_normalized,
+    replay_exact_with_block_ewc_attention,
+    select_block_ewc_attention_route_mask,
+    solve_block_ewc_sparse_attention_weights,
+)
 from .structured_operator_bootstrap import (
     DEFAULT_STRUCTURED_OPERATOR_BOOTSTRAP_ROWS,
     DEFAULT_STRUCTURED_OPERATOR_MAX_CONDITION,
@@ -1005,6 +1011,10 @@ __all__ = [
     "prompt_mode_gate_effects",
     "select_modal_interactions_greedily",
     "authenticate_modal_interaction_authorization",
+    "block_ewc_sparse_attention_from_normalized",
+    "replay_exact_with_block_ewc_attention",
+    "select_block_ewc_attention_route_mask",
+    "solve_block_ewc_sparse_attention_weights",
     "teacher_flow_routing",
     "validate_coordinate_generator_compatibility",
     "ActivationSite",
