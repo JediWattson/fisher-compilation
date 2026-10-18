@@ -391,12 +391,14 @@ class Qwen3CausalLMAdapter(ModelAdapter):
                 cache_kind="none",
             )
             layer_id = f"layer.{index}"
+            # Qwen 3 RMSNorm applies ``weight * normalized`` directly; the
+            # unit-offset (1+w) convention is Gemma-specific.
             residual_norm = NormalizationSpec(
                 kind="rms_norm",
                 width=self._hidden_size,
                 epsilon=norm_epsilon,
                 affine=True,
-                scale_parameterization="unit_offset",
+                scale_parameterization="direct",
                 compute_dtype="float32",
             )
             qk_norm = NormalizationSpec(
@@ -404,7 +406,7 @@ class Qwen3CausalLMAdapter(ModelAdapter):
                 width=head_dimension,
                 epsilon=norm_epsilon,
                 affine=True,
-                scale_parameterization="unit_offset",
+                scale_parameterization="direct",
                 compute_dtype="float32",
             )
             # Qwen 3 residual branches carry no delta normalization: the
