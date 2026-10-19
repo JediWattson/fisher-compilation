@@ -760,8 +760,151 @@ def optimize_trajectory(
     })
 
 
+def allocate_waterfill_attention_ranks(
+    runtime: Any,
+    batches: Sequence[Mapping[str, Any]],
+    *,
+    target_scalars_removed: int,
+    layer_indices: Sequence[int] | None = None,
+    rank_step: int = 1,
+    min_rank: int = 1,
+    fisher_max_tokens: int = 32,
+) -> dict[str, Any]:
+    """Allocate per-layer (input_rank, output_rank) via KKT Fisher water-filling.
+
+    Solves the Lagrangian rate-distortion allocation across all selected
+    attention bottlenecks:
+        min_{r_{in,l}, r_{out,l}} sum_l Omega_l (D_{in,l}(r_{in,l}) + D_{out,l}(r_{out,l}))
+                                  - mu * sum_l Delta_S_l(r_{in,l}, r_{out,l})
+    where Omega_l = E[a_l^T F_l a_l] is the scale-invariant Pullback-Fisher
+    energy of layer l's attention output, including the unfactored exact
+    endpoint (0 distortion, 0 scalars removed) for each side.
+    """
+    mx = _mx()
+    _rank(target_scalars_removed, 2**31 - 1, "target_scalars_removed")
+    _rank(rank_step, 2048, "rank_step")
+    _rank(min_rank, 2048, "min_rank")
+    indices = tuple(range(len(runtime.layers)) if layer_indices is None else layer_indices)
+    if not indices or len(set(indices)) != len(indices):
+        raise ValueError("layer_indices must name unique existing layers")
+    out_sites = [f"attention.{l}.output" for l in indices]
+    in_sites = [f"attention.{l}.normalized" for l in indices]
+    ctx_sites = [f"attention.{l}.context" for l in indices]
+    captures = capture_runtime_rows(runtime, batches, out_sites + in_sites + ctx_sites)
+    fisher = capture_empirical_token_fisher(runtime, batches, out_sites, max_tokens=fisher_max_tokens)
+
+    layer_specs = {}
+    for l in indices:
+        prefix = f"attention.{l}."
+        p = runtime.parameters
+        if prefix + "input_basis" in p or prefix + "output_encoder_weight" in p:
+            raise ValueError("water-filling requires exact source attention layers")
+        q, k, v, out = (p[prefix + key].astype(mx.float32) for key in ("q_weight", "k_weight", "v_weight", "output_decoder_weight"))
+        hidden = int(q.shape[1])
+        q_width = int(q.shape[0])
+        kv_width = int(k.shape[0])
+        exact_in_scalars = (q_width + 2 * kv_width) * hidden
+        exact_out_scalars = hidden * q_width
+        c_in = hidden + q_width + 2 * kv_width
+        c_out = q_width + hidden
+
+        y = np.asarray(captures[prefix + "output"].astype(mx.float32), dtype=np.float64)
+        f_diag = np.asarray(fisher["diagonal"][prefix + "output"].astype(mx.float32), dtype=np.float64)
+        omega = max(float(np.mean(np.sum((y * y) * f_diag[None, :], axis=1))), 1e-12)
+
+        x = captures[prefix + "normalized"].astype(mx.float32)
+        c = captures[prefix + "context"].astype(mx.float32)
+        cov_x = (x.T @ x) / x.shape[0]
+        ev_x = mx.linalg.eigvalsh((cov_x + cov_x.T) * 0.5, stream=mx.cpu)
+        cov_c = (c.T @ c) / c.shape[0]
+        out_gram = out @ cov_c @ out.T
+        ev_o = mx.linalg.eigvalsh((out_gram + out_gram.T) * 0.5, stream=mx.cpu)
+        mx.eval(ev_x, ev_o)
+        ex_np = np.maximum(np.asarray(ev_x, dtype=np.float64)[::-1], 0.0)
+        eo_np = np.maximum(np.asarray(ev_o, dtype=np.float64)[::-1], 0.0)
+        ex_np /= max(ex_np.sum(), 1e-12)
+        eo_np /= max(eo_np.sum(), 1e-12)
+
+        in_tail = np.zeros(hidden + 1, dtype=np.float64)
+        out_tail = np.zeros(min(hidden, q_width) + 1, dtype=np.float64)
+        in_tail[:hidden] = 1.0 - np.concatenate([[0.0], np.cumsum(ex_np[:-1])])
+        out_tail[: min(hidden, q_width)] = 1.0 - np.concatenate([[0.0], np.cumsum(eo_np[: min(hidden, q_width) - 1])])
+
+        max_factored_in = max((exact_in_scalars - 1) // c_in, min_rank)
+        max_factored_out = max((exact_out_scalars - 1) // c_out, min_rank)
+        in_candidates = [r for r in range(min_rank, min(max_factored_in, hidden) + 1, rank_step)] + [hidden]
+        out_candidates = [r for r in range(min_rank, min(max_factored_out, min(hidden, q_width)) + 1, rank_step)] + [min(hidden, q_width)]
+
+        layer_specs[l] = {
+            "omega": omega,
+            "hidden": hidden,
+            "out_full": min(hidden, q_width),
+            "exact_in_scalars": exact_in_scalars,
+            "exact_out_scalars": exact_out_scalars,
+            "c_in": c_in,
+            "c_out": c_out,
+            "in_tail": in_tail,
+            "out_tail": out_tail,
+            "in_candidates": in_candidates,
+            "out_candidates": out_candidates,
+        }
+
+    def evaluate_mu(mu: float):
+        allocations = {}
+        total_removed = 0
+        total_distortion = 0.0
+        for l in indices:
+            s = layer_specs[l]
+            omega = s["omega"]
+            best_in = min(
+                s["in_candidates"],
+                key=lambda r: omega * s["in_tail"][r] - mu * (0 if r == s["hidden"] else s["exact_in_scalars"] - s["c_in"] * r),
+            )
+            best_out = min(
+                s["out_candidates"],
+                key=lambda r: omega * s["out_tail"][r] - mu * (0 if r == s["out_full"] else s["exact_out_scalars"] - s["c_out"] * r),
+            )
+            rem_in = 0 if best_in == s["hidden"] else s["exact_in_scalars"] - s["c_in"] * best_in
+            rem_out = 0 if best_out == s["out_full"] else s["exact_out_scalars"] - s["c_out"] * best_out
+            dist = omega * (s["in_tail"][best_in] + s["out_tail"][best_out])
+            allocations[l] = {
+                "input_rank": best_in,
+                "output_rank": best_out,
+                "input_exact": best_in == s["hidden"],
+                "output_exact": best_out == s["out_full"],
+                "omega": omega,
+                "scalars_removed": int(rem_in + rem_out),
+                "fisher_distortion": float(dist),
+            }
+            total_removed += int(rem_in + rem_out)
+            total_distortion += float(dist)
+        return total_removed, total_distortion, allocations
+
+    max_rem, _, _ = evaluate_mu(1e9)
+    if target_scalars_removed > max_rem:
+        raise ValueError(f"target_scalars_removed ({target_scalars_removed}) exceeds maximum achievable ({max_rem})")
+    lo, hi = 0.0, 1.0
+    while evaluate_mu(hi)[0] < target_scalars_removed:
+        hi *= 2.0
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        if evaluate_mu(mid)[0] < target_scalars_removed:
+            lo = mid
+        else:
+            hi = mid
+    removed, distortion, allocations = evaluate_mu(hi)
+    return {
+        "kind": "kkt_pullback_fisher_waterfill_schedule",
+        "target_scalars_removed": target_scalars_removed,
+        "achieved_scalars_removed": removed,
+        "total_fisher_distortion": distortion,
+        "lagrange_multiplier_mu": hi,
+        "layers": allocations,
+    }
+
+
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
-    "fit_chart_mlp", "optimize_trajectory",
+    "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks",
 ]

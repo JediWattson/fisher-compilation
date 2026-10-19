@@ -107,13 +107,38 @@ the changed trajectory:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `attn_4blocks_7_13_19_25` | `32.00 MiB` | **90.23%** | `+0.03536` | **70/96** | **24** (100% agree) | 20 | **26** (100% agree) | **95.83%** |
 | `joint_4blocks_7_13_19_25` | **`285.85 MiB`** | 69.70% | `+0.28106` | **64/96** | **21** | 19 | **24** | **82.29%** |
-| `attn_all28` | `224.00 MiB` | 63.07% | `+1.08999` | **53/96** | 17 | 20 | 16 | 60.42% |
+| `attn_all28` (uniform `1024/512`) | `224.00 MiB` | 63.07% | `+1.08999` | **53/96** | 17 | 20 | 16 | 60.42% |
+| `attn_body24_3_to_26` (`3..26` `1024/512`) | `192.00 MiB` | 76.68% | `+0.14174` | **63/96** | 18 | 20 | **25** | 78.12% |
+| **`attn_waterfill_224mib`** (KKT water-fill) | **`224.00 MiB`** | **70.28%** | **`+0.30833`** | **70/96** | **25** | **22** | 23 | **76.04%** |
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
 outperformed the single-block fit (`63/96`, `76.04%` agreement) while saving
 `4x` as much memory (`285.85 MiB`), because later fitted chart MLPs (`19, 25`)
 absorb upstream trajectory drift from earlier blocks (`7, 13`). By contrast,
-reducing all 28 attention blocks with frozen MLPs (`attn_all28`, `224.00 MiB`
-saved) accumulated `+1.09` NLL drift and dropped to `53/96` tasks.
+reducing all 28 attention blocks uniformly with `(1024, 512)` (`attn_all28`,
+`224.00 MiB` saved) accumulated `+1.09` NLL drift and dropped to `53/96` tasks.
+
+## 4. Generalized Fisher Rate–Distortion Water-Filling (`allocate_waterfill_attention_ranks`)
+
+Tracing the residual stream layer-by-layer showed that `mlp.2` creates a
+`13,376`-amplitude massive activation on Token 0 (`||h_3[0]|| = 15,815.5` vs.
+`28.2` median on tokens `1..127`) that serves as the model's attention sink
+through Layer 26 before `mlp.27` cancels it. Measuring the dimensionless
+Pullback-Fisher energy $\Omega_l = \mathbb{E}[a_l^T F_l a_l]$ across all 28
+layers ranked Layers `0, 1, 2` as the top three layers (`9.51, 1.36, 1.19` vs.
+`0.10–0.20` in Layers `21..27`).
+
+Solving the KKT Lagrangian water-filling allocation
+(`allocate_waterfill_attention_ranks`) at the **exact same `117,440,512`-scalar
+(`224.00 MiB`) reduction** as `attn_all28`:
+- Automatically left Layer 2 completely exact (`(2048, 2048)`), preserved
+  unfactored exact $W_O$ (`r_out = 2048`) on the high-$\Omega_l$ early layers
+  (`0..7, 9..11`), and compressed the low-$\Omega_l$ late layers (`21..27`)
+  more deeply (`r_in ~ 384–544, r_out ~ 448–608`).
+- Predicted a **`3.45x` reduction in theoretical Pullback-Fisher distortion**
+  (`0.6101 -> 0.1771`), which matched the **measured `3.54x` reduction in
+  512-token held-out NLL drift** (`+1.0900 -> +0.3083` across 32,704 targets)
+  and raised task accuracy from **`53/96` to `70/96`** (`+17` questions, with
+  task target NLL cut from `2.883` to `1.310`).
 

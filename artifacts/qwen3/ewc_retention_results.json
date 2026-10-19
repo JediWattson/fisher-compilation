@@ -1123,6 +1123,274 @@
       },
       "weights_sha256": "f4463b90181dd923d5ce9fa676dde95bbef1bb935c819eb4938d67ecf415a22b"
     },
+    "attn_body24_3_to_26": {
+      "config_sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24",
+      "parameter_storage": {
+        "bytes": 3239823360,
+        "bytes_by_dtype": {
+          "mlx.core.bfloat16": 3239823360
+        },
+        "identity_definition": "distinct MLX array objects; views may share storage",
+        "scalar_count": 1619911680,
+        "unique_array_count": 358
+      },
+      "tasks_aggregate": {
+        "accuracy": 0.65625,
+        "accuracy_change": -0.052083333333333336,
+        "correct": 63,
+        "examples": 96,
+        "mean_target_conditional_nll": 3.404389900697664,
+        "mean_teacher_conditional_label_kl": 1.2283900252835422,
+        "paired_counts": {
+          "both_correct": 57,
+          "both_wrong_different_choice": 4,
+          "both_wrong_same_choice": 18,
+          "teacher_correct_candidate_wrong": 11,
+          "teacher_wrong_candidate_correct": 6
+        },
+        "prediction_label_counts": {
+          "A": 38,
+          "B": 46,
+          "C": 6,
+          "D": 6
+        },
+        "target_label_counts": {
+          "A": 56,
+          "B": 31,
+          "C": 5,
+          "D": 4
+        },
+        "teacher_accuracy": 0.7083333333333334,
+        "teacher_agreement": 0.78125
+      },
+      "tasks_by_task": {
+        "arc_easy": {
+          "accuracy": 0.78125,
+          "accuracy_change": -0.03125,
+          "correct": 25,
+          "examples": 32,
+          "mean_target_conditional_nll": 2.082510548452908,
+          "mean_teacher_conditional_label_kl": 0.6582373463723474,
+          "paired_counts": {
+            "both_correct": 25,
+            "both_wrong_different_choice": 4,
+            "both_wrong_same_choice": 2,
+            "teacher_correct_candidate_wrong": 1,
+            "teacher_wrong_candidate_correct": 0
+          },
+          "prediction_label_counts": {
+            "A": 14,
+            "B": 6,
+            "C": 6,
+            "D": 6
+          },
+          "target_label_counts": {
+            "A": 14,
+            "B": 9,
+            "C": 5,
+            "D": 4
+          },
+          "teacher_accuracy": 0.8125,
+          "teacher_agreement": 0.84375
+        },
+        "boolq": {
+          "accuracy": 0.5625,
+          "accuracy_change": -0.1875,
+          "correct": 18,
+          "examples": 32,
+          "mean_target_conditional_nll": 5.471702415843491,
+          "mean_teacher_conditional_label_kl": 1.4878598468580542,
+          "paired_counts": {
+            "both_correct": 18,
+            "both_wrong_different_choice": 0,
+            "both_wrong_same_choice": 8,
+            "teacher_correct_candidate_wrong": 6,
+            "teacher_wrong_candidate_correct": 0
+          },
+          "prediction_label_counts": {
+            "A": 15,
+            "B": 17
+          },
+          "target_label_counts": {
+            "A": 27,
+            "B": 5
+          },
+          "teacher_accuracy": 0.75,
+          "teacher_agreement": 0.8125
+        },
+        "piqa": {
+          "accuracy": 0.625,
+          "accuracy_change": 0.0625,
+          "correct": 20,
+          "examples": 32,
+          "mean_target_conditional_nll": 2.6589567377965935,
+          "mean_teacher_conditional_label_kl": 1.5390728826202247,
+          "paired_counts": {
+            "both_correct": 14,
+            "both_wrong_different_choice": 0,
+            "both_wrong_same_choice": 8,
+            "teacher_correct_candidate_wrong": 4,
+            "teacher_wrong_candidate_correct": 6
+          },
+          "prediction_label_counts": {
+            "A": 9,
+            "B": 23
+          },
+          "target_label_counts": {
+            "A": 15,
+            "B": 17
+          },
+          "teacher_accuracy": 0.5625,
+          "teacher_agreement": 0.6875
+        }
+      },
+      "text_512_aggregate": {
+        "nll_increase": 0.14174466147114861,
+        "prediction_tokens": 32704,
+        "student_ground_truth_top1_accuracy": 0.43202666340508805,
+        "student_nll": 3.2091592028591265,
+        "teacher_ground_truth_top1_accuracy": 0.45407289628180036,
+        "teacher_kl_available": false,
+        "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+        "teacher_nll": 3.067414541387978,
+        "top1_agreement": 0.7668480919765166
+      },
+      "weights_sha256": "3be1361d8deaa51a73fded877e0f736a87933bfd6ea8fa84872978c926cfa8ba"
+    },
+    "attn_waterfill_224mib": {
+      "config_sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24",
+      "parameter_storage": {
+        "bytes": 3206268928,
+        "bytes_by_dtype": {
+          "mlx.core.bfloat16": 3206268928
+        },
+        "identity_definition": "distinct MLX array objects; views may share storage",
+        "scalar_count": 1603134464,
+        "unique_array_count": 354
+      },
+      "tasks_aggregate": {
+        "accuracy": 0.7291666666666666,
+        "accuracy_change": 0.020833333333333332,
+        "correct": 70,
+        "examples": 96,
+        "mean_target_conditional_nll": 1.3095115555828412,
+        "mean_teacher_conditional_label_kl": 0.9352372357424591,
+        "paired_counts": {
+          "both_correct": 59,
+          "both_wrong_different_choice": 3,
+          "both_wrong_same_choice": 14,
+          "teacher_correct_candidate_wrong": 9,
+          "teacher_wrong_candidate_correct": 11
+        },
+        "prediction_label_counts": {
+          "A": 50,
+          "B": 36,
+          "C": 5,
+          "D": 5
+        },
+        "target_label_counts": {
+          "A": 56,
+          "B": 31,
+          "C": 5,
+          "D": 4
+        },
+        "teacher_accuracy": 0.7083333333333334,
+        "teacher_agreement": 0.7604166666666666
+      },
+      "tasks_by_task": {
+        "arc_easy": {
+          "accuracy": 0.71875,
+          "accuracy_change": -0.09375,
+          "correct": 23,
+          "examples": 32,
+          "mean_target_conditional_nll": 0.9160397748180424,
+          "mean_teacher_conditional_label_kl": 0.3789506621863203,
+          "paired_counts": {
+            "both_correct": 23,
+            "both_wrong_different_choice": 3,
+            "both_wrong_same_choice": 3,
+            "teacher_correct_candidate_wrong": 3,
+            "teacher_wrong_candidate_correct": 0
+          },
+          "prediction_label_counts": {
+            "A": 15,
+            "B": 7,
+            "C": 5,
+            "D": 5
+          },
+          "target_label_counts": {
+            "A": 14,
+            "B": 9,
+            "C": 5,
+            "D": 4
+          },
+          "teacher_accuracy": 0.8125,
+          "teacher_agreement": 0.8125
+        },
+        "boolq": {
+          "accuracy": 0.78125,
+          "accuracy_change": 0.03125,
+          "correct": 25,
+          "examples": 32,
+          "mean_target_conditional_nll": 1.641918786994313,
+          "mean_teacher_conditional_label_kl": 1.8403672440191479,
+          "paired_counts": {
+            "both_correct": 21,
+            "both_wrong_different_choice": 0,
+            "both_wrong_same_choice": 4,
+            "teacher_correct_candidate_wrong": 3,
+            "teacher_wrong_candidate_correct": 4
+          },
+          "prediction_label_counts": {
+            "A": 28,
+            "B": 4
+          },
+          "target_label_counts": {
+            "A": 27,
+            "B": 5
+          },
+          "teacher_accuracy": 0.75,
+          "teacher_agreement": 0.78125
+        },
+        "piqa": {
+          "accuracy": 0.6875,
+          "accuracy_change": 0.125,
+          "correct": 22,
+          "examples": 32,
+          "mean_target_conditional_nll": 1.370576104936168,
+          "mean_teacher_conditional_label_kl": 0.5863938010219089,
+          "paired_counts": {
+            "both_correct": 15,
+            "both_wrong_different_choice": 0,
+            "both_wrong_same_choice": 7,
+            "teacher_correct_candidate_wrong": 3,
+            "teacher_wrong_candidate_correct": 7
+          },
+          "prediction_label_counts": {
+            "A": 7,
+            "B": 25
+          },
+          "target_label_counts": {
+            "A": 15,
+            "B": 17
+          },
+          "teacher_accuracy": 0.5625,
+          "teacher_agreement": 0.6875
+        }
+      },
+      "text_512_aggregate": {
+        "nll_increase": 0.3083307048754218,
+        "prediction_tokens": 32704,
+        "student_ground_truth_top1_accuracy": 0.405149217221135,
+        "student_nll": 3.3757452462633997,
+        "teacher_ground_truth_top1_accuracy": 0.45407289628180036,
+        "teacher_kl_available": false,
+        "teacher_kl_unavailable_reason": "compact references do not retain vocabulary distributions",
+        "teacher_nll": 3.067414541387978,
+        "top1_agreement": 0.702758072407045
+      },
+      "weights_sha256": "9153ed146f94899eb7a44d71ffaa0264d1affc4562ae6a935a1e65a0982cd8db"
+    },
     "joint_4blocks_7_13_19_25": {
       "config_sha256": "e8819960ebe7618888b7904785597edecf7f102ca15c8ea822bd6ea062791f24",
       "parameter_storage": {

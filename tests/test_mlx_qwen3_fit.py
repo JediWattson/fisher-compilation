@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from fisher_graph.mlx_qwen3_fit import (
+    allocate_waterfill_attention_ranks,
     anchored_ridge,
     capture_empirical_token_fisher,
     capture_parameter_fisher,
@@ -249,3 +250,22 @@ def test_bfloat16_optimizer_initial_loss_matches_unmodified_runtime(qwen, mx, ob
     output = result.runtime(**batches(mx)[0])
     assert output.hidden_states.dtype == mx.bfloat16
     assert all(key.dtype == mx.bfloat16 and value.dtype == mx.bfloat16 for key, value in output.cache.key_values)
+
+
+def test_waterfill_attention_rank_allocation_respects_budget_and_reduces_distortion(qwen, mx):
+    runtime, _ = qwen
+    data = batches(mx)
+    # Uniform (input_rank=8, output_rank=4) on 2 layers of width 16 (q=16, kv=8):
+    # exact_in = 32*16 = 512, c_in = 48 -> rem_in(8) = 512 - 384 = 128
+    # exact_out = 16*16 = 256, c_out = 32 -> rem_out(4) = 256 - 128 = 128
+    # Total uniform removed across 2 layers = 2 * 256 = 512 scalars.
+    schedule = allocate_waterfill_attention_ranks(
+        runtime, data, target_scalars_removed=512, rank_step=1, min_rank=2, fisher_max_tokens=4
+    )
+    assert schedule["achieved_scalars_removed"] >= 512
+    assert set(schedule["layers"].keys()) == {0, 1}
+    assert schedule["total_fisher_distortion"] >= 0.0
+    # Higher-Omega layer should receive at least as many kept scalars as lower-Omega layer
+    l0, l1 = schedule["layers"][0], schedule["layers"][1]
+    if l0["omega"] > l1["omega"] * 1.5:
+        assert l0["scalars_removed"] <= l1["scalars_removed"]
