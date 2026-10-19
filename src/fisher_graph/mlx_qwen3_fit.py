@@ -450,6 +450,34 @@ def fit_reduced_attention(
     })
 
 
+def _swiglu_euler_jacobian_prior(runtime: Any, prefix: str, x: Any, weights: Any):
+    """Homogeneous degree-2 Euler Jacobian prior for a source SwiGLU MLP."""
+    mx = _mx()
+    keys = (prefix + "gate_weight", prefix + "up_weight", prefix + "down_weight")
+    if any(key not in runtime.parameters for key in keys):
+        return None
+    w_gate, w_up, w_down = (runtime.parameters[key].astype(mx.float32) for key in keys)
+    g = x @ w_gate.T
+    u = x @ w_up.T
+    sig = mx.sigmoid(g)
+    silu = g * sig
+    silu_grad = sig * (1.0 + g * (1.0 - sig))
+    mean_grad_u = mx.sum((silu_grad * u) * weights[:, None], axis=0)
+    mean_silu = mx.sum(silu * weights[:, None], axis=0)
+    prior = 0.5 * (w_down @ (mean_grad_u[:, None] * w_gate + mean_silu[:, None] * w_up))
+    mx.eval(prior)
+    return prior
+
+
+def _inverse_target_norm_row_weights(y: Any):
+    """Bound outlier-token leverage via clipped inverse squared target norm."""
+    mx = _mx()
+    s_sq = np.mean(np.asarray(y, dtype=np.float64) ** 2, axis=1)
+    median = float(np.median(s_sq))
+    clipped = np.clip(median / np.maximum(s_sq, 1e-4), 0.05, 5.0).astype(np.float32)
+    return mx.array(clipped)
+
+
 def fit_chart_mlp(
     runtime: Any,
     layer_index: int,
@@ -462,13 +490,20 @@ def fit_chart_mlp(
     relative_ridge: float = 0.01,
     temperature: float = 1.0,
     kmeans_iterations: int = 8,
+    euler_jacobian_anchor: bool = True,
+    center_intercept: bool = True,
+    inverse_target_norm_weights: bool = True,
     solver: str = "mlx",
 ) -> MLXFitResult:
     """Fit affine + local chart residuals to real Qwen MLP operator captures.
 
     Charts emit hidden-space deltas directly; no dense identity decoder is
-    allocated. Geometry and regression use only the supplied calibration rows.
-    Input centers are weighted k-means, bases are local activation covariance.
+    allocated. Geometry and regression use only the supplied calibration rows
+    and the layer's own source weights when available. Input centers are
+    weighted k-means, bases are local activation covariance. When source
+    SwiGLU weights are present and ``euler_jacobian_anchor`` is enabled, the
+    centered affine base is anchored to the degree-2 Euler Jacobian prior
+    ``0.5 * E[J(x)]`` rather than shrinking unexcited directions toward zero.
     Supplying Fisher row weights makes the regression Fisher-row-weighted; this
     function does not mislabel activation PCA as a Fisher eigenspace.
     Solves use float32/reference precision; exports retain the source MLP dtype.
@@ -490,7 +525,12 @@ def fit_chart_mlp(
     _rank(chart_rank, hidden, "chart_rank")
     generator_rank = chart_rank + 1 if generator_rank is None else generator_rank
     _rank(generator_rank, chart_rank + 1, "generator_rank")
-    weights = _weights(row_weights, n)
+    effective_row_weights = (
+        _inverse_target_norm_row_weights(y)
+        if row_weights is None and inverse_target_norm_weights
+        else row_weights
+    )
+    weights = _weights(effective_row_weights, n)
     # Deterministic farthest-point seeds, with weighted mean as first reference.
     mean = mx.sum(x * weights[:, None], axis=0)
     first = int(mx.argmax(mx.sum((x - mean) ** 2, axis=1) * weights).item())
@@ -532,16 +572,45 @@ def fit_chart_mlp(
     augmented = mx.concatenate((mx.ones((n, chart_count, 1)), coordinates), axis=-1)
     encoders = mx.broadcast_to(mx.eye(chart_rank + 1)[:, :generator_rank], (chart_count, chart_rank + 1, generator_rank))
     features = (membership[:, :, None] * mx.einsum("ncr,crg->ncg", augmented, encoders)).reshape((n, -1))
-    affine_features = mx.concatenate((x, mx.ones((n, 1))), axis=1)
-    affine = anchored_ridge(affine_features, y, row_weights=weights, relative_ridge=relative_ridge, solver=solver)
-    residual = y - affine_features @ affine
+    euler_prior = _swiglu_euler_jacobian_prior(runtime, prefix, x, weights) if euler_jacobian_anchor else None
+    if center_intercept:
+        x_mean = mx.sum(x * weights[:, None], axis=0)
+        y_mean = mx.sum(y * weights[:, None], axis=0)
+        affine_linear = anchored_ridge(
+            x - x_mean,
+            y - y_mean,
+            row_weights=weights,
+            anchor=None if euler_prior is None else euler_prior.T,
+            relative_ridge=relative_ridge,
+            solver=solver,
+        )
+        affine_weight = affine_linear.T
+        affine_bias = y_mean - x_mean @ affine_linear
+        residual = y - (x @ affine_linear + affine_bias)
+    else:
+        affine_features = mx.concatenate((x, mx.ones((n, 1))), axis=1)
+        affine_anchor = (
+            None
+            if euler_prior is None
+            else mx.concatenate((euler_prior.T, mx.zeros((1, hidden))), axis=0)
+        )
+        affine = anchored_ridge(
+            affine_features,
+            y,
+            row_weights=weights,
+            anchor=affine_anchor,
+            relative_ridge=relative_ridge,
+            solver=solver,
+        )
+        affine_weight, affine_bias = affine[:-1].T, affine[-1]
+        residual = y - affine_features @ affine
     decoded = anchored_ridge(features, residual, row_weights=weights, relative_ridge=relative_ridge, solver=solver)
     updates = {
         prefix + "chart_centers": centers, prefix + "chart_bases": bases,
         prefix + "chart_distance_scales": scales,
         prefix + "local_generator_encoders": encoders,
         prefix + "chart_mode_decoders": decoded.reshape((chart_count, generator_rank, hidden)),
-        prefix + "affine_weight": affine[:-1].T, prefix + "affine_bias": affine[-1],
+        prefix + "affine_weight": affine_weight, prefix + "affine_bias": affine_bias,
     }
     updates = {name: value.astype(deployment_dtype) for name, value in updates.items()}
     mx.eval(updates)
@@ -566,7 +635,11 @@ def fit_chart_mlp(
         "factorization_dtype": "float64" if solver == "numpy_float64" else "float32",
         "regression_accumulation_dtype": "float64" if solver == "numpy_float64" else "float32",
         "deployment_dtype": str(deployment_dtype),
-        "fisher_row_weights_supplied": row_weights is not None, "heldout_confirmation": False,
+        "fisher_row_weights_supplied": row_weights is not None,
+        "euler_jacobian_anchored": euler_prior is not None,
+        "centered_intercept": bool(center_intercept),
+        "inverse_target_norm_weights": bool(row_weights is None and inverse_target_norm_weights),
+        "heldout_confirmation": False,
         "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
     })
 

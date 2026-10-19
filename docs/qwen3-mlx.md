@@ -258,3 +258,12 @@ fresh text targets at 512/2,048-token contexts and 96 constrained task
 questions. Similar text NLL concealed a joint-fit task regression, reproduced
 with a second execution path. These results distinguish useful task retention
 from agreement with the original model's token choices.
+
+The [layer-13 EWC retention and causal localization study](qwen3-mlx-ewc-retention.md)
+traces that regression to chart-router flattening at width 2048, unanchored
+ridge shrinkage, and five dormant chat-boundary SwiGLU channels (`4172, 4971,
+751, 4206, 287`). Anchoring `fit_chart_mlp` to the pretrained SwiGLU
+Euler-Jacobian prior (`0.5 * E[J(x)]`) with centered intercepts and
+inverse-norm weights raises task retention from 49/96 to 57/96 on the same
+32 raw WikiText passages and to 63/96 when those training passages are
+additionally wrapped in the Qwen3 chat template (`88.41%` 512-token agreement).

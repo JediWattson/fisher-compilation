@@ -116,6 +116,9 @@ def test_reduced_attention_and_chart_fit_produce_usable_runtime(qwen, mx):
     fitted = fit_chart_mlp(reduced, 0, rows, chart_count=2, chart_rank=4, generator_rank=4, relative_ridge=0.01)
     assert "mlp.0.gate_weight" not in fitted.runtime.parameters
     assert "mlp.0.mode_decoder_weight" not in fitted.runtime.parameters
+    assert fitted.report["euler_jacobian_anchored"] is True
+    assert fitted.report["centered_intercept"] is True
+    assert fitted.report["inverse_target_norm_weights"] is True
     assert fitted.report["training_relative_error"] < 0.65
     output = fitted.runtime(**data[0])
     assert output.logits.shape == (2, 5, 32)
@@ -124,6 +127,15 @@ def test_reduced_attention_and_chart_fit_produce_usable_runtime(qwen, mx):
     actual = capture_runtime_rows(fitted.runtime, data, ["mlp.0.output"])["mlp.0.output"]
     error = np.linalg.norm(np.asarray(actual - rows["mlp.0.output"])) / np.linalg.norm(np.asarray(rows["mlp.0.output"]))
     assert error == pytest.approx(fitted.report["training_relative_error"], rel=1e-4)
+    # Also verify legacy unanchored/uncentered mode and refit when gate_weight is already removed.
+    refitted = fit_chart_mlp(
+        fitted.runtime, 0, rows, chart_count=2, chart_rank=4, generator_rank=4,
+        relative_ridge=0.01, euler_jacobian_anchor=True, center_intercept=False,
+        inverse_target_norm_weights=False,
+    )
+    assert refitted.report["euler_jacobian_anchored"] is False
+    assert refitted.report["centered_intercept"] is False
+    assert refitted.report["inverse_target_norm_weights"] is False
     with pytest.raises(ValueError, match="exact source"):
         fit_reduced_attention(reduced, 0, attn_rows, input_rank=8, output_rank=6)
 

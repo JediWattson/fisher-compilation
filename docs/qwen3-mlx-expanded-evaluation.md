@@ -88,6 +88,12 @@ objective are hypotheses to test, not remedies established by these results.
 The observed peak MLX allocation across the expanded runs was about 4.92 GB.
 The existing 71.46 MiB joint parameter saving is unchanged.
 
+Follow-up: the [layer-13 EWC retention and causal localization study](qwen3-mlx-ewc-retention.md)
+localizes the BoolQ shift to dormant chat-boundary SwiGLU neurons and recovers
+the joint layer-13 fit from 49/96 to 57/96 (raw WikiText calibration with
+Euler-Jacobian EWC anchoring) and 63/96 (chat-wrapped training calibration)
+while improving 512-token top-1 agreement from 87.21% to 88.41%.
+
 ## Evaluation design
 
 The [protocol](../artifacts/qwen3/expanded_evaluation_protocol.json) fixes the
