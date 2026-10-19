@@ -196,6 +196,12 @@ MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx interactive \
   --tokenizer /absolute/path/to/Qwen3-1.7B/snapshot
 ```
 
+Inside the REPL, `/chat` switches to a **persistent chat conversation** against
+the compiled artifact itself (Qwen3 `<|im_start|>` template, thinking disabled).
+Each turn prints the running context size (`[ctx] N tokens | K turns | prompt=M tok`),
+the decoded response, and the top-5 first-token distribution. `/context` shows the
+recent conversation tail + active mutes, and `/reset` clears history.
+
 Any exact, partial-fit, or full-fit `MLXQwen3` runtime can also be bridged
 directly into the standalone 59-event PyTorch executor (`runtime.to_torch()`)
 without allocating a Hugging Face model, supporting `JointGraphDecodeSession`

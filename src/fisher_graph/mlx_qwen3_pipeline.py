@@ -520,6 +520,58 @@ def _interactive(args):
             )
             _xray(xray_ns)
 
+    # ---- persistent chat state (compiled-model conversation) ----
+    chat_history = []          # [{role, content}, ...] for apply_chat_template
+    chat_ctx_tokens = 0        # total tokens the model has seen this conversation
+    _system_prompt = args.system_prompt or "You are a helpful assistant."
+
+    def run_chat_turn(user_text: str):
+        nonlocal chat_ctx_tokens
+        if not chat_history and _system_prompt:
+            chat_history.append({"role": "system", "content": _system_prompt})
+        chat_history.append({"role": "user", "content": user_text})
+        rendered = tokenizer.apply_chat_template(
+            chat_history,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        ids = tokenizer.encode(rendered, add_special_tokens=False)
+        if len(ids) > args.max_context_tokens:
+            raise ValueError(
+                f"Conversation context is {len(ids)} tokens (> {args.max_context_tokens}); "
+                "use /reset to clear chat history"
+            )
+        text_resp, gen_ids, top5, elapsed = _greedy_continuation(
+            runtime,
+            tokenizer,
+            ids,
+            max_new_tokens=max_new_tokens,
+            ignore_eos=args.ignore_eos,
+            muted_sites=muted_sites,
+            muted_charts=muted_charts,
+        )
+        chat_history.append({"role": "assistant", "content": text_resp})
+        chat_ctx_tokens = len(ids) + len(gen_ids)
+        tok_s = len(gen_ids) / max(elapsed, 1e-6)
+        print(f"\n[user]     {user_text}")
+        print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
+        if muted_sites or muted_charts:
+            print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
+        print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)")
+        top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
+        print(f"[top-5]    {top_str}")
+        if xray_on:
+            xray_ns = argparse.Namespace(
+                artifact=args.artifact,
+                tokenizer=args.tokenizer,
+                prompt=rendered,
+                chat=False,
+                max_prompt_tokens=args.max_context_tokens,
+                report=None,
+            )
+            _xray(xray_ns)
+
     if args.presets:
         for p in _PRESET_PROMPTS:
             run_one(p)
@@ -536,13 +588,15 @@ def _interactive(args):
     print(f"  Chart MLPs     : {chart_mlps}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
-    print("  Commands       : /xray | /chat | /tokens <N> | /preset | /unmute | /quit")
+    print("  Commands       : /xray | /chat | /context | /reset | /tokens <N> |")
+    print("                   /preset | /unmute | /quit")
     print("                   /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
     print("==============================================================================")
 
     while True:
         try:
-            line = input("\nqwen3> ").strip()
+            prompt_label = "qwen3(chat)>" if chat_on else "qwen3>"
+            line = input(f"\n{prompt_label} ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -556,7 +610,24 @@ def _interactive(args):
             continue
         if line == "/chat":
             chat_on = not chat_on
-            print(f"[harness] Chat template is now {'ON' if chat_on else 'OFF'}")
+            if chat_on:
+                chat_history.clear()
+                chat_ctx_tokens = 0
+                print("[harness] Chat mode ON (persistent conversation with this model). /reset clears history.")
+            else:
+                print("[harness] Chat template is now OFF (raw completion mode)")
+            continue
+        if line == "/context":
+            print(f"[harness] chat_ctx_tokens={chat_ctx_tokens} | turns={len(chat_history)//2} | "
+                  f"mutes={sorted(muted_sites) or 'none'} charts={sorted(muted_charts) or 'none'}")
+            for msg in chat_history[-6:]:
+                body = msg["content"] if len(msg["content"]) <= 72 else msg["content"][:69] + "..."
+                print(f"           [{msg['role']:>9}] {body}")
+            continue
+        if line == "/reset":
+            chat_history.clear()
+            chat_ctx_tokens = 0
+            print("[harness] Cleared conversation history")
             continue
         if line == "/unmute":
             muted_sites.clear()
@@ -589,7 +660,10 @@ def _interactive(args):
             else:
                 print("[harness] usage: /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
             continue
-        run_one(line)
+        if chat_on:
+            run_chat_turn(line)
+        else:
+            run_one(line)
 
 
 def build_parser():
@@ -655,6 +729,8 @@ def build_parser():
     interactive.add_argument("--xray", action="store_true", help="Enable per-prompt X-Ray chart/ablation output")
     interactive.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
+    interactive.add_argument("--max-context-tokens", type=_positive_int, default=4096)
+    interactive.add_argument("--system-prompt", help="System prompt for persistent chat mode")
     interactive.add_argument("--ignore-eos", action="store_true")
     interactive.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     interactive.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
