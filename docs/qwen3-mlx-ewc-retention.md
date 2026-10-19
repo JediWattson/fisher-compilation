@@ -109,7 +109,9 @@ the changed trajectory:
 | `joint_4blocks_7_13_19_25` | **`285.85 MiB`** | 69.70% | `+0.28106` | **64/96** | **21** | 19 | **24** | **82.29%** |
 | `attn_all28` (uniform `1024/512`) | `224.00 MiB` | 63.07% | `+1.08999` | **53/96** | 17 | 20 | 16 | 60.42% |
 | `attn_body24_3_to_26` (`3..26` `1024/512`) | `192.00 MiB` | 76.68% | `+0.14174` | **63/96** | 18 | 20 | **25** | 78.12% |
-| **`attn_waterfill_224mib`** (KKT water-fill) | **`224.00 MiB`** | **70.28%** | **`+0.30833`** | **70/96** | **25** | **22** | 23 | **76.04%** |
+| `attn_waterfill_224mib` (cov KKT water-fill) | `224.00 MiB` | 70.28% | `+0.30833` | **70/96** | **25** | **22** | 23 | 76.04% |
+| **`attn_pullback_wf_224mib`** (pullback KKT, `r=0.05`) | **`224.00 MiB`** | **73.68%** | **`+0.12273`** | **67/96** | **25** | 19 | 23 | **80.21%** |
+| **`attn_pullback_wf_r0.25_224mib`** (pullback KKT, `r=0.25`) | **`224.00 MiB`** | **75.60%** | **`+0.09495`** | **61/96** | 19 | 19 | 23 | **79.17%** |
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly

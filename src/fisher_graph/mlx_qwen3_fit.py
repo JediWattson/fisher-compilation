@@ -814,10 +814,31 @@ def allocate_waterfill_attention_ranks(
 
         x = captures[prefix + "normalized"].astype(mx.float32)
         c = captures[prefix + "context"].astype(mx.float32)
+        config = runtime.layers[l]["attention"]
+        head_dim = int(config["head_dimension"])
+
+        def qk_effective(weight, key):
+            gain = p.get(prefix + key)
+            if gain is None:
+                return weight
+            spec = config.get("qk_norm", {})
+            gain = gain + 1 if spec.get("scale_parameterization") == "unit_offset" else gain
+            return weight * mx.tile(mx.maximum(mx.abs(gain), 1e-3), weight.shape[0] // head_dim)[:, None]
+
+        qe, ke = qk_effective(q, "q_norm_weight"), qk_effective(k, "k_norm_weight")
+        repeats = int(config["query_heads"]) // int(config["key_value_heads"])
+        repeated_v = mx.repeat(v.reshape((-1, head_dim, v.shape[1])), repeats, axis=0).reshape((out.shape[1], v.shape[1]))
+        ve = out @ repeated_v
+        grams = [w.T @ w for w in (qe, ke, ve)]
+        metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0), grams))
+
         cov_x = (x.T @ x) / x.shape[0]
-        ev_x = mx.linalg.eigvalsh((cov_x + cov_x.T) * 0.5, stream=mx.cpu)
+        cov_x_reg = cov_x + 0.15 * mx.maximum(mx.sum(mx.diag(cov_x)) / hidden, 1e-12) * mx.eye(hidden)
+        pb_in = cov_x_reg @ metric @ cov_x_reg
+        ev_x = mx.linalg.eigvalsh((pb_in + pb_in.T) * 0.5, stream=mx.cpu)
         cov_c = (c.T @ c) / c.shape[0]
-        out_gram = out @ cov_c @ out.T
+        cov_c_reg = cov_c + 0.15 * mx.maximum(mx.sum(mx.diag(cov_c)) / q_width, 1e-12) * mx.eye(q_width)
+        out_gram = out @ cov_c_reg @ out.T
         ev_o = mx.linalg.eigvalsh((out_gram + out_gram.T) * 0.5, stream=mx.cpu)
         mx.eval(ev_x, ev_o)
         ex_np = np.maximum(np.asarray(ev_x, dtype=np.float64)[::-1], 0.0)
