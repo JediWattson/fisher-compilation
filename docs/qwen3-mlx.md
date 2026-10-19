@@ -186,6 +186,16 @@ MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx xray \
   --prompt "The capital of France is"
 ```
 
+To launch an interactive freeform prompt REPL with live layer/chart muting
+(`/mute attn <L>`, `/mute mlp <L>`, `/mute chart <L> <C>`), `/xray` toggling,
+`/preset`, and optional side-by-side exact comparison:
+
+```sh
+MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx interactive \
+  --artifact .local-runs/qwen3-ewc-refine/joint_waterfill_286mib \
+  --tokenizer /absolute/path/to/Qwen3-1.7B/snapshot
+```
+
 Any exact, partial-fit, or full-fit `MLXQwen3` runtime can also be bridged
 directly into the standalone 59-event PyTorch executor (`runtime.to_torch()`)
 without allocating a Hugging Face model, supporting `JointGraphDecodeSession`

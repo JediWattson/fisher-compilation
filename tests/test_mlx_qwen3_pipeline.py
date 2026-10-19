@@ -138,4 +138,14 @@ def test_real_local_convert_fit_and_generate(tmp_path, monkeypatch, capsys):
     assert xray_data["chart_mlp_layers"] == [0]
     assert len(xray_data["top5_predictions"]) == 5
     assert len(xray_data["ablation_impacts"]) == 2
+    capsys.readouterr()
+    assert main([
+        "interactive", "--artifact", str(fitted), "--reference-artifact", str(original),
+        "--tokenizer", str(source), "--prompt", "word3 word4", "--max-new-tokens", "2",
+        "--ignore-eos", "--mute-attn-layer", "0", "--mute-chart", "0:1",
+    ]) == 0
+    interactive_out = capsys.readouterr().out
+    assert "[compiled]" in interactive_out
+    assert "[exact]" in interactive_out
+    assert "[mutes]" in interactive_out
     assert os.environ["MLX_ENABLE_TF32"] == "0"

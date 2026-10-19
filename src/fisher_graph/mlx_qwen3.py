@@ -283,6 +283,7 @@ class MLXQwen3:
 
     def __call__(self, input_ids, *, attention_mask=None, position_ids=None,
                  parameters=None, capture=False, perturbations=None,
+                 muted_sites=None, muted_charts=None,
                  return_logits=True, cache=None):
         mx = _core()
         p = self.parameters if parameters is None else parameters
@@ -310,10 +311,14 @@ class MLXQwen3:
         key_positions = mx.concatenate((cache.position_ids, positions), axis=1) if cache else positions
         captures, messages, new_kv = {}, {}, []
         perturbations = perturbations or {}
+        muted_site_set = set(muted_sites or ())
+        muted_chart_set = {(int(layer_idx), int(chart_idx)) for layer_idx, chart_idx in (muted_charts or ())}
         seen = set()
         capture_sites = None if capture is True else set(capture or ())
 
         def observe(name, value):
+            if name in muted_site_set:
+                value = mx.zeros_like(value)
             if name in perturbations:
                 if perturbations[name].shape != value.shape:
                     raise ValueError(f"Perturbation shape mismatch at {name}")
@@ -393,6 +398,10 @@ class MLXQwen3:
                 displacement = n[..., None, :] - centers
                 scales = p[m + ".chart_distance_scales"]
                 memberships = mx.softmax(-0.5 * mx.sum(displacement ** 2, axis=-1) / (scales ** 2 * mc.get("temperature", 1.0)), axis=-1)
+                if muted_chart_set:
+                    keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(centers.shape[0])]
+                    if any(v == 0.0 for v in keep):
+                        memberships = memberships * mx.array(keep, dtype=memberships.dtype)
                 coordinates = mx.einsum("btch,chr->btcr", displacement, p[m + ".chart_bases"])
                 aug = mx.concatenate((mx.ones_like(coordinates[..., :1]), coordinates), axis=-1)
                 enc = p[m + ".local_generator_encoders"]

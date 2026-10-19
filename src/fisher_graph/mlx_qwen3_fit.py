@@ -924,8 +924,114 @@ def allocate_waterfill_attention_ranks(
     }
 
 
+def allocate_waterfill_joint_ranks(
+    runtime: Any,
+    batches: Sequence[Mapping[str, Any]],
+    *,
+    target_scalars_removed: int,
+    chart_count: int = 4,
+    chart_rank: int = 16,
+    generator_rank: int | None = None,
+    mlp_expected_relative_error: float = 0.50,
+    min_mlp_layer_spacing: int = 2,
+    rank_step: int = 1,
+    min_rank: int = 1,
+    fisher_max_tokens: int = 32,
+) -> dict[str, Any]:
+    """Joint KKT Pullback-Fisher water-filling across all attention and MLP blocks.
+
+    Ranks MLP layers by Omega_{l,mlp} = E[y_l^T F_{mlp,l} y_l] and selects the
+    lowest-distortion non-adjacent MLP blocks whose marginal Fisher distortion
+    per scalar removed falls below the water-filling threshold, allocating the
+    remaining scalar budget across attention blocks via
+    ``allocate_waterfill_attention_ranks``.
+    """
+    mx = _mx()
+    _rank(target_scalars_removed, 2**31 - 1, "target_scalars_removed")
+    _rank(chart_count, 1024, "chart_count")
+    _rank(chart_rank, 2048, "chart_rank")
+    generator_rank = chart_rank + 1 if generator_rank is None else generator_rank
+    _rank(generator_rank, chart_rank + 1, "generator_rank")
+    err_rel = _positive(mlp_expected_relative_error, "mlp_expected_relative_error")
+    layer_count = len(runtime.layers)
+    mlp_sites = [f"mlp.{l}.output" for l in range(layer_count)]
+    captures = capture_runtime_rows(runtime, batches, mlp_sites)
+    fisher = capture_empirical_token_fisher(runtime, batches, mlp_sites, max_tokens=fisher_max_tokens)
+
+    mlp_candidates = []
+    for l in range(layer_count):
+        prefix = f"mlp.{l}."
+        p = runtime.parameters
+        if any(prefix + k not in p for k in ("gate_weight", "up_weight", "down_weight")):
+            continue
+        gw = p[prefix + "gate_weight"]
+        inter, hidden = int(gw.shape[0]), int(gw.shape[1])
+        exact_scalars = 3 * inter * hidden
+        chart_scalars = (
+            hidden * hidden
+            + hidden
+            + chart_count * hidden
+            + chart_count * hidden * chart_rank
+            + chart_count
+            + chart_count * (chart_rank + 1) * generator_rank
+            + chart_count * generator_rank * hidden
+        )
+        rem_mlp = exact_scalars - chart_scalars
+        if rem_mlp <= 0:
+            continue
+        y = np.asarray(captures[prefix + "output"].astype(mx.float32), dtype=np.float64)
+        f_diag = np.asarray(fisher["diagonal"][prefix + "output"].astype(mx.float32), dtype=np.float64)
+        omega_mlp = max(float(np.mean(np.sum((y * y) * f_diag[None, :], axis=1))), 1e-12)
+        dist_mlp = omega_mlp * (err_rel ** 2)
+        mlp_candidates.append({
+            "layer": l,
+            "omega_mlp": omega_mlp,
+            "scalars_removed": int(rem_mlp),
+            "fisher_distortion": float(dist_mlp),
+            "distortion_per_scalar": float(dist_mlp / rem_mlp),
+        })
+
+    mlp_candidates.sort(key=lambda item: item["distortion_per_scalar"])
+    selected_mlps: list[dict[str, Any]] = []
+    mlp_removed = 0
+    for item in mlp_candidates:
+        if any(abs(item["layer"] - s["layer"]) < min_mlp_layer_spacing for s in selected_mlps):
+            continue
+        if mlp_removed + item["scalars_removed"] <= target_scalars_removed:
+            selected_mlps.append(item)
+            mlp_removed += item["scalars_removed"]
+
+    remaining = max(target_scalars_removed - mlp_removed, 0)
+    if remaining > 0:
+        attn_schedule = allocate_waterfill_attention_ranks(
+            runtime,
+            batches,
+            target_scalars_removed=remaining,
+            rank_step=rank_step,
+            min_rank=min_rank,
+            fisher_max_tokens=fisher_max_tokens,
+        )
+    else:
+        attn_schedule = {
+            "achieved_scalars_removed": 0,
+            "total_fisher_distortion": 0.0,
+            "layers": {},
+        }
+
+    return {
+        "kind": "kkt_pullback_fisher_joint_waterfill_schedule",
+        "target_scalars_removed": target_scalars_removed,
+        "achieved_scalars_removed": int(mlp_removed + attn_schedule["achieved_scalars_removed"]),
+        "mlp_scalars_removed": int(mlp_removed),
+        "attention_scalars_removed": int(attn_schedule["achieved_scalars_removed"]),
+        "selected_mlp_layers": sorted(item["layer"] for item in selected_mlps),
+        "mlp_candidates_ranked": mlp_candidates,
+        "attention_schedule": attn_schedule,
+    }
+
+
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
-    "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks",
+    "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]

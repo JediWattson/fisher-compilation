@@ -391,6 +391,207 @@ def _xray(args):
         report_path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
 
 
+_PRESET_PROMPTS = (
+    "The capital of France is",
+    "In a right triangle, the square of the hypotenuse equals",
+    "Water boils at 100 degrees Celsius at standard",
+    "The chemical symbol for gold is",
+    "Isaac Newton formulated the laws of",
+    "Photosynthesis converts light energy into",
+)
+
+
+def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=False, muted_sites=(), muted_charts=()):
+    import mlx.core as mx
+    import numpy as np
+
+    start = time.perf_counter()
+    output = runtime.prefill(
+        mx.array([ids], dtype=mx.int32),
+        muted_sites=muted_sites,
+        muted_charts=muted_charts,
+    )
+    first_logits = output.logits[0, -1].astype(mx.float32)
+    first_probs = mx.softmax(first_logits, axis=-1)
+    mx.eval(first_logits, first_probs)
+    logits_np = np.asarray(first_logits)
+    probs_np = np.asarray(first_probs)
+    top5_idx = np.argsort(logits_np)[::-1][:5]
+    top5 = [
+        (tokenizer.decode([int(i)]), float(probs_np[i]) * 100.0, float(logits_np[i]))
+        for i in top5_idx
+    ]
+    generated = []
+    for step in range(max_new_tokens):
+        token = int(mx.argmax(output.logits[0, -1]).item())
+        generated.append(token)
+        if not ignore_eos and token == tokenizer.eos_token_id:
+            break
+        if step + 1 < max_new_tokens:
+            output = runtime.decode(
+                mx.array([[token]], dtype=mx.int32),
+                output.cache,
+                muted_sites=muted_sites,
+                muted_charts=muted_charts,
+            )
+    elapsed = time.perf_counter() - start
+    return tokenizer.decode(generated, skip_special_tokens=True), generated, top5, elapsed
+
+
+def _interactive(args):
+    from .mlx_qwen3 import MLXQwen3
+
+    runtime = MLXQwen3.load(_local_directory(args.artifact))
+    reference = MLXQwen3.load(_local_directory(args.reference_artifact)) if args.reference_artifact else None
+    tokenizer = _tokenizer(args.tokenizer)
+    xray_on = bool(args.xray)
+    chat_on = bool(args.chat)
+    max_new_tokens = int(args.max_new_tokens)
+    muted_sites = {f"attention.{l}.delta" for l in (args.mute_attn_layer or ())} | {
+        f"mlp.{l}.delta" for l in (args.mute_mlp_layer or ())
+    }
+    muted_charts = set()
+    for spec in args.mute_chart or ():
+        parts = str(spec).split(":")
+        if len(parts) != 2:
+            raise ValueError("--mute-chart must have format LAYER:CHART")
+        muted_charts.add((int(parts[0]), int(parts[1])))
+
+    reduced_attn = sorted(
+        i for i in range(len(runtime.layers)) if f"attention.{i}.input_basis" in runtime.parameters
+    )
+    chart_mlps = sorted(
+        i for i in range(len(runtime.layers)) if f"mlp.{i}.chart_centers" in runtime.parameters
+    )
+
+    def encode_prompt(raw_text: str) -> list[int]:
+        rendered = (
+            tokenizer.apply_chat_template(
+                [{"role": "user", "content": raw_text}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            if chat_on
+            else raw_text
+        )
+        ids = tokenizer.encode(rendered, add_special_tokens=not chat_on)
+        if not ids or len(ids) > args.max_prompt_tokens:
+            raise ValueError(f"Prompt must contain 1..{args.max_prompt_tokens} tokens")
+        return ids
+
+    def run_one(raw_text: str):
+        ids = encode_prompt(raw_text)
+        text, gen_ids, top5, elapsed = _greedy_continuation(
+            runtime,
+            tokenizer,
+            ids,
+            max_new_tokens=max_new_tokens,
+            ignore_eos=args.ignore_eos,
+            muted_sites=muted_sites,
+            muted_charts=muted_charts,
+        )
+        tok_s = len(gen_ids) / max(elapsed, 1e-6)
+        print(f"\n[prompt]   {raw_text}")
+        if muted_sites or muted_charts:
+            print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
+        print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)")
+        top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
+        print(f"[top-5]    {top_str}")
+        if reference is not None:
+            ref_text, ref_ids, ref_top5, ref_elapsed = _greedy_continuation(
+                reference,
+                tokenizer,
+                ids,
+                max_new_tokens=max_new_tokens,
+                ignore_eos=args.ignore_eos,
+            )
+            ref_top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in ref_top5[:5])
+            print(f"[exact]    {ref_text!r}  ({len(ref_ids)} tok in {ref_elapsed:.2f}s)")
+            print(f"[ex-top-5] {ref_top_str}")
+        if xray_on:
+            xray_ns = argparse.Namespace(
+                artifact=args.artifact,
+                tokenizer=args.tokenizer,
+                prompt=raw_text,
+                chat=chat_on,
+                max_prompt_tokens=args.max_prompt_tokens,
+                report=None,
+            )
+            _xray(xray_ns)
+
+    if args.presets:
+        for p in _PRESET_PROMPTS:
+            run_one(p)
+        return
+    if args.prompt is not None:
+        run_one(args.prompt)
+        return
+
+    print("==============================================================================")
+    print("  Fisher-Graph Qwen3 MLX Interactive Harness (Freeform REPL + X-Ray + Mutes)")
+    print("==============================================================================")
+    print(f"  Artifact       : {Path(args.artifact).expanduser().resolve()}")
+    print(f"  Reduced Attn   : {reduced_attn}")
+    print(f"  Chart MLPs     : {chart_mlps}")
+    print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
+    print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
+    print("  Commands       : /xray | /chat | /tokens <N> | /preset | /unmute | /quit")
+    print("                   /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
+    print("==============================================================================")
+
+    while True:
+        try:
+            line = input("\nqwen3> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not line:
+            continue
+        if line in ("/quit", "/exit", "quit", "exit"):
+            break
+        if line == "/xray":
+            xray_on = not xray_on
+            print(f"[harness] X-Ray mode is now {'ON' if xray_on else 'OFF'}")
+            continue
+        if line == "/chat":
+            chat_on = not chat_on
+            print(f"[harness] Chat template is now {'ON' if chat_on else 'OFF'}")
+            continue
+        if line == "/unmute":
+            muted_sites.clear()
+            muted_charts.clear()
+            print("[harness] Cleared all active layer and chart mutes")
+            continue
+        if line == "/preset":
+            for p in _PRESET_PROMPTS:
+                run_one(p)
+            continue
+        if line.startswith("/tokens "):
+            parts = line.split()
+            if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > 0:
+                max_new_tokens = int(parts[1])
+                print(f"[harness] max_new_tokens = {max_new_tokens}")
+            else:
+                print("[harness] usage: /tokens <positive_int>")
+            continue
+        if line.startswith("/mute "):
+            parts = line.split()
+            if len(parts) == 3 and parts[1] == "attn" and parts[2].isdigit():
+                muted_sites.add(f"attention.{int(parts[2])}.delta")
+                print(f"[harness] Muted attention.{int(parts[2])}.delta")
+            elif len(parts) == 3 and parts[1] == "mlp" and parts[2].isdigit():
+                muted_sites.add(f"mlp.{int(parts[2])}.delta")
+                print(f"[harness] Muted mlp.{int(parts[2])}.delta")
+            elif len(parts) == 4 and parts[1] == "chart" and parts[2].isdigit() and parts[3].isdigit():
+                muted_charts.add((int(parts[2]), int(parts[3])))
+                print(f"[harness] Muted mlp.{int(parts[2])} chart {int(parts[3])}")
+            else:
+                print("[harness] usage: /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
+            continue
+        run_one(line)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -441,6 +642,24 @@ def build_parser():
     xray.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     xray.add_argument("--report", help="Optional JSON X-Ray report path")
     xray.set_defaults(run=_xray)
+    interactive = commands.add_parser(
+        "interactive",
+        help="Interactive freeform prompt REPL with X-Ray, layer/chart muting, and exact comparison",
+    )
+    interactive.add_argument("--artifact", required=True)
+    interactive.add_argument("--reference-artifact", help="Optional exact MLX artifact for side-by-side comparison")
+    interactive.add_argument("--tokenizer", required=True)
+    interactive.add_argument("--prompt", help="Run a single freeform prompt non-interactively and exit")
+    interactive.add_argument("--presets", action="store_true", help="Run the 6 preset prompts and exit")
+    interactive.add_argument("--chat", action="store_true", help="Apply Qwen3 chat template (thinking disabled)")
+    interactive.add_argument("--xray", action="store_true", help="Enable per-prompt X-Ray chart/ablation output")
+    interactive.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
+    interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
+    interactive.add_argument("--ignore-eos", action="store_true")
+    interactive.add_argument("--mute-attn-layer", type=int, action="append", default=[])
+    interactive.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
+    interactive.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
+    interactive.set_defaults(run=_interactive)
     return parser
 
 

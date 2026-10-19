@@ -10,6 +10,7 @@ import pytest
 
 from fisher_graph.mlx_qwen3_fit import (
     allocate_waterfill_attention_ranks,
+    allocate_waterfill_joint_ranks,
     anchored_ridge,
     capture_empirical_token_fisher,
     capture_parameter_fisher,
@@ -269,3 +270,10 @@ def test_waterfill_attention_rank_allocation_respects_budget_and_reduces_distort
     l0, l1 = schedule["layers"][0], schedule["layers"][1]
     if l0["omega"] > l1["omega"] * 1.5:
         assert l0["scalars_removed"] <= l1["scalars_removed"]
+
+    joint = allocate_waterfill_joint_ranks(
+        runtime, data, target_scalars_removed=600, chart_count=2, chart_rank=2, generator_rank=2,
+        min_mlp_layer_spacing=1, rank_step=1, min_rank=2, fisher_max_tokens=4,
+    )
+    assert joint["achieved_scalars_removed"] >= 600
+    assert len(joint["mlp_candidates_ranked"]) == 2
