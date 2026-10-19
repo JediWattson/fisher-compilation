@@ -401,7 +401,32 @@ _PRESET_PROMPTS = (
 )
 
 
-def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=False, muted_sites=(), muted_charts=()):
+def _sample_next_token(logits_np, context_ids, *, temperature, top_p, repetition_penalty):
+    import numpy as np
+
+    logits = logits_np.astype(np.float64).copy()
+    if repetition_penalty != 1.0:
+        seen = np.unique(context_ids)
+        vals = logits[seen]
+        logits[seen] = np.where(vals > 0.0, vals / repetition_penalty, vals * repetition_penalty)
+    logits = logits / max(float(temperature), 1e-6)
+    logits -= logits.max()
+    probs = np.exp(logits)
+    probs /= probs.sum()
+    if top_p < 1.0:
+        order = np.argsort(probs)[::-1]
+        cum = np.cumsum(probs[order])
+        cutoff = int(np.searchsorted(cum, top_p, side="left")) + 1
+        keep = order[: max(cutoff, 1)]
+        mask = np.zeros_like(probs)
+        mask[keep] = probs[keep]
+        probs = mask / mask.sum()
+    return int(np.random.choice(len(probs), p=probs))
+
+
+def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=False,
+                         muted_sites=(), muted_charts=(),
+                         temperature=0.0, top_p=1.0, repetition_penalty=1.0):
     import mlx.core as mx
     import numpy as np
 
@@ -423,7 +448,15 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
     ]
     generated = []
     for step in range(max_new_tokens):
-        token = int(mx.argmax(output.logits[0, -1]).item())
+        logits_np = np.asarray(output.logits[0, -1].astype(mx.float32))
+        if temperature and temperature > 0.0:
+            token = _sample_next_token(
+                logits_np, ids + generated,
+                temperature=temperature, top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+        else:
+            token = int(mx.argmax(output.logits[0, -1]).item())
         generated.append(token)
         if not ignore_eos and token == tokenizer.eos_token_id:
             break
@@ -447,6 +480,9 @@ def _interactive(args):
     xray_on = bool(args.xray)
     chat_on = bool(args.chat)
     max_new_tokens = int(args.max_new_tokens)
+    temperature = float(args.temperature)
+    top_p = float(args.top_p)
+    rep_penalty = float(args.repetition_penalty)
     muted_sites = {f"attention.{l}.delta" for l in (args.mute_attn_layer or ())} | {
         f"mlp.{l}.delta" for l in (args.mute_mlp_layer or ())
     }
@@ -490,12 +526,16 @@ def _interactive(args):
             ignore_eos=args.ignore_eos,
             muted_sites=muted_sites,
             muted_charts=muted_charts,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=rep_penalty,
         )
         tok_s = len(gen_ids) / max(elapsed, 1e-6)
         print(f"\n[prompt]   {raw_text}")
         if muted_sites or muted_charts:
             print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-        print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)")
+        mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
+        print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s) [{mode}]")
         top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
         print(f"[top-5]    {top_str}")
         if reference is not None:
@@ -550,6 +590,9 @@ def _interactive(args):
             ignore_eos=args.ignore_eos,
             muted_sites=muted_sites,
             muted_charts=muted_charts,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=rep_penalty,
         )
         chat_history.append({"role": "assistant", "content": text_resp})
         chat_ctx_tokens = len(ids) + len(gen_ids)
@@ -558,7 +601,8 @@ def _interactive(args):
         print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
         if muted_sites or muted_charts:
             print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-        print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)")
+        print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)"
+              + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
         top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
         print(f"[top-5]    {top_str}")
         if xray_on:
@@ -589,6 +633,7 @@ def _interactive(args):
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
     print("  Commands       : /xray | /chat | /context | /reset | /tokens <N> |")
+    print("                   /temp <F> | /topp <F> | /penalty <F> |")
     print("                   /preset | /unmute | /quit")
     print("                   /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
     print("==============================================================================")
@@ -645,6 +690,30 @@ def _interactive(args):
                 print(f"[harness] max_new_tokens = {max_new_tokens}")
             else:
                 print("[harness] usage: /tokens <positive_int>")
+            continue
+        if line.startswith("/temp "):
+            try:
+                temperature = float(line.split()[1])
+                assert temperature >= 0.0
+                print(f"[harness] temperature = {temperature} ({'sampling' if temperature > 0 else 'greedy'})")
+            except (ValueError, IndexError, AssertionError):
+                print("[harness] usage: /temp <float>=0 for greedy, e.g. /temp 0.7")
+            continue
+        if line.startswith("/topp "):
+            try:
+                top_p = float(line.split()[1])
+                assert 0.0 < top_p <= 1.0
+                print(f"[harness] top_p = {top_p}")
+            except (ValueError, IndexError, AssertionError):
+                print("[harness] usage: /topp <float in (0,1]>")
+            continue
+        if line.startswith("/penalty "):
+            try:
+                rep_penalty = float(line.split()[1])
+                assert rep_penalty >= 1.0
+                print(f"[harness] repetition_penalty = {rep_penalty}")
+            except (ValueError, IndexError, AssertionError):
+                print("[harness] usage: /penalty <float>=1.0, e.g. /penalty 1.15")
             continue
         if line.startswith("/mute "):
             parts = line.split()
@@ -731,6 +800,9 @@ def build_parser():
     interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
     interactive.add_argument("--max-context-tokens", type=_positive_int, default=4096)
     interactive.add_argument("--system-prompt", help="System prompt for persistent chat mode")
+    interactive.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature (0 = greedy argmax)")
+    interactive.add_argument("--top-p", type=float, default=1.0, help="Nucleus sampling cutoff (1.0 = disabled)")
+    interactive.add_argument("--repetition-penalty", type=float, default=1.0, help="HF-style repetition penalty (1.0 = disabled)")
     interactive.add_argument("--ignore-eos", action="store_true")
     interactive.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     interactive.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
