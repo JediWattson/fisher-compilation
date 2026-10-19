@@ -25,11 +25,23 @@ def _local_directory(value):
     return path
 
 
+def _resolve_artifact(value):
+    """Resolve a local artifact directory or a Hugging Face repo id to a path."""
+    path = Path(str(value)).expanduser()
+    if path.is_dir():
+        return path.resolve()
+    from huggingface_hub import snapshot_download
+    return Path(snapshot_download(str(value))).resolve()
+
+
 def _tokenizer(directory):
     from transformers import AutoTokenizer
-    return AutoTokenizer.from_pretrained(
-        str(_local_directory(directory)), local_files_only=True, trust_remote_code=False
-    )
+    path = Path(str(directory)).expanduser()
+    if path.is_dir():
+        return AutoTokenizer.from_pretrained(
+            str(path.resolve()), local_files_only=True, trust_remote_code=False
+        )
+    return AutoTokenizer.from_pretrained(str(directory), trust_remote_code=False)
 
 
 def _layers(value, count):
@@ -471,11 +483,27 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
     return tokenizer.decode(generated, skip_special_tokens=True), generated, top5, elapsed
 
 
+def _default_chat_artifact():
+    local = Path(".local-runs/qwen3-ewc-refine/joint_waterfill_286mib")
+    if local.is_dir():
+        return str(local)
+    return "jediwattzon/qwen3-1.7b-fisher-ewc-graph"
+
+
+def _chat(args):
+    args.chat = True
+    args.presets = False
+    args.reference_artifact = None
+    args.max_prompt_tokens = args.max_context_tokens
+    _interactive(args)
+
+
 def _interactive(args):
     from .mlx_qwen3 import MLXQwen3
 
-    runtime = MLXQwen3.load(_local_directory(args.artifact))
-    reference = MLXQwen3.load(_local_directory(args.reference_artifact)) if args.reference_artifact else None
+    artifact_dir = _resolve_artifact(args.artifact)
+    runtime = MLXQwen3.load(artifact_dir)
+    reference = MLXQwen3.load(_resolve_artifact(args.reference_artifact)) if args.reference_artifact else None
     tokenizer = _tokenizer(args.tokenizer)
     xray_on = bool(args.xray)
     debug_on = bool(args.debug)
@@ -556,7 +584,7 @@ def _interactive(args):
                 print(f"[ex-top-5] {ref_top_str}")
         if xray_on:
             xray_ns = argparse.Namespace(
-                artifact=args.artifact,
+                artifact=str(artifact_dir),
                 tokenizer=args.tokenizer,
                 prompt=raw_text,
                 chat=chat_on,
@@ -615,7 +643,7 @@ def _interactive(args):
             print(f"\n{text_resp}")
         if xray_on:
             xray_ns = argparse.Namespace(
-                artifact=args.artifact,
+                artifact=str(artifact_dir),
                 tokenizer=args.tokenizer,
                 prompt=rendered,
                 chat=False,
@@ -635,7 +663,7 @@ def _interactive(args):
     print("==============================================================================")
     print("  Fisher-Graph Qwen3 MLX Interactive Harness (Freeform REPL + X-Ray + Mutes)")
     print("==============================================================================")
-    print(f"  Artifact       : {Path(args.artifact).expanduser().resolve()}")
+    print(f"  Artifact       : {artifact_dir}")
     print(f"  Reduced Attn   : {reduced_attn}")
     print(f"  Chart MLPs     : {chart_mlps}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
@@ -821,6 +849,28 @@ def build_parser():
     interactive.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
     interactive.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
     interactive.set_defaults(run=_interactive)
+    chat = commands.add_parser(
+        "chat",
+        help="One-arg persistent chat demo: compiled artifact, chat template, and sampling defaults",
+    )
+    chat.add_argument("--artifact", default=_default_chat_artifact(),
+                      help="Local artifact dir or HF repo id (default: local joint_waterfill or published repo)")
+    chat.add_argument("--tokenizer", default="Qwen/Qwen3-1.7B",
+                      help="Local tokenizer dir or HF repo id")
+    chat.add_argument("--prompt", help="Run a single chat question and exit (default: persistent REPL)")
+    chat.add_argument("--temperature", type=float, default=0.7)
+    chat.add_argument("--top-p", type=float, default=0.9)
+    chat.add_argument("--repetition-penalty", type=float, default=1.15)
+    chat.add_argument("--max-new-tokens", type=_positive_int, default=96)
+    chat.add_argument("--max-context-tokens", type=_positive_int, default=4096)
+    chat.add_argument("--system-prompt")
+    chat.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats")
+    chat.add_argument("--xray", action="store_true", help="Enable per-turn X-Ray output")
+    chat.add_argument("--ignore-eos", action="store_true")
+    chat.add_argument("--mute-attn-layer", type=int, action="append", default=[])
+    chat.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
+    chat.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
+    chat.set_defaults(run=_chat)
     return parser
 
 

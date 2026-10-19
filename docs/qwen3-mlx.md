@@ -202,6 +202,18 @@ Each turn prints the running context size (`[ctx] N tokens | K turns | prompt=M 
 the decoded response, and the top-5 first-token distribution. `/context` shows the
 recent conversation tail + active mutes, and `/reset` clears history.
 
+For a zero-configuration chat demo (compiled artifact, chat template, and
+`sampling T=0.7 / top-p=0.9 / repetition-penalty=1.15` all preset):
+
+```sh
+MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx chat            # persistent REPL
+MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx chat --prompt "what is a const?"
+```
+
+`chat` resolves `--artifact`/`--tokenizer` from either a local directory or a
+Hugging Face repo id (default: local `joint_waterfill_286mib` when present,
+otherwise the published `jediwattzon/qwen3-1.7b-fisher-ewc-graph`).
+
 Any exact, partial-fit, or full-fit `MLXQwen3` runtime can also be bridged
 directly into the standalone 59-event PyTorch executor (`runtime.to_torch()`)
 without allocating a Hugging Face model, supporting `JointGraphDecodeSession`
