@@ -88,3 +88,32 @@ against in-fit operator-pullback EWC anchoring inside `fit_chart_mlp`:
    `fit.jsonl` wrapped in Qwen3's chat/choice template woke up the dormant
    chat-boundary channels in layer 13, cutting task label KL in half
    (`2.304 -> 1.117`) while preserving `88.41%` 512-token text agreement.
+
+## 3. Scaling across multiple blocks (`285.85 MiB` saved)
+
+Using the Euler-Jacobian EWC anchor and the chat-wrapped training calibration
+passages, we evaluated three multi-block compression arms sequentially along
+the changed trajectory:
+
+- `attn_4blocks_7_13_19_25`: reduced attention (`1024/512`) across 4 distributed
+  blocks (`7, 13, 19, 25`), removing `16,777,216` scalars (`32.00 MiB` saved).
+- `joint_4blocks_7_13_19_25`: reduced attention (`1024/512`) + Euler-anchored
+  chart MLP (`4` charts, `rank 16`, `ridge 0.35`) across blocks `7, 13, 19, 25`,
+  removing `149,868,000` scalars (`285.85 MiB` saved, `8.71%` of the 1.72B model).
+- `attn_all28`: reduced attention (`1024/512`) across all 28 blocks (`0..27`)
+  with frozen MLPs, removing `117,440,512` scalars (`224.00 MiB` saved).
+
+| Multi-block Variant | BF16 Storage Saved | 512-Token Top-1 Agree (`32,704`) | 512-Token NLL Change | Task Total (`96`) | BoolQ (`32`) | PIQA (`32`) | ARC-Easy (`32`) | Task Teacher Agree |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `attn_4blocks_7_13_19_25` | `32.00 MiB` | **90.23%** | `+0.03536` | **70/96** | **24** (100% agree) | 20 | **26** (100% agree) | **95.83%** |
+| `joint_4blocks_7_13_19_25` | **`285.85 MiB`** | 69.70% | `+0.28106` | **64/96** | **21** | 19 | **24** | **82.29%** |
+| `attn_all28` | `224.00 MiB` | 63.07% | `+1.08999` | **53/96** | 17 | 20 | 16 | 60.42% |
+
+Sequential trajectory adaptation across the 4-block joint slice
+(`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
+outperformed the single-block fit (`63/96`, `76.04%` agreement) while saving
+`4x` as much memory (`285.85 MiB`), because later fitted chart MLPs (`19, 25`)
+absorb upstream trajectory drift from earlier blocks (`7, 13`). By contrast,
+reducing all 28 attention blocks with frozen MLPs (`attn_all28`, `224.00 MiB`
+saved) accumulated `+1.09` NLL drift and dropped to `53/96` tasks.
+

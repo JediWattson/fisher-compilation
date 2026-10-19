@@ -176,6 +176,21 @@ template with thinking disabled; otherwise the prompt is treated as raw
 completion text. The optional report includes generated tokens and completion
 text. Its one-run elapsed time is not a throughput benchmark.
 
+To inspect per-token chart routing and counterfactual ablation pushes for any
+saved MLX artifact:
+
+```sh
+MLX_ENABLE_TF32=0 fisher-graph-qwen3-mlx xray \
+  --artifact artifacts/qwen3-mlx-layer0 \
+  --tokenizer /absolute/path/to/Qwen3-1.7B/snapshot \
+  --prompt "The capital of France is"
+```
+
+Any exact, partial-fit, or full-fit `MLXQwen3` runtime can also be bridged
+directly into the standalone 59-event PyTorch executor (`runtime.to_torch()`)
+without allocating a Hugging Face model, supporting `JointGraphDecodeSession`
+and round-trip conversion via `MLXQwen3.from_torch(executor)`.
+
 ## Python API
 
 Start the process with `MLX_ENABLE_TF32=0`, then:

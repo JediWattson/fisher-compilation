@@ -67,6 +67,7 @@ QWEN3_JOINT_EVENT_COUNT = 59
 
 QWEN3_JOINT_CHART_ARM_ID = "qwen3_joint_cross_block_chart_candidate"
 QWEN3_JOINT_EXACT_CONTROL_ARM_ID = "qwen3_joint_exact_59_event_control"
+QWEN3_JOINT_MLX_HYBRID_ARM_ID = "qwen3_joint_mlx_hybrid_v1"
 
 
 def build_qwen3_event_schedule(
@@ -544,6 +545,7 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
         if arm_id not in {
             QWEN3_JOINT_CHART_ARM_ID,
             QWEN3_JOINT_EXACT_CONTROL_ARM_ID,
+            QWEN3_JOINT_MLX_HYBRID_ARM_ID,
         }:
             raise ValueError("qwen3 joint executor arm_id is unsupported")
         if final_logit_softcap is not None and (
@@ -694,7 +696,8 @@ class Qwen3JointCrossBlockChartExecutor(Gemma3JointCrossBlockChartExecutor):
         manifest = super().architecture_manifest()
         manifest.update(
             kind="qwen3_joint_cross_block_chart_executor",
-            candidate_arm=self.arm_id == QWEN3_JOINT_CHART_ARM_ID,
+            candidate_arm=self.arm_id
+            in {QWEN3_JOINT_CHART_ARM_ID, QWEN3_JOINT_MLX_HYBRID_ARM_ID},
             exact_control_arm=self.arm_id == QWEN3_JOINT_EXACT_CONTROL_ARM_ID,
             layer_count=self._layer_count,
         )
@@ -1116,6 +1119,7 @@ __all__ = [
     "QWEN3_JOINT_CHART_ARM_ID",
     "QWEN3_JOINT_EVENT_COUNT",
     "QWEN3_JOINT_EXACT_CONTROL_ARM_ID",
+    "QWEN3_JOINT_MLX_HYBRID_ARM_ID",
     "QWEN3_JOINT_MUTATION_COUNT",
     "Qwen3JointCrossBlockChartExecutor",
     "Qwen3JointGraphAttentionOperatorOutputSnapshot",

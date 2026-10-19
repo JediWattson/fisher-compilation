@@ -257,6 +257,14 @@ class MLXQwen3:
                   "source": executor.arm_id}
         return cls(p, config)
 
+    def to_torch(self, *, dtype=None, device="cpu"):
+        """Convert this MLX Qwen3 runtime into a standalone Torch joint executor."""
+        import torch
+        from .qwen3_joint_compiler import compile_qwen3_joint_from_mlx
+
+        torch_dtype = torch.float32 if dtype is None else dtype
+        return compile_qwen3_joint_from_mlx(self, dtype=torch_dtype, device=device)
+
     def save(self, directory):
         mx = _core()
         directory = Path(directory)

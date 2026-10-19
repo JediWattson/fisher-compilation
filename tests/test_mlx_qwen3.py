@@ -388,3 +388,40 @@ def test_chart_transport_conversion_and_cached_decode_match_torch(runtimes, tmp_
             reference = candidate.execute(batch["input_ids"], adapter.prepare_sequence(batch)).logits
         np.testing.assert_allclose(_numpy(output.logits)[:, -1], reference[:, -1].numpy(), rtol=5e-5, atol=5e-6)
 
+
+def test_mlx_to_torch_bridge_supports_partial_fit_decode_and_roundtrip(runtimes):
+    from fisher_graph.gemma3_incremental_decode import JointGraphDecodeSession
+    from fisher_graph.mlx_qwen3_fit import capture_runtime_rows, fit_chart_mlp, fit_reduced_attention
+
+    _, adapter, _, direct, _ = runtimes
+    batch = _batch("left")
+    mlx_batch = _mlx_batch(batch)
+    attn_rows = capture_runtime_rows(direct, [mlx_batch], ["attention.0.normalized", "attention.0.context"])
+    partial = fit_reduced_attention(direct, 0, attn_rows, input_rank=12, output_rank=10).runtime
+    mlp_rows = capture_runtime_rows(partial, [mlx_batch], ["mlp.0.normalized", "mlp.0.output"])
+    partial = fit_chart_mlp(partial, 0, mlp_rows, chart_count=2, chart_rank=4, generator_rank=4).runtime
+
+    torch_executor = partial.to_torch()
+    seq = adapter.prepare_sequence(batch)
+    with torch.inference_mode():
+        torch_out = torch_executor.execute(batch["input_ids"], seq)
+    mlx_out = partial(**mlx_batch)
+    valid = batch["attention_mask"].bool().numpy()
+    np.testing.assert_allclose(torch_out.logits.numpy()[valid], _numpy(mlx_out.logits)[valid], rtol=5e-5, atol=5e-6)
+
+    # Verify JointGraphDecodeSession works on the converted partial-fit executor
+    session, prefill_logits = JointGraphDecodeSession.prefill(
+        torch_executor, batch["input_ids"], seq
+    )
+    np.testing.assert_allclose(prefill_logits[:, -1, :].numpy(), torch_out.logits[:, -1, :].numpy(), rtol=5e-5, atol=5e-6)
+    next_tok = torch.tensor([[11], [14]], dtype=torch.long)
+    step_logits = session.step(next_tok)
+    mlx_decode = partial.decode(mx.array(next_tok.numpy()), mlx_out.cache)
+    np.testing.assert_allclose(step_logits[:, 0, :].numpy(), _numpy(mlx_decode.logits)[:, 0, :], rtol=5e-4, atol=5e-5)
+
+    # Round-trip back to MLXQwen3
+    roundtripped = MLXQwen3.from_torch(torch_executor)
+    np.testing.assert_allclose(
+        _numpy(roundtripped(**mlx_batch).logits)[valid], _numpy(mlx_out.logits)[valid], rtol=5e-5, atol=5e-6
+    )
+

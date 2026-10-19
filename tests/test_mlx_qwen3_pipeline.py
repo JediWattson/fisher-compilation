@@ -127,4 +127,15 @@ def test_real_local_convert_fit_and_generate(tmp_path, monkeypatch, capsys):
     assert len(generated["generated_token_ids"]) == 3
     assert generated["decoding"] == "greedy"
     assert generated["completion"] == capsys.readouterr().out.strip()
+    xray_report = tmp_path / "results" / "xray.json"
+    assert main([
+        "xray", "--artifact", str(fitted), "--tokenizer", str(source),
+        "--prompt", "word3 word4", "--report", str(xray_report),
+    ]) == 0
+    xray_data = json.loads(xray_report.read_text())
+    assert xray_data["operation"] == "xray"
+    assert xray_data["reduced_attention_layers"] == [0]
+    assert xray_data["chart_mlp_layers"] == [0]
+    assert len(xray_data["top5_predictions"]) == 5
+    assert len(xray_data["ablation_impacts"]) == 2
     assert os.environ["MLX_ENABLE_TF32"] == "0"

@@ -276,6 +276,121 @@ def _generate(args):
         }, indent=2, allow_nan=False) + "\n")
 
 
+def _xray(args):
+    import mlx.core as mx
+    import numpy as np
+    from .mlx_qwen3 import MLXQwen3
+
+    runtime = MLXQwen3.load(_local_directory(args.artifact))
+    tokenizer = _tokenizer(args.tokenizer)
+    prompt = args.prompt
+    if args.chat:
+        prompt = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    ids = tokenizer.encode(prompt, add_special_tokens=not args.chat)
+    if not ids or len(ids) > args.max_prompt_tokens:
+        raise ValueError(f"Prompt must contain 1..{args.max_prompt_tokens} tokens")
+    lexical = next(
+        runtime.parameters[name]
+        for name in ("lexical.weight", "lexical.codebook")
+        if name in runtime.parameters
+    )
+    if any(token < 0 or token >= lexical.shape[0] for token in ids):
+        raise ValueError("Prompt token IDs are outside the runtime vocabulary")
+
+    chart_layers = sorted(
+        i for i in range(len(runtime.layers)) if f"mlp.{i}.chart_centers" in runtime.parameters
+    )
+    reduced_attn_layers = sorted(
+        i for i in range(len(runtime.layers)) if f"attention.{i}.input_basis" in runtime.parameters
+    )
+    capture_sites = [f"mlp.{i}.normalized" for i in chart_layers] + [
+        f"mlp.{i}.delta" for i in chart_layers
+    ] + [f"attention.{i}.delta" for i in reduced_attn_layers]
+    arr_ids = mx.array([ids], dtype=mx.int32)
+    out = runtime(arr_ids, capture=capture_sites or False)
+    logits = out.logits[0, -1].astype(mx.float32)
+    probs = mx.softmax(logits, axis=-1)
+    mx.eval(logits, probs)
+    logits_np = np.asarray(logits)
+    probs_np = np.asarray(probs)
+    top_idx = np.argsort(logits_np)[::-1][:5]
+    win_id = int(top_idx[0])
+
+    token_routing = {}
+    for i in chart_layers:
+        n_val = out.captures[f"mlp.{i}.normalized"][0].astype(mx.float32)
+        centers = runtime.parameters[f"mlp.{i}.chart_centers"].astype(mx.float32)
+        scales = runtime.parameters[f"mlp.{i}.chart_distance_scales"].astype(mx.float32)
+        temp = float(runtime.layers[i]["mlp"].get("temperature", 1.0))
+        disp = n_val[:, None, :] - centers[None, :, :]
+        memb = np.asarray(
+            mx.softmax(-0.5 * mx.sum(disp ** 2, axis=-1) / (scales[None, :] ** 2 * temp), axis=-1)
+        )
+        token_routing[str(i)] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
+    ablation_impacts = []
+    for i in reduced_attn_layers:
+        site = f"attention.{i}.delta"
+        ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
+        mx.eval(ablated)
+        ab_np = np.asarray(ablated)
+        ablation_impacts.append({
+            "site": site,
+            "winning_logit_push": float(logits_np[win_id] - ab_np[win_id]),
+            "ablated_top1_token_id": int(np.argmax(ab_np)),
+            "ablated_top1_token": tokenizer.decode([int(np.argmax(ab_np))]),
+        })
+    for i in chart_layers:
+        site = f"mlp.{i}.delta"
+        ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
+        mx.eval(ablated)
+        ab_np = np.asarray(ablated)
+        ablation_impacts.append({
+            "site": site,
+            "winning_logit_push": float(logits_np[win_id] - ab_np[win_id]),
+            "ablated_top1_token_id": int(np.argmax(ab_np)),
+            "ablated_top1_token": tokenizer.decode([int(np.argmax(ab_np))]),
+        })
+
+    payload = {
+        "operation": "xray",
+        **_precision(),
+        "artifact": str(Path(args.artifact).expanduser().resolve()),
+        "prompt_tokens": len(ids),
+        "reduced_attention_layers": reduced_attn_layers,
+        "chart_mlp_layers": chart_layers,
+        "top5_predictions": [
+            {
+                "token_id": int(idx),
+                "token": tokenizer.decode([int(idx)]),
+                "logit": float(logits_np[idx]),
+                "probability": float(probs_np[idx]),
+            }
+            for idx in top_idx
+        ],
+        "chart_routing": token_routing,
+        "ablation_impacts": ablation_impacts,
+    }
+    print(json.dumps(payload, indent=2, allow_nan=False))
+    if args.report:
+        report_path = Path(args.report).expanduser()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -318,6 +433,14 @@ def build_parser():
     generate.add_argument("--ignore-eos", action="store_true")
     generate.add_argument("--report", help="Optional JSON completion/timing report path")
     generate.set_defaults(run=_generate)
+    xray = commands.add_parser("xray", help="Inspect chart routing and counterfactual event ablation pushes")
+    xray.add_argument("--artifact", required=True)
+    xray.add_argument("--tokenizer", required=True)
+    xray.add_argument("--prompt", required=True)
+    xray.add_argument("--chat", action="store_true")
+    xray.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
+    xray.add_argument("--report", help="Optional JSON X-Ray report path")
+    xray.set_defaults(run=_xray)
     return parser
 
 
