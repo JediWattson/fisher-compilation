@@ -142,10 +142,16 @@ def test_real_local_convert_fit_and_generate(tmp_path, monkeypatch, capsys):
     assert main([
         "interactive", "--artifact", str(fitted), "--reference-artifact", str(original),
         "--tokenizer", str(source), "--prompt", "word3 word4", "--max-new-tokens", "2",
-        "--ignore-eos", "--mute-attn-layer", "0", "--mute-chart", "0:1",
+        "--ignore-eos", "--mute-attn-layer", "0", "--mute-chart", "0:1", "--debug",
     ]) == 0
     interactive_out = capsys.readouterr().out
     assert "[compiled]" in interactive_out
     assert "[exact]" in interactive_out
     assert "[mutes]" in interactive_out
+    assert main([
+        "interactive", "--artifact", str(fitted), "--tokenizer", str(source),
+        "--prompt", "word3 word4", "--max-new-tokens", "2", "--ignore-eos",
+    ]) == 0
+    clean_out = capsys.readouterr().out
+    assert "[compiled]" not in clean_out and "[top-5]" not in clean_out
     assert os.environ["MLX_ENABLE_TF32"] == "0"

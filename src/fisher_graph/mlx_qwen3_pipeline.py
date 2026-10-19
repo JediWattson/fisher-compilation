@@ -478,6 +478,7 @@ def _interactive(args):
     reference = MLXQwen3.load(_local_directory(args.reference_artifact)) if args.reference_artifact else None
     tokenizer = _tokenizer(args.tokenizer)
     xray_on = bool(args.xray)
+    debug_on = bool(args.debug)
     chat_on = bool(args.chat)
     max_new_tokens = int(args.max_new_tokens)
     temperature = float(args.temperature)
@@ -531,13 +532,16 @@ def _interactive(args):
             repetition_penalty=rep_penalty,
         )
         tok_s = len(gen_ids) / max(elapsed, 1e-6)
-        print(f"\n[prompt]   {raw_text}")
-        if muted_sites or muted_charts:
-            print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-        mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
-        print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s) [{mode}]")
-        top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
-        print(f"[top-5]    {top_str}")
+        if debug_on:
+            print(f"\n[prompt]   {raw_text}")
+            if muted_sites or muted_charts:
+                print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
+            mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
+            print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s) [{mode}]")
+            top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
+            print(f"[top-5]    {top_str}")
+        else:
+            print(f"\n{text}")
         if reference is not None:
             ref_text, ref_ids, ref_top5, ref_elapsed = _greedy_continuation(
                 reference,
@@ -546,9 +550,10 @@ def _interactive(args):
                 max_new_tokens=max_new_tokens,
                 ignore_eos=args.ignore_eos,
             )
-            ref_top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in ref_top5[:5])
-            print(f"[exact]    {ref_text!r}  ({len(ref_ids)} tok in {ref_elapsed:.2f}s)")
-            print(f"[ex-top-5] {ref_top_str}")
+            if debug_on:
+                ref_top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in ref_top5[:5])
+                print(f"[exact]    {ref_text!r}  ({len(ref_ids)} tok in {ref_elapsed:.2f}s)")
+                print(f"[ex-top-5] {ref_top_str}")
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=args.artifact,
@@ -597,14 +602,17 @@ def _interactive(args):
         chat_history.append({"role": "assistant", "content": text_resp})
         chat_ctx_tokens = len(ids) + len(gen_ids)
         tok_s = len(gen_ids) / max(elapsed, 1e-6)
-        print(f"\n[user]     {user_text}")
-        print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
-        if muted_sites or muted_charts:
-            print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-        print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)"
-              + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
-        top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
-        print(f"[top-5]    {top_str}")
+        if debug_on:
+            print(f"\n[user]     {user_text}")
+            print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
+            if muted_sites or muted_charts:
+                print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
+            print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)"
+                  + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
+            top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
+            print(f"[top-5]    {top_str}")
+        else:
+            print(f"\n{text_resp}")
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=args.artifact,
@@ -632,8 +640,8 @@ def _interactive(args):
     print(f"  Chart MLPs     : {chart_mlps}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
-    print("  Commands       : /xray | /chat | /context | /reset | /tokens <N> |")
-    print("                   /temp <F> | /topp <F> | /penalty <F> |")
+    print("  Commands       : /xray | /chat | /debug | /context | /reset |")
+    print("                   /tokens <N> | /temp <F> | /topp <F> | /penalty <F> |")
     print("                   /preset | /unmute | /quit")
     print("                   /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
     print("==============================================================================")
@@ -652,6 +660,10 @@ def _interactive(args):
         if line == "/xray":
             xray_on = not xray_on
             print(f"[harness] X-Ray mode is now {'ON' if xray_on else 'OFF'}")
+            continue
+        if line == "/debug":
+            debug_on = not debug_on
+            print(f"[harness] Debug stats are now {'ON' if debug_on else 'OFF'}")
             continue
         if line == "/chat":
             chat_on = not chat_on
@@ -796,6 +808,7 @@ def build_parser():
     interactive.add_argument("--presets", action="store_true", help="Run the 6 preset prompts and exit")
     interactive.add_argument("--chat", action="store_true", help="Apply Qwen3 chat template (thinking disabled)")
     interactive.add_argument("--xray", action="store_true", help="Enable per-prompt X-Ray chart/ablation output")
+    interactive.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats (default: answer only)")
     interactive.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
     interactive.add_argument("--max-context-tokens", type=_positive_int, default=4096)
