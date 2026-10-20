@@ -141,6 +141,36 @@ Two structural findings:
    *different parameterization* (lexical factorization frees ~`443 MiB` without
    touching the stem; trajectory-target fitting; cross-block transports).
 
+### Layer-vitality scan (causal mute-impact, `scripts/layer_vitality_scan.py`)
+
+Muting `attention.{l}.delta` / `mlp.{l}.delta` one at a time and measuring
+next-token KL on 8 prompts (mean KL, `exact` vs `wf286` vs `wf768`):
+
+| Layer | `attention` exact → wf286 → wf768 | `mlp` exact → wf286 → wf768 |
+| --- | --- | --- |
+| `0` | `20.16 → 17.00 →` **`8.71`** | `12.58 → 9.93 →` **`5.57`** |
+| `2` | `0.12 → 0.08 → 0.06` | `10.93 → 9.18 →` **`8.02`** |
+| `6` | `0.15 → 0.12 →` **`0.03`** | `0.14 → 0.19 → 0.07` |
+| `13` | `0.05 → 0.02 →` **`0.00`** | `0.09 → 0.04* → 0.01*` |
+| `21` | `0.03 → 0.03 →` **`0.01`** | `0.13 → 0.14 → 0.02*` |
+| `26` | `0.02 → 0.03 → 0.04` | `0.21 → 0.45† → 0.22` |
+| `27` | `0.03 → 0.04 → 0.05` | `0.18 → 0.27† →` **`0.50†`** |
+
+`*` chart-MLP layer (286: `13,15,18,25`; 768: `13,15,18,21,23,25`)
+`†` impact *grows* vs exact — downstream exact MLPs are recruited to compensate
+for upstream chart approximations (modal redistribution).
+
+Two falsified/clarified hypotheses:
+
+1. **The token-0 sink does NOT die at 768 MiB** (`max_abs` `12,352` exact →
+   `13,128` wf768 — slightly *larger*). Stem `r_in=384` starves the *queries/keys*
+   the sink feeds, not the sink itself.
+2. **The actual 768 failure mode is global attention-bandwidth collapse**: every
+   layer's mute-impact falls `3–10×` below exact (mid/late attention `0.004–0.06`
+   vs `0.03–0.15`), i.e. the attention blocks emit near-noise the residual stream
+   mostly ignores — the model degenerates to *embeddings + weakened MLPs +
+   terminal block*, which produces the calibration-surface repetition seen in chat.
+
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
 outperformed the single-block fit (`63/96`, `76.04%` agreement) while saving
