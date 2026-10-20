@@ -113,6 +113,33 @@ the changed trajectory:
 | `attn_waterfill_224mib` (cov KKT water-fill) | `224.00 MiB` | 70.28% | `+0.30833` | **70/96** | **25** | **22** | 23 | 76.04% |
 | **`attn_pullback_wf_224mib`** (pullback KKT, `r=0.05`) | **`224.00 MiB`** | **73.68%** | **`+0.12273`** | **67/96** | **25** | 19 | 23 | **80.21%** |
 | **`attn_pullback_wf_r0.25_224mib`** (pullback KKT, `r=0.25`) | **`224.00 MiB`** | **75.60%** | **`+0.09495`** | **61/96** | 19 | 19 | 23 | **79.17%** |
+| **`joint_waterfill_512mib`** (8 chart-MLP + L27 attn) | **`512.20 MiB`** | **61.07%** | **`+0.61101`** | **67/96** | **28** | 17 | 22 | **75.00%** |
+| **`joint_waterfill_768mib`** (6 chart-MLP + all-28 attn `384`) | **`769.46 MiB`** | 43.78% | `+1.50073` | **58/96** | 27 | 19 | 12 | 48.96% |
+
+### Budget-frontier finding (`allocate_waterfill_joint_ranks`)
+
+Sweeping the joint KKT budget at fixed parameterization (`4` charts, `rank 16`,
+`min_rank=384` attention floor, marginal-consistent MLP selection):
+
+| Budget removed | MLPs charted | Attn layers touched | Task | Text agree | NLL $\Delta$ | Weights | Body MACs |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `285.85 MiB` | `13,15,18,25` | `5` (`r_in` 704–960) | **70/96** | **73.47%** | `+0.229` | `2.926 GiB` | `89.4%` |
+| `512.20 MiB` | `8,11,13,15,18,21,23,25` | `1` (L27 `r_in=981`) | **67/96** | **61.07%** | `+0.611` | `2.705 GiB` | `80.9%` |
+| `769.46 MiB` | `13,15,18,21,23,25` | **all 28** (`r_in=384` floor) | **58/96** | 43.78% | `+1.501` | `2.453 GiB` | `78.6%` |
+
+Two structural findings:
+
+1. **The allocator's marginal-consistency pass works as designed** — at 768 MiB it
+   *rejected* `mlp.0`/`mlp.27` (Ω = 5.59/3.34) even though raw distortion-per-scalar
+   ranking would have included them, because their cost exceeded the attention
+   water-filling threshold μ. Without the interleave fix the schedule was degenerate.
+2. **The fidelity knee is ≈512 MiB for this parameterization.** Past it, attention
+   ranks hit the `384` floor on all 28 layers including the stem (`L0–2`), which
+   empirically destroys the token-0 sink as predicted by earlier layer-tracing
+   (ARC-Easy collapses to `12/32`, teacher agreement `48.96%`). The quadratic
+   distortion model is not trustworthy below ~`rank/8`; deeper compression needs a
+   *different parameterization* (lexical factorization frees ~`443 MiB` without
+   touching the stem; trajectory-target fitting; cross-block transports).
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly

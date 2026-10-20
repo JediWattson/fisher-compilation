@@ -935,7 +935,7 @@ def allocate_waterfill_joint_ranks(
     mlp_expected_relative_error: float = 0.50,
     min_mlp_layer_spacing: int = 2,
     rank_step: int = 1,
-    min_rank: int = 1,
+    min_rank: int = 384,
     fisher_max_tokens: int = 32,
 ) -> dict[str, Any]:
     """Joint KKT Pullback-Fisher water-filling across all attention and MLP blocks.
@@ -992,15 +992,49 @@ def allocate_waterfill_joint_ranks(
         })
 
     mlp_candidates.sort(key=lambda item: item["distortion_per_scalar"])
-    selected_mlps: list[dict[str, Any]] = []
-    mlp_removed = 0
-    for item in mlp_candidates:
-        if any(abs(item["layer"] - s["layer"]) < min_mlp_layer_spacing for s in selected_mlps):
-            continue
-        if mlp_removed + item["scalars_removed"] <= target_scalars_removed:
-            selected_mlps.append(item)
-            mlp_removed += item["scalars_removed"]
 
+    def _select(remaining_budget: int) -> list[dict[str, Any]]:
+        selected: list[dict[str, Any]] = []
+        used = 0
+        for item in mlp_candidates:
+            if any(abs(item["layer"] - s["layer"]) < min_mlp_layer_spacing for s in selected):
+                continue
+            if used + item["scalars_removed"] <= remaining_budget:
+                selected.append(item)
+                used += item["scalars_removed"]
+        return selected
+
+    # KKT marginal-consistency pass: a chart-MLP swap is only optimal if its
+    # distortion-per-scalar is below the attention water-filling threshold mu
+    # set by the budget it frees. Drop the worst selected MLP while its
+    # distortion-per-scalar exceeds that mu, then backfill cheaper ones.
+    selected_mlps = _select(target_scalars_removed)
+    for _ in range(8):
+        removed = sum(s["scalars_removed"] for s in selected_mlps)
+        attn_probe = allocate_waterfill_attention_ranks(
+            runtime,
+            batches,
+            target_scalars_removed=max(target_scalars_removed - removed, 0),
+            rank_step=rank_step,
+            min_rank=min_rank,
+            fisher_max_tokens=fisher_max_tokens,
+        )
+        mu = attn_probe["lagrange_multiplier_mu"]
+        worst = max(selected_mlps, key=lambda s: s["distortion_per_scalar"], default=None)
+        if worst is None or worst["distortion_per_scalar"] <= mu:
+            break
+        selected_mlps = [s for s in selected_mlps if s is not worst]
+        budget_left = target_scalars_removed - sum(s["scalars_removed"] for s in selected_mlps)
+        for item in mlp_candidates:
+            if item in selected_mlps or item["distortion_per_scalar"] > mu:
+                continue
+            if any(abs(item["layer"] - s["layer"]) < min_mlp_layer_spacing for s in selected_mlps):
+                continue
+            if item["scalars_removed"] <= budget_left:
+                selected_mlps.append(item)
+                budget_left -= item["scalars_removed"]
+
+    mlp_removed = sum(s["scalars_removed"] for s in selected_mlps)
     remaining = max(target_scalars_removed - mlp_removed, 0)
     if remaining > 0:
         attn_schedule = allocate_waterfill_attention_ranks(
