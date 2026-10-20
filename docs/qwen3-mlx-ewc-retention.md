@@ -222,10 +222,42 @@ parameterization — not because transports can't carry critical signatures
 (the sink revival proves they can), but because per-layer closed-form fitting
 has no global consistency constraint. Gemma's transports worked because they
 were **jointly fitted against terminal loss** in the whole-model experiment.
-The remaining levers are (a) joint gradient refinement over all params
-against terminal KL — real training rather than closed-form compilation — or
-(b) denser charts (`8–16` charts at `rank 32–64` for ~10% per-layer error) so
-that less correction is needed in the first place.
+
+### Joint gradient refinement (`modal_all28_seq_refined`)
+
+The missing global-consistency step was then run directly:
+`scripts/joint_refine_modal.py` — Adam over all 224 fitted coefficient
+arrays (`125.3M` scalars: chart affine/encoders/decoders + all 112 transport
+weights) against the whole-trajectory `teacher_kl` objective on the
+chat-mixed calibration corpus (`lr 5e-5`, `max_grad_norm 1.0`). Because each
+session overfits its own batch slice, batches were rotated across sessions
+(`--batch-offset`) until all `32` corpus rows were covered — `680` total
+steps, training KL `6.74 → ~0.35` per slice.
+
+| Checkpoint | Text top-1 | NLL $\Delta$ | Tasks | Label KL | Degenerate? |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `modal_all28_seq` (init) | 1.13% | `+9.90` | 56/96 | `3.70` | yes — all-`A` |
+| 200 steps (4 rows) | 8.10% | `+9.63` | 37/96 | `1.11` | no — `{A:24,B:72}` |
+| 360 steps (8 rows) | 13.56% | `+8.07` | 41/96 | `1.02` | no — `{A:39,B:54,D:3}` |
+| 680 steps (32 rows) | 15.69% | `+6.23` | 34/96 | `0.99` | no — `{B:49,A:16,C:29,D:2}` |
+
+Read carefully: raw task *accuracy* is lower than the degenerate 56/96
+because the refined model emits **real diverse predictions** (e.g. PIQA
+teacher agreement `78.1%`) instead of always guessing the majority label —
+the label-KL column shows the distributions converging to teacher (`0.99`)
+even where argmax still misses. The sink stays calibrated (`9,024`).
+
+**Verdict**: joint KL refinement converts the modal stack from a degenerate
+artifact into a *real but low-fidelity* model — the Gemma mechanism works
+directionally at 1.7B — but the recovery plateaus far below the `73%` of
+`joint_waterfill_286mib`. With `~4k` calibration tokens against `125M`
+refined scalars the binding constraint is now **data and chart capacity**,
+not the objective: the refinement spends its budget fixing `4×16`-chart
+parameterization error. Next levers in order of leverage: (a) denser charts
+(`8–16 × rank 32–64`) so per-layer error starts at `~10%` rather than
+`~40%`, then re-run transports + refinement; (b) a real training corpus
+(`≥100k` tokens) instead of the fit panel — at which point this is
+fine-tuning a new model, not closed-form compilation.
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
