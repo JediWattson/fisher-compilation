@@ -171,6 +171,28 @@ Two falsified/clarified hypotheses:
    mostly ignores — the model degenerates to *embeddings + weakened MLPs +
    terminal block*, which produces the calibration-surface repetition seen in chat.
 
+### Fully-modal MLP stack experiment (`modal_mlp_*`)
+
+Testing the modal-graph hypothesis directly — *exact attention skeleton + chart
+MLPs instead of SwiGLU*:
+
+| Variant | MLPs charted | Scalars removed | Task | Text agree | NLL $\Delta$ | Diagnosis |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `modal_mlp_all28` | all 28 | `931.6M` (`1,777 MiB`) | 51/96† | 24.50% | `+4.731` | token-0 sink **dead** (`max_abs` `20` vs `12,352`): `mlp.2` chart `rel_err=0.846` |
+| `modal_mlp_body24` | `3..26` (boundary `0,1,2,27` exact) | `798.5M` (`1,523 MiB`) | 56/96† | 33.73% | `+2.280` | body charts carry `~1/10` of a layer's function; 4 boundary MLPs hyper-recruited (`mlp.27` mute-impact `0.557` vs `0.269` on 286) |
+
+`†` Both predict `"A"` for all 96 questions (`prediction_label_counts={"A":96}`):
+the task scores are the degenerate A-count of the panel, not real accuracy.
+
+**Verdict**: a fully-modal MLP stack does not hold fidelity at `4` charts /
+`rank 16` (~30–40% per-layer relative error each — `24` sequential ~40%
+approximations compound multiplicatively through the residual carrier). The
+working `286/512` builds succeeded *because* interleaved exact MLPs absorbed
+the error — the modal blocks need surviving dense neighbors to recruit.
+Candidate parameterization fixes: denser charts (`8–16` charts at `rank 32–64`
+for ~10% per-layer error), trajectory-target fitting, or a fitted shared
+affine backbone with charts as residual correction.
+
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
 outperformed the single-block fit (`63/96`, `76.04%` agreement) while saving

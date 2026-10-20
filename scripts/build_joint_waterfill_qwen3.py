@@ -54,7 +54,8 @@ def main(argv=None):
     parser.add_argument("--exact", default=".local-runs/qwen3-mlx-first-fit/exact")
     parser.add_argument("--corpus", default=".local-runs/qwen3-mlx-first-fit/corpus/fit.jsonl")
     parser.add_argument("--tokenizer", required=True)
-    parser.add_argument("--target-mib", type=int, required=True)
+    parser.add_argument("--target-mib", type=int,
+                        help="Scalar-removal budget in MiB (required unless --mlp-layers)")
     parser.add_argument("--output", required=True)
     parser.add_argument("--chart-count", type=int, default=4)
     parser.add_argument("--chart-rank", type=int, default=16)
@@ -66,8 +67,13 @@ def main(argv=None):
     parser.add_argument("--min-rank", type=int, default=384,
                         help="Floor on attention ranks — the quadratic Fisher model is not "
                              "trustworthy below ~1/8 of full rank")
+    parser.add_argument("--mlp-layers",
+                        help="Explicit MLP layers to chart (e.g. 'all' or '0,2,4-7'). "
+                             "Overrides the allocator and disables attention fitting.")
     parser.add_argument("--schedule-report", help="Optional JSON schedule output path")
     args = parser.parse_args(argv)
+    if not args.mlp_layers and args.target_mib is None:
+        parser.error("either --target-mib or --mlp-layers is required")
 
     import mlx.core as mx
     from fisher_graph.mlx_qwen3 import MLXQwen3
@@ -88,24 +94,33 @@ def main(argv=None):
         "Answer the multiple-choice question. Reply with exactly one option letter and no other text.",
     )
 
-    # Plan on a bounded subset (calibration rows only).
-    sched = allocate_waterfill_joint_ranks(
-        rt_exact,
-        fit_batches[:8],
-        target_scalars_removed=args.target_mib * 1024 * 1024 // 2,
-        chart_count=args.chart_count,
-        chart_rank=args.chart_rank,
-        generator_rank=args.generator_rank,
-        mlp_expected_relative_error=args.mlp_expected_relative_error,
-        min_mlp_layer_spacing=args.min_mlp_layer_spacing,
-        min_rank=args.min_rank,
-        fisher_max_tokens=32,
-    )
-    mlp_layers = set(sched["selected_mlp_layers"])
-    attn_plan = {
-        l: a for l, a in sched["attention_schedule"]["layers"].items()
-        if a["scalars_removed"] > 0
-    }
+    if args.mlp_layers:
+        from fisher_graph.mlx_qwen3_pipeline import _layers
+        mlp_layers = set(_layers(args.mlp_layers, 28))
+        attn_plan = {}
+        sched = {
+            "kind": "explicit_mlp_layer_schedule",
+            "selected_mlp_layers": sorted(mlp_layers),
+            "attention_schedule": {"layers": {}},
+        }
+    else:
+        sched = allocate_waterfill_joint_ranks(
+            rt_exact,
+            fit_batches[:8],
+            target_scalars_removed=args.target_mib * 1024 * 1024 // 2,
+            chart_count=args.chart_count,
+            chart_rank=args.chart_rank,
+            generator_rank=args.generator_rank,
+            mlp_expected_relative_error=args.mlp_expected_relative_error,
+            min_mlp_layer_spacing=args.min_mlp_layer_spacing,
+            min_rank=args.min_rank,
+            fisher_max_tokens=32,
+        )
+        mlp_layers = set(sched["selected_mlp_layers"])
+        attn_plan = {
+            l: a for l, a in sched["attention_schedule"]["layers"].items()
+            if a["scalars_removed"] > 0
+        }
     print(f"[plan] MLP layers -> chart: {sorted(mlp_layers)}", flush=True)
     print(f"[plan] Attn layers -> reduced: "
           f"{ {l: (a['input_rank'], a['output_rank']) for l, a in attn_plan.items()} }", flush=True)
