@@ -296,6 +296,20 @@ Reprioritizing decode MACs over parameter count — bottleneck-SwiGLU MLPs
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | `mac_first_v1` | rank `512` SVD | 57/96† | 3.41% | `+10.36` | `1,209M` | `~1,264M` |
 | `mac_first_nolex` | none | **70/96** | **62.7%** | `+0.57` | `1,441M` | `~1,490M` |
+| `mac_first_12l` (12 layers) | none | 60/96 | 49.5% | `+1.19` | `1,303M` | `~1,360M` |
+
+**MAC/fidelity frontier** (all bottleneck `k=512`, attn `L27 r_in=981`):
+
+| Bottlenecked MLPs | Task | Text agree | MACs cut | Params cut |
+| ---: | ---: | ---: | ---: | ---: |
+| 8 (waterfill set) | **70/96** | **62.7%** | `−16.2%` | `−16.2%` |
+| 12 (+ `5,10,17,20`) | 60/96 | 49.5% | `−23.6%` | `−24.3%` |
+| 24 (body, boundary-exact) | degenerate | ~few % | `−46.7%` | `−48.3%` |
+
+The waterfill-selected 8-layer set is the frontier knee — adding the
+next-lowest-$\Omega$ layers (`5,10,17,20`) costs `−13%` agreement and `−10`
+tasks for `+7.4%` more MAC savings, and 24 sequential layers collapse
+entirely. Composition tolerance, not per-layer error, is again the wall.
 
 `†` degenerate all-`A`. The rank-512 tied-lexical factor keeps only `42%` of
 the embedding matrix's energy (`rel_err 0.5757`) — Qwen3's `151,936`-vocab
