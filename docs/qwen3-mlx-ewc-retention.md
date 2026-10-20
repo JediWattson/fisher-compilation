@@ -286,6 +286,29 @@ not the objective.
   (`56/96`, label KL `5.17 → 2.47`): anchoring conserves the init's structure
   *and* its brokenness.
 
+### MAC-first build (`mac_first_*`, `scripts/build_mac_first.py`)
+
+Reprioritizing decode MACs over parameter count — bottleneck-SwiGLU MLPs
+(`3*2048*k` MACs **and** scalars/layer, no affine backbone) on the proven
+`wf512` layer set `{8,11,13,15,18,21,23,25}` + attention `L27 r_in=981`:
+
+| Variant | Lexical | Task | Text agree | NLL $\Delta$ | Params | Total MACs/tok |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `mac_first_v1` | rank `512` SVD | 57/96† | 3.41% | `+10.36` | `1,209M` | `~1,264M` |
+| `mac_first_nolex` | none | **70/96** | **62.7%** | `+0.57` | `1,441M` | `~1,490M` |
+
+`†` degenerate all-`A`. The rank-512 tied-lexical factor keeps only `42%` of
+the embedding matrix's energy (`rel_err 0.5757`) — Qwen3's `151,936`-vocab
+matrix is genuinely high-rank, and the factorized head produces near-uniform
+logits (top-1 `2.6%`). **Lexical factorization is falsified on Qwen3** at any
+practical rank; without it the same body plan holds `70/96` (beating teacher)
+with real label diversity.
+
+**MAC frontier**: `wf286` `−8.4%` → `mac_first_nolex` `−16.2%` at equal task
+score — `2×` the MAC savings. Bottleneck SwiGLU strictly dominates chart-MLPs
+on the MAC axis (`3.15M` vs `~17M` MACs/layer) and empirically on fidelity at
+equal sites. Push further by widening the low-$\Omega$ layer set.
+
 **Final read on the modal-substitution program at Qwen3-1.7B**: every
 mechanism in the pipeline provably *does its job* — charts route, transports
 carry signatures (sink revived `20 → 9,024`), EWC/Fisher anchors prevent

@@ -1,0 +1,830 @@
+{
+  "artifact": ".local-runs/qwen3-ewc-refine/swiglu_k512_body24_refined",
+  "scalars": 890102784,
+  "weight_bytes_bf16": 1780205568,
+  "weight_gib_bf16": 1.6579456329345703,
+  "layers": [
+    {
+      "layer": 0,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 37748736
+      },
+      "dense_macs_per_token": 50331648
+    },
+    {
+      "layer": 1,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 37748736
+      },
+      "dense_macs_per_token": 50331648
+    },
+    {
+      "layer": 2,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 37748736
+      },
+      "dense_macs_per_token": 50331648
+    },
+    {
+      "layer": 3,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 4,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 5,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 6,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 7,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 8,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 9,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 10,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 11,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 12,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 13,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 14,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 15,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 16,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 17,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 18,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 19,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 20,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 21,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 22,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 23,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 24,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 25,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 26,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 3145728
+      },
+      "dense_macs_per_token": 15728640
+    },
+    {
+      "layer": 27,
+      "attention": {
+        "in_macs": 8388608,
+        "out_macs": 4194304,
+        "input_rank": 2048,
+        "output_rank": 2048
+      },
+      "mlp": {
+        "kind": "exact_swiglu",
+        "macs": 37748736
+      },
+      "dense_macs_per_token": 50331648
+    }
+  ],
+  "decode_macs": {
+    "dense_body_per_token": 578813952,
+    "attention_cache_per_token_at_ctx": 58720256,
+    "context_length": 512,
+    "lm_head_per_generated_token": 311164928,
+    "total_per_token_at_ctx": 948699136
+  },
+  "kv_cache": {
+    "bytes_per_token": 114688,
+    "mib_at_ctx": 56.0,
+    "context_length": 512
+  },
+  "reference": {
+    "artifact": ".local-runs/qwen3-mlx-first-fit/exact",
+    "scalars": 1720574976,
+    "weight_bytes_bf16": 3441149952,
+    "weight_gib_bf16": 3.2048206329345703,
+    "layers": [
+      {
+        "layer": 0,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 1,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 2,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 3,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 4,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 5,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 6,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 7,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 8,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 9,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 10,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 11,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 12,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 13,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 14,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 15,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 16,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 17,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 18,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 19,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 20,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 21,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 22,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 23,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 24,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 25,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 26,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      },
+      {
+        "layer": 27,
+        "attention": {
+          "in_macs": 8388608,
+          "out_macs": 4194304,
+          "input_rank": 2048,
+          "output_rank": 2048
+        },
+        "mlp": {
+          "kind": "exact_swiglu",
+          "macs": 37748736
+        },
+        "dense_macs_per_token": 50331648
+      }
+    ],
+    "decode_macs": {
+      "dense_body_per_token": 1409286144,
+      "attention_cache_per_token_at_ctx": 58720256,
+      "context_length": 512,
+      "lm_head_per_generated_token": 311164928,
+      "total_per_token_at_ctx": 1779171328
+    },
+    "kv_cache": {
+      "bytes_per_token": 114688,
+      "mib_at_ctx": 56.0,
+      "context_length": 512
+    }
+  },
+  "delta": {
+    "scalars_removed": 830472192,
+    "weight_mib_saved": 1584.0,
+    "dense_body_macs_saved_per_token": 830472192,
+    "dense_body_macs_ratio": 0.4107142857142857
+  }
+}
