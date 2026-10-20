@@ -189,9 +189,43 @@ the task scores are the degenerate A-count of the panel, not real accuracy.
 approximations compound multiplicatively through the residual carrier). The
 working `286/512` builds succeeded *because* interleaved exact MLPs absorbed
 the error — the modal blocks need surviving dense neighbors to recruit.
-Candidate parameterization fixes: denser charts (`8–16` charts at `rank 32–64`
-for ~10% per-layer error), trajectory-target fitting, or a fitted shared
-affine backbone with charts as residual correction.
+
+### Gemma-parity retry: + transports + terminal refit (`modal_*_v2`, `modal_all28_seq`)
+
+The `modal_mlp_*` failure lacked the two mechanisms that made Gemma3-270M's
+fully-modal stack work — cross-block transport edges and terminal refit — so
+`scripts/augment_modal_transports.py` was built to add them: one
+`attention.l → mlp.l` edge per chart, ridge-fitted so that
+`Σ_c membership_c·(x_a @ T_c) @ mode_dec_c` closes the local gap
+`teacher_mlp_output − student_chart_output` on the student trajectory
+(trajectory-target fitting toward the teacher's residual correction), plus a
+closed-form refit of the last MLP against `teacher_terminal − pre_state`.
+
+| Variant | Fitting | Task | Text agree | NLL $\Delta$ | Token-0 sink |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `modal_body24_v2` | parallel (all edges vs pre-transport trajectory) | 55/96† | 29.76% | `+4.31` | `11,904` (alive) |
+| `modal_all28_v2` | parallel | 56/96† | 5.16% | `+10.82` | `21,120` (**revived**, overshooting `12,352`) |
+| `modal_all28_seq` | sequential (each edge vs post-transport trajectory) | 56/96† | 1.13% | `+9.90` | `9,024` (revived, well-calibrated) |
+
+`†` Still degenerate constant predictors (`{"A":95+}`).
+
+Per-layer local-residual closure is strong on paper — `attn.2→mlp.2` closed
+`892 → 13` (1.5%) in sequential mode, literally learning to re-emit the sink
+signature — but it is **globally unstable**: each of the 112 edges maximally
+closes its own gap, and membership-gated rank-17 injections accumulate
+residual-stream energy the teacher never had (`terminal` RMS `54`,
+`max|x| 1,631` vs typical ~1). Top-1 stays plausible-but-generic (`' the'`):
+direction roughly sane, magnitude blown.
+
+**Verdict**: Gemma's mechanisms do not rescue the Qwen3 modal stack at this
+parameterization — not because transports can't carry critical signatures
+(the sink revival proves they can), but because per-layer closed-form fitting
+has no global consistency constraint. Gemma's transports worked because they
+were **jointly fitted against terminal loss** in the whole-model experiment.
+The remaining levers are (a) joint gradient refinement over all params
+against terminal KL — real training rather than closed-form compilation — or
+(b) denser charts (`8–16` charts at `rank 32–64` for ~10% per-layer error) so
+that less correction is needed in the first place.
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
