@@ -27,6 +27,9 @@ _COEFF_SUFFIXES = (
     "affine_bias",
     "local_generator_encoders",
     "chart_mode_decoders",
+    "gate_weight",
+    "up_weight",
+    "down_weight",
 )
 
 

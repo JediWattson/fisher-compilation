@@ -252,12 +252,34 @@ artifact into a *real but low-fidelity* model — the Gemma mechanism works
 directionally at 1.7B — but the recovery plateaus far below the `73%` of
 `joint_waterfill_286mib`. With `~4k` calibration tokens against `125M`
 refined scalars the binding constraint is now **data and chart capacity**,
-not the objective: the refinement spends its budget fixing `4×16`-chart
-parameterization error. Next levers in order of leverage: (a) denser charts
-(`8–16 × rank 32–64`) so per-layer error starts at `~10%` rather than
-`~40%`, then re-run transports + refinement; (b) a real training corpus
-(`≥100k` tokens) instead of the fit panel — at which point this is
-fine-tuning a new model, not closed-form compilation.
+not the objective.
+
+### Follow-up probes (parked)
+
+- **Denser charts falsified** (`modal_mlp_all28_8x32`): `8` charts × `rank 32`
+  gave median `rel_err ~0.40` — *no better* than `4×16` (`mlp.2` still `0.84`,
+  sink still dead at `15`). Per-layer error is **function-class-limited**, not
+  resolution-limited: additive membership-gated generators cannot express
+  SwiGLU's multiplicative `silu(gate)·up` interaction at any chart density.
+- **Bottleneck-SwiGLU surrogate** (`swiglu_k512_all28`,
+  `scripts/build_bottleneck_swiglu.py`): keeps the real nonlinearity at
+  intermediate `k=512` (`3.15M` scalars/layer vs `37.75M` — cheaper than
+  charts). Per-layer `rel_err` `0.06–0.55`; **`mlp.2` fits at `0.06`** and the
+  sink survives at `564` (vs `15` charted, `12,352` exact) — but the stack
+  still collapses to all-`A` (`~0.4` errors don't compose ×28).
+- **Refinement of k512** (`swiglu_k512_refined`): per-slice training KL
+  converges to `~0.015` (the compatible class *can* memorize) but unseen-slice
+  initial KL stays `~3` and the sink dies (`24`) — the model **oscillates
+  between slice memorizations** rather than converging. `anchor_weight=1.0`
+  (isotropic) is too weak to matter — the penalty is normalized by `88M`
+  params. Un-tried: stronger anchors (`1e3+`), Fisher-weighted anchor, or
+  mixed all-rows-per-step training.
+
+**Where this leaves the modal thesis**: the parameter economy is solved
+(`54%` removed, fully-modal body executes); function is not. The known-good
+knobs left are (a) Fisher/EWC-anchored refinement at effective strengths,
+(b) a real training corpus, or (c) hybrid k-SwiGLU + charts where the
+bottleneck carries bulk nonlinearity and charts correct the residual.
 
 Sequential trajectory adaptation across the 4-block joint slice
 (`joint_4blocks_7_13_19_25`, `64/96` tasks, `82.29%` teacher agreement) slightly
