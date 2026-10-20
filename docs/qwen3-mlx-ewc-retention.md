@@ -272,8 +272,30 @@ not the objective.
   initial KL stays `~3` and the sink dies (`24`) — the model **oscillates
   between slice memorizations** rather than converging. `anchor_weight=1.0`
   (isotropic) is too weak to matter — the penalty is normalized by `88M`
-  params. Un-tried: stronger anchors (`1e3+`), Fisher-weighted anchor, or
-  mixed all-rows-per-step training.
+  params.
+- **Boundary-exact + Fisher-anchored refinement** (`swiglu_k512_body24` +
+  `swiglu_k512_body24_refined`): exact `mlp.0,1,2,27` preserve the sink
+  structurally (`11,904` pre-refine), `k=512` bottleneck on `3..26`
+  (`1,584 MiB` removed, `890M` scalars total). `scripts/joint_refine_modal.py
+  --fisher --anchor-weight 100` over `226M` scalars (boundary MLPs included),
+  3 sessions × 120 steps over corpus rows `0–23` (session 4 killed under
+  memory pressure): per-slice training KL `~2.1 → ~0.008`, unseen-slice
+  initial KL stays `~2.1` — **the Fisher anchor prevents forgetting**
+  (contrast unanchored `~3+` oscillation) — and the sink is restored to
+  **exactly `12,352`**. But the task panel is still degenerate all-`A`
+  (`56/96`, label KL `5.17 → 2.47`): anchoring conserves the init's structure
+  *and* its brokenness.
+
+**Final read on the modal-substitution program at Qwen3-1.7B**: every
+mechanism in the pipeline provably *does its job* — charts route, transports
+carry signatures (sink revived `20 → 9,024`), EWC/Fisher anchors prevent
+forgetting (unseen-slice KL flat at `~2.1`), joint KL refinement converges —
+yet **none close the composition gap**: `24–28` sequential surrogates at
+`~0.4` local error each remain a degenerate model. The `286 MiB` fidelity
+build works precisely because it leaves `24/28` MLPs *exact*. The residual
+gap to a functioning fully-modal executor is **training-scale data**, not a
+missing mechanism — at which point the artifact is a distilled model, not a
+compiled one. `joint_waterfill_286mib` remains the recommended artifact.
 
 **Where this leaves the modal thesis**: the parameter economy is solved
 (`54%` removed, fully-modal body executes); function is not. The known-good

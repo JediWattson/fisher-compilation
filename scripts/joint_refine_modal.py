@@ -55,6 +55,9 @@ def main():
     ap.add_argument("--batch-offset", type=int, default=0,
                     help="Skip this many leading batches for coverage rotation")
     ap.add_argument("--anchor-weight", type=float, default=0.0)
+    ap.add_argument("--fisher", action="store_true",
+                    help="Weight the anchor by diagonal parameter Fisher")
+    ap.add_argument("--fisher-max-tokens", type=int, default=32)
     ap.add_argument("--max-grad-norm", type=float, default=1.0)
     args = ap.parse_args()
 
@@ -77,6 +80,13 @@ def main():
     )[args.batch_offset : args.batch_offset + args.max_batches]
     names = _selected(rt)
     n_scalars = sum(int(rt.parameters[n].size) for n in names)
+    fisher = None
+    if args.fisher:
+        from fisher_graph.mlx_qwen3_fit import capture_parameter_fisher
+        print(f"[fish] diagonal Fisher over {args.fisher_max_tokens} tokens ...",
+              flush=True)
+        fisher = capture_parameter_fisher(
+            rt, batches, names, max_tokens=args.fisher_max_tokens)["diagonal"]
     print(f"[plan] {len(names)} parameter arrays, {n_scalars:,} scalars under Adam "
           f"({len(batches)} batches/step, lr={args.learning_rate}, "
           f"objective=teacher_kl)", flush=True)
@@ -87,6 +97,7 @@ def main():
         steps=args.steps,
         learning_rate=args.learning_rate,
         anchor_weight=args.anchor_weight,
+        fisher_diagonal=fisher,
         objective="teacher_kl",
         max_grad_norm=args.max_grad_norm,
     )
