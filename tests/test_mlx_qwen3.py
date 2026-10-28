@@ -425,3 +425,101 @@ def test_mlx_to_torch_bridge_supports_partial_fit_decode_and_roundtrip(runtimes)
         _numpy(roundtripped(**mlx_batch).logits)[valid], _numpy(mlx_out.logits)[valid], rtol=5e-5, atol=5e-6
     )
 
+
+@pytest.fixture(scope="module")
+def qwen3_5_runtimes():
+    old_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(915)
+            config = transformers.Qwen3_5TextConfig(
+                vocab_size=43, hidden_size=32, intermediate_size=64,
+                num_hidden_layers=4, num_attention_heads=4, num_key_value_heads=2,
+                head_dim=8, linear_num_key_heads=2, linear_num_value_heads=4,
+                linear_key_head_dim=8, linear_value_head_dim=8,
+                linear_conv_kernel_dim=4, full_attention_interval=2,
+                max_position_embeddings=128, tie_word_embeddings=True,
+                attention_dropout=0.0,
+            )
+            config._attn_implementation = "eager"
+            model = transformers.Qwen3_5ForCausalLM(config).eval().requires_grad_(False)
+            for module in model.modules():
+                if "RMSNorm" in type(module).__name__:
+                    module.weight.uniform_(-0.2, 0.35)
+        direct = MLXQwen3.from_hf(model)
+        yield model, direct
+    finally:
+        torch.set_num_threads(old_threads)
+
+
+@pytest.mark.parametrize("layout", ["plain", "left", "right", "gapped", "repeated"])
+def test_qwen3_5_hybrid_forward_matches_hf_across_layouts(qwen3_5_runtimes, layout):
+    model, direct = qwen3_5_runtimes
+    batch = _batch(layout)
+    with torch.inference_mode():
+        reference = model(**batch).logits.numpy()
+    valid = batch["attention_mask"].bool().numpy()
+    output = direct(**_mlx_batch(batch))
+    actual = _numpy(output.logits)
+    np.testing.assert_allclose(actual[valid], reference[valid], rtol=2e-5, atol=3e-6)
+    assert np.array_equal(actual[valid].argmax(-1), reference[valid].argmax(-1))
+    # Layer 0 is deltanet (conv_state, rec_state); Layer 1 is full_attention (k, v)
+    assert output.cache.key_values[0][0].shape == (2, 3, 2 * 16 + 32)
+    assert output.cache.key_values[0][1].shape == (2, 4, 8, 8)
+    assert output.cache.key_values[1][0].shape == (2, 2, 4, 8)
+
+
+@pytest.mark.parametrize("layout", ["left", "right", "gapped"])
+def test_qwen3_5_hybrid_cached_decode_matches_full_hf(qwen3_5_runtimes, layout):
+    model, direct = qwen3_5_runtimes
+    original = _batch(layout)
+    batch = {k: v.clone() for k, v in original.items()}
+    output = direct.prefill(**_mlx_batch(batch))
+    for step in range(3):
+        token = torch.tensor([[9 + step], [13 + step]])
+        next_positions = batch["position_ids"].masked_fill(
+            ~batch["attention_mask"].bool(), -1
+        ).max(-1, keepdim=True).values + 1
+        output = direct.decode(mx.array(token.numpy()), output.cache)
+        batch["input_ids"] = torch.cat((batch["input_ids"], token), dim=-1)
+        batch["attention_mask"] = torch.cat(
+            (batch["attention_mask"], torch.ones_like(token)), dim=-1
+        )
+        batch["position_ids"] = torch.cat((batch["position_ids"], next_positions), dim=-1)
+        with torch.inference_mode():
+            reference = model(**batch).logits[:, -1].numpy()
+        np.testing.assert_allclose(_numpy(output.logits)[:, -1], reference, rtol=3e-5, atol=3e-6)
+
+
+def test_qwen3_5_safetensors_and_vjp_parity(qwen3_5_runtimes, tmp_path):
+    model, direct = qwen3_5_runtimes
+    native_dir, exported_dir = tmp_path / "qwen3_5_native", tmp_path / "qwen3_5_standalone"
+    model.save_pretrained(native_dir, safe_serialization=True)
+    loaded = MLXQwen3.from_pretrained(native_dir)
+    batch = _batch()
+    mlx_batch = _mlx_batch(batch)
+    reference = _numpy(direct(**mlx_batch).logits)
+    np.testing.assert_allclose(_numpy(loaded(**mlx_batch).logits), reference, rtol=0, atol=0)
+    loaded.save(exported_dir)
+    restored = MLXQwen3.load(exported_dir)
+    np.testing.assert_allclose(_numpy(restored(**mlx_batch).logits), reference, rtol=0, atol=0)
+
+    perturbation = torch.zeros(2, 4, 32, requires_grad=True)
+    hook = model.model.layers[0].linear_attn.register_forward_hook(
+        lambda module, inputs, output: output + perturbation
+    )
+    cotangent = torch.linspace(-0.2, 0.4, 2 * 4 * 43).reshape(2, 4, 43)
+    try:
+        loss = (model(**batch).logits * cotangent).sum()
+        expected = torch.autograd.grad(loss, perturbation)[0].numpy()
+    finally:
+        hook.remove()
+
+    def objective(delta):
+        out = direct(**mlx_batch, perturbations={"deltanet.0.output": delta})
+        return mx.sum(out.logits * mx.array(cotangent.numpy()))
+
+    actual = mx.grad(objective)(mx.zeros((2, 4, 32)))
+    np.testing.assert_allclose(_numpy(actual), expected, rtol=2e-4, atol=2e-5)
+

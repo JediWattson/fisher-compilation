@@ -397,7 +397,10 @@ def fit_reduced_attention(
             return weight
         spec = config.get("qk_norm", {})
         gain = gain + 1 if spec.get("scale_parameterization") == "unit_offset" else gain
-        return weight * mx.tile(mx.maximum(mx.abs(gain), 1e-3), weight.shape[0] // head_dim)[:, None]
+        scale = mx.maximum(mx.abs(gain), 1e-3)
+        if key == "q_norm_weight" and config.get("output_gate", False):
+            scale = mx.concatenate((scale, mx.ones_like(scale)), axis=0)
+        return weight * mx.tile(scale, weight.shape[0] // scale.shape[0])[:, None]
 
     qe, ke = qk_effective(q, "q_norm_weight"), qk_effective(k, "k_norm_weight")
     repeats = int(config["query_heads"]) // int(config["key_value_heads"])
@@ -444,6 +447,200 @@ def fit_reduced_attention(
         "moment_dtype": "float32",
         "factorization_dtype": "float64" if solver == "numpy_float64" else "float32",
         "regression_accumulation_dtype": "float64" if solver == "numpy_float64" else "float32",
+        "deployment_dtype": str(deployment_dtype),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
+def fit_reduced_deltanet(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    input_rank: int,
+    output_rank: int,
+    row_weights: Any = None,
+    relative_ridge: float = 0.01,
+    solver: str = "mlx",
+) -> MLXFitResult:
+    """Fit input/output bottlenecks around a GatedDeltaNet block (Play 1).
+
+    Reduces ``in_proj_qkv`` and ``in_proj_z`` through a shared activation-weighted
+    operator pullback basis while leaving the tiny decay/write-rate projections
+    (``in_proj_a``, ``in_proj_b``) unreduced so exponential state decay does not
+    accumulate rank-truncation drift across long recurrences. Output projection
+    ``out_proj`` is factored via gated-context-covariance whitened SVD.
+    """
+    mx = _mx()
+    backend = _Solver(solver)
+    ridge = _positive(relative_ridge, "relative_ridge")
+    if not 0 <= layer_index < len(runtime.layers) or "deltanet" not in runtime.layers[layer_index]:
+        raise ValueError("deltanet fitting requires a deltanet layer index")
+    prefix = f"deltanet.{layer_index}."
+    _require_no_incident_transports(runtime, prefix[:-1])
+    p = runtime.parameters
+    deployment_dtype = p[prefix + "qkv_weight"].dtype
+    if prefix + "input_basis" in p or prefix + "output_encoder_weight" in p:
+        raise ValueError("deltanet fitting requires an exact source deltanet")
+    x = _rows(captures[prefix + "normalized"], "normalized inputs")
+    contexts = _rows(captures[prefix + "context"], "deltanet contexts")
+    if len(x) != len(contexts):
+        raise ValueError("input/context capture rows must align")
+    qkv, z, out = [p[prefix + key].astype(mx.float32) for key in ("qkv_weight", "z_weight", "output_decoder_weight")]
+    _rank(input_rank, x.shape[1], "input_rank")
+    _rank(output_rank, min(out.shape), "output_rank")
+    weights = _weights(row_weights, x.shape[0])
+    dc = runtime.layers[layer_index]["deltanet"]
+    k_total = int(dc["key_heads"]) * int(dc["key_head_dimension"])
+    vh = int(dc["value_heads"])
+    q_w, k_w, v_w = qkv[:k_total], qkv[k_total : 2 * k_total], qkv[2 * k_total :]
+    norm_w = p.get(prefix + "norm_weight")
+    if norm_w is not None:
+        gain = norm_w.astype(mx.float32)
+        if dc.get("norm", {}).get("scale_parameterization") == "unit_offset":
+            gain = gain + 1.0
+        gain_v = mx.tile(mx.maximum(mx.abs(gain), 1e-3), vh)[:, None]
+        v_w = v_w * gain_v
+        z_eff = z * gain_v
+    else:
+        z_eff = z
+    ve = out @ v_w
+    ze = out @ z_eff
+    grams = [w.T @ w for w in (q_w, k_w, ve, ze)]
+    metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0, 1.0), grams))
+    cov = x.T @ (x * weights[:, None])
+    cov = cov + ridge * mx.maximum(mx.sum(mx.diag(cov)) / x.shape[1], 1e-12) * mx.eye(x.shape[1])
+    basis = _leading_basis(cov @ metric @ cov, input_rank, backend)
+    reconstruction = anchored_ridge(x @ basis, x, row_weights=weights, anchor=basis.T, relative_ridge=ridge, solver=solver)
+
+    cc = contexts.T @ (contexts * weights[:, None])
+    cc = cc + ridge * mx.maximum(mx.sum(mx.diag(cc)) / cc.shape[0], 1e-12) * mx.eye(cc.shape[0])
+    values, vectors = backend.eigh(cc)
+    floor = mx.maximum(mx.max(values) * 1e-7, 1e-12)
+    roots = mx.sqrt(mx.maximum(values, floor))
+    square_root = (vectors * roots) @ vectors.T
+    inverse_root = (vectors / roots) @ vectors.T
+    u, singular, vh_svd = backend.svd(square_root @ out.T)
+    root_s = mx.sqrt(mx.maximum(singular[:output_rank], 0))
+    encoder = (inverse_root @ (u[:, :output_rank] * root_s)).T
+    decoder = (root_s[:, None] * vh_svd[:output_rank, :]).T
+    updates = {
+        prefix + "input_basis": basis,
+        prefix + "qkv_weight": qkv @ reconstruction.T,
+        prefix + "z_weight": z @ reconstruction.T,
+        prefix + "output_encoder_weight": encoder,
+        prefix + "output_decoder_weight": decoder,
+    }
+    updates = {name: value.astype(deployment_dtype) for name, value in updates.items()}
+    mx.eval(updates)
+    approximation = ((contexts.astype(deployment_dtype) @ updates[prefix + "output_encoder_weight"].T)
+                     @ updates[prefix + "output_decoder_weight"].T).astype(mx.float32)
+    reference = (contexts.astype(deployment_dtype) @ p[prefix + "output_decoder_weight"].T).astype(mx.float32)
+    error = mx.sqrt(mx.sum((approximation - reference) ** 2) / mx.maximum(mx.sum(reference ** 2), 1e-12))
+    return MLXFitResult(runtime.with_parameters(updates), updates, {
+        "kind": "activation_weighted_deltanet_operator_pullback",
+        "solver": solver, "capture_rows": x.shape[0],
+        "input_rank": input_rank, "output_rank": output_rank,
+        "context_output_relative_error": float(error.item()),
+        "moment_dtype": "float32",
+        "factorization_dtype": "float64" if solver == "numpy_float64" else "float32",
+        "regression_accumulation_dtype": "float64" if solver == "numpy_float64" else "float32",
+        "deployment_dtype": str(deployment_dtype),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
+def fit_deltanet_carrier_basis(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    carrier_rank: int,
+    fisher_diagonal: Mapping[str, Any] | None = None,
+    row_weights: Any = None,
+    relative_ridge: float = 1e-4,
+    solver: str = "mlx",
+) -> MLXFitResult:
+    """Compress the GatedDeltaNet recurrent carrier S along its key/query axis (Play 2).
+
+    Because every operation on the Dk axis of ``S in R^{B x Hv x Dv x Dk}`` is a
+    linear contraction with ``k`` or ``q`` and decay ``g`` is scalar per V-head,
+    an orthonormal basis ``U_h in R^{Dk x r}`` per K-head group commutes with the
+    entire recurrence. Projecting ``q_tilde = q @ U_h`` and ``k_tilde = k @ U_h``
+    runs the recurrent state natively in ``R^{B x Hv x Dv x r}``.
+    """
+    mx = _mx()
+    backend = _Solver(solver)
+    ridge = _positive(relative_ridge, "relative_ridge", zero=True)
+    if not 0 <= layer_index < len(runtime.layers) or "deltanet" not in runtime.layers[layer_index]:
+        raise ValueError("carrier basis fitting requires a deltanet layer index")
+    prefix = f"deltanet.{layer_index}."
+    p = runtime.parameters
+    if prefix + "carrier_basis" in p:
+        raise ValueError("carrier basis fitting requires an unreduced deltanet carrier")
+    dc = runtime.layers[layer_index]["deltanet"]
+    kh = int(dc["key_heads"])
+    kd = int(dc["key_head_dimension"])
+    _rank(carrier_rank, kd, "carrier_rank")
+    q_rows = _rows(captures[prefix + "q"], "deltanet q")
+    k_rows = _rows(captures[prefix + "k"], "deltanet k")
+    if q_rows.shape != k_rows.shape or q_rows.shape[1] != kh * kd:
+        raise ValueError("deltanet q/k capture shapes must match [rows, key_heads * key_head_dimension]")
+    weights = _weights(row_weights, q_rows.shape[0])
+    q = q_rows.reshape((-1, kh, kd))
+    k = k_rows.reshape((-1, kh, kd))
+    fq = fk = None
+    if fisher_diagonal is not None:
+        if prefix + "q" in fisher_diagonal:
+            fq = mx.maximum(mx.array(fisher_diagonal[prefix + "q"], dtype=mx.float32).reshape((kh, kd)), 1e-12)
+        if prefix + "k" in fisher_diagonal:
+            fk = mx.maximum(mx.array(fisher_diagonal[prefix + "k"], dtype=mx.float32).reshape((kh, kd)), 1e-12)
+
+    bases = []
+    retained_num = 0.0
+    retained_den = 0.0
+    for h in range(kh):
+        qh_rows, kh_rows = q[:, h, :], k[:, h, :]
+        cov_q = qh_rows.T @ (qh_rows * weights[:, None])
+        cov_k = kh_rows.T @ (kh_rows * weights[:, None])
+        cov = cov_q + cov_k
+        if fq is not None or fk is not None:
+            wq = fq[h] if fq is not None else mx.ones((kd,), dtype=mx.float32)
+            wk = fk[h] if fk is not None else mx.ones((kd,), dtype=mx.float32)
+            wq = wq / mx.maximum(mx.mean(wq), 1e-12)
+            wk = wk / mx.maximum(mx.mean(wk), 1e-12)
+            gram = cov_q @ (wq[:, None] * cov_q) + cov_k @ (wk[:, None] * cov_k)
+        else:
+            gram = cov
+        if ridge > 0:
+            gram = gram + ridge * mx.maximum(mx.sum(mx.diag(gram)) / kd, 1e-12) * mx.eye(kd)
+        u_h = _leading_basis(gram, carrier_rank, backend)
+        bases.append(u_h)
+        total_e = float(mx.sum(mx.diag(cov)).item())
+        kept_e = float(mx.sum(mx.diag(u_h.T @ cov @ u_h)).item())
+        retained_num += kept_e
+        retained_den += max(total_e, 1e-12)
+
+    deployment_dtype = p.get(prefix + "qkv_weight.scales", p[prefix + "qkv_weight"]).dtype
+    carrier_basis = mx.stack(bases, axis=0).astype(deployment_dtype)
+    mx.eval(carrier_basis)
+    updates = {prefix + "carrier_basis": carrier_basis}
+    updated_runtime = runtime.with_parameters(
+        updates,
+        layer_overrides={layer_index: {"deltanet": {"carrier_rank": carrier_rank}}},
+    )
+    return MLXFitResult(updated_runtime, updates, {
+        "kind": "fisher_weighted_deltanet_carrier_basis" if (fq is not None or fk is not None) else "second_moment_deltanet_carrier_basis",
+        "solver": solver,
+        "capture_rows": int(q_rows.shape[0]),
+        "key_heads": kh,
+        "full_carrier_dimension": kd,
+        "carrier_rank": carrier_rank,
+        "compression_ratio": float(carrier_rank / kd),
+        "retained_energy_fraction": float(retained_num / max(retained_den, 1e-12)),
+        "fisher_weighted": bool(fq is not None or fk is not None),
         "deployment_dtype": str(deployment_dtype),
         "heldout_confirmation": False,
         "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
@@ -787,57 +984,91 @@ def allocate_waterfill_attention_ranks(
     indices = tuple(range(len(runtime.layers)) if layer_indices is None else layer_indices)
     if not indices or len(set(indices)) != len(indices):
         raise ValueError("layer_indices must name unique existing layers")
-    out_sites = [f"attention.{l}.output" for l in indices]
-    in_sites = [f"attention.{l}.normalized" for l in indices]
-    ctx_sites = [f"attention.{l}.context" for l in indices]
+    prefixes = [
+        f"deltanet.{l}." if "deltanet" in runtime.layers[l] else f"attention.{l}."
+        for l in indices
+    ]
+    out_sites = [p + "output" for p in prefixes]
+    in_sites = [p + "normalized" for p in prefixes]
+    ctx_sites = [p + "context" for p in prefixes]
     captures = capture_runtime_rows(runtime, batches, out_sites + in_sites + ctx_sites)
     fisher = capture_empirical_token_fisher(runtime, batches, out_sites, max_tokens=fisher_max_tokens)
 
     layer_specs = {}
-    for l in indices:
-        prefix = f"attention.{l}."
+    for l, prefix in zip(indices, prefixes):
         p = runtime.parameters
         if prefix + "input_basis" in p or prefix + "output_encoder_weight" in p:
             raise ValueError("water-filling requires exact source attention layers")
-        q, k, v, out = (p[prefix + key].astype(mx.float32) for key in ("q_weight", "k_weight", "v_weight", "output_decoder_weight"))
-        hidden = int(q.shape[1])
-        q_width = int(q.shape[0])
-        kv_width = int(k.shape[0])
-        exact_in_scalars = (q_width + 2 * kv_width) * hidden
-        exact_out_scalars = hidden * q_width
-        c_in = hidden + q_width + 2 * kv_width
-        c_out = q_width + hidden
-
         y = np.asarray(captures[prefix + "output"].astype(mx.float32), dtype=np.float64)
         f_diag = np.asarray(fisher["diagonal"][prefix + "output"].astype(mx.float32), dtype=np.float64)
         omega = max(float(np.mean(np.sum((y * y) * f_diag[None, :], axis=1))), 1e-12)
-
         x = captures[prefix + "normalized"].astype(mx.float32)
         c = captures[prefix + "context"].astype(mx.float32)
-        config = runtime.layers[l]["attention"]
-        head_dim = int(config["head_dimension"])
 
-        def qk_effective(weight, key):
-            gain = p.get(prefix + key)
-            if gain is None:
-                return weight
-            spec = config.get("qk_norm", {})
-            gain = gain + 1 if spec.get("scale_parameterization") == "unit_offset" else gain
-            return weight * mx.tile(mx.maximum(mx.abs(gain), 1e-3), weight.shape[0] // head_dim)[:, None]
+        if "deltanet" in runtime.layers[l]:
+            dc = runtime.layers[l]["deltanet"]
+            qkv, z, out = (p[prefix + key].astype(mx.float32) for key in ("qkv_weight", "z_weight", "output_decoder_weight"))
+            hidden = int(qkv.shape[1])
+            in_proj_width = int(qkv.shape[0] + z.shape[0])
+            out_width = int(out.shape[1])
+            exact_in_scalars = in_proj_width * hidden
+            exact_out_scalars = hidden * out_width
+            c_in = hidden + in_proj_width
+            c_out = out_width + hidden
+            k_total = int(dc["key_heads"]) * int(dc["key_head_dimension"])
+            vh = int(dc["value_heads"])
+            q_w, k_w, v_w = qkv[:k_total], qkv[k_total : 2 * k_total], qkv[2 * k_total :]
+            norm_w = p.get(prefix + "norm_weight")
+            if norm_w is not None:
+                gain = norm_w.astype(mx.float32)
+                if dc.get("norm", {}).get("scale_parameterization") == "unit_offset":
+                    gain = gain + 1.0
+                gain_v = mx.tile(mx.maximum(mx.abs(gain), 1e-3), vh)[:, None]
+                v_w = v_w * gain_v
+                z_eff = z * gain_v
+            else:
+                z_eff = z
+            ve = out @ v_w
+            ze = out @ z_eff
+            grams = [w.T @ w for w in (q_w, k_w, ve, ze)]
+            metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0, 1.0), grams))
+        else:
+            q, k, v, out = (p[prefix + key].astype(mx.float32) for key in ("q_weight", "k_weight", "v_weight", "output_decoder_weight"))
+            hidden = int(q.shape[1])
+            q_width = int(q.shape[0])
+            kv_width = int(k.shape[0])
+            out_width = int(out.shape[1])
+            exact_in_scalars = (q_width + 2 * kv_width) * hidden
+            exact_out_scalars = hidden * out_width
+            c_in = hidden + q_width + 2 * kv_width
+            c_out = out_width + hidden
+            config = runtime.layers[l]["attention"]
+            head_dim = int(config["head_dimension"])
 
-        qe, ke = qk_effective(q, "q_norm_weight"), qk_effective(k, "k_norm_weight")
-        repeats = int(config["query_heads"]) // int(config["key_value_heads"])
-        repeated_v = mx.repeat(v.reshape((-1, head_dim, v.shape[1])), repeats, axis=0).reshape((out.shape[1], v.shape[1]))
-        ve = out @ repeated_v
-        grams = [w.T @ w for w in (qe, ke, ve)]
-        metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0), grams))
+            def qk_effective(weight, key):
+                gain = p.get(prefix + key)
+                if gain is None:
+                    return weight
+                spec = config.get("qk_norm", {})
+                gain = gain + 1 if spec.get("scale_parameterization") == "unit_offset" else gain
+                scale = mx.maximum(mx.abs(gain), 1e-3)
+                if key == "q_norm_weight" and config.get("output_gate", False):
+                    scale = mx.concatenate((scale, mx.ones_like(scale)), axis=0)
+                return weight * mx.tile(scale, weight.shape[0] // scale.shape[0])[:, None]
+
+            qe, ke = qk_effective(q, "q_norm_weight"), qk_effective(k, "k_norm_weight")
+            repeats = int(config["query_heads"]) // int(config["key_value_heads"])
+            repeated_v = mx.repeat(v.reshape((-1, head_dim, v.shape[1])), repeats, axis=0).reshape((out.shape[1], v.shape[1]))
+            ve = out @ repeated_v
+            grams = [w.T @ w for w in (qe, ke, ve)]
+            metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0), grams))
 
         cov_x = (x.T @ x) / x.shape[0]
         cov_x_reg = cov_x + 0.15 * mx.maximum(mx.sum(mx.diag(cov_x)) / hidden, 1e-12) * mx.eye(hidden)
         pb_in = cov_x_reg @ metric @ cov_x_reg
         ev_x = mx.linalg.eigvalsh((pb_in + pb_in.T) * 0.5, stream=mx.cpu)
         cov_c = (c.T @ c) / c.shape[0]
-        cov_c_reg = cov_c + 0.15 * mx.maximum(mx.sum(mx.diag(cov_c)) / q_width, 1e-12) * mx.eye(q_width)
+        cov_c_reg = cov_c + 0.15 * mx.maximum(mx.sum(mx.diag(cov_c)) / out_width, 1e-12) * mx.eye(out_width)
         out_gram = out @ cov_c_reg @ out.T
         ev_o = mx.linalg.eigvalsh((out_gram + out_gram.T) * 0.5, stream=mx.cpu)
         mx.eval(ev_x, ev_o)
@@ -847,19 +1078,19 @@ def allocate_waterfill_attention_ranks(
         eo_np /= max(eo_np.sum(), 1e-12)
 
         in_tail = np.zeros(hidden + 1, dtype=np.float64)
-        out_tail = np.zeros(min(hidden, q_width) + 1, dtype=np.float64)
+        out_tail = np.zeros(min(hidden, out_width) + 1, dtype=np.float64)
         in_tail[:hidden] = 1.0 - np.concatenate([[0.0], np.cumsum(ex_np[:-1])])
-        out_tail[: min(hidden, q_width)] = 1.0 - np.concatenate([[0.0], np.cumsum(eo_np[: min(hidden, q_width) - 1])])
+        out_tail[: min(hidden, out_width)] = 1.0 - np.concatenate([[0.0], np.cumsum(eo_np[: min(hidden, out_width) - 1])])
 
         max_factored_in = max((exact_in_scalars - 1) // c_in, min_rank)
         max_factored_out = max((exact_out_scalars - 1) // c_out, min_rank)
         in_candidates = [r for r in range(min_rank, min(max_factored_in, hidden) + 1, rank_step)] + [hidden]
-        out_candidates = [r for r in range(min_rank, min(max_factored_out, min(hidden, q_width)) + 1, rank_step)] + [min(hidden, q_width)]
+        out_candidates = [r for r in range(min_rank, min(max_factored_out, min(hidden, out_width)) + 1, rank_step)] + [min(hidden, out_width)]
 
         layer_specs[l] = {
             "omega": omega,
             "hidden": hidden,
-            "out_full": min(hidden, q_width),
+            "out_full": min(hidden, out_width),
             "exact_in_scalars": exact_in_scalars,
             "exact_out_scalars": exact_out_scalars,
             "c_in": c_in,
@@ -1064,8 +1295,173 @@ def allocate_waterfill_joint_ranks(
     }
 
 
+def allocate_waterfill_deltanet_carrier_ranks(
+    runtime: Any,
+    batches: Sequence[Mapping[str, Any]],
+    *,
+    target_state_scalars_removed: int | None = None,
+    target_compression_ratio: float | None = None,
+    layer_indices: Sequence[int] | None = None,
+    rank_step: int = 32,
+    min_rank: int = 32,
+    fisher_max_tokens: int = 16,
+    captures: Mapping[str, Any] | None = None,
+    fisher_diagonal: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Allocate per-layer GatedDeltaNet carrier ranks r_l via KKT Fisher water-filling (Play 2).
+
+    Solves the Lagrangian rate-distortion allocation across all selected DeltaNet
+    recurrent carriers S_l in R^{B x Hv x Dv x r_l}:
+        min_{r_l} sum_l Omega_l D_l(r_l) - mu * sum_l Hv * Dv * (Dk - r_l)
+    where Omega_l = E[y_l^T F_{deltanet.l.output} y_l] is layer l's Pullback-Fisher
+    vitality and D_l(r_l) is the normalized spectral tail of the Fisher-pullback
+    carrier Gram ``Cov(q) D_q Cov(q) + Cov(k) D_k Cov(k)`` truncated at rank r_l.
+    Default ``rank_step=32, min_rank=32`` keeps every candidate rank aligned to the
+    32-element SIMD Metal kernel boundary.
+    """
+    mx = _mx()
+    _rank(rank_step, 2048, "rank_step")
+    _rank(min_rank, 2048, "min_rank")
+    indices = tuple(
+        (i for i, layer in enumerate(runtime.layers) if "deltanet" in layer)
+        if layer_indices is None else layer_indices
+    )
+    if not indices or len(set(indices)) != len(indices):
+        raise ValueError("layer_indices must name unique existing deltanet layers")
+    for l in indices:
+        if not 0 <= l < len(runtime.layers) or "deltanet" not in runtime.layers[l]:
+            raise ValueError(f"layer {l} is not a deltanet layer")
+        if f"deltanet.{l}.carrier_basis" in runtime.parameters:
+            raise ValueError("carrier water-filling requires unreduced source deltanet carriers")
+
+    out_sites = [f"deltanet.{l}.output" for l in indices]
+    qk_sites = [s for l in indices for s in (f"deltanet.{l}.q", f"deltanet.{l}.k")]
+    needed_sites = out_sites + qk_sites
+    if captures is None or any(s not in captures for s in needed_sites):
+        captures = capture_runtime_rows(runtime, batches, needed_sites)
+    if fisher_diagonal is None or any(s not in fisher_diagonal for s in needed_sites):
+        fisher = capture_empirical_token_fisher(runtime, batches, needed_sites, max_tokens=fisher_max_tokens)
+        fisher_diagonal = fisher["diagonal"]
+
+    total_exact_scalars = 0
+    layer_specs = {}
+    for l in indices:
+        prefix = f"deltanet.{l}."
+        dc = runtime.layers[l]["deltanet"]
+        kh = int(dc["key_heads"])
+        vh = int(dc["value_heads"])
+        kd = int(dc["key_head_dimension"])
+        vd = int(dc["value_head_dimension"])
+        exact_scalars = vh * vd * kd
+        total_exact_scalars += exact_scalars
+
+        y = np.asarray(captures[prefix + "output"].astype(mx.float32), dtype=np.float64)
+        f_out = np.asarray(fisher_diagonal[prefix + "output"].astype(mx.float32), dtype=np.float64)
+        omega = max(float(np.mean(np.sum((y * y) * f_out[None, :], axis=1))), 1e-12)
+
+        q = captures[prefix + "q"].astype(mx.float32).reshape((-1, kh, kd))
+        k = captures[prefix + "k"].astype(mx.float32).reshape((-1, kh, kd))
+        fq = mx.maximum(mx.array(fisher_diagonal[prefix + "q"], dtype=mx.float32).reshape((kh, kd)), 1e-12)
+        fk = mx.maximum(mx.array(fisher_diagonal[prefix + "k"], dtype=mx.float32).reshape((kh, kd)), 1e-12)
+        n_rows = float(q.shape[0])
+
+        head_evs = []
+        for h in range(kh):
+            qh, kh_rows = q[:, h, :], k[:, h, :]
+            cov_q = (qh.T @ qh) / n_rows
+            cov_k = (kh_rows.T @ kh_rows) / n_rows
+            wq = fq[h] / mx.maximum(mx.mean(fq[h]), 1e-12)
+            wk = fk[h] / mx.maximum(mx.mean(fk[h]), 1e-12)
+            gram = cov_q @ (wq[:, None] * cov_q) + cov_k @ (wk[:, None] * cov_k)
+            ev = mx.linalg.eigvalsh((gram + gram.T) * 0.5, stream=mx.cpu)
+            head_evs.append(ev)
+        mx.eval(head_evs)
+        ev_sum = sum(np.maximum(np.asarray(ev, dtype=np.float64)[::-1], 0.0) for ev in head_evs)
+        ev_sum /= max(float(ev_sum.sum()), 1e-12)
+        tail = np.zeros(kd + 1, dtype=np.float64)
+        tail[:kd] = 1.0 - np.concatenate([[0.0], np.cumsum(ev_sum[:-1])])
+
+        candidates = sorted({*(r for r in range(min_rank, kd + 1, rank_step) if r <= kd), kd})
+        layer_specs[l] = {
+            "omega": omega,
+            "kd": kd,
+            "scalars_per_rank": vh * vd,
+            "exact_scalars": exact_scalars,
+            "tail": tail,
+            "candidates": candidates,
+        }
+
+    if target_state_scalars_removed is None:
+        if target_compression_ratio is None:
+            raise ValueError("Specify target_state_scalars_removed or target_compression_ratio")
+        ratio = float(target_compression_ratio)
+        if not 0.0 < ratio < 1.0:
+            raise ValueError("target_compression_ratio must lie in (0, 1)")
+        target_state_scalars_removed = int(round(total_exact_scalars * (1.0 - ratio)))
+    else:
+        _rank(target_state_scalars_removed, 2**31 - 1, "target_state_scalars_removed")
+
+    def evaluate_mu(mu: float):
+        allocations = {}
+        total_removed = 0
+        total_distortion = 0.0
+        for l in indices:
+            s = layer_specs[l]
+            omega = s["omega"]
+            kd = s["kd"]
+            spr = s["scalars_per_rank"]
+            best_r = min(
+                s["candidates"],
+                key=lambda r: omega * s["tail"][r] - mu * (spr * (kd - r)),
+            )
+            rem = spr * (kd - best_r)
+            dist = omega * s["tail"][best_r]
+            allocations[l] = {
+                "carrier_rank": int(best_r),
+                "full_carrier_dimension": int(kd),
+                "carrier_exact": best_r == kd,
+                "omega": float(omega),
+                "tail_fraction": float(s["tail"][best_r]),
+                "state_scalars_kept": int(spr * best_r),
+                "state_scalars_removed": int(rem),
+                "fisher_distortion": float(dist),
+            }
+            total_removed += int(rem)
+            total_distortion += float(dist)
+        return total_removed, total_distortion, allocations
+
+    max_rem, _, _ = evaluate_mu(1e9)
+    if target_state_scalars_removed > max_rem:
+        raise ValueError(
+            f"target_state_scalars_removed ({target_state_scalars_removed}) exceeds maximum achievable ({max_rem})"
+        )
+    lo, hi = 0.0, 1e-6
+    while evaluate_mu(hi)[0] < target_state_scalars_removed:
+        hi *= 2.0
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        if evaluate_mu(mid)[0] < target_state_scalars_removed:
+            lo = mid
+        else:
+            hi = mid
+    removed, distortion, allocations = evaluate_mu(hi)
+    kept = total_exact_scalars - removed
+    return {
+        "kind": "kkt_pullback_fisher_deltanet_carrier_waterfill_schedule",
+        "total_exact_state_scalars": int(total_exact_scalars),
+        "target_state_scalars_removed": int(target_state_scalars_removed),
+        "achieved_state_scalars_removed": int(removed),
+        "achieved_state_scalars_kept": int(kept),
+        "achieved_compression_ratio": float(kept / max(total_exact_scalars, 1)),
+        "total_fisher_distortion": float(distortion),
+        "lagrange_multiplier_mu": float(hi),
+        "layers": allocations,
+    }
+
+
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
+    "fit_reduced_deltanet", "fit_deltanet_carrier_basis", "allocate_waterfill_deltanet_carrier_ranks",
     "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]

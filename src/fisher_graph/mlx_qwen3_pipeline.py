@@ -183,7 +183,15 @@ def _convert(args):
 
 def _fit(args):
     from .mlx_qwen3 import MLXQwen3
-    from .mlx_qwen3_fit import capture_runtime_rows, fit_reduced_attention, fit_chart_mlp, optimize_trajectory
+    from .mlx_qwen3_fit import (
+        capture_empirical_token_fisher,
+        capture_runtime_rows,
+        fit_chart_mlp,
+        fit_deltanet_carrier_basis,
+        fit_reduced_attention,
+        fit_reduced_deltanet,
+        optimize_trajectory,
+    )
 
     source = _local_directory(args.artifact)
     destination = _destination(args.output, args.overwrite)
@@ -199,14 +207,20 @@ def _fit(args):
     reports, updated_names = [], set()
     before = _inventory(runtime)
     for index in indices:
+        is_deltanet = "deltanet" in runtime.layers[index]
         for part in ("attention", "mlp"):
             if args.components != "both" and args.components != part:
                 continue
-            print(json.dumps({"event": "fitting", "layer": index, "component": part}), file=sys.stderr, flush=True)
-            prefix = f"{part}.{index}."
+            comp_label = "deltanet" if (part == "attention" and is_deltanet) else part
+            print(json.dumps({"event": "fitting", "layer": index, "component": comp_label}), file=sys.stderr, flush=True)
+            prefix = f"{comp_label}.{index}."
             sites = (prefix + "normalized", prefix + ("context" if part == "attention" else "output"))
             captures = capture_runtime_rows(runtime, batches, sites)
-            if part == "attention":
+            if part == "attention" and is_deltanet:
+                result = fit_reduced_deltanet(runtime, index, captures,
+                    input_rank=args.attention_input_rank, output_rank=args.attention_output_rank,
+                    relative_ridge=args.relative_ridge, solver=args.solver)
+            elif part == "attention":
                 result = fit_reduced_attention(runtime, index, captures,
                     input_rank=args.attention_input_rank, output_rank=args.attention_output_rank,
                     relative_ridge=args.relative_ridge, solver=args.solver)
@@ -216,11 +230,24 @@ def _fit(args):
                     relative_ridge=args.relative_ridge, solver=args.solver)
             runtime = result.runtime
             updated_names.update(result.updates)
-            reports.append({"layer": index, "component": part, **result.report})
+            reports.append({"layer": index, "component": comp_label, **result.report})
             del captures, result
+            if part == "attention" and is_deltanet and getattr(args, "carrier_rank", None) is not None:
+                qk_sites = (f"deltanet.{index}.q", f"deltanet.{index}.k")
+                qk_rows = capture_runtime_rows(runtime, batches, qk_sites)
+                fisher_qk = capture_empirical_token_fisher(runtime, batches, qk_sites, max_tokens=min(args.max_tokens, 32))
+                c_res = fit_deltanet_carrier_basis(
+                    runtime, index, qk_rows, carrier_rank=args.carrier_rank,
+                    fisher_diagonal=fisher_qk["diagonal"], solver=args.solver,
+                )
+                runtime = c_res.runtime
+                updated_names.update(c_res.updates)
+                reports.append({"layer": index, "component": "deltanet_carrier", **c_res.report})
+                del qk_rows, fisher_qk, c_res
     trajectory = None
     if args.trajectory_steps:
-        coefficient_names = ("q_weight", "k_weight", "v_weight", "output_encoder_weight", "output_decoder_weight",
+        coefficient_names = ("q_weight", "k_weight", "v_weight", "qkv_weight", "z_weight", "carrier_basis",
+                             "output_encoder_weight", "output_decoder_weight",
                              "affine_weight", "affine_bias", "local_generator_encoders", "chart_mode_decoders")
         names = sorted(name for name in updated_names if name.rsplit(".", 1)[-1] in coefficient_names)
         result = optimize_trajectory(runtime, teacher, batches, parameter_names=names,
@@ -484,10 +511,19 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
 
 
 def _default_chat_artifact():
+    local = Path(".local-runs/qwen3_5-9b-carrier-compile/waterfill_carrier_50pct")
+    if local.is_dir():
+        return str(local)
     local = Path(".local-runs/qwen3-ewc-refine/joint_waterfill_286mib")
     if local.is_dir():
         return str(local)
     return "jediwattzon/qwen3-1.7b-fisher-ewc-graph"
+
+
+def _default_tokenizer(runtime):
+    if runtime.config.get("source") == "hf_qwen3_5":
+        return "mlx-community/Qwen3.5-9B-MLX-4bit"
+    return "Qwen/Qwen3-1.7B"
 
 
 def _chat(args):
@@ -504,7 +540,7 @@ def _interactive(args):
     artifact_dir = _resolve_artifact(args.artifact)
     runtime = MLXQwen3.load(artifact_dir)
     reference = MLXQwen3.load(_resolve_artifact(args.reference_artifact)) if args.reference_artifact else None
-    tokenizer = _tokenizer(args.tokenizer)
+    tokenizer = _tokenizer(args.tokenizer or _default_tokenizer(runtime))
     xray_on = bool(args.xray)
     debug_on = bool(args.debug)
     chat_on = bool(args.chat)
@@ -514,7 +550,7 @@ def _interactive(args):
     rep_penalty = float(args.repetition_penalty)
     muted_sites = {f"attention.{l}.delta" for l in (args.mute_attn_layer or ())} | {
         f"mlp.{l}.delta" for l in (args.mute_mlp_layer or ())
-    }
+    } | {f"deltanet.{l}.delta" for l in (getattr(args, "mute_deltanet_layer", None) or ())}
     muted_charts = set()
     for spec in args.mute_chart or ():
         parts = str(spec).split(":")
@@ -528,6 +564,11 @@ def _interactive(args):
     chart_mlps = sorted(
         i for i in range(len(runtime.layers)) if f"mlp.{i}.chart_centers" in runtime.parameters
     )
+    deltanet_ranks = {
+        i: runtime.layers[i]["deltanet"].get("carrier_rank", runtime.layers[i]["deltanet"]["key_head_dimension"])
+        for i in range(len(runtime.layers))
+        if "deltanet" in runtime.layers[i]
+    }
 
     def encode_prompt(raw_text: str) -> list[int]:
         rendered = (
@@ -666,12 +707,15 @@ def _interactive(args):
     print(f"  Artifact       : {artifact_dir}")
     print(f"  Reduced Attn   : {reduced_attn}")
     print(f"  Chart MLPs     : {chart_mlps}")
+    if deltanet_ranks:
+        print(f"  DeltaNet Ranks : {deltanet_ranks}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
     print("  Commands       : /xray | /chat | /debug | /context | /reset |")
     print("                   /tokens <N> | /temp <F> | /topp <F> | /penalty <F> |")
     print("                   /preset | /unmute | /quit")
-    print("                   /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
+    print("                   /mute attn <L> | /mute mlp <L> | /mute deltanet <L> |")
+    print("                   /mute chart <L> <C>")
     print("==============================================================================")
 
     while True:
@@ -763,11 +807,14 @@ def _interactive(args):
             elif len(parts) == 3 and parts[1] == "mlp" and parts[2].isdigit():
                 muted_sites.add(f"mlp.{int(parts[2])}.delta")
                 print(f"[harness] Muted mlp.{int(parts[2])}.delta")
+            elif len(parts) == 3 and parts[1] == "deltanet" and parts[2].isdigit():
+                muted_sites.add(f"deltanet.{int(parts[2])}.delta")
+                print(f"[harness] Muted deltanet.{int(parts[2])}.delta")
             elif len(parts) == 4 and parts[1] == "chart" and parts[2].isdigit() and parts[3].isdigit():
                 muted_charts.add((int(parts[2]), int(parts[3])))
                 print(f"[harness] Muted mlp.{int(parts[2])} chart {int(parts[3])}")
             else:
-                print("[harness] usage: /mute attn <L> | /mute mlp <L> | /mute chart <L> <C>")
+                print("[harness] usage: /mute attn <L> | /mute mlp <L> | /mute deltanet <L> | /mute chart <L> <C>")
             continue
         if chat_on:
             run_chat_turn(line)
@@ -794,6 +841,7 @@ def build_parser():
     fit.add_argument("--max-tokens", type=_positive_int, default=2048)
     fit.add_argument("--attention-input-rank", type=_positive_int, default=256)
     fit.add_argument("--attention-output-rank", type=_positive_int, default=64)
+    fit.add_argument("--carrier-rank", type=_positive_int, default=None, help="Optional GatedDeltaNet carrier rank along Dk (Play 2)")
     fit.add_argument("--chart-count", type=_positive_int, default=4)
     fit.add_argument("--chart-rank", type=_positive_int, default=16)
     fit.add_argument("--generator-rank", type=_positive_int, default=None)
@@ -831,7 +879,7 @@ def build_parser():
     )
     interactive.add_argument("--artifact", required=True)
     interactive.add_argument("--reference-artifact", help="Optional exact MLX artifact for side-by-side comparison")
-    interactive.add_argument("--tokenizer", required=True)
+    interactive.add_argument("--tokenizer", help="Local tokenizer dir or HF repo id (default: inferred from artifact source)")
     interactive.add_argument("--prompt", help="Run a single freeform prompt non-interactively and exit")
     interactive.add_argument("--presets", action="store_true", help="Run the 6 preset prompts and exit")
     interactive.add_argument("--chat", action="store_true", help="Apply Qwen3 chat template (thinking disabled)")
@@ -847,6 +895,7 @@ def build_parser():
     interactive.add_argument("--ignore-eos", action="store_true")
     interactive.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     interactive.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
+    interactive.add_argument("--mute-deltanet-layer", type=int, action="append", default=[])
     interactive.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
     interactive.set_defaults(run=_interactive)
     chat = commands.add_parser(
@@ -855,8 +904,8 @@ def build_parser():
     )
     chat.add_argument("--artifact", default=_default_chat_artifact(),
                       help="Local artifact dir or HF repo id (default: local joint_waterfill or published repo)")
-    chat.add_argument("--tokenizer", default="Qwen/Qwen3-1.7B",
-                      help="Local tokenizer dir or HF repo id")
+    chat.add_argument("--tokenizer",
+                      help="Local tokenizer dir or HF repo id (default: inferred from artifact source)")
     chat.add_argument("--prompt", help="Run a single chat question and exit (default: persistent REPL)")
     chat.add_argument("--temperature", type=float, default=0.7)
     chat.add_argument("--top-p", type=float, default=0.9)
@@ -869,6 +918,7 @@ def build_parser():
     chat.add_argument("--ignore-eos", action="store_true")
     chat.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     chat.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
+    chat.add_argument("--mute-deltanet-layer", type=int, action="append", default=[])
     chat.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
     chat.set_defaults(run=_chat)
     return parser

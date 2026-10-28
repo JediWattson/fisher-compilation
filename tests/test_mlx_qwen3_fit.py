@@ -10,13 +10,16 @@ import pytest
 
 from fisher_graph.mlx_qwen3_fit import (
     allocate_waterfill_attention_ranks,
+    allocate_waterfill_deltanet_carrier_ranks,
     allocate_waterfill_joint_ranks,
     anchored_ridge,
     capture_empirical_token_fisher,
     capture_parameter_fisher,
     capture_runtime_rows,
     fit_chart_mlp,
+    fit_deltanet_carrier_basis,
     fit_reduced_attention,
+    fit_reduced_deltanet,
     optimize_trajectory,
     weighted_moments,
 )
@@ -277,3 +280,80 @@ def test_waterfill_attention_rank_allocation_respects_budget_and_reduces_distort
     )
     assert joint["achieved_scalars_removed"] >= 600
     assert len(joint["mlp_candidates_ranked"]) == 2
+
+
+@pytest.fixture(scope="module")
+def qwen3_5(mx):
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    from fisher_graph.mlx_qwen3 import MLXQwen3
+
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(512)
+        config = transformers.Qwen3_5TextConfig(
+            vocab_size=32, hidden_size=16, intermediate_size=32,
+            num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
+            head_dim=8, linear_num_key_heads=2, linear_num_value_heads=4,
+            linear_key_head_dim=8, linear_value_head_dim=4,
+            linear_conv_kernel_dim=4, full_attention_interval=2,
+            max_position_embeddings=64, tie_word_embeddings=True,
+            attention_dropout=0.0,
+        )
+        config._attn_implementation = "eager"
+        model = transformers.Qwen3_5ForCausalLM(config).eval().requires_grad_(False)
+    return MLXQwen3.from_hf(model), model
+
+
+def test_qwen3_5_play1_reduced_deltanet_and_play2_carrier_basis(qwen3_5, mx):
+    runtime, _ = qwen3_5
+    data = batches(mx)
+    original = np.asarray(runtime(**data[0]).logits)
+
+    # Play 1: full-rank reduced deltanet preserves forward pass; rank reduction compresses projections
+    d_rows = capture_runtime_rows(runtime, data, ["deltanet.0.normalized", "deltanet.0.context"])
+    full_d = fit_reduced_deltanet(runtime, 0, d_rows, input_rank=16, output_rank=16, relative_ridge=0.02)
+    np.testing.assert_allclose(np.asarray(full_d.runtime(**data[0]).logits), original, rtol=4e-4, atol=4e-5)
+
+    red_d = fit_reduced_deltanet(runtime, 0, d_rows, input_rank=8, output_rank=8, solver="numpy_float64")
+    assert red_d.runtime.parameters["deltanet.0.input_basis"].shape == (16, 8)
+    assert red_d.runtime.parameters["deltanet.0.qkv_weight"].shape == (48, 8)
+    assert red_d.runtime.parameters["deltanet.0.z_weight"].shape == (16, 8)
+    assert red_d.runtime.parameters["deltanet.0.output_encoder_weight"].shape == (8, 16)
+    assert red_d.runtime.parameters["deltanet.0.output_decoder_weight"].shape == (16, 8)
+
+    # Play 2: full-rank orthogonal carrier basis is exact; reduced carrier shrinks S along Dk
+    qk_sites = ["deltanet.0.q", "deltanet.0.k"]
+    qk_rows = capture_runtime_rows(runtime, data, qk_sites)
+    fisher_qk = capture_empirical_token_fisher(runtime, data, qk_sites, max_tokens=4)
+    full_c = fit_deltanet_carrier_basis(
+        runtime, 0, qk_rows, carrier_rank=8, fisher_diagonal=fisher_qk["diagonal"], relative_ridge=0.0
+    )
+    out_full_c = full_c.runtime(**data[0])
+    np.testing.assert_allclose(np.asarray(out_full_c.logits), original, rtol=2e-5, atol=3e-6)
+    assert full_c.report["retained_energy_fraction"] == pytest.approx(1.0, abs=1e-5)
+
+    red_c = fit_deltanet_carrier_basis(
+        red_d.runtime, 0, qk_rows, carrier_rank=4, fisher_diagonal=fisher_qk["diagonal"], solver="numpy_float64"
+    )
+    assert red_c.runtime.parameters["deltanet.0.carrier_basis"].shape == (2, 8, 4)
+    assert red_c.runtime.layers[0]["deltanet"]["carrier_rank"] == 4
+    assert 0.4 < red_c.report["retained_energy_fraction"] <= 1.0
+    out_red_c = red_c.runtime.prefill(**data[0])
+    # Recurrent state S in cache is now [B=2, Hv=4, Dv=4, r=4] instead of [2, 4, 4, 8]
+    assert out_red_c.cache.key_values[0][1].shape == (2, 4, 4, 4)
+    dec_red_c = red_c.runtime.decode(mx.array([[2], [3]], dtype=mx.int32), out_red_c.cache)
+    assert np.isfinite(np.asarray(dec_red_c.logits)).all()
+
+    # Hybrid waterfilling across deltanet.0, attention.1, and mlp.0..1
+    joint = allocate_waterfill_joint_ranks(
+        runtime, data, target_scalars_removed=500, chart_count=2, chart_rank=2, generator_rank=2,
+        min_mlp_layer_spacing=1, rank_step=1, min_rank=2, fisher_max_tokens=4,
+    )
+    assert joint["achieved_scalars_removed"] >= 500
+    assert set(joint["attention_schedule"]["layers"].keys()) == {0, 1}
+
+    carrier_sched = allocate_waterfill_deltanet_carrier_ranks(
+        runtime, data, target_compression_ratio=0.5, rank_step=2, min_rank=2, fisher_max_tokens=4,
+    )
+    assert carrier_sched["achieved_compression_ratio"] <= 0.5
+    assert carrier_sched["layers"][0]["carrier_rank"] == 4

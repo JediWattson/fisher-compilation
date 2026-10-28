@@ -29,13 +29,17 @@ def _array(value, dtype=None):
 
 
 def _norm_spec(module):
-    if type(module).__name__ == "Identity":
+    name = type(module).__name__
+    if name == "Identity":
         return {"kind": "identity"}
     if hasattr(module, "spec"):
         return asdict(module.spec)
     epsilon = getattr(module, "variance_epsilon", getattr(module, "eps", None))
     if epsilon is None or not hasattr(module, "weight"):
-        raise TypeError(f"Unsupported norm: {type(module).__name__}")
+        raise TypeError(f"Unsupported norm: {name}")
+    if "Qwen3_5RMSNorm" in name and "Gated" not in name:
+        return {"kind": "rms_norm", "epsilon": float(epsilon),
+                "scale_parameterization": "unit_offset", "cast_before_scale": False}
     return {"kind": "rms_norm", "epsilon": float(epsilon),
             "scale_parameterization": "direct", "cast_before_scale": True}
 
@@ -102,24 +106,31 @@ class MLXQwen3:
     def from_hf(cls, model, *, dtype=None):
         """Convert a loaded HF model directly, without an intermediate clone."""
         config = model.config.to_dict()
-        embedding, head = model.model.embed_tokens.weight, model.lm_head.weight
+        text_model = getattr(model.model, "language_model", model.model)
+        embedding, head = text_model.embed_tokens.weight, model.lm_head.weight
         config["tie_word_embeddings"] = (
             embedding.data_ptr() == head.data_ptr()
             and embedding.shape == head.shape and embedding.stride() == head.stride()
         )
+        if isinstance(config.get("text_config"), dict):
+            config["text_config"]["tie_word_embeddings"] = config["tie_word_embeddings"]
         state = model.state_dict()
         runtime = cls._from_hf_weights(config, {k: _array(v, dtype) for k, v in state.items()
                                                if k != "lm_head.weight" or not config.get("tie_word_embeddings")})
         # Config values can lag behind deliberate live-module interventions.
-        runtime.config["terminal_norm"] = _norm_spec(model.model.norm)
-        for layer, source_layer in zip(runtime.layers, model.model.layers):
-            layer["attention"]["input_norm"] = _norm_spec(source_layer.input_layernorm)
+        runtime.config["terminal_norm"] = _norm_spec(text_model.norm)
+        for layer, source_layer in zip(runtime.layers, text_model.layers):
             layer["mlp"]["input_norm"] = _norm_spec(source_layer.post_attention_layernorm)
-            qnorm, knorm = (_norm_spec(n) for n in (source_layer.self_attn.q_norm, source_layer.self_attn.k_norm))
-            if qnorm != knorm:
-                raise ValueError("Qwen3 MLX requires matching Q/K normalization semantics")
-            layer["attention"]["qk_norm"] = qnorm
-            layer["attention"]["query_scale"] = float(source_layer.self_attn.scaling)
+            if "deltanet" in layer:
+                layer["deltanet"]["input_norm"] = _norm_spec(source_layer.input_layernorm)
+                layer["deltanet"]["norm"] = _norm_spec(source_layer.linear_attn.norm)
+            else:
+                layer["attention"]["input_norm"] = _norm_spec(source_layer.input_layernorm)
+                qnorm, knorm = (_norm_spec(n) for n in (source_layer.self_attn.q_norm, source_layer.self_attn.k_norm))
+                if qnorm != knorm:
+                    raise ValueError("Qwen3 MLX requires matching Q/K normalization semantics")
+                layer["attention"]["qk_norm"] = qnorm
+                layer["attention"]["query_scale"] = float(source_layer.self_attn.scaling)
         return runtime
 
     @classmethod
@@ -133,60 +144,182 @@ class MLXQwen3:
         directory = Path(directory)
         config = json.loads((directory / "config.json").read_text())
         index = directory / "model.safetensors.index.json"
-        files = (sorted(set(json.loads(index.read_text())["weight_map"].values()))
-                 if index.exists() else ["model.safetensors"])
+        if index.exists():
+            weight_map = json.loads(index.read_text())["weight_map"]
+            files = sorted({
+                fname for key, fname in weight_map.items()
+                if not key.startswith(("mtp.", "model.visual.", "visual.", "vision_tower."))
+            })
+        else:
+            files = ["model.safetensors"]
         weights = {}
         for name in files:
             weights.update(mx.load(str(directory / name)))
         if dtype is not None:
-            weights = {k: v.astype(dtype) for k, v in weights.items()}
+            weights = {
+                k: (v.astype(dtype) if v.dtype in (mx.float16, mx.bfloat16, mx.float32) else v)
+                for k, v in weights.items()
+            }
         return cls._from_hf_weights(config, weights)
 
     @classmethod
     def _from_hf_weights(cls, source, weights):
-        if source.get("model_type") != "qwen3" or source.get("hidden_act", "silu") != "silu":
+        quantization = source.get("quantization") or source.get("quantization_config")
+        if source.get("model_type") == "qwen3_5" and isinstance(source.get("text_config"), Mapping):
+            text_source = dict(source["text_config"])
+            if "tie_word_embeddings" in source and "tie_word_embeddings" not in text_source:
+                text_source["tie_word_embeddings"] = source["tie_word_embeddings"]
+            source = text_source
+        if not quantization:
+            quantization = source.get("quantization") or source.get("quantization_config")
+        model_type = source.get("model_type")
+        is_qwen3_5 = model_type in ("qwen3_5", "qwen3_5_text")
+        if (model_type != "qwen3" and not is_qwen3_5) or source.get("hidden_act", "silu") != "silu":
             raise ValueError("Only dense Qwen3 with SiLU is supported")
-        if source.get("use_sliding_window") or any(x != "full_attention" for x in source.get("layer_types", []) or []):
-            raise ValueError("This loader supports global Qwen3 attention only")
+        if source.get("num_experts", 0) > 0:
+            raise ValueError("Only dense Qwen3 with SiLU is supported")
+        num_layers = int(source["num_hidden_layers"])
+        if is_qwen3_5:
+            interval = int(source.get("full_attention_interval", 4))
+            layer_types = list(source.get("layer_types") or [
+                "linear_attention" if (i + 1) % interval else "full_attention"
+                for i in range(num_layers)
+            ])
+            if source.get("use_sliding_window") or len(layer_types) != num_layers or any(
+                x not in ("full_attention", "linear_attention") for x in layer_types
+            ):
+                raise ValueError("This loader supports Qwen3.5 full_attention and linear_attention layers only")
+        else:
+            layer_types = ["full_attention"] * num_layers
+            if source.get("use_sliding_window") or any(x != "full_attention" for x in source.get("layer_types", []) or []):
+                raise ValueError("This loader supports global Qwen3 attention only")
         rope = source.get("rope_parameters") or source.get("rope_scaling") or {}
         if rope.get("rope_type", rope.get("type", "default")) not in ("default", "linear"):
             raise ValueError("Only default and linear RoPE are supported")
         factor = float(rope.get("factor", 1.0))
-        heads = source["num_attention_heads"]
-        kvheads = source["num_key_value_heads"]
-        dim = source.get("head_dim", source["hidden_size"] // heads)
-        if heads % kvheads or dim % 2 or factor <= 0:
+        heads = int(source["num_attention_heads"])
+        kvheads = int(source["num_key_value_heads"])
+        dim = int(source.get("head_dim") or (source["hidden_size"] // heads))
+        partial_rotary = float(rope.get("partial_rotary_factor", source.get("partial_rotary_factor", 1.0)))
+        rotary_dim = int(round(dim * partial_rotary))
+        if heads % kvheads or dim % 2 or rotary_dim <= 0 or rotary_dim % 2 or rotary_dim > dim or factor <= 0:
             raise ValueError("Invalid GQA or rotary dimensions")
-        norm = {"kind": "rms_norm", "epsilon": source["rms_norm_eps"],
-                "scale_parameterization": "direct", "cast_before_scale": True}
-        p = {"lexical.weight": weights["model.embed_tokens.weight"],
-             "terminal.weight": weights["model.norm.weight"]}
+        sanitized_mlx = is_qwen3_5 and any(
+            "conv1d.weight" in k and v.ndim == 3 and v.shape[-1] == 1 and v.shape[1] != 1
+            for k, v in weights.items()
+        )
+        norm = {
+            "kind": "rms_norm",
+            "epsilon": float(source["rms_norm_eps"]),
+            "scale_parameterization": ("direct" if sanitized_mlx else "unit_offset") if is_qwen3_5 else "direct",
+            "cast_before_scale": not is_qwen3_5,
+        }
+        gated_norm = {
+            "kind": "rms_norm",
+            "epsilon": float(source["rms_norm_eps"]),
+            "scale_parameterization": "direct",
+            "cast_before_scale": True,
+        }
+        prefix = next(
+            (cand for cand in ("model.language_model.", "language_model.model.", "model.") if cand + "embed_tokens.weight" in weights),
+            "model.",
+        )
+        p = {"terminal.weight": weights[prefix + "norm.weight"]}
+
+        def copy_linear(target_key, source_prefix):
+            p[target_key] = weights[source_prefix + ".weight"]
+            if source_prefix + ".scales" in weights:
+                p[target_key + ".scales"] = weights[source_prefix + ".scales"]
+            if source_prefix + ".biases" in weights:
+                p[target_key + ".biases"] = weights[source_prefix + ".biases"]
+
+        copy_linear("lexical.weight", prefix + "embed_tokens")
         if not source.get("tie_word_embeddings", False):
-            p["lexical.head_weight"] = weights["lm_head.weight"]
+            head_prefix = next(
+                (cand for cand in ("lm_head", "language_model.lm_head", prefix + "lm_head") if cand + ".weight" in weights),
+                "lm_head",
+            )
+            copy_linear("lexical.head_weight", head_prefix)
+        output_gate = bool(source.get("attn_output_gate", True)) if is_qwen3_5 else bool(source.get("attn_output_gate", False))
         layers = []
-        for i in range(source["num_hidden_layers"]):
-            s = f"model.layers.{i}."
-            a, m = f"attention.{i}.", f"mlp.{i}."
-            p[a + "input_norm_weight"] = weights[s + "input_layernorm.weight"]
+        for i, layer_type in enumerate(layer_types):
+            s = f"{prefix}layers.{i}."
+            m = f"mlp.{i}."
             p[m + "input_norm_weight"] = weights[s + "post_attention_layernorm.weight"]
-            for name in ("q", "k", "v", "o"):
-                target = "output_decoder_weight" if name == "o" else name + "_weight"
-                p[a + target] = weights[s + f"self_attn.{name}_proj.weight"]
-                bias = weights.get(s + f"self_attn.{name}_proj.bias")
-                if bias is not None:
-                    p[a + name + "_bias"] = bias
-            for name in ("q", "k"):
-                p[a + name + "_norm_weight"] = weights[s + f"self_attn.{name}_norm.weight"]
             for name in ("gate", "up", "down"):
-                p[m + name + "_weight"] = weights[s + f"mlp.{name}_proj.weight"]
-            layers.append({"attention": {
-                "input_norm": norm, "output_norm": {"kind": "identity"}, "qk_norm": norm,
-                "query_heads": heads, "key_value_heads": kvheads, "head_dimension": dim,
-                "query_scale": dim ** -0.5, "theta": rope.get("rope_theta", source.get("rope_theta", 1000000.0)),
-                "rope_factor": factor, "window_size": None, "logit_softcap": None},
-                "mlp": {"input_norm": norm, "output_norm": {"kind": "identity"}, "temperature": 1.0}})
-        return cls(p, {"format_version": 1, "layers": layers, "terminal_norm": norm,
-                       "embed_scale": 1.0, "final_logit_softcap": None, "source": "hf_qwen3"})
+                copy_linear(m + name + "_weight", s + f"mlp.{name}_proj")
+            mlp_cfg = {"input_norm": norm, "output_norm": {"kind": "identity"}, "temperature": 1.0}
+            if layer_type == "linear_attention":
+                d = f"deltanet.{i}."
+                kh = int(source["linear_num_key_heads"])
+                vh = int(source["linear_num_value_heads"])
+                kd = int(source["linear_key_head_dim"])
+                vd = int(source["linear_value_head_dim"])
+                kernel_size = int(source.get("linear_conv_kernel_dim", 4))
+                if vh % kh != 0:
+                    raise ValueError("linear_num_value_heads must be divisible by linear_num_key_heads")
+                p[d + "input_norm_weight"] = weights[s + "input_layernorm.weight"]
+                copy_linear(d + "qkv_weight", s + "linear_attn.in_proj_qkv")
+                copy_linear(d + "z_weight", s + "linear_attn.in_proj_z")
+                copy_linear(d + "b_weight", s + "linear_attn.in_proj_b")
+                copy_linear(d + "a_weight", s + "linear_attn.in_proj_a")
+                conv_w = weights[s + "linear_attn.conv1d.weight"]
+                p[d + "conv_weight"] = conv_w.reshape(conv_w.shape[0], kernel_size)
+                if s + "linear_attn.conv1d.bias" in weights:
+                    p[d + "conv_bias"] = weights[s + "linear_attn.conv1d.bias"]
+                p[d + "A_log"] = weights[s + "linear_attn.A_log"]
+                p[d + "dt_bias"] = weights[s + "linear_attn.dt_bias"]
+                p[d + "norm_weight"] = weights[s + "linear_attn.norm.weight"]
+                copy_linear(d + "output_decoder_weight", s + "linear_attn.out_proj")
+                if s + "linear_attn.out_proj.bias" in weights:
+                    p[d + "o_bias"] = weights[s + "linear_attn.out_proj.bias"]
+                layers.append({
+                    "deltanet": {
+                        "input_norm": norm,
+                        "output_norm": {"kind": "identity"},
+                        "norm": gated_norm,
+                        "key_heads": kh,
+                        "value_heads": vh,
+                        "key_head_dimension": kd,
+                        "value_head_dimension": vd,
+                        "carrier_rank": kd,
+                        "conv_kernel_size": kernel_size,
+                        "qk_l2_eps": 1e-6,
+                    },
+                    "mlp": mlp_cfg,
+                })
+            else:
+                a = f"attention.{i}."
+                p[a + "input_norm_weight"] = weights[s + "input_layernorm.weight"]
+                for name in ("q", "k", "v", "o"):
+                    target = "output_decoder_weight" if name == "o" else name + "_weight"
+                    copy_linear(a + target, s + f"self_attn.{name}_proj")
+                    bias = weights.get(s + f"self_attn.{name}_proj.bias")
+                    if bias is not None:
+                        p[a + name + "_bias"] = bias
+                for name in ("q", "k"):
+                    p[a + name + "_norm_weight"] = weights[s + f"self_attn.{name}_norm.weight"]
+                attn_cfg = {
+                    "input_norm": norm, "output_norm": {"kind": "identity"}, "qk_norm": norm,
+                    "query_heads": heads, "key_value_heads": kvheads, "head_dimension": dim,
+                    "query_scale": dim ** -0.5, "theta": rope.get("rope_theta", source.get("rope_theta", 1000000.0)),
+                    "rope_factor": factor, "window_size": None, "logit_softcap": None,
+                }
+                if rotary_dim != dim:
+                    attn_cfg["rotary_dimension"] = rotary_dim
+                if output_gate:
+                    attn_cfg["output_gate"] = True
+                layers.append({"attention": attn_cfg, "mlp": mlp_cfg})
+        cfg = {"format_version": 1, "layers": layers, "terminal_norm": norm,
+               "embed_scale": 1.0, "final_logit_softcap": None,
+               "source": "hf_qwen3_5" if is_qwen3_5 else "hf_qwen3"}
+        if isinstance(quantization, Mapping) and any(k.endswith(".scales") for k in p):
+            cfg["quantization"] = {
+                "group_size": int(quantization.get("group_size", 64)),
+                "bits": int(quantization.get("bits", 4)),
+                "mode": str(quantization.get("mode", "affine")),
+            }
+        return cls(p, cfg)
 
     @classmethod
     def from_torch(cls, executor, *, dtype=None):
@@ -328,8 +461,19 @@ class MLXQwen3:
                 captures[name] = value
             return value
 
+        quant = self.config.get("quantization") or {}
+        q_group_size = int(quant.get("group_size", 64))
+        q_bits = int(quant.get("bits", 4))
+        q_mode = str(quant.get("mode", "affine"))
+
         def linear(x, key, bias=None):
-            y = x @ p[key].T
+            if key + ".scales" in p:
+                y = mx.quantized_matmul(
+                    x, p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                    transpose=True, group_size=q_group_size, bits=q_bits, mode=q_mode,
+                )
+            else:
+                y = x @ p[key].T
             return y + p[bias] if bias in p else y
 
         def incoming(name, count, rank, dtype):
@@ -340,57 +484,164 @@ class MLXQwen3:
             return mx.stack([sum(c, mx.zeros((b, t, rank), dtype=dtype)) for c in cols], axis=-2)
 
         if "lexical.weight" in p:
-            x = p["lexical.weight"][ids]
+            if "lexical.weight.scales" in p:
+                x = mx.dequantize(
+                    p["lexical.weight"][ids],
+                    scales=p["lexical.weight.scales"][ids],
+                    biases=p["lexical.weight.biases"][ids] if "lexical.weight.biases" in p else None,
+                    group_size=q_group_size, bits=q_bits, mode=q_mode,
+                )
+            else:
+                x = p["lexical.weight"][ids]
         else:
             x = p["lexical.codebook"][ids] @ p["lexical.basis"].T
         x = observe("embedding", x * self.config.get("embed_scale", 1.0))
         for i, layer in enumerate(self.layers):
-            a, m = f"attention.{i}", f"mlp.{i}"
-            ac, mc = layer["attention"], layer["mlp"]
-            state = observe(a + ".input", x)
-            n = observe(a + ".normalized", _rms(state, p.get(a + ".input_norm_weight"), ac["input_norm"]))
-            coords = n @ p[a + ".input_basis"] if a + ".input_basis" in p else n
-            coords = mx.where(valid[..., None], coords, 0)
-            coords = coords + incoming(a, 1, coords.shape[-1], coords.dtype)[..., 0, :]
-            qh, kh, d = ac["query_heads"], ac["key_value_heads"], ac["head_dimension"]
-            qkv = []
-            for name, heads in (("q", qh), ("k", kh), ("v", kh)):
-                y = linear(coords, a + f".{name}_weight", a + f".{name}_bias").reshape(b, t, heads, d).transpose(0, 2, 1, 3)
-                if name != "v" and ac["qk_norm"] is not None:
-                    y = _rms(y, p[a + f".{name}_norm_weight"], ac["qk_norm"])
-                qkv.append(y)
-            q, k, v = qkv
-            inv = ac["theta"] ** (-mx.arange(0, d, 2, dtype=mx.float32) / d)
-            freqs = positions.astype(mx.float32)[..., None] * inv / ac["rope_factor"]
-            angles = mx.concatenate((freqs, freqs), axis=-1)[:, None, :, :]
-            cos, sin = mx.cos(angles).astype(q.dtype), mx.sin(angles).astype(q.dtype)
+            m = f"mlp.{i}"
+            mc = layer["mlp"]
+            if "deltanet" in layer:
+                d = f"deltanet.{i}"
+                dc = layer["deltanet"]
+                state = observe(d + ".input", x)
+                n = observe(d + ".normalized", _rms(state, p.get(d + ".input_norm_weight"), dc["input_norm"]))
+                n_masked = mx.where(valid[..., None], n, 0)
+                coords = n_masked @ p[d + ".input_basis"] if d + ".input_basis" in p else n_masked
+                coords = mx.where(valid[..., None], coords, 0)
+                coords = coords + incoming(d, 1, coords.shape[-1], coords.dtype)[..., 0, :]
+                kh, vh = dc["key_heads"], dc["value_heads"]
+                kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
+                k_total, v_total = kh * kd, vh * vd
+                kernel_size = dc["conv_kernel_size"]
+                conv_dim = 2 * k_total + v_total
+                qkv = linear(coords, d + ".qkv_weight", d + ".qkv_bias")
+                z = linear(coords, d + ".z_weight", d + ".z_bias").reshape(b, t, vh, vd)
+                b_gate = linear(n_masked, d + ".b_weight", d + ".b_bias")
+                a_gate = linear(n_masked, d + ".a_weight", d + ".a_bias")
+                if cache and cache.key_values[i] is not None:
+                    conv_state, rec_state = cache.key_values[i]
+                else:
+                    conv_state = mx.zeros((b, kernel_size - 1, conv_dim), dtype=qkv.dtype)
+                    rec_state = None
+                conv_in = mx.concatenate((conv_state, qkv), axis=1)
+                new_conv_state = conv_in[:, -(kernel_size - 1):, :] if kernel_size > 1 else conv_state
+                conv_w = p[d + ".conv_weight"].reshape(conv_dim, kernel_size)
+                conv_out = sum(conv_in[:, k_idx : k_idx + t, :] * conv_w[:, k_idx] for k_idx in range(kernel_size))
+                if d + ".conv_bias" in p:
+                    conv_out = conv_out + p[d + ".conv_bias"]
+                conv_f = conv_out.astype(mx.float32)
+                conv_act = (conv_f * mx.sigmoid(conv_f)).astype(qkv.dtype)
+                q_raw = conv_act[..., :k_total].reshape(b, t, kh, kd)
+                k_raw = conv_act[..., k_total : 2 * k_total].reshape(b, t, kh, kd)
+                v = observe(d + ".v", conv_act[..., 2 * k_total:]).reshape(b, t, vh, vd)
+                eps = dc.get("qk_l2_eps", 1e-6)
+                q_f, k_f = q_raw.astype(mx.float32), k_raw.astype(mx.float32)
+                q_norm = (q_f * mx.rsqrt(mx.sum(q_f * q_f, axis=-1, keepdims=True) + eps)) * (kd ** -0.5)
+                k_norm = k_f * mx.rsqrt(mx.sum(k_f * k_f, axis=-1, keepdims=True) + eps)
+                q = observe(d + ".q", q_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                k = observe(d + ".k", k_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                if d + ".carrier_basis" in p:
+                    basis = p[d + ".carrier_basis"].astype(mx.float32)
+                    q_rec = mx.einsum("bthd,hdr->bthr", q.astype(mx.float32), basis)
+                    k_rec = mx.einsum("bthd,hdr->bthr", k.astype(mx.float32), basis)
+                else:
+                    q_rec, k_rec = q.astype(mx.float32), k.astype(mx.float32)
+                if vh // kh > 1:
+                    q_rec = mx.repeat(q_rec, vh // kh, axis=2)
+                    k_rec = mx.repeat(k_rec, vh // kh, axis=2)
+                v_f = v.astype(mx.float32)
+                beta = mx.sigmoid(b_gate.astype(mx.float32))
+                a_val = a_gate.astype(mx.float32) + p[d + ".dt_bias"].astype(mx.float32)
+                softplus_a = mx.log1p(mx.exp(-mx.abs(a_val))) + mx.maximum(a_val, 0.0)
+                g_decay = mx.exp(-mx.exp(p[d + ".A_log"].astype(mx.float32)) * softplus_a)
+                carrier_dim = q_rec.shape[-1]
+                if rec_state is None:
+                    rec_state = mx.zeros((b, vh, vd, carrier_dim), dtype=mx.float32)
+                else:
+                    rec_state = rec_state.astype(mx.float32)
+                ys = []
+                for step in range(t):
+                    q_t = q_rec[:, step]
+                    k_t = k_rec[:, step]
+                    v_t = v_f[:, step]
+                    g_t = g_decay[:, step, :, None, None]
+                    beta_t = beta[:, step, :, None]
+                    rec_state = rec_state * g_t
+                    kv_mem = mx.sum(rec_state * k_t[:, :, None, :], axis=-1)
+                    delta_v = (v_t - kv_mem) * beta_t
+                    rec_state = rec_state + delta_v[:, :, :, None] * k_t[:, :, None, :]
+                    y_t = mx.sum(rec_state * q_t[:, :, None, :], axis=-1)
+                    ys.append(y_t)
+                rec_out = observe(d + ".recurrent_out", mx.stack(ys, axis=1).astype(qkv.dtype).reshape(b, t, v_total)).reshape(b, t, vh, vd)
+                new_kv.append((new_conv_state, rec_state))
+                normed_out = _rms(rec_out, p.get(d + ".norm_weight"), dc["norm"])
+                z_f = z.astype(mx.float32)
+                gated_out = (normed_out.astype(mx.float32) * (z_f * mx.sigmoid(z_f))).astype(qkv.dtype)
+                context = observe(d + ".context", gated_out.reshape(b, t, v_total))
+                outcoords = linear(context, d + ".output_encoder_weight") if d + ".output_encoder_weight" in p else context
+                raw = observe(d + ".output", linear(outcoords, d + ".output_decoder_weight", d + ".o_bias"))
+                delta = observe(d + ".delta", _rms(raw, p.get(d + ".output_norm_weight"), dc["output_norm"]))
+                x = state + mx.where(valid[..., None], delta, 0)
+                messages[d] = mx.where(valid[..., None], outcoords, 0)[..., None, :]
+            else:
+                a = f"attention.{i}"
+                ac = layer["attention"]
+                state = observe(a + ".input", x)
+                n = observe(a + ".normalized", _rms(state, p.get(a + ".input_norm_weight"), ac["input_norm"]))
+                coords = n @ p[a + ".input_basis"] if a + ".input_basis" in p else n
+                coords = mx.where(valid[..., None], coords, 0)
+                coords = coords + incoming(a, 1, coords.shape[-1], coords.dtype)[..., 0, :]
+                qh, kh, d = ac["query_heads"], ac["key_value_heads"], ac["head_dimension"]
+                use_gate = bool(ac.get("output_gate", False))
+                if use_gate:
+                    q_raw = linear(coords, a + ".q_weight", a + ".q_bias").reshape(b, t, qh, 2 * d)
+                    q_proj, attn_gate = q_raw[..., :d], q_raw[..., d:].reshape(b, t, qh * d)
+                else:
+                    q_proj = linear(coords, a + ".q_weight", a + ".q_bias").reshape(b, t, qh, d)
+                    attn_gate = None
+                q = q_proj.transpose(0, 2, 1, 3)
+                if ac["qk_norm"] is not None:
+                    q = _rms(q, p[a + ".q_norm_weight"], ac["qk_norm"])
+                k = linear(coords, a + ".k_weight", a + ".k_bias").reshape(b, t, kh, d).transpose(0, 2, 1, 3)
+                if ac["qk_norm"] is not None:
+                    k = _rms(k, p[a + ".k_norm_weight"], ac["qk_norm"])
+                v = linear(coords, a + ".v_weight", a + ".v_bias").reshape(b, t, kh, d).transpose(0, 2, 1, 3)
+                d_rot = int(ac.get("rotary_dimension", d))
+                inv = ac["theta"] ** (-mx.arange(0, d_rot, 2, dtype=mx.float32) / d_rot)
+                freqs = positions.astype(mx.float32)[..., None] * inv / ac["rope_factor"]
+                angles = mx.concatenate((freqs, freqs), axis=-1)[:, None, :, :]
+                cos, sin = mx.cos(angles).astype(q.dtype), mx.sin(angles).astype(q.dtype)
 
-            def rotary(y):
-                return y * cos + mx.concatenate((-y[..., d//2:], y[..., :d//2]), axis=-1) * sin
+                def rotary(y):
+                    y_rot, y_pass = y[..., :d_rot], y[..., d_rot:]
+                    y_rot = y_rot * cos + mx.concatenate((-y_rot[..., d_rot // 2:], y_rot[..., :d_rot // 2]), axis=-1) * sin
+                    return mx.concatenate((y_rot, y_pass), axis=-1) if d_rot < d else y_rot
 
-            q, k = rotary(q), rotary(k)
-            if cache:
-                k = mx.concatenate((cache.key_values[i][0], k), axis=2)
-                v = mx.concatenate((cache.key_values[i][1], v), axis=2)
-            new_kv.append((k, v))
-            kr, vr = mx.repeat(k, qh // kh, axis=1), mx.repeat(v, qh // kh, axis=1)
-            scores = (q @ kr.transpose(0, 1, 3, 2)) * ac["query_scale"]
-            if ac["logit_softcap"] is not None:
-                cap = ac["logit_softcap"]
-                scores = mx.tanh(scores / cap) * cap
-            offset = cache.length if cache else 0
-            physical_causal = mx.arange(key_valid.shape[1])[None, :] <= (mx.arange(t) + offset)[:, None]
-            allowed = valid[:, :, None] & key_valid[:, None, :] & physical_causal[None, :, :]
-            if ac["window_size"] is not None:
-                allowed = allowed & ((positions[:, :, None] - key_positions[:, None, :]) < ac["window_size"])
-            scores = mx.where(allowed[:, None, :, :], scores.astype(mx.float32), -3.4028234663852886e38)
-            probabilities = mx.softmax(scores, axis=-1).astype(q.dtype)
-            context = observe(a + ".context", (probabilities @ vr).transpose(0, 2, 1, 3).reshape(b, t, qh*d))
-            outcoords = linear(context, a + ".output_encoder_weight") if a + ".output_encoder_weight" in p else context
-            raw = observe(a + ".output", linear(outcoords, a + ".output_decoder_weight", a + ".o_bias"))
-            delta = observe(a + ".delta", _rms(raw, p.get(a + ".output_norm_weight"), ac["output_norm"]))
-            x = state + mx.where(valid[..., None], delta, 0)
-            messages[a] = mx.where(valid[..., None], outcoords, 0)[..., None, :]
+                q, k = rotary(q), rotary(k)
+                if cache:
+                    k = mx.concatenate((cache.key_values[i][0], k), axis=2)
+                    v = mx.concatenate((cache.key_values[i][1], v), axis=2)
+                new_kv.append((k, v))
+                kr, vr = mx.repeat(k, qh // kh, axis=1), mx.repeat(v, qh // kh, axis=1)
+                scores = (q @ kr.transpose(0, 1, 3, 2)) * ac["query_scale"]
+                if ac["logit_softcap"] is not None:
+                    cap = ac["logit_softcap"]
+                    scores = mx.tanh(scores / cap) * cap
+                offset = cache.length if cache else 0
+                physical_causal = mx.arange(key_valid.shape[1])[None, :] <= (mx.arange(t) + offset)[:, None]
+                allowed = valid[:, :, None] & key_valid[:, None, :] & physical_causal[None, :, :]
+                if ac["window_size"] is not None:
+                    allowed = allowed & ((positions[:, :, None] - key_positions[:, None, :]) < ac["window_size"])
+                scores = mx.where(allowed[:, None, :, :], scores.astype(mx.float32), -3.4028234663852886e38)
+                probabilities = mx.softmax(scores, axis=-1).astype(q.dtype)
+                raw_context = (probabilities @ vr).transpose(0, 2, 1, 3).reshape(b, t, qh * d)
+                if attn_gate is not None:
+                    raw_context = (raw_context.astype(mx.float32) * mx.sigmoid(attn_gate.astype(mx.float32))).astype(raw_context.dtype)
+                context = observe(a + ".context", raw_context)
+                outcoords = linear(context, a + ".output_encoder_weight") if a + ".output_encoder_weight" in p else context
+                raw = observe(a + ".output", linear(outcoords, a + ".output_decoder_weight", a + ".o_bias"))
+                delta = observe(a + ".delta", _rms(raw, p.get(a + ".output_norm_weight"), ac["output_norm"]))
+                x = state + mx.where(valid[..., None], delta, 0)
+                messages[a] = mx.where(valid[..., None], outcoords, 0)[..., None, :]
             state = observe(m + ".input", x)
             n = observe(m + ".normalized", _rms(state, p.get(m + ".input_norm_weight"), mc["input_norm"]))
             if m + ".chart_centers" in p:
@@ -422,9 +673,9 @@ class MLXQwen3:
         logits = None
         if return_logits:
             if "lexical.head_weight" in p:
-                logits = normalized @ p["lexical.head_weight"].T
+                logits = linear(normalized, "lexical.head_weight")
             elif "lexical.weight" in p:
-                logits = normalized @ p["lexical.weight"].T
+                logits = linear(normalized, "lexical.weight")
             else:
                 logits = (normalized @ p["lexical.basis"]) @ p["lexical.codebook"].T
             if self.config.get("final_logit_softcap") is not None:
