@@ -367,6 +367,10 @@ def _xray(args):
         and int(runtime.parameters[f"mlp.{i}.gate_weight"].shape[0])
         < int(runtime.layers[i].get("mlp", {}).get("full_intermediate_size", 0) or 0)
     )
+    clustered_mlp_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"mlp.{i}.cluster_scales" in runtime.parameters
+    )
     gated_dnet_layers = sorted(
         i for i in range(len(runtime.layers))
         if f"deltanet.{i}.energy_threshold" in runtime.parameters
@@ -386,6 +390,7 @@ def _xray(args):
         + [f"attention.{i}.context" for i in chart_attn_layers]
         + [f"attention.{i}.delta" for i in attn_delta_layers]
         + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
+        + [f"mlp.{i}.act" for i in clustered_mlp_layers]
     )
     arr_ids = mx.array([ids], dtype=mx.int32)
     out = runtime(arr_ids, capture=capture_sites or False)
@@ -459,6 +464,28 @@ def _xray(args):
             for pos, tok in enumerate(ids)
         ]
 
+    neuron_cluster_routing = {}
+    neuron_cluster_counts = {}
+    for i in clustered_mlp_layers:
+        if f"mlp.{i}.act" not in out.captures:
+            continue
+        act_val = np.asarray(out.captures[f"mlp.{i}.act"][0].astype(mx.float32))
+        scales = np.maximum(np.asarray(runtime.parameters[f"mlp.{i}.cluster_scales"].astype(mx.float32)), 1e-12)
+        c_cnt = int(scales.shape[0])
+        neuron_cluster_counts[f"mlp.{i}"] = c_cnt
+        act_clus = act_val.reshape(len(ids), c_cnt, -1)
+        e_clus = np.sum(act_clus ** 2, axis=-1) / scales[None, :]
+        memb = e_clus / np.maximum(np.sum(e_clus, axis=-1, keepdims=True), 1e-12)
+        neuron_cluster_routing[f"mlp.{i}"] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
     energy_gating = {}
     for i in gated_dnet_layers:
         n_val = out.captures[f"deltanet.{i}.normalized"][0].astype(mx.float32)
@@ -518,6 +545,8 @@ def _xray(args):
         ],
         "chart_routing": token_routing,
         "chart_counts": chart_counts,
+        "neuron_cluster_routing": neuron_cluster_routing,
+        "neuron_cluster_counts": neuron_cluster_counts,
         "energy_gating": energy_gating,
         "ablation_impacts": ablation_impacts,
     }
@@ -578,6 +607,34 @@ def _print_xray_panel(payload, A):
             for c in shown:
                 entry = routing[c][pos]
                 n_ch = max(counts.get(c, 1), 1)
+                uniform = 1.0 / n_ch
+                lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
+                glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]
+                color = getattr(A, _CHART_PALETTE[entry["dominant_chart"] % len(_CHART_PALETTE)])
+                cells.append(color(f"{entry['dominant_chart']}{glyph}".center(4)))
+            print("  " + A.gray(label) + "".join(cells))
+        if n_rows > cap or hidden:
+            note = f"  … {n_rows - cap} more tokens" if n_rows > cap else ""
+            note += f"{' · ' if note and hidden else '  … '}{len(hidden)} more layers" if hidden else ""
+            print(A.dim(note))
+
+    nc_routing = payload.get("neuron_cluster_routing") or {}
+    nc_counts = payload.get("neuron_cluster_counts") or {}
+    if nc_routing:
+        print(_hrule(A, "neuron clusters", style=A.magenta, tail="░▒▓█ SwiGLU cluster firing lift"))
+        cols = sorted(nc_routing, key=lambda k: int(k.split(".")[-1]))
+        max_cols = 12
+        shown, hidden = cols[:max_cols], cols[max_cols:]
+        header = "  " + " " * 16 + "".join(("m" + c.split(".")[-1]).center(4) for c in shown)
+        print(A.gray(header))
+        n_rows = len(nc_routing[shown[0]])
+        cap = 40
+        for pos in range(min(n_rows, cap)):
+            label = _trunc(repr(nc_routing[shown[0]][pos]["token"]), 15).ljust(16)
+            cells = []
+            for c in shown:
+                entry = nc_routing[c][pos]
+                n_ch = max(nc_counts.get(c, 1), 1)
                 uniform = 1.0 / n_ch
                 lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
                 glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]

@@ -2117,22 +2117,26 @@ def fit_bottleneck_swiglu(
     captures: Mapping[str, Any],
     *,
     intermediate_rank: int,
+    cluster_count: int = 4,
     fisher_diagonal: Mapping[str, Any] | None = None,
     row_weights: Any = None,
     relative_ridge: float = 0.25,
 ) -> MLXFitResult:
-    """Compress a SwiGLU MLP to ``intermediate_rank`` channels via Pullback-Fisher ranking.
+    """Compress a SwiGLU MLP to ``intermediate_rank`` channels and partition into co-activating neuron clusters.
 
     1. Scores each intermediate neuron j by its Pullback-Fisher energy:
            I_j = E_w[(silu(gate_j) * up_j)^2] * sum_i F_{mlp.l.output, i} * W_{down, i, j}^2
-    2. Slices ``gate_weight`` and ``up_weight`` (including 4-bit ``.scales`` and ``.biases``
-       when quantized) bit-exactly along row axis ``top_sorted`` with zero requantization loss.
-    3. Refits ``down_weight`` via dual anchored ridge around the kept columns ``W_0`` so
+    2. Partitions the ``intermediate_rank`` surviving neurons into ``cluster_count`` balanced,
+       contiguous co-activating neuron clusters via spectral SVD on standardized log firing energy.
+    3. Slices ``gate_weight`` and ``up_weight`` (including 4-bit ``.scales`` and ``.biases``
+       when quantized) bit-exactly in clustered order with zero requantization loss.
+    4. Refits ``down_weight`` via dual anchored ridge around the kept columns ``W_0`` so
        surviving neurons absorb the dropped residual along the calibration subspace while
        preserving exact original columns ``W_0`` in all orthogonal directions.
     """
     mx = _mx()
     ridge = _positive(relative_ridge, "relative_ridge")
+    _rank(cluster_count, 1024, "cluster_count")
     if not 0 <= layer_index < len(runtime.layers):
         raise ValueError("layer_index out of range")
     prefix = f"mlp.{layer_index}."
@@ -2152,6 +2156,7 @@ def fit_bottleneck_swiglu(
             return mx.dequantize(p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
                                  group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
     else:
+        q_gs = 1
         deployment_dtype = p[prefix + "gate_weight"].dtype
 
         def dense(key):
@@ -2184,7 +2189,31 @@ def fit_bottleneck_swiglu(
     importance = act_sq * col_fisher
     top_sorted = np.sort(np.argsort(-importance)[:intermediate_rank])
     retained_fraction = float(np.sum(importance[top_sorted]) / max(float(np.sum(importance)), 1e-12))
-    top_mx = mx.array(top_sorted, dtype=mx.int32)
+
+    eff_clusters = (
+        cluster_count
+        if (cluster_count > 1 and intermediate_rank % (cluster_count * q_gs) == 0 and x.shape[0] >= cluster_count)
+        else 1
+    )
+    if eff_clusters > 1:
+        clus_size = intermediate_rank // eff_clusters
+        e_kept = (act_np[:, top_sorted] ** 2) * col_fisher[None, top_sorted]
+        e_log = np.log1p(e_kept.astype(np.float64))
+        e_std = (e_log - np.mean(e_log, axis=0, keepdims=True)) / (np.std(e_log, axis=0, keepdims=True) + 1e-6)
+        _, s_v, vt = np.linalg.svd(e_std, full_matrices=False)
+        scores = vt[:eff_clusters, :].T * s_v[:eff_clusters]
+        clusters = [[] for _ in range(eff_clusters)]
+        pref = np.argsort(-scores, axis=1)
+        margin = np.max(scores, axis=1) - np.partition(scores, -2, axis=1)[:, -2]
+        for ni in np.argsort(-margin):
+            for c in pref[ni]:
+                if len(clusters[c]) < clus_size:
+                    clusters[c].append(top_sorted[ni])
+                    break
+        selected_order = np.concatenate([np.sort(np.array(c, dtype=np.int32)) for c in clusters])
+    else:
+        selected_order = top_sorted
+    top_mx = mx.array(selected_order, dtype=mx.int32)
 
     updates = {}
     for wname in ("gate_weight", "up_weight"):
@@ -2194,12 +2223,12 @@ def fit_bottleneck_swiglu(
             if prefix + wname + ".biases" in p:
                 updates[prefix + wname + ".biases"] = p[prefix + wname + ".biases"][top_mx]
 
-    dw_kept = dw_np[:, top_sorted]
+    dw_kept = dw_np[:, selected_order]
     if intermediate_rank == full_inter:
         W_refit = dw_kept
     else:
         sqrt_w = np.sqrt(w_np.astype(np.float64))[:, None]
-        A = act_np[:, top_sorted].astype(np.float64) * sqrt_w
+        A = act_np[:, selected_order].astype(np.float64) * sqrt_w
         Y = np.asarray(y, dtype=np.float64) * sqrt_w
         W0 = dw_kept.T.astype(np.float64)
         R = Y - A @ W0
@@ -2207,6 +2236,13 @@ def fit_bottleneck_swiglu(
         lam = ridge * max(float(np.trace(G_dual)) / A.shape[0], 1e-12)
         alpha = np.linalg.solve(G_dual + lam * np.eye(A.shape[0]), R)
         W_refit = (W0 + A.T @ alpha).T.astype(np.float32)
+
+    if eff_clusters > 1:
+        act_ord = act_np[:, selected_order].reshape(act_np.shape[0], eff_clusters, -1)
+        clus_energy = np.mean(np.sum((act_ord ** 2) * w_np[:, None, None], axis=-1), axis=0)
+        updates[prefix + "cluster_scales"] = mx.array(
+            np.maximum(clus_energy, 1e-8).astype(np.float32), dtype=deployment_dtype
+        )
 
     if quantized:
         wq, sq, bq = mx.quantize(mx.array(W_refit, dtype=deployment_dtype),
@@ -2220,17 +2256,25 @@ def fit_bottleneck_swiglu(
         w_dep = updates[prefix + "down_weight"].astype(mx.float32)
     mx.eval(updates)
 
-    y_pred = mx.array(act_np[:, top_sorted]) @ w_dep.T
+    y_pred = mx.array(act_np[:, selected_order]) @ w_dep.T
     err = mx.sqrt(mx.sum((y_pred - y) ** 2) / mx.maximum(mx.sum(y ** 2), 1e-12))
     fitted = runtime.with_parameters(
         updates,
-        layer_overrides={layer_index: {"mlp": {"intermediate_size": int(intermediate_rank)}}},
+        layer_overrides={
+            layer_index: {
+                "mlp": {
+                    "intermediate_size": int(intermediate_rank),
+                    "cluster_count": int(eff_clusters),
+                }
+            }
+        },
     )
     return MLXFitResult(fitted, updates, {
         "kind": "fisher_weighted_bottleneck_swiglu",
         "capture_rows": int(x.shape[0]),
         "full_intermediate_size": full_inter,
         "intermediate_rank": int(intermediate_rank),
+        "cluster_count": int(eff_clusters),
         "compression_ratio": float(intermediate_rank / full_inter),
         "retained_fisher_importance_fraction": retained_fraction,
         "relative_error": float(err.item()),

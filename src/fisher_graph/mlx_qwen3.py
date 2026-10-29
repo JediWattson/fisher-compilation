@@ -997,7 +997,14 @@ class MLXQwen3:
                 raw = linear(modal, m + ".mode_decoder_weight") if m + ".mode_decoder_weight" in p else modal
             else:
                 gate = linear(n, m + ".gate_weight")
-                raw = linear((gate * mx.sigmoid(gate)) * linear(n, m + ".up_weight"), m + ".down_weight")
+                act = observe(m + ".act", (gate * mx.sigmoid(gate)) * linear(n, m + ".up_weight"))
+                c_cnt = int(mc.get("cluster_count", 1))
+                if muted_chart_set and c_cnt > 1:
+                    c_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(c_cnt)]
+                    if any(v == 0.0 for v in c_keep):
+                        c_mask = mx.array(c_keep, dtype=act.dtype)[:, None]
+                        act = (act.reshape(b, t, c_cnt, -1) * c_mask).reshape(b, t, -1)
+                raw = linear(act, m + ".down_weight")
                 packet = None
             raw = observe(m + ".output", raw)
             delta = observe(m + ".delta", fast_rms(raw, m + ".output_norm_weight", mc["output_norm"]))
