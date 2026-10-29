@@ -792,6 +792,7 @@ def fit_coalesced_deltanet(
     *,
     transport_source_layer: int | None = None,
     coalesce_mlp: bool = False,
+    energy_skip_quantile: float | None = None,
     transport_rank: int = 64,
     chart_count: int = 4,
     chart_rank: int = 16,
@@ -914,15 +915,24 @@ def fit_coalesced_deltanet(
         ("chart_mode_decoders", decoded),
     ):
         updates[prefix + k_name] = val.astype(deployment_dtype)
+    if energy_skip_quantile is not None:
+        q_val = _positive(energy_skip_quantile, "energy_skip_quantile")
+        if q_val > 1.0:
+            raise ValueError("energy_skip_quantile must lie in (0, 1]")
+        neg_e = -0.5 * distance / (scales[None, :] ** 2 * temperature)
+        free_e = np.asarray(-mx.logsumexp(neg_e, axis=-1), dtype=np.float64)
+        thr = float(np.quantile(free_e, q_val))
+        updates[prefix + "energy_threshold"] = mx.array(thr, dtype=mx.float32)
+        remove = ()
+    else:
+        remove = [
+            k for k in p
+            if k.startswith(prefix) and k not in {prefix + "input_norm_weight", prefix + "output_norm_weight"}
+        ]
+        if coalesce_mlp:
+            mlp_prefix = f"mlp.{layer_index}."
+            remove.extend(k for k in p if k.startswith(mlp_prefix))
     mx.eval(updates)
-
-    remove = [
-        k for k in p
-        if k.startswith(prefix) and k not in {prefix + "input_norm_weight", prefix + "output_norm_weight"}
-    ]
-    if coalesce_mlp:
-        mlp_prefix = f"mlp.{layer_index}."
-        remove.extend(k for k in p if k.startswith(mlp_prefix))
     override = {"temperature": temperature, "coalesced_mlp": bool(coalesce_mlp)}
     if transport_source_layer is not None:
         override["transport_source_layer"] = int(transport_source_layer)
@@ -939,6 +949,7 @@ def fit_coalesced_deltanet(
         "capture_rows": n,
         "transport_source_layer": transport_source_layer,
         "coalesce_mlp": bool(coalesce_mlp),
+        "energy_skip_quantile": energy_skip_quantile,
         "transport_rank": transport_rank,
         "chart_count": chart_count,
         "chart_rank": chart_rank,

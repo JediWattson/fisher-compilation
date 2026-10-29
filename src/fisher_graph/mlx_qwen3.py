@@ -177,6 +177,10 @@ class MLXQwen3:
         if not self.layers:
             raise ValueError("Qwen3 requires at least one decoder layer")
         self._fast_cache: dict[str, Any] = {}
+        self._routing_stats: dict[int, list[int]] = {}
+
+    def reset_routing_stats(self):
+        self._routing_stats = {}
 
     def with_parameters(self, updates, *, remove=(), layer_overrides=None):
         parameters = {k: v for k, v in self.parameters.items() if k not in remove}
@@ -625,10 +629,32 @@ class MLXQwen3:
                 state = observe(d + ".input", x)
                 n = observe(d + ".normalized", fast_rms(state, d + ".input_norm_weight", dc["input_norm"]))
                 n_masked = mask_valid(n)
-                if d + ".qkv_weight" not in p:
-                    new_kv.append(None)
+                take_supernode = d + ".qkv_weight" not in p
+                d_memb_cached = None
+                d_disp_cached = None
+                if not take_supernode and d + ".energy_threshold" in p and not capture and not perturbations:
+                    d_centers = p[d + ".chart_centers"]
+                    d_disp_cached = n_masked[..., None, :] - d_centers
+                    d_scales = p[d + ".chart_distance_scales"]
+                    temp = dc.get("temperature", 1.0)
+                    neg_energy = -0.5 * mx.sum(d_disp_cached ** 2, axis=-1) / (d_scales ** 2 * temp)
+                    free_energy = -mx.logsumexp(neg_energy, axis=-1)
+                    thr = float(p[d + ".energy_threshold"].item())
+                    mean_fe = float(mx.mean(free_energy).item())
+                    take_supernode = mean_fe <= thr
+                    counts = self._routing_stats.setdefault(i, [0, 0])
+                    if take_supernode:
+                        counts[0] += int(b * t)
+                        d_memb_cached = mx.softmax(neg_energy, axis=-1)
+                    else:
+                        counts[1] += int(b * t)
+                if take_supernode:
+                    if cache and cache.key_values[i] is not None:
+                        new_kv.append(cache.key_values[i])
+                    else:
+                        new_kv.append(None)
                     z_parts = []
-                    if d + ".transport_context_basis" in p:
+                    if d + ".transport_context_basis" in p and int(dc.get("transport_source_layer", -1)) in deltanet_contexts:
                         src_ctx = deltanet_contexts[int(dc["transport_source_layer"])]
                         z_parts.append(src_ctx @ p[d + ".transport_context_basis"].astype(src_ctx.dtype))
                     if d + ".transport_input_basis" in p:
@@ -637,14 +663,18 @@ class MLXQwen3:
                         z_comb = mx.concatenate(z_parts, axis=-1)
                         raw = z_comb @ p[d + ".transport_decoder"].astype(z_comb.dtype)
                     elif len(z_parts) == 1:
-                        raw = z_parts[0] @ p[d + ".transport_decoder"].astype(z_parts[0].dtype)
+                        t_dec = p[d + ".transport_decoder"]
+                        raw = z_parts[0] @ t_dec[-z_parts[0].shape[-1]:].astype(z_parts[0].dtype)
                     else:
                         raw = mx.zeros_like(n_masked)
                     if d + ".chart_centers" in p:
                         d_centers = p[d + ".chart_centers"]
-                        d_disp = n_masked[..., None, :] - d_centers
-                        d_scales = p[d + ".chart_distance_scales"]
-                        d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
+                        d_disp = d_disp_cached if d_disp_cached is not None else (n_masked[..., None, :] - d_centers)
+                        if d_memb_cached is not None:
+                            d_memb = d_memb_cached
+                        else:
+                            d_scales = p[d + ".chart_distance_scales"]
+                            d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
                         if muted_chart_set:
                             d_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(d_centers.shape[0])]
                             if any(v == 0.0 for v in d_keep):

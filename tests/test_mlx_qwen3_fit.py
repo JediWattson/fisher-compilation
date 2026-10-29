@@ -384,3 +384,13 @@ def test_qwen3_5_play1_reduced_deltanet_and_play2_carrier_basis(qwen3_5, mx):
     assert out_coal_pre.cache.key_values[0] is None
     out_coal_dec = coal_d.runtime.decode(mx.array([[2], [3]], dtype=mx.int32), out_coal_pre.cache)
     assert np.isfinite(np.asarray(out_coal_dec.logits)).all()
+
+    dyn_d = fit_coalesced_deltanet(
+        runtime, 0, coal_rows, coalesce_mlp=True, energy_skip_quantile=0.5,
+        transport_rank=4, chart_count=2, chart_rank=2, solver="numpy_float64",
+    )
+    assert "deltanet.0.qkv_weight" in dyn_d.runtime.parameters
+    assert "deltanet.0.energy_threshold" in dyn_d.runtime.parameters
+    dyn_d.runtime.reset_routing_stats()
+    _ = dyn_d.runtime.prefill(data[0]["input_ids"][:1])
+    assert 0 in dyn_d.runtime._routing_stats

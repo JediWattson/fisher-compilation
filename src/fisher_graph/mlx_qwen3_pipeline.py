@@ -519,6 +519,8 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
         del w_out
         mx.clear_cache()
         runtime._warmed = True
+    if hasattr(runtime, "reset_routing_stats"):
+        runtime.reset_routing_stats()
 
     start = time.perf_counter()
     output = runtime.prefill(
@@ -624,27 +626,42 @@ def _mac_stats(runtime, context_len):
 
     total = lin("lexical.head_weight")
     state_bytes = 0
+    r_stats = getattr(runtime, "_routing_stats", {}) or {}
     for i, layer in enumerate(layers):
         m = f"mlp.{i}."
-        total += lin(m + "gate_weight") + lin(m + "up_weight") + lin(m + "down_weight")
+        mlp_macs = lin(m + "gate_weight") + lin(m + "up_weight") + lin(m + "down_weight")
         if "deltanet" in layer:
             d, dc = f"deltanet.{i}.", layer["deltanet"]
-            if d + "qkv_weight" not in p:
-                total += (basis(d + "transport_context_basis") + basis(d + "transport_input_basis")
+            super_macs = (basis(d + "transport_context_basis") + basis(d + "transport_input_basis")
                           + basis(d + "transport_decoder") + basis(d + "chart_bases")
                           + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
+            if d + "qkv_weight" not in p:
+                total += super_macs + mlp_macs
             else:
                 kh, vh = dc["key_heads"], dc["value_heads"]
                 kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
                 rank = dc.get("carrier_rank", kd)
-                total += (lin(d + "qkv_weight") + lin(d + "z_weight") + lin(d + "a_weight")
-                          + lin(d + "b_weight") + out_pair(d) + basis(d + "input_basis")
-                          + basis(d + "value_basis") + basis(d + "chart_bases")
-                          + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
                 conv_dim = 2 * kh * kd + vh * vd
-                total += conv_dim * dc["conv_kernel_size"] + 5 * vh * vd * rank
+                full_dnet_macs = (
+                    lin(d + "qkv_weight") + lin(d + "z_weight") + lin(d + "a_weight")
+                    + lin(d + "b_weight") + out_pair(d) + basis(d + "input_basis")
+                    + basis(d + "value_basis") + conv_dim * dc["conv_kernel_size"] + 5 * vh * vd * rank
+                )
+                if d + "energy_threshold" not in p and d + "chart_centers" in p:
+                    full_dnet_macs += (basis(d + "chart_bases") + basis(d + "local_generator_encoders")
+                                       + basis(d + "chart_mode_decoders"))
+                counts = r_stats.get(i)
+                if d + "energy_threshold" in p and counts and (counts[0] + counts[1]) > 0:
+                    fast_frac = counts[0] / (counts[0] + counts[1])
+                    gate_probe_macs = basis(d + "chart_centers")
+                    fast_path_macs = gate_probe_macs + super_macs + (0 if dc.get("coalesced_mlp", False) else mlp_macs)
+                    full_path_macs = gate_probe_macs + full_dnet_macs + mlp_macs
+                    total += int(round(fast_frac * fast_path_macs + (1.0 - fast_frac) * full_path_macs))
+                else:
+                    total += full_dnet_macs + mlp_macs
                 state_bytes += ((dc["conv_kernel_size"] - 1) * conv_dim + vh * vd * rank) * 4
         else:
+            total += mlp_macs
             a, ac = f"attention.{i}.", layer["attention"]
             kh, d_head = ac["key_value_heads"], ac["head_dimension"]
             total += (lin(a + "q_weight") + lin(a + "k_weight") + lin(a + "v_weight")
@@ -785,7 +802,13 @@ def _interactive(args):
             top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
             print(f"[top-5]    {top_str}")
             mac_tok, state_b = _mac_stats(runtime, len(ids) + len(gen_ids))
-            print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
+            r_stats = getattr(runtime, "_routing_stats", {}) or {}
+            if r_stats:
+                f_tok = sum(c[0] for c in r_stats.values())
+                tot_tok = sum(c[0] + c[1] for c in r_stats.values())
+                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token (dynamic chart skip {100*f_tok/max(tot_tok,1):.0f}% across {len(r_stats)} gated layers) | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
+            else:
+                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
         elif not stream_on:
             print(f"\n{text}")
         if reference is not None:
@@ -868,7 +891,13 @@ def _interactive(args):
             top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
             print(f"[top-5]    {top_str}")
             mac_tok, state_b = _mac_stats(runtime, chat_ctx_tokens)
-            print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
+            r_stats = getattr(runtime, "_routing_stats", {}) or {}
+            if r_stats:
+                f_tok = sum(c[0] for c in r_stats.values())
+                tot_tok = sum(c[0] + c[1] for c in r_stats.values())
+                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token (dynamic chart skip {100*f_tok/max(tot_tok,1):.0f}% across {len(r_stats)} gated layers) | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
+            else:
+                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
         elif not stream_on:
             print(f"\n{text_resp}")
         if xray_on:
