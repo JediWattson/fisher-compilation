@@ -351,9 +351,23 @@ def _xray(args):
     chart_deltanet_layers = sorted(
         i for i in range(len(runtime.layers)) if f"deltanet.{i}.chart_centers" in runtime.parameters
     )
+    chart_attn_layers = sorted(
+        i for i in range(len(runtime.layers)) if f"attention.{i}.chart_centers" in runtime.parameters
+    )
     reduced_attn_layers = sorted(
         i for i in range(len(runtime.layers)) if f"attention.{i}.input_basis" in runtime.parameters
     )
+    value_attn_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"attention.{i}.value_basis" in runtime.parameters and i not in chart_attn_layers
+    )
+    bottleneck_mlp_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"mlp.{i}.gate_weight" in runtime.parameters
+        and int(runtime.parameters[f"mlp.{i}.gate_weight"].shape[0])
+        < int(runtime.layers[i].get("mlp", {}).get("full_intermediate_size", 0) or 0)
+    )
+    attn_delta_layers = sorted(set(reduced_attn_layers) | set(chart_attn_layers) | set(value_attn_layers))
     dnet_route_site = {
         i: (f"deltanet.{i}.context" if f"deltanet.{i}.qkv_weight" in runtime.parameters else f"deltanet.{i}.normalized")
         for i in chart_deltanet_layers
@@ -363,7 +377,9 @@ def _xray(args):
         + [f"mlp.{i}.delta" for i in chart_layers]
         + [dnet_route_site[i] for i in chart_deltanet_layers]
         + [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
-        + [f"attention.{i}.delta" for i in reduced_attn_layers]
+        + [f"attention.{i}.context" for i in chart_attn_layers]
+        + [f"attention.{i}.delta" for i in attn_delta_layers]
+        + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
     )
     arr_ids = mx.array([ids], dtype=mx.int32)
     out = runtime(arr_ids, capture=capture_sites or False)
@@ -417,31 +433,34 @@ def _xray(args):
             for pos, tok in enumerate(ids)
         ]
 
+    for i in chart_attn_layers:
+        c_val = out.captures[f"attention.{i}.context"][0].astype(mx.float32)
+        centers = runtime.parameters[f"attention.{i}.chart_centers"].astype(mx.float32)
+        scales = runtime.parameters[f"attention.{i}.chart_distance_scales"].astype(mx.float32)
+        chart_counts[f"attention.{i}"] = int(centers.shape[0])
+        temp = float(runtime.layers[i]["attention"].get("temperature", 1.0))
+        disp = c_val[:, None, :] - centers[None, :, :]
+        memb = np.asarray(
+            mx.softmax(-0.5 * mx.sum(disp ** 2, axis=-1) / (scales[None, :] ** 2 * temp), axis=-1)
+        )
+        token_routing[f"attention.{i}"] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
     ablation_impacts = []
-    for i in chart_deltanet_layers:
-        site = f"deltanet.{i}.delta"
-        ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
-        mx.eval(ablated)
-        ab_np = np.asarray(ablated)
-        ablation_impacts.append({
-            "site": site,
-            "winning_logit_push": float(logits_np[win_id] - ab_np[win_id]),
-            "ablated_top1_token_id": int(np.argmax(ab_np)),
-            "ablated_top1_token": tokenizer.decode([int(np.argmax(ab_np))]),
-        })
-    for i in reduced_attn_layers:
-        site = f"attention.{i}.delta"
-        ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
-        mx.eval(ablated)
-        ab_np = np.asarray(ablated)
-        ablation_impacts.append({
-            "site": site,
-            "winning_logit_push": float(logits_np[win_id] - ab_np[win_id]),
-            "ablated_top1_token_id": int(np.argmax(ab_np)),
-            "ablated_top1_token": tokenizer.decode([int(np.argmax(ab_np))]),
-        })
-    for i in chart_layers:
-        site = f"mlp.{i}.delta"
+    ablation_sites = (
+        [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
+        + [f"attention.{i}.delta" for i in attn_delta_layers]
+        + [f"mlp.{i}.delta" for i in chart_layers]
+        + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
+    )
+    for site in ablation_sites:
         ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
         mx.eval(ablated)
         ab_np = np.asarray(ablated)
@@ -458,6 +477,9 @@ def _xray(args):
         "artifact": str(Path(args.artifact).expanduser().resolve()),
         "prompt_tokens": len(ids),
         "reduced_attention_layers": reduced_attn_layers,
+        "chart_attention_layers": chart_attn_layers,
+        "value_crushed_attention_layers": value_attn_layers,
+        "bottleneck_mlp_layers": bottleneck_mlp_layers,
         "chart_mlp_layers": chart_layers,
         "top5_predictions": [
             {
@@ -516,7 +538,8 @@ def _print_xray_panel(payload, A):
         max_cols = 12
         shown, hidden = cols[:max_cols], cols[max_cols:]
         header = "  " + " " * 18 + "".join(
-            (("d" if c.startswith("deltanet.") else "m") + c.split(".")[-1]).center(4)
+            (("d" if c.startswith("deltanet.") else "a" if c.startswith("attention.") else "m")
+             + c.split(".")[-1]).center(4)
             for c in shown
         )
         print(A.gray(header))
