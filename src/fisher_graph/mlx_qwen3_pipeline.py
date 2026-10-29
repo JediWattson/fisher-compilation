@@ -390,6 +390,16 @@ def _xray(args):
         i: (f"deltanet.{i}.context" if f"deltanet.{i}.qkv_weight" in runtime.parameters else f"deltanet.{i}.normalized")
         for i in chart_deltanet_layers
     }
+    whole_model_clusters = bool(head_cluster_dnet_layers or head_cluster_attn_layers)
+    all_delta_sites = (
+        [
+            f"deltanet.{i}.delta" if "deltanet" in runtime.layers[i] else f"attention.{i}.delta"
+            for i in range(len(runtime.layers))
+        ]
+        + [f"mlp.{i}.delta" for i in range(len(runtime.layers))]
+        if whole_model_clusters
+        else []
+    )
     capture_sites = sorted({
         *(f"mlp.{i}.normalized" for i in chart_layers),
         *(f"mlp.{i}.delta" for i in chart_layers),
@@ -402,6 +412,8 @@ def _xray(args):
         *(f"mlp.{i}.act" for i in clustered_mlp_layers),
         *(f"deltanet.{i}.context" for i in head_cluster_dnet_layers),
         *(f"attention.{i}.context" for i in head_cluster_attn_layers),
+        *all_delta_sites,
+        *(("terminal",) if whole_model_clusters else ()),
     })
     arr_ids = mx.array([ids], dtype=mx.int32)
     out = runtime(arr_ids, capture=capture_sites or False)
@@ -569,12 +581,50 @@ def _xray(args):
         }
 
     ablation_impacts = []
-    ablation_sites = (
-        [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
-        + [f"attention.{i}.delta" for i in attn_delta_layers]
-        + [f"mlp.{i}.delta" for i in chart_layers]
-        + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
-    )
+    if whole_model_clusters:
+        p = runtime.parameters
+        head_key = "lexical.head_weight" if "lexical.head_weight" in p else "lexical.weight"
+        quant = runtime.config.get("quantization") or {}
+        if head_key + ".scales" in p:
+            u_win = mx.dequantize(
+                p[head_key][win_id : win_id + 1],
+                scales=p[head_key + ".scales"][win_id : win_id + 1],
+                biases=p[head_key + ".biases"][win_id : win_id + 1] if head_key + ".biases" in p else None,
+                group_size=int(quant.get("group_size", 64)),
+                bits=int(quant.get("bits", 4)),
+                mode=str(quant.get("mode", "affine")),
+            )[0].astype(mx.float32)
+        else:
+            u_win = p[head_key][win_id].astype(mx.float32)
+        t_spec = runtime.config["terminal_norm"]
+        t_gain = p["terminal.weight"].astype(mx.float32)
+        if t_spec.get("scale_parameterization") == "unit_offset":
+            t_gain = t_gain + 1.0
+        term_last = out.captures["terminal"][0, -1].astype(mx.float32)
+        inv_rms = float(mx.rsqrt(mx.mean(term_last * term_last) + float(t_spec["epsilon"])).item())
+        g_dir = np.asarray(u_win * t_gain) * inv_rms
+        bands = ([], [], [])
+        n_layers = len(runtime.layers)
+        b1, b2 = max(1, n_layers // 3), max(2, (2 * n_layers) // 3)
+        for s_name in all_delta_sites:
+            if s_name in out.captures:
+                d_vec = np.asarray(out.captures[s_name][0, -1].astype(mx.float32))
+                d_norm = float(np.linalg.norm(d_vec)) + 1e-6
+                l_idx = int(s_name.split(".")[1])
+                b_idx = 0 if l_idx < b1 else (1 if l_idx < b2 else 2)
+                bands[b_idx].append((abs(float(np.dot(d_vec, g_dir))) / (d_norm ** 0.5), s_name))
+        top_sites = {s for band in bands for _, s in sorted(band, reverse=True)[:6]}
+        ablation_sites = sorted(
+            top_sites,
+            key=lambda s: (int(s.split(".")[1]), 0 if not s.startswith("mlp.") else 1),
+        )
+    else:
+        ablation_sites = (
+            [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
+            + [f"attention.{i}.delta" for i in attn_delta_layers]
+            + [f"mlp.{i}.delta" for i in chart_layers]
+            + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
+        )
     for site in ablation_sites:
         ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
         mx.eval(ablated)
