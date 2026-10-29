@@ -12,10 +12,13 @@ from fisher_graph.mlx_qwen3_fit import (
     allocate_waterfill_attention_ranks,
     allocate_waterfill_deltanet_carrier_ranks,
     allocate_waterfill_joint_ranks,
+    allocate_waterfill_mlp_intermediates,
     anchored_ridge,
     capture_empirical_token_fisher,
     capture_parameter_fisher,
     capture_runtime_rows,
+    fit_bottleneck_swiglu,
+    fit_chart_attention,
     fit_chart_deltanet,
     fit_chart_mlp,
     fit_coalesced_deltanet,
@@ -394,3 +397,28 @@ def test_qwen3_5_play1_reduced_deltanet_and_play2_carrier_basis(qwen3_5, mx):
     dyn_d.runtime.reset_routing_stats()
     _ = dyn_d.runtime.prefill(data[0]["input_ids"][:1])
     assert 0 in dyn_d.runtime._routing_stats
+
+    attn_ctx = capture_runtime_rows(runtime, data, ["attention.1.context"])
+    chart_a = fit_chart_attention(
+        runtime, 1, attn_ctx, value_rank=2, chart_count=2, chart_rank=2, solver="numpy_float64",
+    )
+    assert chart_a.runtime.parameters["attention.1.value_basis"].shape == (4, 8, 2)
+    assert chart_a.runtime.parameters["attention.1.output_decoder_weight"].shape == (16, 8)
+    assert chart_a.report["chart_relative_error"] <= chart_a.report["base_relative_error"] + 1e-5
+    out_ca = chart_a.runtime.prefill(**data[0])
+    out_ca_dec = chart_a.runtime.decode(mx.array([[2], [3]], dtype=mx.int32), out_ca.cache)
+    assert np.isfinite(np.asarray(out_ca_dec.logits)).all()
+
+    mlp_rows = capture_runtime_rows(runtime, data, ["mlp.0.normalized", "mlp.0.output", "mlp.1.normalized", "mlp.1.output"])
+    f_mlp = capture_empirical_token_fisher(runtime, data, ["mlp.0.output", "mlp.1.output"], max_tokens=4)
+    wf_mlp = allocate_waterfill_mlp_intermediates(
+        runtime, data, target_compression_ratio=0.75, rank_step=8, min_rank=16,
+        captures=mlp_rows, fisher_diagonal=f_mlp["diagonal"],
+    )
+    assert wf_mlp["achieved_scalars_removed"] >= wf_mlp["target_scalars_removed"]
+    bn_mlp = fit_bottleneck_swiglu(
+        runtime, 0, mlp_rows, intermediate_rank=16, fisher_diagonal=f_mlp["diagonal"],
+    )
+    assert bn_mlp.runtime.parameters["mlp.0.gate_weight"].shape == (16, 16)
+    assert bn_mlp.runtime.parameters["mlp.0.down_weight"].shape == (16, 16)
+    assert np.isfinite(np.asarray(bn_mlp.runtime(**data[0]).logits)).all()

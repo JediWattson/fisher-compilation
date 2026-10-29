@@ -829,7 +829,15 @@ class MLXQwen3:
                     context = observe(d + ".context", gated_out.reshape(b, t, v_total))
                     deltanet_contexts[i] = context
                     if d + ".value_basis" in p:
-                        v_basis = p[d + ".value_basis"].astype(gated_out.dtype)
+                        if fc is not None:
+                            ck_vb = ("value_basis", d, gated_out.dtype)
+                            v_basis = fc.get(ck_vb)
+                            if v_basis is None:
+                                v_basis = mx.contiguous(p[d + ".value_basis"].astype(gated_out.dtype))
+                                mx.eval(v_basis)
+                                fc[ck_vb] = v_basis
+                        else:
+                            v_basis = p[d + ".value_basis"].astype(gated_out.dtype)
                         if b == 1 and t == 1:
                             r_v = v_basis.shape[-1]
                             outcoords = (gated_out.reshape(vh, 1, vd) @ v_basis).reshape(1, 1, vh * r_v)
@@ -927,8 +935,43 @@ class MLXQwen3:
                 if attn_gate is not None:
                     raw_context = (raw_context.astype(mx.float32) * mx.sigmoid(attn_gate.astype(mx.float32))).astype(raw_context.dtype)
                 context = observe(a + ".context", raw_context)
-                outcoords = linear(context, a + ".output_encoder_weight") if a + ".output_encoder_weight" in p else context
-                raw = observe(a + ".output", linear(outcoords, a + ".output_decoder_weight", a + ".o_bias"))
+                if a + ".value_basis" in p:
+                    if fc is not None:
+                        ck_avb = ("value_basis", a, context.dtype)
+                        av_basis = fc.get(ck_avb)
+                        if av_basis is None:
+                            av_basis = mx.contiguous(p[a + ".value_basis"].astype(context.dtype))
+                            mx.eval(av_basis)
+                            fc[ck_avb] = av_basis
+                    else:
+                        av_basis = p[a + ".value_basis"].astype(context.dtype)
+                    if b == 1 and t == 1:
+                        r_v = av_basis.shape[-1]
+                        outcoords = (context.reshape(qh, 1, d) @ av_basis).reshape(1, 1, qh * r_v)
+                    else:
+                        outcoords = (context.reshape(b, t, qh, d).transpose(0, 2, 1, 3) @ av_basis).transpose(0, 2, 1, 3).reshape(b, t, -1)
+                elif a + ".output_encoder_weight" in p:
+                    outcoords = linear(context, a + ".output_encoder_weight")
+                else:
+                    outcoords = context
+                raw = linear(outcoords, a + ".output_decoder_weight", a + ".o_bias")
+                if a + ".chart_centers" in p:
+                    a_centers = p[a + ".chart_centers"]
+                    a_disp = context[..., None, :] - a_centers
+                    a_scales = p[a + ".chart_distance_scales"]
+                    a_memb = mx.softmax(-0.5 * mx.sum(a_disp ** 2, axis=-1) / (a_scales ** 2 * ac.get("temperature", 1.0)), axis=-1)
+                    if muted_chart_set:
+                        a_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(a_centers.shape[0])]
+                        if any(v == 0.0 for v in a_keep):
+                            a_memb = a_memb * mx.array(a_keep, dtype=a_memb.dtype)
+                    a_coords = mx.einsum("btch,chr->btcr", a_disp, p[a + ".chart_bases"])
+                    a_aug = mx.concatenate((mx.ones_like(a_coords[..., :1]), a_coords), axis=-1)
+                    a_enc = p[a + ".local_generator_encoders"]
+                    a_local = mx.einsum("btcr,crg->btcg", a_aug, a_enc)
+                    a_inc = incoming(a, a_centers.shape[0], a_enc.shape[-1], context.dtype) if has_transports else 0
+                    a_packet = a_memb[..., None] * (a_local + a_inc)
+                    raw = raw + mx.einsum("btcg,cgm->btm", a_packet, p[a + ".chart_mode_decoders"])
+                raw = observe(a + ".output", raw)
                 delta = observe(a + ".delta", fast_rms(raw, a + ".output_norm_weight", ac["output_norm"]))
                 x = state + mask_valid(delta)
                 if has_transports:

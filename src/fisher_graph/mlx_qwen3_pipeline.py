@@ -753,7 +753,9 @@ def _mac_stats(runtime, context_len):
             a, ac = f"attention.{i}.", layer["attention"]
             kh, d_head = ac["key_value_heads"], ac["head_dimension"]
             total += (lin(a + "q_weight") + lin(a + "k_weight") + lin(a + "v_weight")
-                      + out_pair(a) + basis(a + "input_basis"))
+                      + out_pair(a) + basis(a + "input_basis") + basis(a + "value_basis")
+                      + basis(a + "chart_bases") + basis(a + "local_generator_encoders")
+                      + basis(a + "chart_mode_decoders"))
             total += 3 * ac["query_heads"] * d_head * context_len
             state_bytes += 2 * kh * d_head * context_len * 2
     return total, state_bytes
@@ -1239,10 +1241,34 @@ def _interactive(args):
     print("  " + A.bold("fisher-graph · qwen3-mlx") + A.gray("  interactive harness"))
     print(A.gray("  " + "─" * (_RULE_W - 2)))
     _kv("artifact", artifact_dir)
-    if reduced_attn:
-        _kv("attn", f"input-basis {reduced_attn}")
-    if chart_mlps:
-        _kv("charts", f"mlp {chart_mlps}")
+    value_crushed_attn = sorted(
+        i for i in range(len(runtime.layers)) if f"attention.{i}.value_basis" in runtime.parameters
+    )
+    chart_attns = sorted(
+        i for i in range(len(runtime.layers)) if f"attention.{i}.chart_centers" in runtime.parameters
+    )
+    bottleneck_mlps = {
+        i: int(runtime.parameters[f"mlp.{i}.gate_weight"].shape[0])
+        for i in range(len(runtime.layers))
+        if f"mlp.{i}.gate_weight" in runtime.parameters
+        and int(runtime.parameters[f"mlp.{i}.gate_weight"].shape[0]) < int(runtime.layers[i]["mlp"].get("full_intermediate_size", 12288 if runtime.config.get("source") == "hf_qwen3_5" else 0))
+    }
+    if reduced_attn or value_crushed_attn or chart_attns:
+        a_bits = []
+        if reduced_attn:
+            a_bits.append(f"input-basis {reduced_attn}")
+        if value_crushed_attn:
+            a_bits.append(f"value-crushed {value_crushed_attn}")
+        if chart_attns:
+            a_bits.append(f"charts {chart_attns}")
+        _kv("attn", " · ".join(a_bits))
+    if chart_mlps or bottleneck_mlps:
+        m_bits = []
+        if chart_mlps:
+            m_bits.append(f"charts {chart_mlps}")
+        if bottleneck_mlps:
+            m_bits.append(f"bottleneck-swiglu {bottleneck_mlps}")
+        _kv("mlp", " · ".join(m_bits))
     if deltanet_ranks or bypassed_deltanets or chart_deltanets:
         hist = {}
         for r in deltanet_ranks.values():

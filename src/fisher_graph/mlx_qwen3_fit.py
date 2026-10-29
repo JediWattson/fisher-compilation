@@ -378,14 +378,29 @@ def fit_reduced_attention(
     prefix = f"attention.{layer_index}."
     _require_no_incident_transports(runtime, prefix[:-1])
     p = runtime.parameters
-    deployment_dtype = p[prefix + "q_weight"].dtype
+    quantized = prefix + "q_weight.scales" in p
+    if quantized:
+        quant = runtime.config.get("quantization") or {}
+        q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                                str(quant.get("mode", "affine")))
+        deployment_dtype = p[prefix + "q_weight.scales"].dtype
+
+        def dense(key):
+            return mx.dequantize(p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        deployment_dtype = p[prefix + "q_weight"].dtype
+
+        def dense(key):
+            return p[key].astype(mx.float32)
+
     if prefix + "input_basis" in p:
         raise ValueError("attention fitting requires an exact source attention")
     x = _rows(captures[prefix + "normalized"], "normalized inputs")
     contexts = _rows(captures[prefix + "context"], "attention contexts")
     if len(x) != len(contexts):
         raise ValueError("input/context capture rows must align")
-    q, k, v, out = [p[prefix + key].astype(mx.float32) for key in ("q_weight", "k_weight", "v_weight", "output_decoder_weight")]
+    q, k, v, out = [dense(prefix + key) for key in ("q_weight", "k_weight", "v_weight", "output_decoder_weight")]
     _rank(input_rank, x.shape[1], "input_rank")
     _rank(output_rank, min(out.shape), "output_rank")
     weights = _weights(row_weights, x.shape[0])
@@ -413,32 +428,67 @@ def fit_reduced_attention(
     cov = x.T @ (x * weights[:, None])
     cov = cov + ridge * mx.maximum(mx.sum(mx.diag(cov)) / x.shape[1], 1e-12) * mx.eye(x.shape[1])
     basis = _leading_basis(cov @ metric @ cov, input_rank, backend)
-    reconstruction = anchored_ridge(x @ basis, x, row_weights=weights, anchor=basis.T, relative_ridge=ridge, solver=solver)
+    if quantized and input_rank == x.shape[1]:
+        reconstruction = basis.T
+    else:
+        reconstruction = anchored_ridge(x @ basis, x, row_weights=weights, anchor=basis.T, relative_ridge=ridge, solver=solver)
 
     cc = contexts.T @ (contexts * weights[:, None])
     cc = cc + ridge * mx.maximum(mx.sum(mx.diag(cc)) / cc.shape[0], 1e-12) * mx.eye(cc.shape[0])
-    values, vectors = backend.eigh(cc)
-    floor = mx.maximum(mx.max(values) * 1e-7, 1e-12)
-    roots = mx.sqrt(mx.maximum(values, floor))
-    square_root = (vectors * roots) @ vectors.T
-    inverse_root = (vectors / roots) @ vectors.T
-    u, singular, vh = backend.svd(square_root @ out.T)
-    root_s = mx.sqrt(mx.maximum(singular[:output_rank], 0))
-    encoder = (inverse_root @ (u[:, :output_rank] * root_s)).T
-    decoder = (root_s[:, None] * vh[:output_rank, :]).T
-    updates = {
-        prefix + "input_basis": basis,
-        prefix + "q_weight": q @ reconstruction.T,
-        prefix + "k_weight": k @ reconstruction.T,
-        prefix + "v_weight": v @ reconstruction.T,
-        prefix + "output_encoder_weight": encoder,
-        prefix + "output_decoder_weight": decoder,
-    }
-    updates = {name: value.astype(deployment_dtype) for name, value in updates.items()}
+    if quantized:
+        out_gram = out @ cc @ out.T
+        v_out = _leading_basis(out_gram, output_rank, backend)
+        encoder_raw = v_out.T @ out
+        mode_scale = mx.sqrt(mx.maximum(mx.sqrt(mx.sum(encoder_raw * encoder_raw, axis=1)), 1e-6))
+        encoder = encoder_raw / mode_scale[:, None]
+        decoder = v_out * mode_scale[None, :]
+    else:
+        values, vectors = backend.eigh(cc)
+        floor = mx.maximum(mx.max(values) * 1e-7, 1e-12)
+        roots = mx.sqrt(mx.maximum(values, floor))
+        square_root = (vectors * roots) @ vectors.T
+        inverse_root = (vectors / roots) @ vectors.T
+        u, singular, vh = backend.svd(square_root @ out.T)
+        root_s = mx.sqrt(mx.maximum(singular[:output_rank], 0))
+        encoder = (inverse_root @ (u[:, :output_rank] * root_s)).T
+        decoder = (root_s[:, None] * vh[:output_rank, :]).T
+
+    if quantized and input_rank == x.shape[1]:
+        updates = {}
+        dense_updates = {
+            prefix + "output_encoder_weight": encoder,
+            prefix + "output_decoder_weight": decoder,
+        }
+    else:
+        updates = {prefix + "input_basis": basis.astype(deployment_dtype)}
+        dense_updates = {
+            prefix + "q_weight": q @ reconstruction.T,
+            prefix + "k_weight": k @ reconstruction.T,
+            prefix + "v_weight": v @ reconstruction.T,
+            prefix + "output_encoder_weight": encoder,
+            prefix + "output_decoder_weight": decoder,
+        }
+    for name, value in dense_updates.items():
+        if quantized:
+            if value.shape[-1] % q_gs:
+                raise ValueError(f"reduced {name} input dimension must be a multiple of the quantization group_size")
+            w_q, scales, biases = mx.quantize(value.astype(deployment_dtype),
+                                              group_size=q_gs, bits=q_bits, mode=q_mode)
+            updates[name], updates[name + ".scales"], updates[name + ".biases"] = w_q, scales, biases
+        else:
+            updates[name] = value.astype(deployment_dtype)
     mx.eval(updates)
-    approximation = ((contexts.astype(deployment_dtype) @ updates[prefix + "output_encoder_weight"].T)
-                     @ updates[prefix + "output_decoder_weight"].T).astype(mx.float32)
-    reference = (contexts.astype(deployment_dtype) @ p[prefix + "output_decoder_weight"].T).astype(mx.float32)
+
+    def deployed(key):
+        if quantized:
+            return mx.dequantize(updates[key], scales=updates[key + ".scales"],
+                                 biases=updates[key + ".biases"],
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+        return updates[key].astype(mx.float32)
+
+    approximation = ((contexts @ deployed(prefix + "output_encoder_weight").T)
+                     @ deployed(prefix + "output_decoder_weight").T).astype(mx.float32)
+    reference = (contexts @ out.T).astype(mx.float32)
     error = mx.sqrt(mx.sum((approximation - reference) ** 2) / mx.maximum(mx.sum(reference ** 2), 1e-12))
     return MLXFitResult(runtime.with_parameters(updates), updates, {
         "kind": "activation_weighted_attention_operator_pullback",
@@ -448,7 +498,8 @@ def fit_reduced_attention(
         "moment_dtype": "float32",
         "factorization_dtype": "float64" if solver == "numpy_float64" else "float32",
         "regression_accumulation_dtype": "float64" if solver == "numpy_float64" else "float32",
-        "deployment_dtype": str(deployment_dtype),
+        "deployment_dtype": (f"quantized_{q_bits}bit_gs{q_gs}_{q_mode}" if quantized
+                             else str(deployment_dtype)),
         "heldout_confirmation": False,
         "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
     })
@@ -1868,10 +1919,476 @@ def allocate_waterfill_deltanet_carrier_ranks(
     }
 
 
+def fit_chart_attention(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    value_rank: int,
+    chart_count: int = 4,
+    chart_rank: int = 16,
+    generator_rank: int | None = None,
+    row_weights: Any = None,
+    relative_ridge: float = 0.01,
+    temperature: float = 1.0,
+    kmeans_iterations: int = 6,
+    solver: str = "mlx",
+) -> MLXFitResult:
+    """Crush full-attention ``o_proj`` via per-query-head bases + chart generators.
+
+    1. Compresses each of the ``Qh`` query heads' ``Dh``-dimensional attention
+       context fiber through ``attention.{i}.value_basis`` (``[Qh, Dh, value_rank]``),
+       crushing ``output_decoder_weight`` directly from ``[D, Qh * Dh]`` to
+       ``[D, Qh * value_rank]`` with no full-width encoder matrix.
+    2. Fits ``chart_count`` deflated residual-pullback charts + generator nodes
+       (``chart_centers``, ``chart_bases``, ``chart_distance_scales``,
+       ``local_generator_encoders``, ``chart_mode_decoders``) to the residual
+       operator left behind by the crushed per-head context fiber.
+    """
+    mx = _mx()
+    backend = _Solver(solver)
+    ridge = _positive(relative_ridge, "relative_ridge")
+    temperature = _positive(temperature, "temperature")
+    _rank(kmeans_iterations, 10_000, "kmeans_iterations")
+    if not 0 <= layer_index < len(runtime.layers) or "attention" not in runtime.layers[layer_index]:
+        raise ValueError("chart attention fitting requires a full-attention layer index")
+    prefix = f"attention.{layer_index}."
+    _require_no_incident_transports(runtime, prefix[:-1])
+    p = runtime.parameters
+    if prefix + "value_basis" in p or prefix + "chart_centers" in p or prefix + "output_encoder_weight" in p:
+        raise ValueError("chart attention fitting requires an unreduced attention output")
+    quantized = prefix + "output_decoder_weight.scales" in p
+    if quantized:
+        quant = runtime.config.get("quantization") or {}
+        q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                                str(quant.get("mode", "affine")))
+        deployment_dtype = p[prefix + "output_decoder_weight.scales"].dtype
+        w_out = mx.dequantize(p[prefix + "output_decoder_weight"],
+                              scales=p[prefix + "output_decoder_weight.scales"],
+                              biases=p.get(prefix + "output_decoder_weight.biases"),
+                              group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        deployment_dtype = p[prefix + "output_decoder_weight"].dtype
+        w_out = p[prefix + "output_decoder_weight"].astype(mx.float32)
+
+    x = _rows(captures[prefix + "context"], "attention contexts")
+    n, d_ctx = x.shape
+    d_out = w_out.shape[0]
+    ac = runtime.layers[layer_index]["attention"]
+    qh, d_head = int(ac["query_heads"]), int(ac["head_dimension"])
+    _rank(value_rank, d_head, "value_rank")
+    _rank(chart_count, n, "chart_count")
+    _rank(chart_rank, d_ctx, "chart_rank")
+    generator_rank = chart_rank + 1 if generator_rank is None else generator_rank
+    _rank(generator_rank, chart_rank + 1, "generator_rank")
+    weights = _weights(row_weights, n)
+
+    xh = x.reshape(n, qh, d_head)
+    wh_out = w_out.reshape(d_out, qh, d_head)
+    head_bases, w_crushed_list = [], []
+    for h in range(qh):
+        xh_h = xh[:, h, :]
+        wh_h = wh_out[:, h, :]
+        cov_h = xh_h.T @ (xh_h * weights[:, None])
+        cov_h = cov_h + ridge * mx.maximum(mx.sum(mx.diag(cov_h)) / d_head, 1e-12) * mx.eye(d_head)
+        m_h = wh_h.T @ wh_h
+        u_h = _leading_basis(cov_h @ m_h @ cov_h, value_rank, backend)
+        rec_h = (
+            u_h.T
+            if value_rank == d_head
+            else anchored_ridge(xh_h @ u_h, xh_h, row_weights=weights, anchor=u_h.T, relative_ridge=ridge, solver=solver)
+        )
+        head_bases.append(u_h)
+        w_crushed_list.append(wh_h @ rec_h.T)
+    value_basis = mx.stack(head_bases, axis=0)
+    w_crushed = mx.concatenate(w_crushed_list, axis=1)
+
+    updates = {prefix + "value_basis": value_basis.astype(deployment_dtype)}
+    if quantized:
+        if w_crushed.shape[-1] % q_gs:
+            raise ValueError("crushed output_decoder_weight width must be a multiple of quantization group_size")
+        wq, sc_q, bi_q = mx.quantize(w_crushed.astype(deployment_dtype), group_size=q_gs, bits=q_bits, mode=q_mode)
+        updates[prefix + "output_decoder_weight"] = wq
+        updates[prefix + "output_decoder_weight.scales"] = sc_q
+        updates[prefix + "output_decoder_weight.biases"] = bi_q
+        w_dep = mx.dequantize(wq, scales=sc_q, biases=bi_q, group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        updates[prefix + "output_decoder_weight"] = w_crushed.astype(deployment_dtype)
+        w_dep = updates[prefix + "output_decoder_weight"].astype(mx.float32)
+
+    y_exact = x @ w_out.T
+    z_base = mx.einsum("nhd,hdr->nhr", xh, value_basis.astype(mx.float32)).reshape(n, qh * value_rank)
+    y_base = z_base @ w_dep.T
+    residual = y_exact - y_base
+
+    w_full_approx = mx.concatenate(
+        [w_dep[:, h * value_rank : (h + 1) * value_rank] @ value_basis[h].astype(mx.float32).T for h in range(qh)],
+        axis=1,
+    )
+    w_res = w_out - w_full_approx
+    m_rem = w_res.T @ w_res
+
+    mean = mx.sum(x * weights[:, None], axis=0)
+    first = int(mx.argmax(mx.sum((x - mean) ** 2, axis=1) * weights).item())
+    centers = [x[first]]
+    nearest = mx.sum((x - centers[0]) ** 2, axis=1)
+    for _ in range(1, chart_count):
+        chosen = int(mx.argmax(nearest * weights).item())
+        centers.append(x[chosen])
+        nearest = mx.minimum(nearest, mx.sum((x - centers[-1]) ** 2, axis=1))
+    centers = mx.stack(centers)
+    for _ in range(kmeans_iterations):
+        distance = mx.sum((x[:, None, :] - centers[None, :, :]) ** 2, axis=-1)
+        assignment = mx.argmin(distance, axis=1)
+        centers = mx.stack([
+            mx.where(
+                mx.sum(weights * (assignment == c)) > 1e-12,
+                mx.sum(x * (weights * (assignment == c))[:, None], axis=0) / mx.maximum(mx.sum(weights * (assignment == c)), 1e-12),
+                centers[c],
+            )
+            for c in range(chart_count)
+        ])
+    displacement = x[:, None, :] - centers[None, :, :]
+    distance = mx.sum(displacement ** 2, axis=-1)
+    assignment = mx.argmin(distance, axis=1)
+    global_cov = x.T @ (x * weights[:, None])
+    global_scale = mx.maximum(mx.sum(mx.diag(global_cov)), 1e-8)
+    bases, scales, anchors = [], [], []
+    for c in range(chart_count):
+        wc = weights * (assignment == c)
+        mass = mx.sum(wc)
+        loc = displacement[:, c, :]
+        l_cov = loc.T @ (loc * wc[:, None]) / mx.maximum(mass, 1e-12) + 0.1 * global_cov
+        b_c = _leading_basis(l_cov @ m_rem @ l_cov, chart_rank, backend)
+        bases.append(b_c)
+        sc = mx.sum(distance[:, c] * wc) / mx.maximum(mass, 1e-12)
+        scales.append(mx.sqrt(mx.maximum(sc, global_scale * 0.01)))
+        proj_perp = mx.eye(d_ctx) - b_c @ b_c.T
+        m_rem = proj_perp @ m_rem @ proj_perp
+        g0 = (centers[c] @ w_res.T)[None, :]
+        g1 = (w_res @ b_c).T
+        anchors.append(mx.concatenate([g0, g1], axis=0)[:generator_rank])
+    bases, scales = mx.stack(bases), mx.stack(scales)
+    anchor_dec = mx.concatenate(anchors, axis=0)
+    encoders = mx.broadcast_to(mx.eye(chart_rank + 1)[:, :generator_rank], (chart_count, chart_rank + 1, generator_rank))
+    membership = mx.softmax(-0.5 * distance / (scales[None, :] ** 2 * temperature), axis=-1)
+    coordinates = mx.einsum("nch,chr->ncr", displacement, bases)
+    augmented = mx.concatenate((mx.ones((n, chart_count, 1)), coordinates), axis=-1)
+    features = (membership[:, :, None] * mx.einsum("ncr,crg->ncg", augmented, encoders)).reshape((n, -1))
+    decoded = anchored_ridge(
+        features, residual, row_weights=weights, anchor=anchor_dec, relative_ridge=max(ridge, 0.05), solver=solver
+    ).reshape((chart_count, generator_rank, d_out))
+    for k_name, val in (
+        ("chart_centers", centers),
+        ("chart_bases", bases),
+        ("chart_distance_scales", scales),
+        ("local_generator_encoders", encoders),
+        ("chart_mode_decoders", decoded),
+    ):
+        updates[prefix + k_name] = val.astype(deployment_dtype)
+    mx.eval(updates)
+
+    y_chart = y_base + features @ decoded.reshape((-1, d_out))
+    err_base = mx.sqrt(mx.sum((y_base - y_exact) ** 2) / mx.maximum(mx.sum(y_exact ** 2), 1e-12))
+    err_chart = mx.sqrt(mx.sum((y_chart - y_exact) ** 2) / mx.maximum(mx.sum(y_exact ** 2), 1e-12))
+    fitted = runtime.with_parameters(
+        updates,
+        layer_overrides={layer_index: {"attention": {"value_rank": value_rank, "temperature": temperature}}},
+    )
+    return MLXFitResult(fitted, updates, {
+        "kind": "per_head_value_fiber_and_deflated_chart_generator_attention",
+        "solver": solver,
+        "capture_rows": n,
+        "value_rank": value_rank,
+        "chart_count": chart_count,
+        "chart_rank": chart_rank,
+        "generator_rank": generator_rank,
+        "base_relative_error": float(err_base.item()),
+        "chart_relative_error": float(err_chart.item()),
+        "deployment_dtype": (f"quantized_{q_bits}bit_gs{q_gs}_{q_mode}" if quantized else str(deployment_dtype)),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
+def fit_bottleneck_swiglu(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    intermediate_rank: int,
+    fisher_diagonal: Mapping[str, Any] | None = None,
+    row_weights: Any = None,
+    relative_ridge: float = 0.25,
+) -> MLXFitResult:
+    """Compress a SwiGLU MLP to ``intermediate_rank`` channels via Pullback-Fisher ranking.
+
+    1. Scores each intermediate neuron j by its Pullback-Fisher energy:
+           I_j = E_w[(silu(gate_j) * up_j)^2] * sum_i F_{mlp.l.output, i} * W_{down, i, j}^2
+    2. Slices ``gate_weight`` and ``up_weight`` (including 4-bit ``.scales`` and ``.biases``
+       when quantized) bit-exactly along row axis ``top_sorted`` with zero requantization loss.
+    3. Refits ``down_weight`` via dual anchored ridge around the kept columns ``W_0`` so
+       surviving neurons absorb the dropped residual along the calibration subspace while
+       preserving exact original columns ``W_0`` in all orthogonal directions.
+    """
+    mx = _mx()
+    ridge = _positive(relative_ridge, "relative_ridge")
+    if not 0 <= layer_index < len(runtime.layers):
+        raise ValueError("layer_index out of range")
+    prefix = f"mlp.{layer_index}."
+    p = runtime.parameters
+    if any(prefix + k not in p for k in ("gate_weight", "up_weight", "down_weight")):
+        raise ValueError("bottleneck SwiGLU fitting requires an unchart-replaced SwiGLU MLP")
+    quantized = prefix + "gate_weight.scales" in p
+    if quantized:
+        quant = runtime.config.get("quantization") or {}
+        q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                                str(quant.get("mode", "affine")))
+        if intermediate_rank % q_gs:
+            raise ValueError("intermediate_rank must be a multiple of quantization group_size")
+        deployment_dtype = p[prefix + "gate_weight.scales"].dtype
+
+        def dense(key):
+            return mx.dequantize(p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        deployment_dtype = p[prefix + "gate_weight"].dtype
+
+        def dense(key):
+            return p[key].astype(mx.float32)
+
+    gw, uw, dw = (dense(prefix + k) for k in ("gate_weight", "up_weight", "down_weight"))
+    full_inter = int(gw.shape[0])
+    _rank(intermediate_rank, full_inter, "intermediate_rank")
+    x = _rows(captures[prefix + "normalized"], "MLP normalized inputs")
+    y = _rows(captures[prefix + "output"], "MLP output targets")
+    if x.shape != y.shape:
+        raise ValueError("MLP normalized/output capture shapes must match")
+    weights = _weights(row_weights, x.shape[0])
+
+    g = x @ gw.T
+    u = x @ uw.T
+    act = (g * mx.sigmoid(g)) * u
+    mx.eval(act, dw)
+    act_np = np.asarray(act, dtype=np.float32)
+    dw_np = np.asarray(dw, dtype=np.float32)
+    w_np = np.asarray(weights, dtype=np.float32)
+    if fisher_diagonal is not None and prefix + "output" in fisher_diagonal:
+        f_np = np.maximum(np.asarray(mx.array(fisher_diagonal[prefix + "output"], dtype=mx.float32)), 1e-12)
+        f_np = f_np / max(float(np.mean(f_np)), 1e-12)
+    else:
+        f_np = np.ones((dw_np.shape[0],), dtype=np.float32)
+
+    act_sq = np.sum((act_np ** 2) * w_np[:, None], axis=0)
+    col_fisher = np.sum(f_np[:, None] * (dw_np ** 2), axis=0)
+    importance = act_sq * col_fisher
+    top_sorted = np.sort(np.argsort(-importance)[:intermediate_rank])
+    retained_fraction = float(np.sum(importance[top_sorted]) / max(float(np.sum(importance)), 1e-12))
+    top_mx = mx.array(top_sorted, dtype=mx.int32)
+
+    updates = {}
+    for wname in ("gate_weight", "up_weight"):
+        updates[prefix + wname] = p[prefix + wname][top_mx]
+        if quantized:
+            updates[prefix + wname + ".scales"] = p[prefix + wname + ".scales"][top_mx]
+            if prefix + wname + ".biases" in p:
+                updates[prefix + wname + ".biases"] = p[prefix + wname + ".biases"][top_mx]
+
+    dw_kept = dw_np[:, top_sorted]
+    if intermediate_rank == full_inter:
+        W_refit = dw_kept
+    else:
+        sqrt_w = np.sqrt(w_np.astype(np.float64))[:, None]
+        A = act_np[:, top_sorted].astype(np.float64) * sqrt_w
+        Y = np.asarray(y, dtype=np.float64) * sqrt_w
+        W0 = dw_kept.T.astype(np.float64)
+        R = Y - A @ W0
+        G_dual = A @ A.T
+        lam = ridge * max(float(np.trace(G_dual)) / A.shape[0], 1e-12)
+        alpha = np.linalg.solve(G_dual + lam * np.eye(A.shape[0]), R)
+        W_refit = (W0 + A.T @ alpha).T.astype(np.float32)
+
+    if quantized:
+        wq, sq, bq = mx.quantize(mx.array(W_refit, dtype=deployment_dtype),
+                                 group_size=q_gs, bits=q_bits, mode=q_mode)
+        updates[prefix + "down_weight"] = wq
+        updates[prefix + "down_weight.scales"] = sq
+        updates[prefix + "down_weight.biases"] = bq
+        w_dep = mx.dequantize(wq, scales=sq, biases=bq, group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        updates[prefix + "down_weight"] = mx.array(W_refit, dtype=deployment_dtype)
+        w_dep = updates[prefix + "down_weight"].astype(mx.float32)
+    mx.eval(updates)
+
+    y_pred = mx.array(act_np[:, top_sorted]) @ w_dep.T
+    err = mx.sqrt(mx.sum((y_pred - y) ** 2) / mx.maximum(mx.sum(y ** 2), 1e-12))
+    fitted = runtime.with_parameters(
+        updates,
+        layer_overrides={layer_index: {"mlp": {"intermediate_size": int(intermediate_rank)}}},
+    )
+    return MLXFitResult(fitted, updates, {
+        "kind": "fisher_weighted_bottleneck_swiglu",
+        "capture_rows": int(x.shape[0]),
+        "full_intermediate_size": full_inter,
+        "intermediate_rank": int(intermediate_rank),
+        "compression_ratio": float(intermediate_rank / full_inter),
+        "retained_fisher_importance_fraction": retained_fraction,
+        "relative_error": float(err.item()),
+        "fisher_weighted": bool(fisher_diagonal is not None and prefix + "output" in fisher_diagonal),
+        "deployment_dtype": (f"quantized_{q_bits}bit_gs{q_gs}_{q_mode}" if quantized else str(deployment_dtype)),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
+def allocate_waterfill_mlp_intermediates(
+    runtime: Any,
+    batches: Sequence[Mapping[str, Any]],
+    *,
+    target_compression_ratio: float = 0.85,
+    layer_indices: Sequence[int] | None = None,
+    rank_step: int = 1024,
+    min_rank: int = 6144,
+    fisher_max_tokens: int = 8,
+    captures: Mapping[str, Any] | None = None,
+    fisher_diagonal: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Allocate per-layer SwiGLU intermediate widths k_l via KKT Pullback-Fisher water-filling.
+
+    Solves the Lagrangian rate-distortion allocation across all selected SwiGLU MLPs:
+        min_{k_l} sum_l Omega_{mlp,l} D_{mlp,l}(k_l) - mu * sum_l 3 * H * (M_l - k_l)
+    where Omega_{mlp,l} = E[y_l^T F_{mlp.l.output} y_l] is layer l's Pullback-Fisher
+    vitality and D_{mlp,l}(k_l) is the normalized tail of the sorted Pullback-Fisher
+    neuron importances truncated at k_l.
+    """
+    mx = _mx()
+    _rank(rank_step, 16384, "rank_step")
+    _rank(min_rank, 16384, "min_rank")
+    ratio = float(target_compression_ratio)
+    if not 0.0 < ratio < 1.0:
+        raise ValueError("target_compression_ratio must lie in (0, 1)")
+    indices = tuple(
+        (i for i in range(len(runtime.layers)) if f"mlp.{i}.gate_weight" in runtime.parameters)
+        if layer_indices is None else layer_indices
+    )
+    if not indices or len(set(indices)) != len(indices):
+        raise ValueError("layer_indices must name unique existing MLP layers")
+    norm_sites = [f"mlp.{l}.normalized" for l in indices]
+    out_sites = [f"mlp.{l}.output" for l in indices]
+    needed = norm_sites + out_sites
+    if captures is None or any(s not in captures for s in needed):
+        captures = capture_runtime_rows(runtime, batches, needed)
+    if fisher_diagonal is None or any(s not in fisher_diagonal for s in out_sites):
+        fisher_diagonal = capture_empirical_token_fisher(
+            runtime, batches, out_sites, max_tokens=fisher_max_tokens
+        )["diagonal"]
+
+    p = runtime.parameters
+    quant = runtime.config.get("quantization") or {}
+    q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                            str(quant.get("mode", "affine")))
+
+    def dense(key):
+        if key + ".scales" in p:
+            return mx.dequantize(p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+        return p[key].astype(mx.float32)
+
+    total_exact_scalars = 0
+    layer_specs = {}
+    for l in indices:
+        prefix = f"mlp.{l}."
+        gw, uw, dw = (dense(prefix + k) for k in ("gate_weight", "up_weight", "down_weight"))
+        m_full, hidden = int(gw.shape[0]), int(gw.shape[1])
+        exact_scalars = 3 * m_full * hidden
+        total_exact_scalars += exact_scalars
+
+        x = captures[prefix + "normalized"].astype(mx.float32)
+        y = np.asarray(captures[prefix + "output"].astype(mx.float32), dtype=np.float64)
+        f_out = np.maximum(np.asarray(fisher_diagonal[prefix + "output"].astype(mx.float32), dtype=np.float64), 1e-12)
+        omega = max(float(np.mean(np.sum((y * y) * f_out[None, :], axis=1))), 1e-12)
+
+        g = x @ gw.T
+        u = x @ uw.T
+        act = (g * mx.sigmoid(g)) * u
+        mx.eval(act, dw)
+        act_np = np.asarray(act, dtype=np.float64)
+        dw_np = np.asarray(dw, dtype=np.float64)
+        f_norm = f_out / max(float(np.mean(f_out)), 1e-12)
+        imp = np.mean(act_np ** 2, axis=0) * np.sum(f_norm[:, None] * (dw_np ** 2), axis=0)
+        imp_sorted = np.sort(imp)[::-1]
+        imp_sorted /= max(float(imp_sorted.sum()), 1e-12)
+        tail = np.zeros(m_full + 1, dtype=np.float64)
+        tail[:m_full] = 1.0 - np.concatenate([[0.0], np.cumsum(imp_sorted[:-1])])
+        candidates = sorted({*(k for k in range(min_rank, m_full + 1, rank_step) if k <= m_full), m_full})
+        layer_specs[l] = {
+            "omega": omega,
+            "m_full": m_full,
+            "scalars_per_neuron": 3 * hidden,
+            "exact_scalars": exact_scalars,
+            "tail": tail,
+            "candidates": candidates,
+        }
+        mx.clear_cache()
+
+    target_removed = int(round(total_exact_scalars * (1.0 - ratio)))
+
+    def evaluate_mu(mu: float):
+        allocations = {}
+        total_rem = 0
+        total_dist = 0.0
+        for l in indices:
+            s = layer_specs[l]
+            omega, m_full, spn = s["omega"], s["m_full"], s["scalars_per_neuron"]
+            best_k = min(
+                s["candidates"],
+                key=lambda k: omega * s["tail"][k] - mu * (spn * (m_full - k)),
+            )
+            rem = spn * (m_full - best_k)
+            dist = omega * s["tail"][best_k]
+            allocations[l] = {
+                "intermediate_rank": int(best_k),
+                "full_intermediate_size": int(m_full),
+                "mlp_exact": best_k == m_full,
+                "omega": float(omega),
+                "tail_fraction": float(s["tail"][best_k]),
+                "scalars_removed": int(rem),
+                "fisher_distortion": float(dist),
+            }
+            total_rem += int(rem)
+            total_dist += float(dist)
+        return total_rem, total_dist, allocations
+
+    max_rem, _, _ = evaluate_mu(1e9)
+    if target_removed > max_rem:
+        raise ValueError(f"target_removed ({target_removed}) exceeds max achievable ({max_rem})")
+    lo, hi = 0.0, 1e-9
+    while evaluate_mu(hi)[0] < target_removed:
+        hi *= 2.0
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        if evaluate_mu(mid)[0] < target_removed:
+            lo = mid
+        else:
+            hi = mid
+    removed, distortion, allocations = evaluate_mu(hi)
+    return {
+        "kind": "kkt_pullback_fisher_mlp_intermediate_waterfill_schedule",
+        "total_exact_scalars": int(total_exact_scalars),
+        "target_scalars_removed": int(target_removed),
+        "achieved_scalars_removed": int(removed),
+        "achieved_compression_ratio": float((total_exact_scalars - removed) / max(total_exact_scalars, 1)),
+        "total_fisher_distortion": float(distortion),
+        "lagrange_multiplier_mu": float(hi),
+        "layers": allocations,
+    }
+
+
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
-    "fit_reduced_deltanet", "fit_chart_deltanet", "fit_coalesced_deltanet", "fit_deltanet_carrier_basis",
-    "allocate_waterfill_deltanet_carrier_ranks",
+    "fit_chart_attention", "fit_reduced_deltanet", "fit_chart_deltanet", "fit_coalesced_deltanet",
+    "fit_deltanet_carrier_basis", "allocate_waterfill_deltanet_carrier_ranks",
+    "fit_bottleneck_swiglu", "allocate_waterfill_mlp_intermediates",
     "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]
