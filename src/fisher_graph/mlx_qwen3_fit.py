@@ -593,6 +593,198 @@ def fit_reduced_deltanet(
     })
 
 
+def fit_chart_deltanet(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    value_rank: int,
+    chart_count: int = 4,
+    chart_rank: int = 16,
+    generator_rank: int | None = None,
+    row_weights: Any = None,
+    relative_ridge: float = 0.01,
+    temperature: float = 1.0,
+    kmeans_iterations: int = 6,
+    solver: str = "mlx",
+) -> MLXFitResult:
+    """Crush GatedDeltaNet ``out_proj`` via per-value-head bases + chart generators.
+
+    1. Compresses each of the ``Hv`` value heads' ``Dv``-dimensional readout fiber
+       through ``deltanet.{i}.value_basis`` (``[Hv, Dv, value_rank]``), crushing
+       ``output_decoder_weight`` directly from ``[D, Hv * Dv]`` to
+       ``[D, Hv * value_rank]`` with no full-width encoder matrix.
+    2. Fits ``chart_count`` deflated residual-pullback charts + generator nodes
+       (``chart_centers``, ``chart_bases``, ``chart_distance_scales``,
+       ``local_generator_encoders``, ``chart_mode_decoders``) to the residual
+       operator left behind by the crushed value fiber.
+    """
+    mx = _mx()
+    backend = _Solver(solver)
+    ridge = _positive(relative_ridge, "relative_ridge")
+    temperature = _positive(temperature, "temperature")
+    _rank(kmeans_iterations, 10_000, "kmeans_iterations")
+    if not 0 <= layer_index < len(runtime.layers) or "deltanet" not in runtime.layers[layer_index]:
+        raise ValueError("chart deltanet fitting requires a deltanet layer index")
+    prefix = f"deltanet.{layer_index}."
+    _require_no_incident_transports(runtime, prefix[:-1])
+    p = runtime.parameters
+    if prefix + "value_basis" in p or prefix + "chart_centers" in p or prefix + "output_encoder_weight" in p:
+        raise ValueError("chart deltanet fitting requires an unreduced deltanet output")
+    quantized = prefix + "output_decoder_weight.scales" in p
+    if quantized:
+        quant = runtime.config.get("quantization") or {}
+        q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                                str(quant.get("mode", "affine")))
+        deployment_dtype = p[prefix + "output_decoder_weight.scales"].dtype
+        w_out = mx.dequantize(p[prefix + "output_decoder_weight"],
+                              scales=p[prefix + "output_decoder_weight.scales"],
+                              biases=p.get(prefix + "output_decoder_weight.biases"),
+                              group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        deployment_dtype = p[prefix + "output_decoder_weight"].dtype
+        w_out = p[prefix + "output_decoder_weight"].astype(mx.float32)
+
+    x = _rows(captures[prefix + "context"], "deltanet contexts")
+    n, d_ctx = x.shape
+    d_out = w_out.shape[0]
+    dc = runtime.layers[layer_index]["deltanet"]
+    vh, vd = int(dc["value_heads"]), int(dc["value_head_dimension"])
+    _rank(value_rank, vd, "value_rank")
+    _rank(chart_count, n, "chart_count")
+    _rank(chart_rank, d_ctx, "chart_rank")
+    generator_rank = chart_rank + 1 if generator_rank is None else generator_rank
+    _rank(generator_rank, chart_rank + 1, "generator_rank")
+    weights = _weights(row_weights, n)
+
+    xh = x.reshape(n, vh, vd)
+    wh_out = w_out.reshape(d_out, vh, vd)
+    head_bases, w_crushed_list = [], []
+    for h in range(vh):
+        xh_h = xh[:, h, :]
+        wh_h = wh_out[:, h, :]
+        cov_h = xh_h.T @ (xh_h * weights[:, None])
+        cov_h = cov_h + ridge * mx.maximum(mx.sum(mx.diag(cov_h)) / vd, 1e-12) * mx.eye(vd)
+        m_h = wh_h.T @ wh_h
+        u_h = _leading_basis(cov_h @ m_h @ cov_h, value_rank, backend)
+        rec_h = (
+            u_h.T
+            if value_rank == vd
+            else anchored_ridge(xh_h @ u_h, xh_h, row_weights=weights, anchor=u_h.T, relative_ridge=ridge, solver=solver)
+        )
+        head_bases.append(u_h)
+        w_crushed_list.append(wh_h @ rec_h.T)
+    value_basis = mx.stack(head_bases, axis=0)
+    w_crushed = mx.concatenate(w_crushed_list, axis=1)
+
+    updates = {prefix + "value_basis": value_basis.astype(deployment_dtype)}
+    if quantized:
+        if w_crushed.shape[-1] % q_gs:
+            raise ValueError("crushed output_decoder_weight width must be a multiple of quantization group_size")
+        wq, sc_q, bi_q = mx.quantize(w_crushed.astype(deployment_dtype), group_size=q_gs, bits=q_bits, mode=q_mode)
+        updates[prefix + "output_decoder_weight"] = wq
+        updates[prefix + "output_decoder_weight.scales"] = sc_q
+        updates[prefix + "output_decoder_weight.biases"] = bi_q
+        w_dep = mx.dequantize(wq, scales=sc_q, biases=bi_q, group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        updates[prefix + "output_decoder_weight"] = w_crushed.astype(deployment_dtype)
+        w_dep = updates[prefix + "output_decoder_weight"].astype(mx.float32)
+
+    y_exact = x @ w_out.T
+    z_base = mx.einsum("nhd,hdr->nhr", xh, value_basis.astype(mx.float32)).reshape(n, vh * value_rank)
+    y_base = z_base @ w_dep.T
+    residual = y_exact - y_base
+
+    w_full_approx = mx.concatenate(
+        [w_dep[:, h * value_rank : (h + 1) * value_rank] @ value_basis[h].astype(mx.float32).T for h in range(vh)],
+        axis=1,
+    )
+    w_res = w_out - w_full_approx
+    m_rem = w_res.T @ w_res
+
+    mean = mx.sum(x * weights[:, None], axis=0)
+    first = int(mx.argmax(mx.sum((x - mean) ** 2, axis=1) * weights).item())
+    centers = [x[first]]
+    nearest = mx.sum((x - centers[0]) ** 2, axis=1)
+    for _ in range(1, chart_count):
+        chosen = int(mx.argmax(nearest * weights).item())
+        centers.append(x[chosen])
+        nearest = mx.minimum(nearest, mx.sum((x - centers[-1]) ** 2, axis=1))
+    centers = mx.stack(centers)
+    for _ in range(kmeans_iterations):
+        distance = mx.sum((x[:, None, :] - centers[None, :, :]) ** 2, axis=-1)
+        assignment = mx.argmin(distance, axis=1)
+        centers = mx.stack([
+            mx.where(
+                mx.sum(weights * (assignment == c)) > 1e-12,
+                mx.sum(x * (weights * (assignment == c))[:, None], axis=0) / mx.maximum(mx.sum(weights * (assignment == c)), 1e-12),
+                centers[c],
+            )
+            for c in range(chart_count)
+        ])
+    displacement = x[:, None, :] - centers[None, :, :]
+    distance = mx.sum(displacement ** 2, axis=-1)
+    assignment = mx.argmin(distance, axis=1)
+    global_cov = x.T @ (x * weights[:, None])
+    global_scale = mx.maximum(mx.sum(mx.diag(global_cov)), 1e-8)
+    bases, scales, anchors = [], [], []
+    for c in range(chart_count):
+        wc = weights * (assignment == c)
+        mass = mx.sum(wc)
+        loc = displacement[:, c, :]
+        l_cov = loc.T @ (loc * wc[:, None]) / mx.maximum(mass, 1e-12) + 0.1 * global_cov
+        b_c = _leading_basis(l_cov @ m_rem @ l_cov, chart_rank, backend)
+        bases.append(b_c)
+        sc = mx.sum(distance[:, c] * wc) / mx.maximum(mass, 1e-12)
+        scales.append(mx.sqrt(mx.maximum(sc, global_scale * 0.01)))
+        proj_perp = mx.eye(d_ctx) - b_c @ b_c.T
+        m_rem = proj_perp @ m_rem @ proj_perp
+        g0 = (centers[c] @ w_res.T)[None, :]
+        g1 = (w_res @ b_c).T
+        anchors.append(mx.concatenate([g0, g1], axis=0)[:generator_rank])
+    bases, scales = mx.stack(bases), mx.stack(scales)
+    anchor_dec = mx.concatenate(anchors, axis=0)
+    encoders = mx.broadcast_to(mx.eye(chart_rank + 1)[:, :generator_rank], (chart_count, chart_rank + 1, generator_rank))
+    membership = mx.softmax(-0.5 * distance / (scales[None, :] ** 2 * temperature), axis=-1)
+    coordinates = mx.einsum("nch,chr->ncr", displacement, bases)
+    augmented = mx.concatenate((mx.ones((n, chart_count, 1)), coordinates), axis=-1)
+    features = (membership[:, :, None] * mx.einsum("ncr,crg->ncg", augmented, encoders)).reshape((n, -1))
+    decoded = anchored_ridge(
+        features, residual, row_weights=weights, anchor=anchor_dec, relative_ridge=max(ridge, 0.05), solver=solver
+    ).reshape((chart_count, generator_rank, d_out))
+    for k_name, val in (
+        ("chart_centers", centers),
+        ("chart_bases", bases),
+        ("chart_distance_scales", scales),
+        ("local_generator_encoders", encoders),
+        ("chart_mode_decoders", decoded),
+    ):
+        updates[prefix + k_name] = val.astype(deployment_dtype)
+    mx.eval(updates)
+
+    y_chart = y_base + features @ decoded.reshape((-1, d_out))
+    err_base = mx.sqrt(mx.sum((y_base - y_exact) ** 2) / mx.maximum(mx.sum(y_exact ** 2), 1e-12))
+    err_chart = mx.sqrt(mx.sum((y_chart - y_exact) ** 2) / mx.maximum(mx.sum(y_exact ** 2), 1e-12))
+    fitted = runtime.with_parameters(
+        updates,
+        layer_overrides={layer_index: {"deltanet": {"value_rank": value_rank, "temperature": temperature}}},
+    )
+    return MLXFitResult(fitted, updates, {
+        "kind": "per_head_value_fiber_and_deflated_chart_generator_deltanet",
+        "solver": solver,
+        "capture_rows": n,
+        "value_rank": value_rank,
+        "chart_count": chart_count,
+        "chart_rank": chart_rank,
+        "generator_rank": generator_rank,
+        "base_relative_error": float(err_base.item()),
+        "chart_relative_error": float(err_chart.item()),
+        "deployment_dtype": (f"quantized_{q_bits}bit_gs{q_gs}_{q_mode}" if quantized else str(deployment_dtype)),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
 def fit_deltanet_carrier_basis(
     runtime: Any,
     layer_index: int,
@@ -1503,6 +1695,7 @@ def allocate_waterfill_deltanet_carrier_ranks(
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
-    "fit_reduced_deltanet", "fit_deltanet_carrier_basis", "allocate_waterfill_deltanet_carrier_ranks",
+    "fit_reduced_deltanet", "fit_chart_deltanet", "fit_deltanet_carrier_basis",
+    "allocate_waterfill_deltanet_carrier_ranks",
     "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]

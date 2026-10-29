@@ -346,12 +346,19 @@ def _xray(args):
     chart_layers = sorted(
         i for i in range(len(runtime.layers)) if f"mlp.{i}.chart_centers" in runtime.parameters
     )
+    chart_deltanet_layers = sorted(
+        i for i in range(len(runtime.layers)) if f"deltanet.{i}.chart_centers" in runtime.parameters
+    )
     reduced_attn_layers = sorted(
         i for i in range(len(runtime.layers)) if f"attention.{i}.input_basis" in runtime.parameters
     )
-    capture_sites = [f"mlp.{i}.normalized" for i in chart_layers] + [
-        f"mlp.{i}.delta" for i in chart_layers
-    ] + [f"attention.{i}.delta" for i in reduced_attn_layers]
+    capture_sites = (
+        [f"mlp.{i}.normalized" for i in chart_layers]
+        + [f"mlp.{i}.delta" for i in chart_layers]
+        + [f"deltanet.{i}.context" for i in chart_deltanet_layers]
+        + [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
+        + [f"attention.{i}.delta" for i in reduced_attn_layers]
+    )
     arr_ids = mx.array([ids], dtype=mx.int32)
     out = runtime(arr_ids, capture=capture_sites or False)
     logits = out.logits[0, -1].astype(mx.float32)
@@ -382,7 +389,37 @@ def _xray(args):
             for pos, tok in enumerate(ids)
         ]
 
+    for i in chart_deltanet_layers:
+        c_val = out.captures[f"deltanet.{i}.context"][0].astype(mx.float32)
+        centers = runtime.parameters[f"deltanet.{i}.chart_centers"].astype(mx.float32)
+        scales = runtime.parameters[f"deltanet.{i}.chart_distance_scales"].astype(mx.float32)
+        temp = float(runtime.layers[i]["deltanet"].get("temperature", 1.0))
+        disp = c_val[:, None, :] - centers[None, :, :]
+        memb = np.asarray(
+            mx.softmax(-0.5 * mx.sum(disp ** 2, axis=-1) / (scales[None, :] ** 2 * temp), axis=-1)
+        )
+        token_routing[f"deltanet.{i}"] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
     ablation_impacts = []
+    for i in chart_deltanet_layers:
+        site = f"deltanet.{i}.delta"
+        ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
+        mx.eval(ablated)
+        ab_np = np.asarray(ablated)
+        ablation_impacts.append({
+            "site": site,
+            "winning_logit_push": float(logits_np[win_id] - ab_np[win_id]),
+            "ablated_top1_token_id": int(np.argmax(ab_np)),
+            "ablated_top1_token": tokenizer.decode([int(np.argmax(ab_np))]),
+        })
     for i in reduced_attn_layers:
         site = f"attention.{i}.delta"
         ablated = runtime(arr_ids, perturbations={site: -out.captures[site]}).logits[0, -1].astype(mx.float32)
@@ -467,9 +504,17 @@ def _sample_next_token(logits_np, context_ids, *, temperature, top_p, repetition
 
 def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=False,
                          muted_sites=(), muted_charts=(),
-                         temperature=0.0, top_p=1.0, repetition_penalty=1.0):
+                         temperature=0.0, top_p=1.0, repetition_penalty=1.0, emit=None,
+                         return_timing_breakdown=False):
     import mlx.core as mx
     import numpy as np
+
+    if not getattr(runtime, "_warmed", False) and hasattr(runtime, "_fast_cache"):
+        w_out = runtime.prefill(mx.array([[ids[0]]], dtype=mx.int32))
+        mx.eval(w_out.logits, w_out.cache.key_values)
+        del w_out
+        mx.clear_cache()
+        runtime._warmed = True
 
     start = time.perf_counter()
     output = runtime.prefill(
@@ -479,7 +524,8 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
     )
     first_logits = output.logits[0, -1].astype(mx.float32)
     first_probs = mx.softmax(first_logits, axis=-1)
-    mx.eval(first_logits, first_probs)
+    mx.eval(first_logits, first_probs, output.cache.key_values)
+    prefill_elapsed = time.perf_counter() - start
     logits_np = np.asarray(first_logits)
     probs_np = np.asarray(first_probs)
     top5_idx = np.argsort(logits_np)[::-1][:5]
@@ -487,29 +533,116 @@ def _greedy_continuation(runtime, tokenizer, ids, *, max_new_tokens, ignore_eos=
         (tokenizer.decode([int(i)]), float(probs_np[i]) * 100.0, float(logits_np[i]))
         for i in top5_idx
     ]
+    decode_start = time.perf_counter()
     generated = []
-    for step in range(max_new_tokens):
-        logits_np = np.asarray(output.logits[0, -1].astype(mx.float32))
-        if temperature and temperature > 0.0:
+    emitted = ""
+    if not (temperature and temperature > 0.0):
+        next_tok = mx.argmax(output.logits[:, -1:], axis=-1)
+        mx.async_eval(next_tok)
+        cache = output.cache
+        for step in range(max_new_tokens):
+            if step + 1 < max_new_tokens:
+                next_out = runtime.decode(
+                    next_tok,
+                    cache,
+                    muted_sites=muted_sites,
+                    muted_charts=muted_charts,
+                )
+                cand_tok = mx.argmax(next_out.logits[:, -1:], axis=-1)
+                mx.async_eval(cand_tok, next_out.cache.key_values)
+            token = int(next_tok.item())
+            generated.append(token)
+            if emit is not None:
+                text_now = tokenizer.decode(generated, skip_special_tokens=True)
+                if len(text_now) > len(emitted):
+                    emit(text_now[len(emitted):])
+                emitted = text_now
+            if not ignore_eos and token == tokenizer.eos_token_id:
+                break
+            if step + 1 < max_new_tokens:
+                next_tok, cache = cand_tok, next_out.cache
+    else:
+        for step in range(max_new_tokens):
+            logits_np = np.asarray(output.logits[0, -1].astype(mx.float32))
             token = _sample_next_token(
                 logits_np, ids + generated,
                 temperature=temperature, top_p=top_p,
                 repetition_penalty=repetition_penalty,
             )
+            generated.append(token)
+            if emit is not None:
+                text_now = tokenizer.decode(generated, skip_special_tokens=True)
+                if len(text_now) > len(emitted):
+                    emit(text_now[len(emitted):])
+                emitted = text_now
+            if not ignore_eos and token == tokenizer.eos_token_id:
+                break
+            if step + 1 < max_new_tokens:
+                output = runtime.decode(
+                    mx.array([[token]], dtype=mx.int32),
+                    output.cache,
+                    muted_sites=muted_sites,
+                    muted_charts=muted_charts,
+                )
+    decode_elapsed = time.perf_counter() - decode_start
+    elapsed = prefill_elapsed + decode_elapsed
+    text = tokenizer.decode(generated, skip_special_tokens=True)
+    if return_timing_breakdown:
+        return text, generated, top5, prefill_elapsed, decode_elapsed
+    return text, generated, top5, elapsed
+
+
+def _mac_stats(runtime, context_len):
+    """Analytic MACs per decoded token plus recurrent/KV state bytes at context_len.
+
+    Counts matmul multiply-accumulates from parameter shapes (packed quantized
+    weights are unpacked via the quantization config). DeltaNet recurrence cost
+    uses the compiled carrier_rank, so Play 2 savings are reflected directly.
+    """
+    p, layers = runtime.parameters, runtime.layers
+    quant = runtime.config.get("quantization") or {}
+    bits = int(quant.get("bits", 4))
+
+    def lin(key):
+        if key not in p:
+            return 0
+        out_dim, cols = p[key].shape
+        in_dim = cols * 32 // bits if key + ".scales" in p else cols
+        return out_dim * in_dim
+
+    def basis(key):
+        return p[key].size if key in p else 0
+
+    def out_pair(prefix):
+        if prefix + "output_encoder_weight" in p:
+            return lin(prefix + "output_encoder_weight") + lin(prefix + "output_decoder_weight")
+        return lin(prefix + "output_decoder_weight")
+
+    total = lin("lexical.head_weight")
+    state_bytes = 0
+    for i, layer in enumerate(layers):
+        m = f"mlp.{i}."
+        total += lin(m + "gate_weight") + lin(m + "up_weight") + lin(m + "down_weight")
+        if "deltanet" in layer:
+            d, dc = f"deltanet.{i}.", layer["deltanet"]
+            kh, vh = dc["key_heads"], dc["value_heads"]
+            kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
+            rank = dc.get("carrier_rank", kd)
+            total += (lin(d + "qkv_weight") + lin(d + "z_weight") + lin(d + "a_weight")
+                      + lin(d + "b_weight") + out_pair(d) + basis(d + "input_basis")
+                      + basis(d + "value_basis") + basis(d + "chart_bases")
+                      + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
+            conv_dim = 2 * kh * kd + vh * vd
+            total += conv_dim * dc["conv_kernel_size"] + 5 * vh * vd * rank
+            state_bytes += ((dc["conv_kernel_size"] - 1) * conv_dim + vh * vd * rank) * 4
         else:
-            token = int(mx.argmax(output.logits[0, -1]).item())
-        generated.append(token)
-        if not ignore_eos and token == tokenizer.eos_token_id:
-            break
-        if step + 1 < max_new_tokens:
-            output = runtime.decode(
-                mx.array([[token]], dtype=mx.int32),
-                output.cache,
-                muted_sites=muted_sites,
-                muted_charts=muted_charts,
-            )
-    elapsed = time.perf_counter() - start
-    return tokenizer.decode(generated, skip_special_tokens=True), generated, top5, elapsed
+            a, ac = f"attention.{i}.", layer["attention"]
+            kh, d_head = ac["key_value_heads"], ac["head_dimension"]
+            total += (lin(a + "q_weight") + lin(a + "k_weight") + lin(a + "v_weight")
+                      + out_pair(a) + basis(a + "input_basis"))
+            total += 3 * ac["query_heads"] * d_head * context_len
+            state_bytes += 2 * kh * d_head * context_len * 2
+    return total, state_bytes
 
 
 def _default_chat_artifact():
@@ -546,6 +679,7 @@ def _interactive(args):
     xray_on = bool(args.xray)
     debug_on = bool(args.debug)
     chat_on = bool(args.chat)
+    stream_on = bool(getattr(args, "stream", False))
     max_new_tokens = int(args.max_new_tokens)
     temperature = float(args.temperature)
     top_p = float(args.top_p)
@@ -568,7 +702,12 @@ def _interactive(args):
     )
     reduced_deltanet = sorted(
         i for i in range(len(runtime.layers))
-        if f"deltanet.{i}.output_encoder_weight" in runtime.parameters or f"deltanet.{i}.input_basis" in runtime.parameters
+        if f"deltanet.{i}.output_encoder_weight" in runtime.parameters
+        or f"deltanet.{i}.input_basis" in runtime.parameters
+        or f"deltanet.{i}.value_basis" in runtime.parameters
+    )
+    chart_deltanets = sorted(
+        i for i in range(len(runtime.layers)) if f"deltanet.{i}.chart_centers" in runtime.parameters
     )
     deltanet_ranks = {
         i: runtime.layers[i]["deltanet"].get("carrier_rank", runtime.layers[i]["deltanet"]["key_head_dimension"])
@@ -592,9 +731,16 @@ def _interactive(args):
             raise ValueError(f"Prompt must contain 1..{args.max_prompt_tokens} tokens")
         return ids
 
+    def emitter():
+        if not stream_on:
+            return None
+        return lambda piece: (sys.stdout.write(piece), sys.stdout.flush())
+
     def run_one(raw_text: str):
         ids = encode_prompt(raw_text)
-        text, gen_ids, top5, elapsed = _greedy_continuation(
+        if stream_on:
+            print()
+        text, gen_ids, top5, prefill_s, decode_s = _greedy_continuation(
             runtime,
             tokenizer,
             ids,
@@ -605,17 +751,26 @@ def _interactive(args):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=rep_penalty,
+            emit=emitter(),
+            return_timing_breakdown=True,
         )
-        tok_s = len(gen_ids) / max(elapsed, 1e-6)
+        elapsed = prefill_s + decode_s
+        prompt_tps = len(ids) / max(prefill_s, 1e-6)
+        decode_tps = max(len(gen_ids) - 1, 1) / max(decode_s, 1e-6)
         if debug_on:
             print(f"\n[prompt]   {raw_text}")
             if muted_sites or muted_charts:
                 print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
             mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
-            print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s) [{mode}]")
+            if stream_on:
+                print(f"[compiled] ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
+            else:
+                print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
             top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
             print(f"[top-5]    {top_str}")
-        else:
+            mac_tok, state_b = _mac_stats(runtime, len(ids) + len(gen_ids))
+            print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
+        elif not stream_on:
             print(f"\n{text}")
         if reference is not None:
             ref_text, ref_ids, ref_top5, ref_elapsed = _greedy_continuation(
@@ -662,7 +817,9 @@ def _interactive(args):
                 f"Conversation context is {len(ids)} tokens (> {args.max_context_tokens}); "
                 "use /reset to clear chat history"
             )
-        text_resp, gen_ids, top5, elapsed = _greedy_continuation(
+        if stream_on:
+            print()
+        text_resp, gen_ids, top5, prefill_s, decode_s = _greedy_continuation(
             runtime,
             tokenizer,
             ids,
@@ -673,20 +830,30 @@ def _interactive(args):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=rep_penalty,
+            emit=emitter(),
+            return_timing_breakdown=True,
         )
+        elapsed = prefill_s + decode_s
+        prompt_tps = len(ids) / max(prefill_s, 1e-6)
+        decode_tps = max(len(gen_ids) - 1, 1) / max(decode_s, 1e-6)
         chat_history.append({"role": "assistant", "content": text_resp})
         chat_ctx_tokens = len(ids) + len(gen_ids)
-        tok_s = len(gen_ids) / max(elapsed, 1e-6)
         if debug_on:
             print(f"\n[user]     {user_text}")
             print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
             if muted_sites or muted_charts:
                 print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-            print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s, {tok_s:.1f} tok/s)"
-                  + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
+            if stream_on:
+                print(f"[model]    ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s)"
+                      + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
+            else:
+                print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s)"
+                      + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
             top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
             print(f"[top-5]    {top_str}")
-        else:
+            mac_tok, state_b = _mac_stats(runtime, chat_ctx_tokens)
+            print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
+        elif not stream_on:
             print(f"\n{text_resp}")
         if xray_on:
             xray_ns = argparse.Namespace(
@@ -715,12 +882,14 @@ def _interactive(args):
     print(f"  Chart MLPs     : {chart_mlps}")
     if deltanet_ranks:
         print(f"  Reduced DNet   : {reduced_deltanet}")
+        print(f"  Chart DNet     : {chart_deltanets}")
         print(f"  DeltaNet Ranks : {deltanet_ranks}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
-    print("  Commands       : /xray | /chat | /debug | /context | /reset |")
+    print(f"  Streaming      : {'ON' if stream_on else 'OFF'} (toggle with /stream)")
+    print("  Commands       : /xray | /chat | /stream | /debug | /context | /reset |")
     print("                   /tokens <N> | /temp <F> | /topp <F> | /penalty <F> |")
-    print("                   /preset | /unmute | /quit")
+    print("                   /macs | /preset | /unmute | /quit")
     print("                   /mute attn <L> | /mute mlp <L> | /mute deltanet <L> |")
     print("                   /mute chart <L> <C>")
     print("==============================================================================")
@@ -739,6 +908,18 @@ def _interactive(args):
         if line == "/xray":
             xray_on = not xray_on
             print(f"[harness] X-Ray mode is now {'ON' if xray_on else 'OFF'}")
+            continue
+        if line == "/stream":
+            stream_on = not stream_on
+            print(f"[harness] Streaming is now {'ON' if stream_on else 'OFF'}")
+            continue
+        if line == "/macs":
+            mac_tok, state_b = _mac_stats(runtime, max(chat_ctx_tokens, 1))
+            print(f"[harness] ~{mac_tok/1e9:.2f} G-MAC/token | cache+state ~{state_b/2**20:.1f} MiB @ {max(chat_ctx_tokens,1)} tok context")
+            if reference is not None:
+                ref_tok, ref_b = _mac_stats(reference, max(chat_ctx_tokens, 1))
+                saved = (ref_tok - mac_tok) / max(ref_tok, 1) * 100
+                print(f"[harness] reference: ~{ref_tok/1e9:.2f} G-MAC/token | compiled saves {saved:.1f}% MACs/token")
             continue
         if line == "/debug":
             debug_on = not debug_on
@@ -892,6 +1073,7 @@ def build_parser():
     interactive.add_argument("--chat", action="store_true", help="Apply Qwen3 chat template (thinking disabled)")
     interactive.add_argument("--xray", action="store_true", help="Enable per-prompt X-Ray chart/ablation output")
     interactive.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats (default: answer only)")
+    interactive.add_argument("--stream", action="store_true", help="Print generated tokens as they decode")
     interactive.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
     interactive.add_argument("--max-context-tokens", type=_positive_int, default=4096)
@@ -922,6 +1104,7 @@ def build_parser():
     chat.add_argument("--system-prompt")
     chat.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats")
     chat.add_argument("--xray", action="store_true", help="Enable per-turn X-Ray output")
+    chat.add_argument("--stream", action="store_true", help="Print generated tokens as they decode")
     chat.add_argument("--ignore-eos", action="store_true")
     chat.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     chat.add_argument("--mute-mlp-layer", type=int, action="append", default=[])

@@ -44,10 +44,15 @@ def _norm_spec(module):
             "scale_parameterization": "direct", "cast_before_scale": True}
 
 
-def _rms(x, weight, spec):
+def _rms(x, weight, spec, *, fast=False):
     if spec["kind"] == "identity":
         return x
     mx = _core()
+    if fast and hasattr(mx, "fast"):
+        w = weight.astype(x.dtype)
+        if spec.get("scale_parameterization") == "unit_offset":
+            w = w + 1.0
+        return mx.fast.rms_norm(x, w, spec["epsilon"])
     y = x.astype(mx.float32)
     y = y * mx.rsqrt(mx.mean(y * y, axis=-1, keepdims=True) + spec["epsilon"])
     gain = weight.astype(mx.float32)
@@ -58,12 +63,91 @@ def _rms(x, weight, spec):
     return (y * gain).astype(x.dtype)
 
 
+_GDN_METAL_KERNEL = None
+
+
+def _get_gdn_metal_kernel(mx):
+    global _GDN_METAL_KERNEL
+    if _GDN_METAL_KERNEL is not None:
+        return _GDN_METAL_KERNEL
+    if not hasattr(mx, "fast") or not hasattr(mx, "metal") or not mx.metal.is_available():
+        return None
+    source = """
+        auto n = thread_position_in_grid.z;
+        auto b_idx = n / Hv;
+        auto hv_idx = n % Hv;
+        auto hk_idx = hv_idx / (Hv / Hk);
+        constexpr int n_per_t = Dk / 32;
+
+        auto q_ = q + b_idx * T * Hk * Dk + hk_idx * Dk;
+        auto k_ = k + b_idx * T * Hk * Dk + hk_idx * Dk;
+        auto v_ = v + b_idx * T * Hv * Dv + hv_idx * Dv;
+        y += b_idx * T * Hv * Dv + hv_idx * Dv;
+
+        auto dk_idx = thread_position_in_threadgroup.x;
+        auto dv_idx = thread_position_in_grid.y;
+
+        auto i_state = state_in + (n * Dv + dv_idx) * Dk;
+        auto o_state = state_out + (n * Dv + dv_idx) * Dk;
+
+        float state[n_per_t];
+        for (int i = 0; i < n_per_t; ++i) {
+          auto s_idx = n_per_t * dk_idx + i;
+          state[i] = static_cast<float>(i_state[s_idx]);
+        }
+
+        auto g_ = g + b_idx * T * Hv;
+        auto beta_ = beta + b_idx * T * Hv;
+
+        for (int t = 0; t < T; ++t) {
+          float kv_mem = 0.0f;
+          for (int i = 0; i < n_per_t; ++i) {
+            auto s_idx = n_per_t * dk_idx + i;
+            state[i] = state[i] * g_[hv_idx];
+            kv_mem += state[i] * k_[s_idx];
+          }
+          kv_mem = simd_sum(kv_mem);
+
+          auto delta = (v_[dv_idx] - kv_mem) * beta_[hv_idx];
+
+          float out = 0.0f;
+          for (int i = 0; i < n_per_t; ++i) {
+            auto s_idx = n_per_t * dk_idx + i;
+            state[i] = state[i] + k_[s_idx] * delta;
+            out += state[i] * q_[s_idx];
+          }
+          out = simd_sum(out);
+          if (thread_index_in_simdgroup == 0) {
+            y[dv_idx] = static_cast<InT>(out);
+          }
+          q_ += Hk * Dk;
+          k_ += Hk * Dk;
+          v_ += Hv * Dv;
+          y += Hv * Dv;
+          g_ += Hv;
+          beta_ += Hv;
+        }
+        for (int i = 0; i < n_per_t; ++i) {
+          auto s_idx = n_per_t * dk_idx + i;
+          o_state[s_idx] = static_cast<StT>(state[i]);
+        }
+    """
+    _GDN_METAL_KERNEL = mx.fast.metal_kernel(
+        name="fisher_gated_delta_step",
+        input_names=["q", "k", "v", "g", "beta", "state_in", "T"],
+        output_names=["y", "state_out"],
+        source=source,
+    )
+    return _GDN_METAL_KERNEL
+
+
 @dataclass(frozen=True)
 class MLXQwen3Cache:
     """Keys/values plus per-row physical validity and logical RoPE positions."""
     key_values: tuple
     attention_mask: Any
     position_ids: Any
+    all_valid: bool = False
 
     @property
     def length(self):
@@ -92,6 +176,7 @@ class MLXQwen3:
         self.layers = tuple(self.config["layers"])
         if not self.layers:
             raise ValueError("Qwen3 requires at least one decoder layer")
+        self._fast_cache: dict[str, Any] = {}
 
     def with_parameters(self, updates, *, remove=(), layer_overrides=None):
         parameters = {k: v for k, v in self.parameters.items() if k not in remove}
@@ -420,22 +505,28 @@ class MLXQwen3:
                  return_logits=True, cache=None):
         mx = _core()
         p = self.parameters if parameters is None else parameters
-        ids = mx.array(input_ids)
+        ids = input_ids if isinstance(input_ids, mx.array) else mx.array(input_ids)
         if ids.ndim != 2 or min(ids.shape) < 1 or ids.dtype not in (mx.int32, mx.int64, mx.uint32, mx.uint64):
             raise ValueError("input_ids must be a nonempty integer [batch, length] array")
         lexical = p.get("lexical.weight", p.get("lexical.codebook"))
-        if not bool(mx.all((ids >= 0) & (ids < lexical.shape[0])).item()):
-            raise ValueError("input_ids must lie within the lexical vocabulary")
+        if cache is None or not isinstance(input_ids, mx.array):
+            if not bool(mx.all((ids >= 0) & (ids < lexical.shape[0])).item()):
+                raise ValueError("input_ids must lie within the lexical vocabulary")
         b, t = ids.shape
+        all_valid = attention_mask is None and (cache is None or getattr(cache, "all_valid", False))
         valid = mx.ones((b, t), dtype=mx.bool_) if attention_mask is None else mx.array(attention_mask).astype(mx.bool_)
         if valid.shape != ids.shape:
             raise ValueError("attention_mask must describe only the current input tokens")
         if cache is not None and (cache.attention_mask.shape[0] != b or len(cache.key_values) != len(self.layers)):
             raise ValueError("cache batch/layer count mismatch")
         if position_ids is None:
-            start = (mx.max(mx.where(cache.attention_mask, cache.position_ids, -1), axis=1, keepdims=True) + 1
-                     if cache is not None else mx.zeros((b, 1), dtype=mx.int32))
-            positions = mx.maximum(start + mx.cumsum(valid.astype(mx.int32), axis=1) - 1, 0)
+            if all_valid:
+                offset_pos = cache.length if cache is not None else 0
+                positions = mx.broadcast_to(mx.arange(offset_pos, offset_pos + t, dtype=mx.int32)[None, :], (b, t))
+            else:
+                start = (mx.max(mx.where(cache.attention_mask, cache.position_ids, -1), axis=1, keepdims=True) + 1
+                         if cache is not None else mx.zeros((b, 1), dtype=mx.int32))
+                positions = mx.maximum(start + mx.cumsum(valid.astype(mx.int32), axis=1) - 1, 0)
         else:
             positions = mx.array(position_ids)
             if positions.shape != ids.shape or positions.dtype not in (mx.int32, mx.int64):
@@ -448,6 +539,34 @@ class MLXQwen3:
         muted_chart_set = {(int(layer_idx), int(chart_idx)) for layer_idx, chart_idx in (muted_charts or ())}
         seen = set()
         capture_sites = None if capture is True else set(capture or ())
+        has_transports = bool(self.config.get("transports"))
+        use_fast_kernel = (
+            all_valid
+            and parameters is None
+            and not capture
+            and not perturbations
+            and mx.default_device() == mx.gpu
+        )
+        gdn_kernel = _get_gdn_metal_kernel(mx) if use_fast_kernel else None
+        fc = self._fast_cache if use_fast_kernel else None
+
+        def fast_rms(x_val, key, spec):
+            if spec["kind"] == "identity":
+                return x_val
+            if fc is not None and hasattr(mx, "fast"):
+                ck = ("rms", key, x_val.dtype)
+                w = fc.get(ck)
+                if w is None:
+                    w = p[key].astype(x_val.dtype)
+                    if spec.get("scale_parameterization") == "unit_offset":
+                        w = w + 1.0
+                    mx.eval(w)
+                    fc[ck] = w
+                return mx.fast.rms_norm(x_val, w, spec["epsilon"])
+            return _rms(x_val, p.get(key), spec)
+
+        def mask_valid(val):
+            return val if all_valid else mx.where(valid[..., None], val, 0)
 
         def observe(name, value):
             if name in muted_site_set:
@@ -503,11 +622,12 @@ class MLXQwen3:
                 d = f"deltanet.{i}"
                 dc = layer["deltanet"]
                 state = observe(d + ".input", x)
-                n = observe(d + ".normalized", _rms(state, p.get(d + ".input_norm_weight"), dc["input_norm"]))
-                n_masked = mx.where(valid[..., None], n, 0)
+                n = observe(d + ".normalized", fast_rms(state, d + ".input_norm_weight", dc["input_norm"]))
+                n_masked = mask_valid(n)
                 coords = n_masked @ p[d + ".input_basis"] if d + ".input_basis" in p else n_masked
-                coords = mx.where(valid[..., None], coords, 0)
-                coords = coords + incoming(d, 1, coords.shape[-1], coords.dtype)[..., 0, :]
+                coords = mask_valid(coords)
+                if has_transports:
+                    coords = coords + incoming(d, 1, coords.shape[-1], coords.dtype)[..., 0, :]
                 kh, vh = dc["key_heads"], dc["value_heads"]
                 kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
                 k_total, v_total = kh * kd, vh * vd
@@ -524,8 +644,17 @@ class MLXQwen3:
                     rec_state = None
                 conv_in = mx.concatenate((conv_state, qkv), axis=1)
                 new_conv_state = conv_in[:, -(kernel_size - 1):, :] if kernel_size > 1 else conv_state
-                conv_w = p[d + ".conv_weight"].reshape(conv_dim, kernel_size)
-                conv_out = sum(conv_in[:, k_idx : k_idx + t, :] * conv_w[:, k_idx] for k_idx in range(kernel_size))
+                if t == 1 and fc is not None:
+                    ck_conv = ("conv_w_t", d, qkv.dtype)
+                    conv_wt = fc.get(ck_conv)
+                    if conv_wt is None:
+                        conv_wt = mx.contiguous(p[d + ".conv_weight"].reshape(conv_dim, kernel_size).T[None, :, :].astype(qkv.dtype))
+                        mx.eval(conv_wt)
+                        fc[ck_conv] = conv_wt
+                    conv_out = mx.sum(conv_in * conv_wt, axis=1, keepdims=True)
+                else:
+                    conv_w = p[d + ".conv_weight"].reshape(conv_dim, kernel_size)
+                    conv_out = sum(conv_in[:, k_idx : k_idx + t, :] * conv_w[:, k_idx] for k_idx in range(kernel_size))
                 if d + ".conv_bias" in p:
                     conv_out = conv_out + p[d + ".conv_bias"]
                 conv_f = conv_out.astype(mx.float32)
@@ -534,62 +663,140 @@ class MLXQwen3:
                 k_raw = conv_act[..., k_total : 2 * k_total].reshape(b, t, kh, kd)
                 v = observe(d + ".v", conv_act[..., 2 * k_total:]).reshape(b, t, vh, vd)
                 eps = dc.get("qk_l2_eps", 1e-6)
-                q_f, k_f = q_raw.astype(mx.float32), k_raw.astype(mx.float32)
-                q_norm = (q_f * mx.rsqrt(mx.sum(q_f * q_f, axis=-1, keepdims=True) + eps)) * (kd ** -0.5)
-                k_norm = k_f * mx.rsqrt(mx.sum(k_f * k_f, axis=-1, keepdims=True) + eps)
-                q = observe(d + ".q", q_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
-                k = observe(d + ".k", k_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
-                if d + ".carrier_basis" in p:
-                    basis = p[d + ".carrier_basis"].astype(mx.float32)
-                    q_rec = mx.einsum("bthd,hdr->bthr", q.astype(mx.float32), basis)
-                    k_rec = mx.einsum("bthd,hdr->bthr", k.astype(mx.float32), basis)
+                if use_fast_kernel:
+                    inv_scale = kd ** -0.5
+                    rms_eps = eps * (inv_scale ** 2)
+                    q = (inv_scale ** 2) * mx.fast.rms_norm(q_raw, None, rms_eps)
+                    k = inv_scale * mx.fast.rms_norm(k_raw, None, rms_eps)
                 else:
-                    q_rec, k_rec = q.astype(mx.float32), k.astype(mx.float32)
-                if vh // kh > 1:
-                    q_rec = mx.repeat(q_rec, vh // kh, axis=2)
-                    k_rec = mx.repeat(k_rec, vh // kh, axis=2)
-                v_f = v.astype(mx.float32)
+                    q_f, k_f = q_raw.astype(mx.float32), k_raw.astype(mx.float32)
+                    q_norm = (q_f * mx.rsqrt(mx.sum(q_f * q_f, axis=-1, keepdims=True) + eps)) * (kd ** -0.5)
+                    k_norm = k_f * mx.rsqrt(mx.sum(k_f * k_f, axis=-1, keepdims=True) + eps)
+                    q = observe(d + ".q", q_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                    k = observe(d + ".k", k_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                if d + ".carrier_basis" in p:
+                    if use_fast_kernel:
+                        ck_b = ("carrier_basis", d, q.dtype)
+                        basis = fc.get(ck_b)
+                        if basis is None:
+                            basis = mx.contiguous(p[d + ".carrier_basis"].astype(q.dtype))
+                            mx.eval(basis)
+                            fc[ck_b] = basis
+                        if b == 1 and t == 1:
+                            r_dim = basis.shape[-1]
+                            q_rec = (q.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
+                            k_rec = (k.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
+                        else:
+                            q_rec = mx.contiguous((q.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
+                            k_rec = mx.contiguous((k.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
+                    else:
+                        basis = p[d + ".carrier_basis"].astype(mx.float32)
+                        q_rec = mx.einsum("bthd,hdr->bthr", q.astype(mx.float32), basis)
+                        k_rec = mx.einsum("bthd,hdr->bthr", k.astype(mx.float32), basis)
+                else:
+                    q_rec, k_rec = (q, k) if use_fast_kernel else (q.astype(mx.float32), k.astype(mx.float32))
                 beta = mx.sigmoid(b_gate.astype(mx.float32))
                 a_val = a_gate.astype(mx.float32) + p[d + ".dt_bias"].astype(mx.float32)
                 softplus_a = mx.log1p(mx.exp(-mx.abs(a_val))) + mx.maximum(a_val, 0.0)
-                g_decay = mx.exp(-mx.exp(p[d + ".A_log"].astype(mx.float32)) * softplus_a)
+                if fc is not None:
+                    ck_a = ("neg_exp_A", d)
+                    neg_exp_a = fc.get(ck_a)
+                    if neg_exp_a is None:
+                        neg_exp_a = -mx.exp(p[d + ".A_log"].astype(mx.float32))
+                        mx.eval(neg_exp_a)
+                        fc[ck_a] = neg_exp_a
+                    g_decay = mx.exp(neg_exp_a * softplus_a)
+                else:
+                    g_decay = mx.exp(-mx.exp(p[d + ".A_log"].astype(mx.float32)) * softplus_a)
                 carrier_dim = q_rec.shape[-1]
                 if rec_state is None:
                     rec_state = mx.zeros((b, vh, vd, carrier_dim), dtype=mx.float32)
                 else:
                     rec_state = rec_state.astype(mx.float32)
-                ys = []
-                for step in range(t):
-                    q_t = q_rec[:, step]
-                    k_t = k_rec[:, step]
-                    v_t = v_f[:, step]
-                    g_t = g_decay[:, step, :, None, None]
-                    beta_t = beta[:, step, :, None]
-                    rec_state = rec_state * g_t
-                    kv_mem = mx.sum(rec_state * k_t[:, :, None, :], axis=-1)
-                    delta_v = (v_t - kv_mem) * beta_t
-                    rec_state = rec_state + delta_v[:, :, :, None] * k_t[:, :, None, :]
-                    y_t = mx.sum(rec_state * q_t[:, :, None, :], axis=-1)
-                    ys.append(y_t)
-                rec_out = observe(d + ".recurrent_out", mx.stack(ys, axis=1).astype(qkv.dtype).reshape(b, t, v_total)).reshape(b, t, vh, vd)
+                if gdn_kernel is not None and carrier_dim >= 32 and carrier_dim % 32 == 0:
+                    y_kern, rec_state = gdn_kernel(
+                        inputs=[q_rec.astype(qkv.dtype), k_rec.astype(qkv.dtype), v, g_decay, beta.astype(qkv.dtype), rec_state, t],
+                        template=[
+                            ("InT", qkv.dtype),
+                            ("StT", rec_state.dtype),
+                            ("Dk", carrier_dim),
+                            ("Dv", vd),
+                            ("Hk", kh),
+                            ("Hv", vh),
+                        ],
+                        grid=(32, vd, b * vh),
+                        threadgroup=(32, 4, 1),
+                        output_shapes=[(b, t, vh, vd), rec_state.shape],
+                        output_dtypes=[qkv.dtype, rec_state.dtype],
+                    )
+                    rec_out = observe(d + ".recurrent_out", y_kern.reshape(b, t, v_total)).reshape(b, t, vh, vd)
+                else:
+                    q_rec, k_rec = q_rec.astype(mx.float32), k_rec.astype(mx.float32)
+                    if vh // kh > 1:
+                        q_rec = mx.repeat(q_rec, vh // kh, axis=2)
+                        k_rec = mx.repeat(k_rec, vh // kh, axis=2)
+                    v_f = v.astype(mx.float32)
+                    ys = []
+                    for step in range(t):
+                        q_t = q_rec[:, step]
+                        k_t = k_rec[:, step]
+                        v_t = v_f[:, step]
+                        g_t = g_decay[:, step, :, None, None]
+                        beta_t = beta[:, step, :, None]
+                        rec_state = rec_state * g_t
+                        kv_mem = mx.sum(rec_state * k_t[:, :, None, :], axis=-1)
+                        delta_v = (v_t - kv_mem) * beta_t
+                        rec_state = rec_state + delta_v[:, :, :, None] * k_t[:, :, None, :]
+                        y_t = mx.sum(rec_state * q_t[:, :, None, :], axis=-1)
+                        ys.append(y_t)
+                    rec_out = observe(d + ".recurrent_out", mx.stack(ys, axis=1).astype(qkv.dtype).reshape(b, t, v_total)).reshape(b, t, vh, vd)
                 new_kv.append((new_conv_state, rec_state))
-                normed_out = _rms(rec_out, p.get(d + ".norm_weight"), dc["norm"])
+                normed_out = fast_rms(rec_out, d + ".norm_weight", dc["norm"])
                 z_f = z.astype(mx.float32)
                 gated_out = (normed_out.astype(mx.float32) * (z_f * mx.sigmoid(z_f))).astype(qkv.dtype)
                 context = observe(d + ".context", gated_out.reshape(b, t, v_total))
-                outcoords = linear(context, d + ".output_encoder_weight") if d + ".output_encoder_weight" in p else context
-                raw = observe(d + ".output", linear(outcoords, d + ".output_decoder_weight", d + ".o_bias"))
-                delta = observe(d + ".delta", _rms(raw, p.get(d + ".output_norm_weight"), dc["output_norm"]))
-                x = state + mx.where(valid[..., None], delta, 0)
-                messages[d] = mx.where(valid[..., None], outcoords, 0)[..., None, :]
+                if d + ".value_basis" in p:
+                    v_basis = p[d + ".value_basis"].astype(gated_out.dtype)
+                    if b == 1 and t == 1:
+                        r_v = v_basis.shape[-1]
+                        outcoords = (gated_out.reshape(vh, 1, vd) @ v_basis).reshape(1, 1, vh * r_v)
+                    else:
+                        outcoords = (gated_out.transpose(0, 2, 1, 3) @ v_basis).transpose(0, 2, 1, 3).reshape(b, t, -1)
+                elif d + ".output_encoder_weight" in p:
+                    outcoords = linear(context, d + ".output_encoder_weight")
+                else:
+                    outcoords = context
+                raw = linear(outcoords, d + ".output_decoder_weight", d + ".o_bias")
+                if d + ".chart_centers" in p:
+                    d_centers = p[d + ".chart_centers"]
+                    d_disp = context[..., None, :] - d_centers
+                    d_scales = p[d + ".chart_distance_scales"]
+                    d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
+                    if muted_chart_set:
+                        d_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(d_centers.shape[0])]
+                        if any(v == 0.0 for v in d_keep):
+                            d_memb = d_memb * mx.array(d_keep, dtype=d_memb.dtype)
+                    d_coords = mx.einsum("btch,chr->btcr", d_disp, p[d + ".chart_bases"])
+                    d_aug = mx.concatenate((mx.ones_like(d_coords[..., :1]), d_coords), axis=-1)
+                    d_enc = p[d + ".local_generator_encoders"]
+                    d_local = mx.einsum("btcr,crg->btcg", d_aug, d_enc)
+                    d_inc = incoming(d, d_centers.shape[0], d_enc.shape[-1], context.dtype) if has_transports else 0
+                    d_packet = d_memb[..., None] * (d_local + d_inc)
+                    raw = raw + mx.einsum("btcg,cgm->btm", d_packet, p[d + ".chart_mode_decoders"])
+                raw = observe(d + ".output", raw)
+                delta = observe(d + ".delta", fast_rms(raw, d + ".output_norm_weight", dc["output_norm"]))
+                x = state + mask_valid(delta)
+                if has_transports:
+                    messages[d] = mask_valid(outcoords)[..., None, :]
             else:
                 a = f"attention.{i}"
                 ac = layer["attention"]
                 state = observe(a + ".input", x)
-                n = observe(a + ".normalized", _rms(state, p.get(a + ".input_norm_weight"), ac["input_norm"]))
+                n = observe(a + ".normalized", fast_rms(state, a + ".input_norm_weight", ac["input_norm"]))
                 coords = n @ p[a + ".input_basis"] if a + ".input_basis" in p else n
-                coords = mx.where(valid[..., None], coords, 0)
-                coords = coords + incoming(a, 1, coords.shape[-1], coords.dtype)[..., 0, :]
+                coords = mask_valid(coords)
+                if has_transports:
+                    coords = coords + incoming(a, 1, coords.shape[-1], coords.dtype)[..., 0, :]
                 qh, kh, d = ac["query_heads"], ac["key_value_heads"], ac["head_dimension"]
                 use_gate = bool(ac.get("output_gate", False))
                 if use_gate:
@@ -600,50 +807,61 @@ class MLXQwen3:
                     attn_gate = None
                 q = q_proj.transpose(0, 2, 1, 3)
                 if ac["qk_norm"] is not None:
-                    q = _rms(q, p[a + ".q_norm_weight"], ac["qk_norm"])
+                    q = fast_rms(q, a + ".q_norm_weight", ac["qk_norm"])
                 k = linear(coords, a + ".k_weight", a + ".k_bias").reshape(b, t, kh, d).transpose(0, 2, 1, 3)
                 if ac["qk_norm"] is not None:
-                    k = _rms(k, p[a + ".k_norm_weight"], ac["qk_norm"])
+                    k = fast_rms(k, a + ".k_norm_weight", ac["qk_norm"])
                 v = linear(coords, a + ".v_weight", a + ".v_bias").reshape(b, t, kh, d).transpose(0, 2, 1, 3)
                 d_rot = int(ac.get("rotary_dimension", d))
-                inv = ac["theta"] ** (-mx.arange(0, d_rot, 2, dtype=mx.float32) / d_rot)
-                freqs = positions.astype(mx.float32)[..., None] * inv / ac["rope_factor"]
-                angles = mx.concatenate((freqs, freqs), axis=-1)[:, None, :, :]
-                cos, sin = mx.cos(angles).astype(q.dtype), mx.sin(angles).astype(q.dtype)
+                offset = cache.length if cache else 0
+                if use_fast_kernel and position_ids is None and ac["rope_factor"] == 1.0:
+                    q = mx.fast.rope(q, d_rot, traditional=False, base=ac["theta"], scale=1.0, offset=offset)
+                    k = mx.fast.rope(k, d_rot, traditional=False, base=ac["theta"], scale=1.0, offset=offset)
+                else:
+                    inv = ac["theta"] ** (-mx.arange(0, d_rot, 2, dtype=mx.float32) / d_rot)
+                    freqs = positions.astype(mx.float32)[..., None] * inv / ac["rope_factor"]
+                    angles = mx.concatenate((freqs, freqs), axis=-1)[:, None, :, :]
+                    cos, sin = mx.cos(angles).astype(q.dtype), mx.sin(angles).astype(q.dtype)
 
-                def rotary(y):
-                    y_rot, y_pass = y[..., :d_rot], y[..., d_rot:]
-                    y_rot = y_rot * cos + mx.concatenate((-y_rot[..., d_rot // 2:], y_rot[..., :d_rot // 2]), axis=-1) * sin
-                    return mx.concatenate((y_rot, y_pass), axis=-1) if d_rot < d else y_rot
+                    def rotary(y):
+                        y_rot, y_pass = y[..., :d_rot], y[..., d_rot:]
+                        y_rot = y_rot * cos + mx.concatenate((-y_rot[..., d_rot // 2:], y_rot[..., :d_rot // 2]), axis=-1) * sin
+                        return mx.concatenate((y_rot, y_pass), axis=-1) if d_rot < d else y_rot
 
-                q, k = rotary(q), rotary(k)
+                    q, k = rotary(q), rotary(k)
                 if cache:
                     k = mx.concatenate((cache.key_values[i][0], k), axis=2)
                     v = mx.concatenate((cache.key_values[i][1], v), axis=2)
                 new_kv.append((k, v))
-                kr, vr = mx.repeat(k, qh // kh, axis=1), mx.repeat(v, qh // kh, axis=1)
-                scores = (q @ kr.transpose(0, 1, 3, 2)) * ac["query_scale"]
-                if ac["logit_softcap"] is not None:
-                    cap = ac["logit_softcap"]
-                    scores = mx.tanh(scores / cap) * cap
-                offset = cache.length if cache else 0
-                physical_causal = mx.arange(key_valid.shape[1])[None, :] <= (mx.arange(t) + offset)[:, None]
-                allowed = valid[:, :, None] & key_valid[:, None, :] & physical_causal[None, :, :]
-                if ac["window_size"] is not None:
-                    allowed = allowed & ((positions[:, :, None] - key_positions[:, None, :]) < ac["window_size"])
-                scores = mx.where(allowed[:, None, :, :], scores.astype(mx.float32), -3.4028234663852886e38)
-                probabilities = mx.softmax(scores, axis=-1).astype(q.dtype)
-                raw_context = (probabilities @ vr).transpose(0, 2, 1, 3).reshape(b, t, qh * d)
+                if use_fast_kernel and ac["logit_softcap"] is None and ac["window_size"] is None:
+                    sdpa_mask = "causal" if t > 1 else None
+                    raw_context = mx.fast.scaled_dot_product_attention(
+                        q, k, v, scale=ac["query_scale"], mask=sdpa_mask
+                    ).transpose(0, 2, 1, 3).reshape(b, t, qh * d)
+                else:
+                    kr, vr = mx.repeat(k, qh // kh, axis=1), mx.repeat(v, qh // kh, axis=1)
+                    scores = (q @ kr.transpose(0, 1, 3, 2)) * ac["query_scale"]
+                    if ac["logit_softcap"] is not None:
+                        cap = ac["logit_softcap"]
+                        scores = mx.tanh(scores / cap) * cap
+                    physical_causal = mx.arange(key_valid.shape[1])[None, :] <= (mx.arange(t) + offset)[:, None]
+                    allowed = valid[:, :, None] & key_valid[:, None, :] & physical_causal[None, :, :]
+                    if ac["window_size"] is not None:
+                        allowed = allowed & ((positions[:, :, None] - key_positions[:, None, :]) < ac["window_size"])
+                    scores = mx.where(allowed[:, None, :, :], scores.astype(mx.float32), -3.4028234663852886e38)
+                    probabilities = mx.softmax(scores, axis=-1).astype(q.dtype)
+                    raw_context = (probabilities @ vr).transpose(0, 2, 1, 3).reshape(b, t, qh * d)
                 if attn_gate is not None:
                     raw_context = (raw_context.astype(mx.float32) * mx.sigmoid(attn_gate.astype(mx.float32))).astype(raw_context.dtype)
                 context = observe(a + ".context", raw_context)
                 outcoords = linear(context, a + ".output_encoder_weight") if a + ".output_encoder_weight" in p else context
                 raw = observe(a + ".output", linear(outcoords, a + ".output_decoder_weight", a + ".o_bias"))
-                delta = observe(a + ".delta", _rms(raw, p.get(a + ".output_norm_weight"), ac["output_norm"]))
-                x = state + mx.where(valid[..., None], delta, 0)
-                messages[a] = mx.where(valid[..., None], outcoords, 0)[..., None, :]
+                delta = observe(a + ".delta", fast_rms(raw, a + ".output_norm_weight", ac["output_norm"]))
+                x = state + mask_valid(delta)
+                if has_transports:
+                    messages[a] = mask_valid(outcoords)[..., None, :]
             state = observe(m + ".input", x)
-            n = observe(m + ".normalized", _rms(state, p.get(m + ".input_norm_weight"), mc["input_norm"]))
+            n = observe(m + ".normalized", fast_rms(state, m + ".input_norm_weight", mc["input_norm"]))
             if m + ".chart_centers" in p:
                 centers = p[m + ".chart_centers"]
                 displacement = n[..., None, :] - centers
@@ -657,19 +875,23 @@ class MLXQwen3:
                 aug = mx.concatenate((mx.ones_like(coordinates[..., :1]), coordinates), axis=-1)
                 enc = p[m + ".local_generator_encoders"]
                 local = mx.einsum("btcr,crg->btcg", aug, enc)
-                packet = memberships[..., None] * (local + incoming(m, centers.shape[0], enc.shape[-1], n.dtype))
+                inc = incoming(m, centers.shape[0], enc.shape[-1], n.dtype) if has_transports else 0
+                packet = memberships[..., None] * (local + inc)
                 modal = linear(n, m + ".affine_weight", m + ".affine_bias") + mx.einsum("btcg,cgm->btm", packet, p[m + ".chart_mode_decoders"])
                 raw = linear(modal, m + ".mode_decoder_weight") if m + ".mode_decoder_weight" in p else modal
             else:
                 gate = linear(n, m + ".gate_weight")
                 raw = linear((gate * mx.sigmoid(gate)) * linear(n, m + ".up_weight"), m + ".down_weight")
-                packet = mx.zeros((b, t, mc.get("emitted_chart_count", 1), mc.get("emitted_generator_rank", n.shape[-1])), dtype=n.dtype)
+                packet = None
             raw = observe(m + ".output", raw)
-            delta = observe(m + ".delta", _rms(raw, p.get(m + ".output_norm_weight"), mc["output_norm"]))
-            x = state + mx.where(valid[..., None], delta, 0)
-            messages[m] = mx.where(valid[..., None, None], packet, 0)
+            delta = observe(m + ".delta", fast_rms(raw, m + ".output_norm_weight", mc["output_norm"]))
+            x = state + mask_valid(delta)
+            if has_transports:
+                if packet is None:
+                    packet = mx.zeros((b, t, mc.get("emitted_chart_count", 1), mc.get("emitted_generator_rank", n.shape[-1])), dtype=n.dtype)
+                messages[m] = mx.where(valid[..., None, None], packet, 0)
         x = observe("terminal", x)
-        normalized = observe("terminal.normalized", _rms(x, p.get("terminal.weight"), self.config["terminal_norm"]))
+        normalized = observe("terminal.normalized", fast_rms(x, "terminal.weight", self.config["terminal_norm"]))
         logits = None
         if return_logits:
             if "lexical.head_weight" in p:
@@ -685,7 +907,7 @@ class MLXQwen3:
             raise ValueError(f"Unknown perturbation sites: {sorted(set(perturbations) - seen)}")
         if capture_sites and capture_sites - set(captures):
             raise ValueError(f"Unknown capture sites: {sorted(capture_sites - set(captures))}")
-        return MLXQwen3Output(logits, x, captures, MLXQwen3Cache(tuple(new_kv), key_valid, key_positions))
+        return MLXQwen3Output(logits, x, captures, MLXQwen3Cache(tuple(new_kv), key_valid, key_positions, all_valid))
 
     def prefill(self, input_ids, **kwargs):
         return self(input_ids, **kwargs)
