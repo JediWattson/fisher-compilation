@@ -2239,7 +2239,7 @@ def fit_bottleneck_swiglu(
 
     if eff_clusters > 1:
         act_ord = act_np[:, selected_order].reshape(act_np.shape[0], eff_clusters, -1)
-        clus_energy = np.mean(np.sum((act_ord ** 2) * w_np[:, None, None], axis=-1), axis=0)
+        clus_energy = np.sum(np.sum(act_ord ** 2, axis=-1) * w_np[:, None], axis=0)
         updates[prefix + "cluster_scales"] = mx.array(
             np.maximum(clus_energy, 1e-8).astype(np.float32), dtype=deployment_dtype
         )
@@ -2428,11 +2428,167 @@ def allocate_waterfill_mlp_intermediates(
     }
 
 
+def _balanced_spectral_partition(energy_matrix: np.ndarray, cluster_count: int) -> list[np.ndarray]:
+    """Partition columns of [N_tokens, M_units] energy_matrix into balanced co-activating clusters."""
+    m_units = int(energy_matrix.shape[1])
+    clus_size = m_units // cluster_count
+    e_log = np.log1p(np.maximum(energy_matrix.astype(np.float64), 0.0))
+    e_std = (e_log - np.mean(e_log, axis=0, keepdims=True)) / (np.std(e_log, axis=0, keepdims=True) + 1e-6)
+    _, s_v, vt = np.linalg.svd(e_std, full_matrices=False)
+    k_modes = min(cluster_count, vt.shape[0])
+    scores = np.zeros((m_units, cluster_count), dtype=np.float64)
+    scores[:, :k_modes] = vt[:k_modes, :].T * s_v[:k_modes]
+    clusters: list[list[int]] = [[] for _ in range(cluster_count)]
+    pref = np.argsort(-scores, axis=1)
+    margin = (
+        np.max(scores, axis=1) - np.partition(scores, -2, axis=1)[:, -2]
+        if cluster_count > 1 else np.zeros(m_units)
+    )
+    for ui in np.argsort(-margin):
+        for c in pref[ui]:
+            if len(clusters[c]) < clus_size:
+                clusters[c].append(int(ui))
+                break
+    return [np.sort(np.array(c, dtype=np.int32)) for c in clusters]
+
+
+def fit_all_clusters(
+    runtime: Any,
+    batches: Sequence[Mapping[str, Any]],
+    *,
+    cluster_count: int = 4,
+    captures: Mapping[str, Any] | None = None,
+) -> MLXFitResult:
+    """Partition all DeltaNet value heads, Attention query heads, and full-width SwiGLU MLPs
+    into ``cluster_count`` balanced co-activating clusters without modifying weight values.
+
+    - For each ``deltanet.{l}`` (``Hv`` value heads) and ``attention.{l}`` (``Qh`` query heads),
+      groups heads by standardized log context-energy SVD into ``cluster_count`` head clusters,
+      storing ``head_cluster_assign`` (``[H]`` int32) and ``head_cluster_scales`` (``[C]``).
+    - For each ``mlp.{l}`` that does not yet have ``cluster_scales``, groups its intermediate
+      SwiGLU neurons by standardized log firing energy into ``cluster_count`` neuron clusters,
+      storing ``cluster_indices`` (``[M]`` int32) and ``cluster_scales`` (``[C]``) without
+      requantizing ``gate_weight``, ``up_weight``, or ``down_weight``.
+    """
+    mx = _mx()
+    _rank(cluster_count, 64, "cluster_count")
+    p = runtime.parameters
+    layer_count = len(runtime.layers)
+
+    ctx_sites = []
+    mlp_norm_sites = []
+    for i, layer in enumerate(runtime.layers):
+        if "deltanet" in layer and f"deltanet.{i}.qkv_weight" in p:
+            ctx_sites.append(f"deltanet.{i}.context")
+        elif "attention" in layer:
+            ctx_sites.append(f"attention.{i}.context")
+        if f"mlp.{i}.gate_weight" in p and f"mlp.{i}.cluster_scales" not in p:
+            mlp_norm_sites.append(f"mlp.{i}.normalized")
+
+    needed = ctx_sites + mlp_norm_sites
+    if captures is None or any(s not in captures for s in needed):
+        captures = capture_runtime_rows(runtime, batches, needed)
+
+    quant = runtime.config.get("quantization") or {}
+    q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                            str(quant.get("mode", "affine")))
+    scale_dtype = next(
+        (v.dtype for k, v in p.items() if k.endswith(".scales") or k == "terminal.weight"),
+        mx.float32,
+    )
+
+    def lin_np(x_arr, key):
+        if key + ".scales" in p:
+            y = mx.quantized_matmul(
+                x_arr, p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                transpose=True, group_size=q_gs, bits=q_bits, mode=q_mode,
+            )
+        else:
+            y = x_arr @ p[key].T
+        return y.astype(mx.float32)
+
+    updates = {}
+    layer_overrides: dict[int, dict[str, Any]] = {}
+    clustered_heads = 0
+    clustered_mlps = 0
+
+    for i, layer in enumerate(runtime.layers):
+        if "deltanet" in layer and f"deltanet.{i}.qkv_weight" in p:
+            prefix = f"deltanet.{i}."
+            dc = layer["deltanet"]
+            vh, vd = int(dc["value_heads"]), int(dc["value_head_dimension"])
+            if vh >= cluster_count and vh % cluster_count == 0:
+                ctx = np.asarray(captures[prefix + "context"].astype(mx.float32)).reshape(-1, vh, vd)
+                e_head = np.sum(ctx ** 2, axis=-1)
+                h_clusters = _balanced_spectral_partition(e_head, cluster_count)
+                assign = np.zeros(vh, dtype=np.int32)
+                scales = np.zeros(cluster_count, dtype=np.float32)
+                for c_idx, h_idx in enumerate(h_clusters):
+                    assign[h_idx] = c_idx
+                    scales[c_idx] = max(float(np.mean(np.sum(e_head[:, h_idx], axis=-1))), 1e-8)
+                updates[prefix + "head_cluster_assign"] = mx.array(assign, dtype=mx.int32)
+                updates[prefix + "head_cluster_scales"] = mx.array(scales, dtype=scale_dtype)
+                layer_overrides.setdefault(i, {}).setdefault("deltanet", {})["head_cluster_count"] = int(cluster_count)
+                clustered_heads += 1
+        elif "attention" in layer:
+            prefix = f"attention.{i}."
+            ac = layer["attention"]
+            qh, dh = int(ac["query_heads"]), int(ac["head_dimension"])
+            if qh >= cluster_count and qh % cluster_count == 0:
+                ctx = np.asarray(captures[prefix + "context"].astype(mx.float32)).reshape(-1, qh, dh)
+                e_head = np.sum(ctx ** 2, axis=-1)
+                h_clusters = _balanced_spectral_partition(e_head, cluster_count)
+                assign = np.zeros(qh, dtype=np.int32)
+                scales = np.zeros(cluster_count, dtype=np.float32)
+                for c_idx, h_idx in enumerate(h_clusters):
+                    assign[h_idx] = c_idx
+                    scales[c_idx] = max(float(np.mean(np.sum(e_head[:, h_idx], axis=-1))), 1e-8)
+                updates[prefix + "head_cluster_assign"] = mx.array(assign, dtype=mx.int32)
+                updates[prefix + "head_cluster_scales"] = mx.array(scales, dtype=scale_dtype)
+                layer_overrides.setdefault(i, {}).setdefault("attention", {})["head_cluster_count"] = int(cluster_count)
+                clustered_heads += 1
+
+        m_prefix = f"mlp.{i}."
+        if m_prefix + "gate_weight" in p:
+            if m_prefix + "cluster_scales" not in p:
+                x_m = captures[m_prefix + "normalized"]
+                g = lin_np(x_m, m_prefix + "gate_weight")
+                u = lin_np(x_m, m_prefix + "up_weight")
+                act = (g * mx.sigmoid(g)) * u
+                mx.eval(act)
+                act_np = np.asarray(act, dtype=np.float32)
+                m_units = int(act_np.shape[1])
+                if m_units >= cluster_count and m_units % cluster_count == 0:
+                    e_neur = act_np ** 2
+                    n_clusters = _balanced_spectral_partition(e_neur, cluster_count)
+                    order = np.concatenate(n_clusters)
+                    act_ord = act_np[:, order].reshape(act_np.shape[0], cluster_count, -1)
+                    c_scales = np.maximum(np.mean(np.sum(act_ord ** 2, axis=-1), axis=0), 1e-8).astype(np.float32)
+                    updates[m_prefix + "cluster_indices"] = mx.array(order, dtype=mx.int32)
+                    updates[m_prefix + "cluster_scales"] = mx.array(c_scales, dtype=scale_dtype)
+                    layer_overrides.setdefault(i, {}).setdefault("mlp", {})["cluster_count"] = int(cluster_count)
+                    clustered_mlps += 1
+                mx.clear_cache()
+            else:
+                clustered_mlps += 1
+
+    mx.eval(updates)
+    fitted = runtime.with_parameters(updates, layer_overrides=layer_overrides)
+    return MLXFitResult(fitted, updates, {
+        "kind": "whole_model_spectral_coactivation_clusters",
+        "cluster_count": int(cluster_count),
+        "clustered_sequence_mixers": clustered_heads,
+        "clustered_mlps": clustered_mlps,
+        "total_layers": layer_count,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
     "fit_chart_attention", "fit_reduced_deltanet", "fit_chart_deltanet", "fit_coalesced_deltanet",
     "fit_deltanet_carrier_basis", "allocate_waterfill_deltanet_carrier_ranks",
-    "fit_bottleneck_swiglu", "allocate_waterfill_mlp_intermediates",
+    "fit_bottleneck_swiglu", "allocate_waterfill_mlp_intermediates", "fit_all_clusters",
     "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]

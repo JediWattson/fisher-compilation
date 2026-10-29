@@ -17,6 +17,7 @@ from fisher_graph.mlx_qwen3_fit import (
     capture_empirical_token_fisher,
     capture_parameter_fisher,
     capture_runtime_rows,
+    fit_all_clusters,
     fit_bottleneck_swiglu,
     fit_chart_attention,
     fit_chart_deltanet,
@@ -422,3 +423,15 @@ def test_qwen3_5_play1_reduced_deltanet_and_play2_carrier_basis(qwen3_5, mx):
     assert bn_mlp.runtime.parameters["mlp.0.gate_weight"].shape == (16, 16)
     assert bn_mlp.runtime.parameters["mlp.0.down_weight"].shape == (16, 16)
     assert np.isfinite(np.asarray(bn_mlp.runtime(**data[0]).logits)).all()
+
+    all_c = fit_all_clusters(bn_mlp.runtime, data, cluster_count=2)
+    assert "deltanet.0.head_cluster_assign" in all_c.runtime.parameters
+    assert "attention.1.head_cluster_assign" in all_c.runtime.parameters
+    assert "mlp.1.cluster_indices" in all_c.runtime.parameters
+    np.testing.assert_allclose(
+        np.asarray(all_c.runtime(**data[0]).logits),
+        np.asarray(bn_mlp.runtime(**data[0]).logits),
+        rtol=1e-5, atol=1e-6,
+    )
+    out_muted_c = all_c.runtime(**data[0], muted_charts=[(0, 0), (1, 1)])
+    assert np.isfinite(np.asarray(out_muted_c.logits)).all()

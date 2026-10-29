@@ -371,6 +371,15 @@ def _xray(args):
         i for i in range(len(runtime.layers))
         if f"mlp.{i}.cluster_scales" in runtime.parameters
     )
+    head_cluster_dnet_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"deltanet.{i}.head_cluster_assign" in runtime.parameters
+        and f"deltanet.{i}.qkv_weight" in runtime.parameters
+    )
+    head_cluster_attn_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"attention.{i}.head_cluster_assign" in runtime.parameters
+    )
     gated_dnet_layers = sorted(
         i for i in range(len(runtime.layers))
         if f"deltanet.{i}.energy_threshold" in runtime.parameters
@@ -381,17 +390,19 @@ def _xray(args):
         i: (f"deltanet.{i}.context" if f"deltanet.{i}.qkv_weight" in runtime.parameters else f"deltanet.{i}.normalized")
         for i in chart_deltanet_layers
     }
-    capture_sites = (
-        [f"mlp.{i}.normalized" for i in chart_layers]
-        + [f"mlp.{i}.delta" for i in chart_layers]
-        + [dnet_route_site[i] for i in chart_deltanet_layers]
-        + [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
-        + [f"deltanet.{i}.normalized" for i in gated_dnet_layers]
-        + [f"attention.{i}.context" for i in chart_attn_layers]
-        + [f"attention.{i}.delta" for i in attn_delta_layers]
-        + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
-        + [f"mlp.{i}.act" for i in clustered_mlp_layers]
-    )
+    capture_sites = sorted({
+        *(f"mlp.{i}.normalized" for i in chart_layers),
+        *(f"mlp.{i}.delta" for i in chart_layers),
+        *(dnet_route_site[i] for i in chart_deltanet_layers),
+        *(f"deltanet.{i}.delta" for i in chart_deltanet_layers),
+        *(f"deltanet.{i}.normalized" for i in gated_dnet_layers),
+        *(f"attention.{i}.context" for i in chart_attn_layers),
+        *(f"attention.{i}.delta" for i in attn_delta_layers),
+        *(f"mlp.{i}.delta" for i in bottleneck_mlp_layers),
+        *(f"mlp.{i}.act" for i in clustered_mlp_layers),
+        *(f"deltanet.{i}.context" for i in head_cluster_dnet_layers),
+        *(f"attention.{i}.context" for i in head_cluster_attn_layers),
+    })
     arr_ids = mx.array([ids], dtype=mx.int32)
     out = runtime(arr_ids, capture=capture_sites or False)
     logits = out.logits[0, -1].astype(mx.float32)
@@ -464,12 +475,63 @@ def _xray(args):
             for pos, tok in enumerate(ids)
         ]
 
+    head_cluster_routing = {}
+    head_cluster_counts = {}
+    for i in head_cluster_dnet_layers:
+        if f"deltanet.{i}.context" not in out.captures:
+            continue
+        dc = runtime.layers[i]["deltanet"]
+        vh, vd = int(dc["value_heads"]), int(dc["value_head_dimension"])
+        ctx_val = np.asarray(out.captures[f"deltanet.{i}.context"][0].astype(mx.float32)).reshape(len(ids), vh, vd)
+        e_head = np.sum(ctx_val ** 2, axis=-1)
+        assign = np.asarray(runtime.parameters[f"deltanet.{i}.head_cluster_assign"])
+        scales = np.maximum(np.asarray(runtime.parameters[f"deltanet.{i}.head_cluster_scales"].astype(mx.float32)), 1e-12)
+        c_cnt = int(scales.shape[0])
+        head_cluster_counts[f"deltanet.{i}"] = c_cnt
+        e_clus = np.stack([np.sum(e_head[:, assign == c], axis=-1) for c in range(c_cnt)], axis=-1) / scales[None, :]
+        memb = e_clus / np.maximum(np.sum(e_clus, axis=-1, keepdims=True), 1e-12)
+        head_cluster_routing[f"deltanet.{i}"] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
+    for i in head_cluster_attn_layers:
+        if f"attention.{i}.context" not in out.captures:
+            continue
+        ac = runtime.layers[i]["attention"]
+        qh, dh = int(ac["query_heads"]), int(ac["head_dimension"])
+        ctx_val = np.asarray(out.captures[f"attention.{i}.context"][0].astype(mx.float32)).reshape(len(ids), qh, dh)
+        e_head = np.sum(ctx_val ** 2, axis=-1)
+        assign = np.asarray(runtime.parameters[f"attention.{i}.head_cluster_assign"])
+        scales = np.maximum(np.asarray(runtime.parameters[f"attention.{i}.head_cluster_scales"].astype(mx.float32)), 1e-12)
+        c_cnt = int(scales.shape[0])
+        head_cluster_counts[f"attention.{i}"] = c_cnt
+        e_clus = np.stack([np.sum(e_head[:, assign == c], axis=-1) for c in range(c_cnt)], axis=-1) / scales[None, :]
+        memb = e_clus / np.maximum(np.sum(e_clus, axis=-1, keepdims=True), 1e-12)
+        head_cluster_routing[f"attention.{i}"] = [
+            {
+                "position": pos,
+                "token": tokenizer.decode([tok]),
+                "dominant_chart": int(np.argmax(memb[pos])),
+                "dominant_membership": float(np.max(memb[pos])),
+            }
+            for pos, tok in enumerate(ids)
+        ]
+
     neuron_cluster_routing = {}
     neuron_cluster_counts = {}
     for i in clustered_mlp_layers:
         if f"mlp.{i}.act" not in out.captures:
             continue
         act_val = np.asarray(out.captures[f"mlp.{i}.act"][0].astype(mx.float32))
+        if f"mlp.{i}.cluster_indices" in runtime.parameters:
+            c_idx_arr = np.asarray(runtime.parameters[f"mlp.{i}.cluster_indices"])
+            act_val = act_val[:, c_idx_arr]
         scales = np.maximum(np.asarray(runtime.parameters[f"mlp.{i}.cluster_scales"].astype(mx.float32)), 1e-12)
         c_cnt = int(scales.shape[0])
         neuron_cluster_counts[f"mlp.{i}"] = c_cnt
@@ -545,6 +607,8 @@ def _xray(args):
         ],
         "chart_routing": token_routing,
         "chart_counts": chart_counts,
+        "head_cluster_routing": head_cluster_routing,
+        "head_cluster_counts": head_cluster_counts,
         "neuron_cluster_routing": neuron_cluster_routing,
         "neuron_cluster_counts": neuron_cluster_counts,
         "energy_gating": energy_gating,
@@ -586,65 +650,57 @@ def _print_xray_panel(payload, A):
             styled = (A.b_green if rank == 0 else A.cyan)(bar)
             print(f"  {name}{styled} {100 * p:5.1f}%  " + A.gray(f"logit {pred['logit']:.2f}"))
 
-    routing = payload.get("chart_routing") or {}
-    counts = payload.get("chart_counts") or {}
-    if routing:
-        print(_hrule(A, "chart routing", style=A.magenta, tail="░▒▓█ membership lift over uniform"))
-        cols = sorted(routing, key=lambda k: int(k.split(".")[-1]))
-        max_cols = 12
-        shown, hidden = cols[:max_cols], cols[max_cols:]
-        header = "  " + " " * 18 + "".join(
-            (("d" if c.startswith("deltanet.") else "a" if c.startswith("attention.") else "m")
-             + c.split(".")[-1]).center(4)
-            for c in shown
-        )
-        print(A.gray(header))
-        n_rows = len(routing[shown[0]])
+    def _render_routing_section(title, tail_text, r_dict, c_dict):
+        if not r_dict:
+            return
+        print(_hrule(A, title, style=A.magenta, tail=tail_text))
+        cols = sorted(r_dict, key=lambda k: int(k.split(".")[-1]))
+        band_w = 14
         cap = 40
-        for pos in range(min(n_rows, cap)):
-            label = _trunc(repr(routing[shown[0]][pos]["token"]), 15).ljust(16)
-            cells = []
-            for c in shown:
-                entry = routing[c][pos]
-                n_ch = max(counts.get(c, 1), 1)
-                uniform = 1.0 / n_ch
-                lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
-                glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]
-                color = getattr(A, _CHART_PALETTE[entry["dominant_chart"] % len(_CHART_PALETTE)])
-                cells.append(color(f"{entry['dominant_chart']}{glyph}".center(4)))
-            print("  " + A.gray(label) + "".join(cells))
-        if n_rows > cap or hidden:
-            note = f"  … {n_rows - cap} more tokens" if n_rows > cap else ""
-            note += f"{' · ' if note and hidden else '  … '}{len(hidden)} more layers" if hidden else ""
-            print(A.dim(note))
+        for b_start in range(0, len(cols), band_w):
+            shown = cols[b_start : b_start + band_w]
+            if b_start > 0:
+                print()
+            header = "  " + " " * 16 + "".join(
+                (("d" if c.startswith("deltanet.") else "a" if c.startswith("attention.") else "m")
+                 + c.split(".")[-1]).center(4)
+                for c in shown
+            )
+            print(A.gray(header))
+            n_rows = len(r_dict[shown[0]])
+            for pos in range(min(n_rows, cap)):
+                label = _trunc(repr(r_dict[shown[0]][pos]["token"]), 15).ljust(16)
+                cells = []
+                for c in shown:
+                    entry = r_dict[c][pos]
+                    n_ch = max(c_dict.get(c, 1), 1)
+                    uniform = 1.0 / n_ch
+                    lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
+                    glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]
+                    color = getattr(A, _CHART_PALETTE[entry["dominant_chart"] % len(_CHART_PALETTE)])
+                    cells.append(color(f"{entry['dominant_chart']}{glyph}".center(4)))
+                print("  " + A.gray(label) + "".join(cells))
+            if n_rows > cap:
+                print(A.dim(f"  … {n_rows - cap} more tokens"))
 
-    nc_routing = payload.get("neuron_cluster_routing") or {}
-    nc_counts = payload.get("neuron_cluster_counts") or {}
-    if nc_routing:
-        print(_hrule(A, "neuron clusters", style=A.magenta, tail="░▒▓█ SwiGLU cluster firing lift"))
-        cols = sorted(nc_routing, key=lambda k: int(k.split(".")[-1]))
-        max_cols = 12
-        shown, hidden = cols[:max_cols], cols[max_cols:]
-        header = "  " + " " * 16 + "".join(("m" + c.split(".")[-1]).center(4) for c in shown)
-        print(A.gray(header))
-        n_rows = len(nc_routing[shown[0]])
-        cap = 40
-        for pos in range(min(n_rows, cap)):
-            label = _trunc(repr(nc_routing[shown[0]][pos]["token"]), 15).ljust(16)
-            cells = []
-            for c in shown:
-                entry = nc_routing[c][pos]
-                n_ch = max(nc_counts.get(c, 1), 1)
-                uniform = 1.0 / n_ch
-                lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
-                glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]
-                color = getattr(A, _CHART_PALETTE[entry["dominant_chart"] % len(_CHART_PALETTE)])
-                cells.append(color(f"{entry['dominant_chart']}{glyph}".center(4)))
-            print("  " + A.gray(label) + "".join(cells))
-        if n_rows > cap or hidden:
-            note = f"  … {n_rows - cap} more tokens" if n_rows > cap else ""
-            note += f"{' · ' if note and hidden else '  … '}{len(hidden)} more layers" if hidden else ""
-            print(A.dim(note))
+    _render_routing_section(
+        "chart routing",
+        "░▒▓█ membership lift over uniform",
+        payload.get("chart_routing") or {},
+        payload.get("chart_counts") or {},
+    )
+    _render_routing_section(
+        "head clusters",
+        "░▒▓█ DeltaNet/Attn head-cluster lift",
+        payload.get("head_cluster_routing") or {},
+        payload.get("head_cluster_counts") or {},
+    )
+    _render_routing_section(
+        "neuron clusters",
+        "░▒▓█ SwiGLU cluster firing lift",
+        payload.get("neuron_cluster_routing") or {},
+        payload.get("neuron_cluster_counts") or {},
+    )
 
     gating = payload.get("energy_gating") or {}
     if gating:

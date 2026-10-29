@@ -491,7 +491,11 @@ class MLXQwen3:
         mx = _core()
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        mx.save_safetensors(str(directory / "weights.safetensors"), self.parameters)
+        mx.eval(self.parameters)
+        target = directory / "weights.safetensors"
+        tmp = directory / "weights.tmp.safetensors"
+        mx.save_safetensors(str(tmp), self.parameters)
+        tmp.replace(target)
         (directory / "mlx_qwen3.json").write_text(json.dumps(self.config, indent=2) + "\n")
 
     @classmethod
@@ -826,6 +830,11 @@ class MLXQwen3:
                     normed_out = fast_rms(rec_out, d + ".norm_weight", dc["norm"])
                     z_f = z.astype(mx.float32)
                     gated_out = (normed_out.astype(mx.float32) * (z_f * mx.sigmoid(z_f))).astype(qkv.dtype)
+                    if muted_chart_set and d + ".head_cluster_assign" in p and d + ".chart_centers" not in p:
+                        h_assign = p[d + ".head_cluster_assign"].tolist()
+                        h_keep = [0.0 if (i, int(c_idx)) in muted_chart_set else 1.0 for c_idx in h_assign]
+                        if any(v == 0.0 for v in h_keep):
+                            gated_out = gated_out * mx.array(h_keep, dtype=gated_out.dtype)[None, None, :, None]
                     context = observe(d + ".context", gated_out.reshape(b, t, v_total))
                     deltanet_contexts[i] = context
                     if d + ".value_basis" in p:
@@ -934,6 +943,11 @@ class MLXQwen3:
                     raw_context = (probabilities @ vr).transpose(0, 2, 1, 3).reshape(b, t, qh * d)
                 if attn_gate is not None:
                     raw_context = (raw_context.astype(mx.float32) * mx.sigmoid(attn_gate.astype(mx.float32))).astype(raw_context.dtype)
+                if muted_chart_set and a + ".head_cluster_assign" in p and a + ".chart_centers" not in p:
+                    h_assign = p[a + ".head_cluster_assign"].tolist()
+                    h_keep = [0.0 if (i, int(c_idx)) in muted_chart_set else 1.0 for c_idx in h_assign]
+                    if any(v == 0.0 for v in h_keep):
+                        raw_context = (raw_context.reshape(b, t, qh, d) * mx.array(h_keep, dtype=raw_context.dtype)[None, None, :, None]).reshape(b, t, qh * d)
                 context = observe(a + ".context", raw_context)
                 if a + ".value_basis" in p:
                     if fc is not None:
@@ -1002,8 +1016,20 @@ class MLXQwen3:
                 if muted_chart_set and c_cnt > 1:
                     c_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(c_cnt)]
                     if any(v == 0.0 for v in c_keep):
-                        c_mask = mx.array(c_keep, dtype=act.dtype)[:, None]
-                        act = (act.reshape(b, t, c_cnt, -1) * c_mask).reshape(b, t, -1)
+                        if m + ".cluster_indices" in p:
+                            c_idx_arr = p[m + ".cluster_indices"]
+                            n_per_c = int(c_idx_arr.shape[0]) // c_cnt
+                            keep_vec = mx.ones((act.shape[-1],), dtype=act.dtype)
+                            mask_np = [1.0] * int(act.shape[-1])
+                            c_list = c_idx_arr.tolist()
+                            for c_i, kv in enumerate(c_keep):
+                                if kv == 0.0:
+                                    for idx_j in c_list[c_i * n_per_c : (c_i + 1) * n_per_c]:
+                                        mask_np[idx_j] = 0.0
+                            act = act * mx.array(mask_np, dtype=act.dtype)
+                        else:
+                            c_mask = mx.array(c_keep, dtype=act.dtype)[:, None]
+                            act = (act.reshape(b, t, c_cnt, -1) * c_mask).reshape(b, t, -1)
                 raw = linear(act, m + ".down_weight")
                 packet = None
             raw = observe(m + ".output", raw)
