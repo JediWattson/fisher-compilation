@@ -793,7 +793,7 @@ def _default_chat_artifact():
         local = Path(candidate)
         if local.is_dir():
             return str(local)
-    return "jediwattzon/qwen3-1.7b-fisher-ewc-graph"
+    return "jediwattzon/qwen3.5-9b-fisher-chart-graph"
 
 
 def _default_tokenizer(runtime):
