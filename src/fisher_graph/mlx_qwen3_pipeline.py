@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import sys
 import time
 
@@ -689,6 +691,168 @@ def _default_tokenizer(runtime):
     return "Qwen/Qwen3-1.7B"
 
 
+# ---------------------------------------------------------------------------
+# Terminal styling and streaming markdown rendering (zero-dependency ANSI)
+# ---------------------------------------------------------------------------
+
+_RULE_W = 74
+
+
+class _Ansi:
+    """Minimal ANSI styler — every method is a no-op when disabled."""
+
+    def __init__(self, enabled):
+        self.enabled = bool(enabled)
+
+    def _w(self, code, text):
+        return f"\x1b[{code}m{text}\x1b[0m" if self.enabled else text
+
+    def bold(self, text): return self._w("1", text)
+    def dim(self, text): return self._w("2", text)
+    def italic(self, text): return self._w("3", text)
+    def underline(self, text): return self._w("4", text)
+    def strike(self, text): return self._w("9", text)
+    def red(self, text): return self._w("31", text)
+    def green(self, text): return self._w("32", text)
+    def yellow(self, text): return self._w("33", text)
+    def magenta(self, text): return self._w("35", text)
+    def cyan(self, text): return self._w("36", text)
+    def gray(self, text): return self._w("90", text)
+    def b_cyan(self, text): return self._w("1;36", text)
+    def b_green(self, text): return self._w("1;32", text)
+
+
+def _ansi_enabled(args):
+    if getattr(args, "no_color", False) or os.environ.get("NO_COLOR") is not None:
+        return False
+    return sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
+
+
+def _hrule(A, label="", *, style=None, tail=""):
+    """`─ label ──────────────── tail ` spanning _RULE_W columns."""
+    left = f" {label} " if label else ""
+    right = f"─ {tail} " if tail else ""
+    fill = "─" * max(0, _RULE_W - 1 - len(left) - len(right))
+    parts = [A.gray("─")]
+    if label:
+        parts.append((style or A.bold)(left))
+    parts.append(A.gray(fill))
+    if tail:
+        parts.append(A.gray(right))
+    return "".join(parts)
+
+
+_MD_FENCE = re.compile(r"^\s*```(.*)$")
+_MD_HEAD = re.compile(r"^\s{0,3}#{1,6}\s+(.*)$")
+_MD_HR = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
+_MD_QUOTE = re.compile(r"^\s{0,3}>\s?(.*)$")
+_MD_ULIST = re.compile(r"^(\s*)([-*+])\s+(.*)$")
+_MD_OLIST = re.compile(r"^(\s*)(\d{1,3})([.)])\s+(.*)$")
+_MD_INLINE = re.compile(
+    r"`(?P<code>[^`\n]+)`"
+    r"|~~(?P<strike>\S[^~\n]*?)~~"
+    r"|\*\*(?P<bold>\S(?:[^*\n]*?\S)?)\*\*"
+    r"|__(?P<boldu>\S(?:[^_\n]*?\S)?)__"
+    r"|\[(?P<ltext>[^\]\n]+)\]\((?P<lurl>[^)\s\n]+)[^)\n]*\)"
+    r"|\*(?P<ital>\S(?:[^*\n]*?\S)?)\*"
+    r"|(?<!\w)_(?P<italu>\S(?:[^_\n]*?\S)?)_(?!\w)"
+)
+
+
+def _inline_md(A, line):
+    def repl(m):
+        if m.group("code") is not None:
+            return A.yellow(m.group("code"))
+        if m.group("strike") is not None:
+            return A.strike(m.group("strike"))
+        inner = m.group("bold") or m.group("boldu")
+        if inner is not None:
+            return A.bold(inner)
+        if m.group("ltext") is not None:
+            return A.underline(m.group("ltext")) + A.gray(f" ({m.group('lurl')})")
+        inner = m.group("ital") or m.group("italu")
+        if inner is not None:
+            return A.italic(inner)
+        return m.group(0)
+    return _MD_INLINE.sub(repl, line) if A.enabled else line
+
+
+def _render_markdown(text, A):
+    """Best-effort markdown rendering for assistant output (fenced code,
+    headers, lists, quotes, inline spans). Returns text unchanged when ANSI
+    is disabled."""
+    if not A.enabled:
+        return text
+    out = []
+    in_code = False
+    for raw in text.split("\n"):
+        fence = _MD_FENCE.match(raw)
+        if fence:
+            in_code = not in_code
+            if in_code:
+                lang = fence.group(1).strip()
+                label = f" {lang} " if lang else "──"
+                out.append(A.gray("  ╭─" + label + "─" * max(0, _RULE_W - 4 - len(label))))
+            else:
+                out.append(A.gray("  ╰" + "─" * (_RULE_W - 3)))
+            continue
+        if in_code:
+            out.append(A.gray("  │ ") + raw)
+            continue
+        head = _MD_HEAD.match(raw)
+        if head:
+            out.append("  " + A.b_cyan(head.group(1).strip()))
+            continue
+        if _MD_HR.match(raw):
+            out.append(A.gray("  " + "─" * (_RULE_W - 2)))
+            continue
+        quote = _MD_QUOTE.match(raw)
+        if quote:
+            out.append(A.gray("  ▎ ") + _inline_md(A, quote.group(1)))
+            continue
+        ul = _MD_ULIST.match(raw)
+        if ul:
+            out.append("  " + ul.group(1) + A.cyan("•") + " " + _inline_md(A, ul.group(3)))
+            continue
+        ol = _MD_OLIST.match(raw)
+        if ol:
+            out.append("  " + ol.group(1) + A.cyan(ol.group(2) + ol.group(3)) + " " + _inline_md(A, ol.group(4)))
+            continue
+        out.append("  " + _inline_md(A, raw))
+    return "\n".join(out)
+
+
+class _TermRepaint:
+    """emit callback: streams raw token text, then repaints that region as
+    rendered markdown once generation finishes."""
+
+    def __init__(self, A):
+        self.A = A
+        self._col = 0
+        self._rows = 0
+
+    def feed(self, piece):
+        if self.A.enabled:
+            w = max(20, shutil.get_terminal_size((80, 24)).columns)
+            for ch in piece:
+                if ch == "\n":
+                    self._rows += max(1, -(-self._col // w))
+                    self._col = 0
+                else:
+                    self._col += 1
+        sys.stdout.write(piece)
+        sys.stdout.flush()
+
+    def repaint(self, rendered):
+        if not self.A.enabled:
+            return
+        w = max(20, shutil.get_terminal_size((80, 24)).columns)
+        total = self._rows + max(1, -(-self._col // w))
+        seq = f"\r\x1b[{total - 1}A\x1b[J" if total > 1 else "\r\x1b[2K"
+        sys.stdout.write(seq + rendered + "\n")
+        sys.stdout.flush()
+
+
 def _chat(args):
     args.chat = True
     args.presets = False
@@ -766,14 +930,93 @@ def _interactive(args):
             raise ValueError(f"Prompt must contain 1..{args.max_prompt_tokens} tokens")
         return ids
 
-    def emitter():
-        if not stream_on:
-            return None
-        return lambda piece: (sys.stdout.write(piece), sys.stdout.flush())
+    A = _Ansi(_ansi_enabled(args))
+    gated_deltanets = sorted(
+        i for i in range(len(runtime.layers))
+        if f"deltanet.{i}.energy_threshold" in runtime.parameters
+    )
+    value_crushed = sorted(
+        i for i in range(len(runtime.layers))
+        if f"deltanet.{i}.value_basis" in runtime.parameters
+    )
 
-    def run_one(raw_text: str):
+    def _stat(label, body):
+        print("   " + A.gray(label.ljust(6)) + " " + body)
+
+    def _harness(msg):
+        print(A.green("[harness]") + " " + msg)
+
+    def _mutes_str():
+        bits = []
+        if muted_sites:
+            bits.append(f"sites={sorted(muted_sites)}")
+        if muted_charts:
+            bits.append(f"charts={sorted(muted_charts)}")
+        return " ".join(bits)
+
+    def _macs_str(ctx_tokens):
+        mac_tok, state_b = _mac_stats(runtime, ctx_tokens)
+        parts = [f"~{mac_tok / 1e9:.2f} G-MAC/tok"]
+        r_stats = getattr(runtime, "_routing_stats", {}) or {}
+        if r_stats:
+            f_tok = sum(c[0] for c in r_stats.values())
+            tot_tok = sum(c[0] + c[1] for c in r_stats.values())
+            parts.append(f"chart-skip {100 * f_tok / max(tot_tok, 1):.0f}% ({len(r_stats)} gated)")
+        parts.append(f"cache+state {state_b / 2**20:.1f} MiB @ {ctx_tokens} tok")
+        return " · ".join(parts)
+
+    def _finish_turn(label, *, plain_tag=None, text, gen_ids, top5, prefill_s, decode_s,
+                     n_prompt, ctx_tok, stream, echo=None, ctx=None):
+        tag = plain_tag or label
+        elapsed = prefill_s + decode_s
+        prompt_tps = n_prompt / max(prefill_s, 1e-6)
+        decode_tps = max(len(gen_ids) - 1, 1) / max(decode_s, 1e-6)
+        mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
+        top_str = " · ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
+        if not A.enabled:
+            if debug_on:
+                if echo is not None:
+                    print(f"\n[{echo[0]}]    {echo[1]}")
+                if ctx is not None:
+                    print(f"[ctx]      {ctx}")
+                if muted_sites or muted_charts:
+                    print(f"[mutes]    {_mutes_str()}")
+                if stream_on:
+                    print(f"[{tag}]    ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
+                else:
+                    print(f"[{tag}]    {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
+                print(f"[top-5]    {top_str}")
+                print(f"[macs]     {_macs_str(ctx_tok)}")
+            elif not stream_on:
+                print(f"\n{text}")
+            return
+        if stream is not None:
+            stream.repaint(_render_markdown(text, A))
+        else:
+            print(_render_markdown(text, A))
+        footer = (f"{len(gen_ids)} tok · {elapsed:.2f}s · prompt {prompt_tps:.1f} tok/s "
+                  f"· decode {decode_tps:.1f} tok/s")
+        if mode != "greedy":
+            footer += f" · {mode}"
+        print(_hrule(A, footer, style=A.dim))
+        if debug_on:
+            if ctx is not None:
+                _stat("ctx", ctx)
+            if muted_sites or muted_charts:
+                _stat("mutes", _mutes_str())
+            _stat("top-5", top_str)
+            _stat("macs", _macs_str(ctx_tok))
+
+    def run_one(raw_text: str, *, show_prompt=False):
         ids = encode_prompt(raw_text)
-        if stream_on:
+        stream = _TermRepaint(A) if stream_on else None
+        if A.enabled:
+            print()
+            if show_prompt:
+                print(_hrule(A, "prompt", style=A.b_green))
+                print(f"  {raw_text}")
+            print(_hrule(A, "model", style=A.b_cyan))
+        elif stream_on:
             print()
         text, gen_ids, top5, prefill_s, decode_s = _greedy_continuation(
             runtime,
@@ -786,33 +1029,14 @@ def _interactive(args):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=rep_penalty,
-            emit=emitter(),
+            emit=stream.feed if stream is not None else None,
             return_timing_breakdown=True,
         )
-        elapsed = prefill_s + decode_s
-        prompt_tps = len(ids) / max(prefill_s, 1e-6)
-        decode_tps = max(len(gen_ids) - 1, 1) / max(decode_s, 1e-6)
-        if debug_on:
-            print(f"\n[prompt]   {raw_text}")
-            if muted_sites or muted_charts:
-                print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-            mode = "greedy" if not temperature else f"T={temperature}/top-p={top_p}/pen={rep_penalty}"
-            if stream_on:
-                print(f"[compiled] ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
-            else:
-                print(f"[compiled] {text!r}  ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s) [{mode}]")
-            top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
-            print(f"[top-5]    {top_str}")
-            mac_tok, state_b = _mac_stats(runtime, len(ids) + len(gen_ids))
-            r_stats = getattr(runtime, "_routing_stats", {}) or {}
-            if r_stats:
-                f_tok = sum(c[0] for c in r_stats.values())
-                tot_tok = sum(c[0] + c[1] for c in r_stats.values())
-                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token (dynamic chart skip {100*f_tok/max(tot_tok,1):.0f}% across {len(r_stats)} gated layers) | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
-            else:
-                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {len(ids)+len(gen_ids)} tok")
-        elif not stream_on:
-            print(f"\n{text}")
+        _finish_turn(
+            "model", plain_tag="compiled", text=text, gen_ids=gen_ids, top5=top5,
+            prefill_s=prefill_s, decode_s=decode_s, n_prompt=len(ids),
+            ctx_tok=len(ids) + len(gen_ids), stream=stream, echo=("prompt", raw_text),
+        )
         if reference is not None:
             ref_text, ref_ids, ref_top5, ref_elapsed = _greedy_continuation(
                 reference,
@@ -822,9 +1046,15 @@ def _interactive(args):
                 ignore_eos=args.ignore_eos,
             )
             if debug_on:
-                ref_top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in ref_top5[:5])
-                print(f"[exact]    {ref_text!r}  ({len(ref_ids)} tok in {ref_elapsed:.2f}s)")
-                print(f"[ex-top-5] {ref_top_str}")
+                ref_top_str = " · ".join(f"{t!r}:{p:.1f}%" for t, p, _ in ref_top5[:5])
+                if A.enabled:
+                    print(_hrule(A, "exact", style=A.magenta))
+                    print(_render_markdown(ref_text, A))
+                    print(_hrule(A, f"{len(ref_ids)} tok · {ref_elapsed:.2f}s", style=A.dim))
+                    _stat("top-5", ref_top_str)
+                else:
+                    print(f"[exact]    {ref_text!r}  ({len(ref_ids)} tok in {ref_elapsed:.2f}s)")
+                    print(f"[ex-top-5] {ref_top_str}")
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=str(artifact_dir),
@@ -834,6 +1064,8 @@ def _interactive(args):
                 max_prompt_tokens=args.max_prompt_tokens,
                 report=None,
             )
+            if A.enabled:
+                print(_hrule(A, "x-ray", style=A.magenta))
             _xray(xray_ns)
 
     # ---- persistent chat state (compiled-model conversation) ----
@@ -858,7 +1090,11 @@ def _interactive(args):
                 f"Conversation context is {len(ids)} tokens (> {args.max_context_tokens}); "
                 "use /reset to clear chat history"
             )
-        if stream_on:
+        stream = _TermRepaint(A) if stream_on else None
+        if A.enabled:
+            print()
+            print(_hrule(A, "assistant", style=A.b_cyan))
+        elif stream_on:
             print()
         text_resp, gen_ids, top5, prefill_s, decode_s = _greedy_continuation(
             runtime,
@@ -871,37 +1107,17 @@ def _interactive(args):
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=rep_penalty,
-            emit=emitter(),
+            emit=stream.feed if stream is not None else None,
             return_timing_breakdown=True,
         )
-        elapsed = prefill_s + decode_s
-        prompt_tps = len(ids) / max(prefill_s, 1e-6)
-        decode_tps = max(len(gen_ids) - 1, 1) / max(decode_s, 1e-6)
         chat_history.append({"role": "assistant", "content": text_resp})
         chat_ctx_tokens = len(ids) + len(gen_ids)
-        if debug_on:
-            print(f"\n[user]     {user_text}")
-            print(f"[ctx]      {chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok")
-            if muted_sites or muted_charts:
-                print(f"[mutes]    sites={sorted(muted_sites)} charts={sorted(muted_charts)}")
-            if stream_on:
-                print(f"[model]    ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s)"
-                      + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
-            else:
-                print(f"[model]    {text_resp!r}  ({len(gen_ids)} tok in {elapsed:.2f}s | prompt {prompt_tps:.1f} tok/s | decode {decode_tps:.1f} tok/s)"
-                      + ("" if not temperature else f" [T={temperature}/top-p={top_p}/pen={rep_penalty}]"))
-            top_str = ", ".join(f"{t!r}:{p:.1f}%" for t, p, _ in top5[:5])
-            print(f"[top-5]    {top_str}")
-            mac_tok, state_b = _mac_stats(runtime, chat_ctx_tokens)
-            r_stats = getattr(runtime, "_routing_stats", {}) or {}
-            if r_stats:
-                f_tok = sum(c[0] for c in r_stats.values())
-                tot_tok = sum(c[0] + c[1] for c in r_stats.values())
-                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token (dynamic chart skip {100*f_tok/max(tot_tok,1):.0f}% across {len(r_stats)} gated layers) | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
-            else:
-                print(f"[macs]     ~{mac_tok/1e9:.2f} G/token | cache+state ~{state_b/2**20:.1f} MiB @ {chat_ctx_tokens} tok")
-        elif not stream_on:
-            print(f"\n{text_resp}")
+        _finish_turn(
+            "assistant", plain_tag="model", text=text_resp, gen_ids=gen_ids, top5=top5,
+            prefill_s=prefill_s, decode_s=decode_s, n_prompt=len(ids),
+            ctx_tok=chat_ctx_tokens, stream=stream, echo=("user", user_text),
+            ctx=f"{chat_ctx_tokens} tokens | {len(chat_history)//2} turns | prompt={len(ids)} tok",
+        )
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=str(artifact_dir),
@@ -911,42 +1127,62 @@ def _interactive(args):
                 max_prompt_tokens=args.max_context_tokens,
                 report=None,
             )
+            if A.enabled:
+                print(_hrule(A, "x-ray", style=A.magenta))
             _xray(xray_ns)
 
     if args.presets:
         for p in _PRESET_PROMPTS:
-            run_one(p)
+            run_one(p, show_prompt=True)
         return
     if args.prompt is not None:
-        run_one(args.prompt)
+        run_one(args.prompt, show_prompt=True)
         return
 
-    print("==============================================================================")
-    print("  Fisher-Graph Qwen3 MLX Interactive Harness (Freeform REPL + X-Ray + Mutes)")
-    print("==============================================================================")
-    print(f"  Artifact       : {artifact_dir}")
-    print(f"  Reduced Attn   : {reduced_attn}")
-    print(f"  Chart MLPs     : {chart_mlps}")
-    if deltanet_ranks or bypassed_deltanets:
-        print(f"  Reduced DNet   : {reduced_deltanet}")
-        print(f"  Chart DNet     : {chart_deltanets}")
+    def _kv(label, value):
+        print("  " + A.cyan(label.ljust(9)) + A.gray("│ ") + str(value))
+
+    def _flag(on):
+        return A.green("on") if on else A.gray("off")
+
+    print()
+    print("  " + A.bold("fisher-graph · qwen3-mlx") + A.gray("  interactive harness"))
+    print(A.gray("  " + "─" * (_RULE_W - 2)))
+    _kv("artifact", artifact_dir)
+    if reduced_attn:
+        _kv("attn", f"input-basis {reduced_attn}")
+    if chart_mlps:
+        _kv("charts", f"mlp {chart_mlps}")
+    if deltanet_ranks or bypassed_deltanets or chart_deltanets:
+        hist = {}
+        for r in deltanet_ranks.values():
+            hist[r] = hist.get(r, 0) + 1
+        bits = []
+        if hist:
+            bits.append("carriers " + " ".join(f"r{r}×{n}" for r, n in sorted(hist.items(), reverse=True)))
+        if value_crushed:
+            bits.append(f"value-crushed {value_crushed}")
         if bypassed_deltanets:
-            print(f"  Bypassed DNet  : {bypassed_deltanets} (full-layer coalesced: {coalesced_full_layers})")
-        print(f"  DeltaNet Ranks : {deltanet_ranks}")
-    print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
-    print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
-    print(f"  Streaming      : {'ON' if stream_on else 'OFF'} (toggle with /stream)")
-    print("  Commands       : /xray | /chat | /stream | /debug | /context | /reset |")
-    print("                   /tokens <N> | /temp <F> | /topp <F> | /penalty <F> |")
-    print("                   /macs | /preset | /unmute | /quit")
-    print("                   /mute attn <L> | /mute mlp <L> | /mute deltanet <L> |")
-    print("                   /mute chart <L> <C>")
-    print("==============================================================================")
+            bits.append(f"bypassed {bypassed_deltanets}")
+        if coalesced_full_layers:
+            bits.append(f"coalesced-mlp {coalesced_full_layers}")
+        _kv("deltanet", " · ".join(bits))
+        if chart_deltanets:
+            gated = f" · energy-gated {gated_deltanets}" if gated_deltanets else ""
+            _kv("charts", f"deltanet {chart_deltanets}{gated}")
+    _kv("mode", f"chat {_flag(chat_on)} · stream {_flag(stream_on)} · xray {_flag(xray_on)} · debug {_flag(debug_on)}")
+    samp = "greedy" if not temperature else f"T={temperature} top-p={top_p} pen={rep_penalty}"
+    _kv("sampling", f"{samp} · max-new {max_new_tokens}")
+    if muted_sites or muted_charts:
+        _kv("mutes", _mutes_str())
+    _kv("commands", "/xray /chat /stream /debug /context /reset /tokens N /temp F /topp F")
+    _kv("", "/penalty F /macs /preset /unmute /mute attn|mlp|deltanet L /mute chart L C /quit")
+    print(A.gray("  " + "─" * (_RULE_W - 2)))
 
     while True:
         try:
-            prompt_label = "qwen3(chat)>" if chat_on else "qwen3>"
-            line = input(f"\n{prompt_label} ").strip()
+            prompt_label = A.b_green("chat › ") if chat_on else A.b_cyan("text › ")
+            line = input(f"\n{prompt_label}").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -956,102 +1192,103 @@ def _interactive(args):
             break
         if line == "/xray":
             xray_on = not xray_on
-            print(f"[harness] X-Ray mode is now {'ON' if xray_on else 'OFF'}")
+            _harness(f"X-Ray mode is now {'ON' if xray_on else 'OFF'}")
             continue
         if line == "/stream":
             stream_on = not stream_on
-            print(f"[harness] Streaming is now {'ON' if stream_on else 'OFF'}")
+            _harness(f"Streaming is now {'ON' if stream_on else 'OFF'}")
             continue
         if line == "/macs":
-            mac_tok, state_b = _mac_stats(runtime, max(chat_ctx_tokens, 1))
-            print(f"[harness] ~{mac_tok/1e9:.2f} G-MAC/token | cache+state ~{state_b/2**20:.1f} MiB @ {max(chat_ctx_tokens,1)} tok context")
+            ctx_tok = max(chat_ctx_tokens, 1)
+            mac_tok, _ = _mac_stats(runtime, ctx_tok)
+            _harness(_macs_str(ctx_tok))
             if reference is not None:
-                ref_tok, ref_b = _mac_stats(reference, max(chat_ctx_tokens, 1))
+                ref_tok, _ = _mac_stats(reference, ctx_tok)
                 saved = (ref_tok - mac_tok) / max(ref_tok, 1) * 100
-                print(f"[harness] reference: ~{ref_tok/1e9:.2f} G-MAC/token | compiled saves {saved:.1f}% MACs/token")
+                _harness(f"reference ~{ref_tok/1e9:.2f} G-MAC/tok · compiled saves {saved:.1f}%")
             continue
         if line == "/debug":
             debug_on = not debug_on
-            print(f"[harness] Debug stats are now {'ON' if debug_on else 'OFF'}")
+            _harness(f"Debug stats are now {'ON' if debug_on else 'OFF'}")
             continue
         if line == "/chat":
             chat_on = not chat_on
             if chat_on:
                 chat_history.clear()
                 chat_ctx_tokens = 0
-                print("[harness] Chat mode ON (persistent conversation with this model). /reset clears history.")
+                _harness("Chat mode ON (persistent conversation with this model). /reset clears history.")
             else:
-                print("[harness] Chat template is now OFF (raw completion mode)")
+                _harness("Chat template is now OFF (raw completion mode)")
             continue
         if line == "/context":
-            print(f"[harness] chat_ctx_tokens={chat_ctx_tokens} | turns={len(chat_history)//2} | "
-                  f"mutes={sorted(muted_sites) or 'none'} charts={sorted(muted_charts) or 'none'}")
+            _harness(f"chat_ctx_tokens={chat_ctx_tokens} | turns={len(chat_history)//2} | "
+                     f"mutes={sorted(muted_sites) or 'none'} charts={sorted(muted_charts) or 'none'}")
             for msg in chat_history[-6:]:
                 body = msg["content"] if len(msg["content"]) <= 72 else msg["content"][:69] + "..."
-                print(f"           [{msg['role']:>9}] {body}")
+                print("           " + A.gray(f"[{msg['role']:>9}]") + " " + body)
             continue
         if line == "/reset":
             chat_history.clear()
             chat_ctx_tokens = 0
-            print("[harness] Cleared conversation history")
+            _harness("Cleared conversation history")
             continue
         if line == "/unmute":
             muted_sites.clear()
             muted_charts.clear()
-            print("[harness] Cleared all active layer and chart mutes")
+            _harness("Cleared all active layer and chart mutes")
             continue
         if line == "/preset":
             for p in _PRESET_PROMPTS:
-                run_one(p)
+                run_one(p, show_prompt=True)
             continue
         if line.startswith("/tokens "):
             parts = line.split()
             if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > 0:
                 max_new_tokens = int(parts[1])
-                print(f"[harness] max_new_tokens = {max_new_tokens}")
+                _harness(f"max_new_tokens = {max_new_tokens}")
             else:
-                print("[harness] usage: /tokens <positive_int>")
+                _harness("usage: /tokens <positive_int>")
             continue
         if line.startswith("/temp "):
             try:
                 temperature = float(line.split()[1])
                 assert temperature >= 0.0
-                print(f"[harness] temperature = {temperature} ({'sampling' if temperature > 0 else 'greedy'})")
+                _harness(f"temperature = {temperature} ({'sampling' if temperature > 0 else 'greedy'})")
             except (ValueError, IndexError, AssertionError):
-                print("[harness] usage: /temp <float>=0 for greedy, e.g. /temp 0.7")
+                _harness("usage: /temp <float>=0 for greedy, e.g. /temp 0.7")
             continue
         if line.startswith("/topp "):
             try:
                 top_p = float(line.split()[1])
                 assert 0.0 < top_p <= 1.0
-                print(f"[harness] top_p = {top_p}")
+                _harness(f"top_p = {top_p}")
             except (ValueError, IndexError, AssertionError):
-                print("[harness] usage: /topp <float in (0,1]>")
+                _harness("usage: /topp <float in (0,1]>")
             continue
         if line.startswith("/penalty "):
             try:
                 rep_penalty = float(line.split()[1])
                 assert rep_penalty >= 1.0
-                print(f"[harness] repetition_penalty = {rep_penalty}")
+                _harness(f"repetition_penalty = {rep_penalty}")
             except (ValueError, IndexError, AssertionError):
-                print("[harness] usage: /penalty <float>=1.0, e.g. /penalty 1.15")
+                _harness("usage: /penalty <float>=1.0, e.g. /penalty 1.15")
             continue
         if line.startswith("/mute "):
             parts = line.split()
             if len(parts) == 3 and parts[1] == "attn" and parts[2].isdigit():
                 muted_sites.add(f"attention.{int(parts[2])}.delta")
-                print(f"[harness] Muted attention.{int(parts[2])}.delta")
+                _harness(f"Muted attention.{int(parts[2])}.delta")
             elif len(parts) == 3 and parts[1] == "mlp" and parts[2].isdigit():
                 muted_sites.add(f"mlp.{int(parts[2])}.delta")
-                print(f"[harness] Muted mlp.{int(parts[2])}.delta")
+                _harness(f"Muted mlp.{int(parts[2])}.delta")
             elif len(parts) == 3 and parts[1] == "deltanet" and parts[2].isdigit():
                 muted_sites.add(f"deltanet.{int(parts[2])}.delta")
-                print(f"[harness] Muted deltanet.{int(parts[2])}.delta")
+                _harness(f"Muted deltanet.{int(parts[2])}.delta")
             elif len(parts) == 4 and parts[1] == "chart" and parts[2].isdigit() and parts[3].isdigit():
                 muted_charts.add((int(parts[2]), int(parts[3])))
-                print(f"[harness] Muted mlp.{int(parts[2])} chart {int(parts[3])}")
+                _harness(f"Muted chart {int(parts[2])}:{int(parts[3])}")
             else:
-                print("[harness] usage: /mute attn <L> | /mute mlp <L> | /mute deltanet <L> | /mute chart <L> <C>")
+                _harness("usage: /mute attn <L> | /mute mlp <L> | /mute deltanet <L> | /mute chart <L> <C>")
             continue
         if chat_on:
             run_chat_turn(line)
@@ -1123,6 +1360,7 @@ def build_parser():
     interactive.add_argument("--xray", action="store_true", help="Enable per-prompt X-Ray chart/ablation output")
     interactive.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats (default: answer only)")
     interactive.add_argument("--stream", action="store_true", help="Print generated tokens as they decode")
+    interactive.add_argument("--no-color", action="store_true", help="Disable ANSI styling and markdown rendering")
     interactive.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     interactive.add_argument("--max-new-tokens", type=_positive_int, default=24)
     interactive.add_argument("--max-context-tokens", type=_positive_int, default=4096)
@@ -1154,6 +1392,7 @@ def build_parser():
     chat.add_argument("--debug", action="store_true", help="Show [ctx]/[top-5]/timing stats")
     chat.add_argument("--xray", action="store_true", help="Enable per-turn X-Ray output")
     chat.add_argument("--stream", action="store_true", help="Print generated tokens as they decode")
+    chat.add_argument("--no-color", action="store_true", help="Disable ANSI styling and markdown rendering")
     chat.add_argument("--ignore-eos", action="store_true")
     chat.add_argument("--mute-attn-layer", type=int, action="append", default=[])
     chat.add_argument("--mute-mlp-layer", type=int, action="append", default=[])
