@@ -376,9 +376,11 @@ def _xray(args):
     win_id = int(top_idx[0])
 
     token_routing = {}
+    chart_counts = {}
     for i in chart_layers:
         n_val = out.captures[f"mlp.{i}.normalized"][0].astype(mx.float32)
         centers = runtime.parameters[f"mlp.{i}.chart_centers"].astype(mx.float32)
+        chart_counts[str(i)] = int(centers.shape[0])
         scales = runtime.parameters[f"mlp.{i}.chart_distance_scales"].astype(mx.float32)
         temp = float(runtime.layers[i]["mlp"].get("temperature", 1.0))
         disp = n_val[:, None, :] - centers[None, :, :]
@@ -398,6 +400,7 @@ def _xray(args):
     for i in chart_deltanet_layers:
         c_val = out.captures[dnet_route_site[i]][0].astype(mx.float32)
         centers = runtime.parameters[f"deltanet.{i}.chart_centers"].astype(mx.float32)
+        chart_counts[f"deltanet.{i}"] = int(centers.shape[0])
         scales = runtime.parameters[f"deltanet.{i}.chart_distance_scales"].astype(mx.float32)
         temp = float(runtime.layers[i]["deltanet"].get("temperature", 1.0))
         disp = c_val[:, None, :] - centers[None, :, :]
@@ -466,13 +469,96 @@ def _xray(args):
             for idx in top_idx
         ],
         "chart_routing": token_routing,
+        "chart_counts": chart_counts,
         "ablation_impacts": ablation_impacts,
     }
-    print(json.dumps(payload, indent=2, allow_nan=False))
     if args.report:
         report_path = Path(args.report).expanduser()
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
+    A = _Ansi(_ansi_enabled(args) and not getattr(args, "json", False))
+    if A.enabled:
+        _print_xray_panel(payload, A)
+    else:
+        print(json.dumps(payload, indent=2, allow_nan=False))
+
+
+_DENSITY = "░▒▓█"
+_CHART_PALETTE = ("cyan", "magenta", "yellow", "green", "red", "b_cyan", "b_green")
+
+
+def _trunc(text, width):
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def _print_xray_panel(payload, A):
+    """Render an xray payload as an ANSI panel: top-5 probability bars, a
+    token x layer routing heatmap, and diverging ablation-push bars."""
+    top5 = payload.get("top5_predictions") or []
+    winner = top5[0]["token"] if top5 else ""
+
+    if top5:
+        print(_hrule(A, "top-5", style=A.magenta))
+        bar_w = 26
+        for rank, pred in enumerate(top5):
+            p = pred["probability"]
+            fill = int(round(p * bar_w))
+            name = _trunc(repr(pred["token"]), 16).ljust(18)
+            bar = "█" * fill + "░" * (bar_w - fill)
+            styled = (A.b_green if rank == 0 else A.cyan)(bar)
+            print(f"  {name}{styled} {100 * p:5.1f}%  " + A.gray(f"logit {pred['logit']:.2f}"))
+
+    routing = payload.get("chart_routing") or {}
+    counts = payload.get("chart_counts") or {}
+    if routing:
+        print(_hrule(A, "chart routing", style=A.magenta, tail="░▒▓█ membership lift over uniform"))
+        cols = sorted(routing, key=lambda k: int(k.split(".")[-1]))
+        max_cols = 12
+        shown, hidden = cols[:max_cols], cols[max_cols:]
+        header = "  " + " " * 18 + "".join(
+            (("d" if c.startswith("deltanet.") else "m") + c.split(".")[-1]).center(4)
+            for c in shown
+        )
+        print(A.gray(header))
+        n_rows = len(routing[shown[0]])
+        cap = 40
+        for pos in range(min(n_rows, cap)):
+            label = _trunc(repr(routing[shown[0]][pos]["token"]), 15).ljust(16)
+            cells = []
+            for c in shown:
+                entry = routing[c][pos]
+                n_ch = max(counts.get(c, 1), 1)
+                uniform = 1.0 / n_ch
+                lift = (entry["dominant_membership"] - uniform) / (1.0 - uniform) if n_ch > 1 else 1.0
+                glyph = _DENSITY[min(3, max(0, int(max(0.0, lift) * 4)))]
+                color = getattr(A, _CHART_PALETTE[entry["dominant_chart"] % len(_CHART_PALETTE)])
+                cells.append(color(f"{entry['dominant_chart']}{glyph}".center(4)))
+            print("  " + A.gray(label) + "".join(cells))
+        if n_rows > cap or hidden:
+            note = f"  … {n_rows - cap} more tokens" if n_rows > cap else ""
+            note += f"{' · ' if note and hidden else '  … '}{len(hidden)} more layers" if hidden else ""
+            print(A.dim(note))
+
+    impacts = payload.get("ablation_impacts") or []
+    if impacts:
+        print(_hrule(A, f"ablation push on {winner!r}", style=A.magenta))
+        peak = max(abs(i["winning_logit_push"]) for i in impacts) or 1.0
+        half = 14
+        for i in impacts:
+            push = i["winning_logit_push"]
+            n = int(round(abs(push) / peak * half))
+            site = _trunc(
+                i["site"].replace("deltanet.", "dnet.").replace("attention.", "attn."), 15
+            ).ljust(16)
+            left = A.red(("█" * n).rjust(half)) if push < 0 else " " * half
+            right = A.green(("█" * n).ljust(half)) if push > 0 else " " * half
+            flip = ""
+            if i["ablated_top1_token"] != winner:
+                flip = A.yellow(" ▸ " + _trunc(repr(i["ablated_top1_token"]), 10))
+            print(f"  {site}{push:+.2f}  {left}{A.gray('│')}{right}{flip}")
+
+    if not top5 and not routing and not impacts:
+        print(A.dim("  no fitted chart or reduced sites in this artifact"))
 
 
 _PRESET_PROMPTS = (
@@ -1058,11 +1144,13 @@ def _interactive(args):
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=str(artifact_dir),
-                tokenizer=args.tokenizer,
+                tokenizer=args.tokenizer or _default_tokenizer(runtime),
                 prompt=raw_text,
                 chat=chat_on,
                 max_prompt_tokens=args.max_prompt_tokens,
                 report=None,
+                json=False,
+                no_color=getattr(args, "no_color", False),
             )
             if A.enabled:
                 print(_hrule(A, "x-ray", style=A.magenta))
@@ -1121,11 +1209,13 @@ def _interactive(args):
         if xray_on:
             xray_ns = argparse.Namespace(
                 artifact=str(artifact_dir),
-                tokenizer=args.tokenizer,
+                tokenizer=args.tokenizer or _default_tokenizer(runtime),
                 prompt=rendered,
                 chat=False,
                 max_prompt_tokens=args.max_context_tokens,
                 report=None,
+                json=False,
+                no_color=getattr(args, "no_color", False),
             )
             if A.enabled:
                 print(_hrule(A, "x-ray", style=A.magenta))
@@ -1346,6 +1436,8 @@ def build_parser():
     xray.add_argument("--chat", action="store_true")
     xray.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
     xray.add_argument("--report", help="Optional JSON X-Ray report path")
+    xray.add_argument("--json", action="store_true", help="Emit the raw JSON report even in a TTY")
+    xray.add_argument("--no-color", action="store_true", help="Disable ANSI styling")
     xray.set_defaults(run=_xray)
     interactive = commands.add_parser(
         "interactive",
