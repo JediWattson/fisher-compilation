@@ -615,6 +615,7 @@ class MLXQwen3:
         else:
             x = p["lexical.codebook"][ids] @ p["lexical.basis"].T
         x = observe("embedding", x * self.config.get("embed_scale", 1.0))
+        deltanet_contexts = {}
         for i, layer in enumerate(self.layers):
             m = f"mlp.{i}"
             mc = layer["mlp"]
@@ -624,170 +625,207 @@ class MLXQwen3:
                 state = observe(d + ".input", x)
                 n = observe(d + ".normalized", fast_rms(state, d + ".input_norm_weight", dc["input_norm"]))
                 n_masked = mask_valid(n)
-                coords = n_masked @ p[d + ".input_basis"] if d + ".input_basis" in p else n_masked
-                coords = mask_valid(coords)
-                if has_transports:
-                    coords = coords + incoming(d, 1, coords.shape[-1], coords.dtype)[..., 0, :]
-                kh, vh = dc["key_heads"], dc["value_heads"]
-                kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
-                k_total, v_total = kh * kd, vh * vd
-                kernel_size = dc["conv_kernel_size"]
-                conv_dim = 2 * k_total + v_total
-                qkv = linear(coords, d + ".qkv_weight", d + ".qkv_bias")
-                z = linear(coords, d + ".z_weight", d + ".z_bias").reshape(b, t, vh, vd)
-                b_gate = linear(n_masked, d + ".b_weight", d + ".b_bias")
-                a_gate = linear(n_masked, d + ".a_weight", d + ".a_bias")
-                if cache and cache.key_values[i] is not None:
-                    conv_state, rec_state = cache.key_values[i]
+                if d + ".qkv_weight" not in p:
+                    new_kv.append(None)
+                    z_parts = []
+                    if d + ".transport_context_basis" in p:
+                        src_ctx = deltanet_contexts[int(dc["transport_source_layer"])]
+                        z_parts.append(src_ctx @ p[d + ".transport_context_basis"].astype(src_ctx.dtype))
+                    if d + ".transport_input_basis" in p:
+                        z_parts.append(n_masked @ p[d + ".transport_input_basis"].astype(n_masked.dtype))
+                    if len(z_parts) > 1:
+                        z_comb = mx.concatenate(z_parts, axis=-1)
+                        raw = z_comb @ p[d + ".transport_decoder"].astype(z_comb.dtype)
+                    elif len(z_parts) == 1:
+                        raw = z_parts[0] @ p[d + ".transport_decoder"].astype(z_parts[0].dtype)
+                    else:
+                        raw = mx.zeros_like(n_masked)
+                    if d + ".chart_centers" in p:
+                        d_centers = p[d + ".chart_centers"]
+                        d_disp = n_masked[..., None, :] - d_centers
+                        d_scales = p[d + ".chart_distance_scales"]
+                        d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
+                        if muted_chart_set:
+                            d_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(d_centers.shape[0])]
+                            if any(v == 0.0 for v in d_keep):
+                                d_memb = d_memb * mx.array(d_keep, dtype=d_memb.dtype)
+                        d_coords = mx.einsum("btch,chr->btcr", d_disp, p[d + ".chart_bases"])
+                        d_aug = mx.concatenate((mx.ones_like(d_coords[..., :1]), d_coords), axis=-1)
+                        d_enc = p[d + ".local_generator_encoders"]
+                        d_local = mx.einsum("btcr,crg->btcg", d_aug, d_enc)
+                        d_packet = d_memb[..., None] * d_local
+                        raw = raw + mx.einsum("btcg,cgm->btm", d_packet, p[d + ".chart_mode_decoders"])
+                    raw = observe(d + ".output", raw)
+                    delta = observe(d + ".delta", fast_rms(raw, d + ".output_norm_weight", dc["output_norm"]))
+                    x = state + mask_valid(delta)
+                    if dc.get("coalesced_mlp", False):
+                        continue
                 else:
-                    conv_state = mx.zeros((b, kernel_size - 1, conv_dim), dtype=qkv.dtype)
-                    rec_state = None
-                conv_in = mx.concatenate((conv_state, qkv), axis=1)
-                new_conv_state = conv_in[:, -(kernel_size - 1):, :] if kernel_size > 1 else conv_state
-                if t == 1 and fc is not None:
-                    ck_conv = ("conv_w_t", d, qkv.dtype)
-                    conv_wt = fc.get(ck_conv)
-                    if conv_wt is None:
-                        conv_wt = mx.contiguous(p[d + ".conv_weight"].reshape(conv_dim, kernel_size).T[None, :, :].astype(qkv.dtype))
-                        mx.eval(conv_wt)
-                        fc[ck_conv] = conv_wt
-                    conv_out = mx.sum(conv_in * conv_wt, axis=1, keepdims=True)
-                else:
-                    conv_w = p[d + ".conv_weight"].reshape(conv_dim, kernel_size)
-                    conv_out = sum(conv_in[:, k_idx : k_idx + t, :] * conv_w[:, k_idx] for k_idx in range(kernel_size))
-                if d + ".conv_bias" in p:
-                    conv_out = conv_out + p[d + ".conv_bias"]
-                conv_f = conv_out.astype(mx.float32)
-                conv_act = (conv_f * mx.sigmoid(conv_f)).astype(qkv.dtype)
-                q_raw = conv_act[..., :k_total].reshape(b, t, kh, kd)
-                k_raw = conv_act[..., k_total : 2 * k_total].reshape(b, t, kh, kd)
-                v = observe(d + ".v", conv_act[..., 2 * k_total:]).reshape(b, t, vh, vd)
-                eps = dc.get("qk_l2_eps", 1e-6)
-                if use_fast_kernel:
-                    inv_scale = kd ** -0.5
-                    rms_eps = eps * (inv_scale ** 2)
-                    q = (inv_scale ** 2) * mx.fast.rms_norm(q_raw, None, rms_eps)
-                    k = inv_scale * mx.fast.rms_norm(k_raw, None, rms_eps)
-                else:
-                    q_f, k_f = q_raw.astype(mx.float32), k_raw.astype(mx.float32)
-                    q_norm = (q_f * mx.rsqrt(mx.sum(q_f * q_f, axis=-1, keepdims=True) + eps)) * (kd ** -0.5)
-                    k_norm = k_f * mx.rsqrt(mx.sum(k_f * k_f, axis=-1, keepdims=True) + eps)
-                    q = observe(d + ".q", q_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
-                    k = observe(d + ".k", k_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
-                if d + ".carrier_basis" in p:
+                    coords = n_masked @ p[d + ".input_basis"] if d + ".input_basis" in p else n_masked
+                    coords = mask_valid(coords)
+                    if has_transports:
+                        coords = coords + incoming(d, 1, coords.shape[-1], coords.dtype)[..., 0, :]
+                    kh, vh = dc["key_heads"], dc["value_heads"]
+                    kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
+                    k_total, v_total = kh * kd, vh * vd
+                    kernel_size = dc["conv_kernel_size"]
+                    conv_dim = 2 * k_total + v_total
+                    qkv = linear(coords, d + ".qkv_weight", d + ".qkv_bias")
+                    z = linear(coords, d + ".z_weight", d + ".z_bias").reshape(b, t, vh, vd)
+                    b_gate = linear(n_masked, d + ".b_weight", d + ".b_bias")
+                    a_gate = linear(n_masked, d + ".a_weight", d + ".a_bias")
+                    if cache and cache.key_values[i] is not None:
+                        conv_state, rec_state = cache.key_values[i]
+                    else:
+                        conv_state = mx.zeros((b, kernel_size - 1, conv_dim), dtype=qkv.dtype)
+                        rec_state = None
+                    conv_in = mx.concatenate((conv_state, qkv), axis=1)
+                    new_conv_state = conv_in[:, -(kernel_size - 1):, :] if kernel_size > 1 else conv_state
+                    if t == 1 and fc is not None:
+                        ck_conv = ("conv_w_t", d, qkv.dtype)
+                        conv_wt = fc.get(ck_conv)
+                        if conv_wt is None:
+                            conv_wt = mx.contiguous(p[d + ".conv_weight"].reshape(conv_dim, kernel_size).T[None, :, :].astype(qkv.dtype))
+                            mx.eval(conv_wt)
+                            fc[ck_conv] = conv_wt
+                        conv_out = mx.sum(conv_in * conv_wt, axis=1, keepdims=True)
+                    else:
+                        conv_w = p[d + ".conv_weight"].reshape(conv_dim, kernel_size)
+                        conv_out = sum(conv_in[:, k_idx : k_idx + t, :] * conv_w[:, k_idx] for k_idx in range(kernel_size))
+                    if d + ".conv_bias" in p:
+                        conv_out = conv_out + p[d + ".conv_bias"]
+                    conv_f = conv_out.astype(mx.float32)
+                    conv_act = (conv_f * mx.sigmoid(conv_f)).astype(qkv.dtype)
+                    q_raw = conv_act[..., :k_total].reshape(b, t, kh, kd)
+                    k_raw = conv_act[..., k_total : 2 * k_total].reshape(b, t, kh, kd)
+                    v = observe(d + ".v", conv_act[..., 2 * k_total:]).reshape(b, t, vh, vd)
+                    eps = dc.get("qk_l2_eps", 1e-6)
                     if use_fast_kernel:
-                        ck_b = ("carrier_basis", d, q.dtype)
-                        basis = fc.get(ck_b)
-                        if basis is None:
-                            basis = mx.contiguous(p[d + ".carrier_basis"].astype(q.dtype))
-                            mx.eval(basis)
-                            fc[ck_b] = basis
-                        if b == 1 and t == 1:
-                            r_dim = basis.shape[-1]
-                            q_rec = (q.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
-                            k_rec = (k.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
+                        inv_scale = kd ** -0.5
+                        rms_eps = eps * (inv_scale ** 2)
+                        q = (inv_scale ** 2) * mx.fast.rms_norm(q_raw, None, rms_eps)
+                        k = inv_scale * mx.fast.rms_norm(k_raw, None, rms_eps)
+                    else:
+                        q_f, k_f = q_raw.astype(mx.float32), k_raw.astype(mx.float32)
+                        q_norm = (q_f * mx.rsqrt(mx.sum(q_f * q_f, axis=-1, keepdims=True) + eps)) * (kd ** -0.5)
+                        k_norm = k_f * mx.rsqrt(mx.sum(k_f * k_f, axis=-1, keepdims=True) + eps)
+                        q = observe(d + ".q", q_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                        k = observe(d + ".k", k_norm.astype(qkv.dtype).reshape(b, t, k_total)).reshape(b, t, kh, kd)
+                    if d + ".carrier_basis" in p:
+                        if use_fast_kernel:
+                            ck_b = ("carrier_basis", d, q.dtype)
+                            basis = fc.get(ck_b)
+                            if basis is None:
+                                basis = mx.contiguous(p[d + ".carrier_basis"].astype(q.dtype))
+                                mx.eval(basis)
+                                fc[ck_b] = basis
+                            if b == 1 and t == 1:
+                                r_dim = basis.shape[-1]
+                                q_rec = (q.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
+                                k_rec = (k.reshape(kh, 1, kd) @ basis).reshape(1, 1, kh, r_dim)
+                            else:
+                                q_rec = mx.contiguous((q.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
+                                k_rec = mx.contiguous((k.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
                         else:
-                            q_rec = mx.contiguous((q.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
-                            k_rec = mx.contiguous((k.transpose(0, 2, 1, 3) @ basis).transpose(0, 2, 1, 3))
+                            basis = p[d + ".carrier_basis"].astype(mx.float32)
+                            q_rec = mx.einsum("bthd,hdr->bthr", q.astype(mx.float32), basis)
+                            k_rec = mx.einsum("bthd,hdr->bthr", k.astype(mx.float32), basis)
                     else:
-                        basis = p[d + ".carrier_basis"].astype(mx.float32)
-                        q_rec = mx.einsum("bthd,hdr->bthr", q.astype(mx.float32), basis)
-                        k_rec = mx.einsum("bthd,hdr->bthr", k.astype(mx.float32), basis)
-                else:
-                    q_rec, k_rec = (q, k) if use_fast_kernel else (q.astype(mx.float32), k.astype(mx.float32))
-                beta = mx.sigmoid(b_gate.astype(mx.float32))
-                a_val = a_gate.astype(mx.float32) + p[d + ".dt_bias"].astype(mx.float32)
-                softplus_a = mx.log1p(mx.exp(-mx.abs(a_val))) + mx.maximum(a_val, 0.0)
-                if fc is not None:
-                    ck_a = ("neg_exp_A", d)
-                    neg_exp_a = fc.get(ck_a)
-                    if neg_exp_a is None:
-                        neg_exp_a = -mx.exp(p[d + ".A_log"].astype(mx.float32))
-                        mx.eval(neg_exp_a)
-                        fc[ck_a] = neg_exp_a
-                    g_decay = mx.exp(neg_exp_a * softplus_a)
-                else:
-                    g_decay = mx.exp(-mx.exp(p[d + ".A_log"].astype(mx.float32)) * softplus_a)
-                carrier_dim = q_rec.shape[-1]
-                if rec_state is None:
-                    rec_state = mx.zeros((b, vh, vd, carrier_dim), dtype=mx.float32)
-                else:
-                    rec_state = rec_state.astype(mx.float32)
-                if gdn_kernel is not None and carrier_dim >= 32 and carrier_dim % 32 == 0:
-                    y_kern, rec_state = gdn_kernel(
-                        inputs=[q_rec.astype(qkv.dtype), k_rec.astype(qkv.dtype), v, g_decay, beta.astype(qkv.dtype), rec_state, t],
-                        template=[
-                            ("InT", qkv.dtype),
-                            ("StT", rec_state.dtype),
-                            ("Dk", carrier_dim),
-                            ("Dv", vd),
-                            ("Hk", kh),
-                            ("Hv", vh),
-                        ],
-                        grid=(32, vd, b * vh),
-                        threadgroup=(32, 4, 1),
-                        output_shapes=[(b, t, vh, vd), rec_state.shape],
-                        output_dtypes=[qkv.dtype, rec_state.dtype],
-                    )
-                    rec_out = observe(d + ".recurrent_out", y_kern.reshape(b, t, v_total)).reshape(b, t, vh, vd)
-                else:
-                    q_rec, k_rec = q_rec.astype(mx.float32), k_rec.astype(mx.float32)
-                    if vh // kh > 1:
-                        q_rec = mx.repeat(q_rec, vh // kh, axis=2)
-                        k_rec = mx.repeat(k_rec, vh // kh, axis=2)
-                    v_f = v.astype(mx.float32)
-                    ys = []
-                    for step in range(t):
-                        q_t = q_rec[:, step]
-                        k_t = k_rec[:, step]
-                        v_t = v_f[:, step]
-                        g_t = g_decay[:, step, :, None, None]
-                        beta_t = beta[:, step, :, None]
-                        rec_state = rec_state * g_t
-                        kv_mem = mx.sum(rec_state * k_t[:, :, None, :], axis=-1)
-                        delta_v = (v_t - kv_mem) * beta_t
-                        rec_state = rec_state + delta_v[:, :, :, None] * k_t[:, :, None, :]
-                        y_t = mx.sum(rec_state * q_t[:, :, None, :], axis=-1)
-                        ys.append(y_t)
-                    rec_out = observe(d + ".recurrent_out", mx.stack(ys, axis=1).astype(qkv.dtype).reshape(b, t, v_total)).reshape(b, t, vh, vd)
-                new_kv.append((new_conv_state, rec_state))
-                normed_out = fast_rms(rec_out, d + ".norm_weight", dc["norm"])
-                z_f = z.astype(mx.float32)
-                gated_out = (normed_out.astype(mx.float32) * (z_f * mx.sigmoid(z_f))).astype(qkv.dtype)
-                context = observe(d + ".context", gated_out.reshape(b, t, v_total))
-                if d + ".value_basis" in p:
-                    v_basis = p[d + ".value_basis"].astype(gated_out.dtype)
-                    if b == 1 and t == 1:
-                        r_v = v_basis.shape[-1]
-                        outcoords = (gated_out.reshape(vh, 1, vd) @ v_basis).reshape(1, 1, vh * r_v)
+                        q_rec, k_rec = (q, k) if use_fast_kernel else (q.astype(mx.float32), k.astype(mx.float32))
+                    beta = mx.sigmoid(b_gate.astype(mx.float32))
+                    a_val = a_gate.astype(mx.float32) + p[d + ".dt_bias"].astype(mx.float32)
+                    softplus_a = mx.log1p(mx.exp(-mx.abs(a_val))) + mx.maximum(a_val, 0.0)
+                    if fc is not None:
+                        ck_a = ("neg_exp_A", d)
+                        neg_exp_a = fc.get(ck_a)
+                        if neg_exp_a is None:
+                            neg_exp_a = -mx.exp(p[d + ".A_log"].astype(mx.float32))
+                            mx.eval(neg_exp_a)
+                            fc[ck_a] = neg_exp_a
+                        g_decay = mx.exp(neg_exp_a * softplus_a)
                     else:
-                        outcoords = (gated_out.transpose(0, 2, 1, 3) @ v_basis).transpose(0, 2, 1, 3).reshape(b, t, -1)
-                elif d + ".output_encoder_weight" in p:
-                    outcoords = linear(context, d + ".output_encoder_weight")
-                else:
-                    outcoords = context
-                raw = linear(outcoords, d + ".output_decoder_weight", d + ".o_bias")
-                if d + ".chart_centers" in p:
-                    d_centers = p[d + ".chart_centers"]
-                    d_disp = context[..., None, :] - d_centers
-                    d_scales = p[d + ".chart_distance_scales"]
-                    d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
-                    if muted_chart_set:
-                        d_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(d_centers.shape[0])]
-                        if any(v == 0.0 for v in d_keep):
-                            d_memb = d_memb * mx.array(d_keep, dtype=d_memb.dtype)
-                    d_coords = mx.einsum("btch,chr->btcr", d_disp, p[d + ".chart_bases"])
-                    d_aug = mx.concatenate((mx.ones_like(d_coords[..., :1]), d_coords), axis=-1)
-                    d_enc = p[d + ".local_generator_encoders"]
-                    d_local = mx.einsum("btcr,crg->btcg", d_aug, d_enc)
-                    d_inc = incoming(d, d_centers.shape[0], d_enc.shape[-1], context.dtype) if has_transports else 0
-                    d_packet = d_memb[..., None] * (d_local + d_inc)
-                    raw = raw + mx.einsum("btcg,cgm->btm", d_packet, p[d + ".chart_mode_decoders"])
-                raw = observe(d + ".output", raw)
-                delta = observe(d + ".delta", fast_rms(raw, d + ".output_norm_weight", dc["output_norm"]))
-                x = state + mask_valid(delta)
-                if has_transports:
-                    messages[d] = mask_valid(outcoords)[..., None, :]
+                        g_decay = mx.exp(-mx.exp(p[d + ".A_log"].astype(mx.float32)) * softplus_a)
+                    carrier_dim = q_rec.shape[-1]
+                    if rec_state is None:
+                        rec_state = mx.zeros((b, vh, vd, carrier_dim), dtype=mx.float32)
+                    else:
+                        rec_state = rec_state.astype(mx.float32)
+                    if gdn_kernel is not None and carrier_dim >= 32 and carrier_dim % 32 == 0:
+                        y_kern, rec_state = gdn_kernel(
+                            inputs=[q_rec.astype(qkv.dtype), k_rec.astype(qkv.dtype), v, g_decay, beta.astype(qkv.dtype), rec_state, t],
+                            template=[
+                                ("InT", qkv.dtype),
+                                ("StT", rec_state.dtype),
+                                ("Dk", carrier_dim),
+                                ("Dv", vd),
+                                ("Hk", kh),
+                                ("Hv", vh),
+                            ],
+                            grid=(32, vd, b * vh),
+                            threadgroup=(32, 4, 1),
+                            output_shapes=[(b, t, vh, vd), rec_state.shape],
+                            output_dtypes=[qkv.dtype, rec_state.dtype],
+                        )
+                        rec_out = observe(d + ".recurrent_out", y_kern.reshape(b, t, v_total)).reshape(b, t, vh, vd)
+                    else:
+                        q_rec, k_rec = q_rec.astype(mx.float32), k_rec.astype(mx.float32)
+                        if vh // kh > 1:
+                            q_rec = mx.repeat(q_rec, vh // kh, axis=2)
+                            k_rec = mx.repeat(k_rec, vh // kh, axis=2)
+                        v_f = v.astype(mx.float32)
+                        ys = []
+                        for step in range(t):
+                            q_t = q_rec[:, step]
+                            k_t = k_rec[:, step]
+                            v_t = v_f[:, step]
+                            g_t = g_decay[:, step, :, None, None]
+                            beta_t = beta[:, step, :, None]
+                            rec_state = rec_state * g_t
+                            kv_mem = mx.sum(rec_state * k_t[:, :, None, :], axis=-1)
+                            delta_v = (v_t - kv_mem) * beta_t
+                            rec_state = rec_state + delta_v[:, :, :, None] * k_t[:, :, None, :]
+                            y_t = mx.sum(rec_state * q_t[:, :, None, :], axis=-1)
+                            ys.append(y_t)
+                        rec_out = observe(d + ".recurrent_out", mx.stack(ys, axis=1).astype(qkv.dtype).reshape(b, t, v_total)).reshape(b, t, vh, vd)
+                    new_kv.append((new_conv_state, rec_state))
+                    normed_out = fast_rms(rec_out, d + ".norm_weight", dc["norm"])
+                    z_f = z.astype(mx.float32)
+                    gated_out = (normed_out.astype(mx.float32) * (z_f * mx.sigmoid(z_f))).astype(qkv.dtype)
+                    context = observe(d + ".context", gated_out.reshape(b, t, v_total))
+                    deltanet_contexts[i] = context
+                    if d + ".value_basis" in p:
+                        v_basis = p[d + ".value_basis"].astype(gated_out.dtype)
+                        if b == 1 and t == 1:
+                            r_v = v_basis.shape[-1]
+                            outcoords = (gated_out.reshape(vh, 1, vd) @ v_basis).reshape(1, 1, vh * r_v)
+                        else:
+                            outcoords = (gated_out.transpose(0, 2, 1, 3) @ v_basis).transpose(0, 2, 1, 3).reshape(b, t, -1)
+                    elif d + ".output_encoder_weight" in p:
+                        outcoords = linear(context, d + ".output_encoder_weight")
+                    else:
+                        outcoords = context
+                    raw = linear(outcoords, d + ".output_decoder_weight", d + ".o_bias")
+                    if d + ".chart_centers" in p:
+                        d_centers = p[d + ".chart_centers"]
+                        d_disp = context[..., None, :] - d_centers
+                        d_scales = p[d + ".chart_distance_scales"]
+                        d_memb = mx.softmax(-0.5 * mx.sum(d_disp ** 2, axis=-1) / (d_scales ** 2 * dc.get("temperature", 1.0)), axis=-1)
+                        if muted_chart_set:
+                            d_keep = [0.0 if (i, c_idx) in muted_chart_set else 1.0 for c_idx in range(d_centers.shape[0])]
+                            if any(v == 0.0 for v in d_keep):
+                                d_memb = d_memb * mx.array(d_keep, dtype=d_memb.dtype)
+                        d_coords = mx.einsum("btch,chr->btcr", d_disp, p[d + ".chart_bases"])
+                        d_aug = mx.concatenate((mx.ones_like(d_coords[..., :1]), d_coords), axis=-1)
+                        d_enc = p[d + ".local_generator_encoders"]
+                        d_local = mx.einsum("btcr,crg->btcg", d_aug, d_enc)
+                        d_inc = incoming(d, d_centers.shape[0], d_enc.shape[-1], context.dtype) if has_transports else 0
+                        d_packet = d_memb[..., None] * (d_local + d_inc)
+                        raw = raw + mx.einsum("btcg,cgm->btm", d_packet, p[d + ".chart_mode_decoders"])
+                    raw = observe(d + ".output", raw)
+                    delta = observe(d + ".delta", fast_rms(raw, d + ".output_norm_weight", dc["output_norm"]))
+                    x = state + mask_valid(delta)
+                    if has_transports:
+                        messages[d] = mask_valid(outcoords)[..., None, :]
             else:
                 a = f"attention.{i}"
                 ac = layer["attention"]

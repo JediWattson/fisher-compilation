@@ -18,6 +18,7 @@ from fisher_graph.mlx_qwen3_fit import (
     capture_runtime_rows,
     fit_chart_deltanet,
     fit_chart_mlp,
+    fit_coalesced_deltanet,
     fit_deltanet_carrier_basis,
     fit_reduced_attention,
     fit_reduced_deltanet,
@@ -369,3 +370,17 @@ def test_qwen3_5_play1_reduced_deltanet_and_play2_carrier_basis(qwen3_5, mx):
     assert chart_d.report["chart_relative_error"] <= chart_d.report["base_relative_error"] + 1e-4
     out_chart_d = chart_d.runtime(**data[0], muted_charts=[(0, 1)])
     assert np.isfinite(np.asarray(out_chart_d.logits)).all()
+
+    coal_rows = capture_runtime_rows(
+        runtime, data, ["deltanet.0.normalized", "deltanet.0.delta", "mlp.0.delta"]
+    )
+    coal_d = fit_coalesced_deltanet(
+        runtime, 0, coal_rows, coalesce_mlp=True, transport_rank=4, chart_count=2, chart_rank=2, solver="numpy_float64",
+    )
+    assert "deltanet.0.qkv_weight" not in coal_d.runtime.parameters
+    assert "mlp.0.gate_weight" not in coal_d.runtime.parameters
+    assert coal_d.runtime.layers[0]["deltanet"]["coalesced_mlp"] is True
+    out_coal_pre = coal_d.runtime.prefill(**data[0])
+    assert out_coal_pre.cache.key_values[0] is None
+    out_coal_dec = coal_d.runtime.decode(mx.array([[2], [3]], dtype=mx.int32), out_coal_pre.cache)
+    assert np.isfinite(np.asarray(out_coal_dec.logits)).all()

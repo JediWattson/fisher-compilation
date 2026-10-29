@@ -785,6 +785,171 @@ def fit_chart_deltanet(
     })
 
 
+def fit_coalesced_deltanet(
+    runtime: Any,
+    layer_index: int,
+    captures: Mapping[str, Any],
+    *,
+    transport_source_layer: int | None = None,
+    coalesce_mlp: bool = False,
+    transport_rank: int = 64,
+    chart_count: int = 4,
+    chart_rank: int = 16,
+    generator_rank: int | None = None,
+    row_weights: Any = None,
+    relative_ridge: float = 0.05,
+    temperature: float = 1.0,
+    kmeans_iterations: int = 4,
+    solver: str = "mlx",
+) -> MLXFitResult:
+    """Physically bypass a GatedDeltaNet block (or full DeltaNet+MLP layer) via a Chart+Generator Supernode.
+
+    Removes ``qkv_weight``, ``z_weight``, ``conv_weight``, ``A_log``, ``dt_bias``,
+    ``norm_weight``, ``output_decoder_weight``, and ``carrier_basis`` from the layer
+    (and ``gate_weight``, ``up_weight``, ``down_weight`` when ``coalesce_mlp=True``),
+    so the recurrence, convolution, and dense projections are completely skipped at
+    runtime and replaced by a cross-layer transport basis + ``chart_count`` local
+    chart generators.
+    """
+    mx = _mx()
+    ridge = _positive(relative_ridge, "relative_ridge")
+    temperature = _positive(temperature, "temperature")
+    _rank(kmeans_iterations, 10_000, "kmeans_iterations")
+    if not 0 <= layer_index < len(runtime.layers) or "deltanet" not in runtime.layers[layer_index]:
+        raise ValueError("coalesced deltanet fitting requires a deltanet layer index")
+    if transport_source_layer is not None and (
+        not 0 <= transport_source_layer < layer_index
+        or "deltanet" not in runtime.layers[transport_source_layer]
+    ):
+        raise ValueError("transport_source_layer must be an earlier deltanet layer index")
+    prefix = f"deltanet.{layer_index}."
+    p = runtime.parameters
+    if prefix + "qkv_weight" not in p:
+        raise ValueError("deltanet layer is already coalesced")
+    deployment_dtype = p.get(prefix + "qkv_weight.scales", p[prefix + "qkv_weight"]).dtype
+
+    n_cur = _rows(captures[prefix + "normalized"], "normalized inputs")
+    y_target = _rows(captures[prefix + "delta"], "deltanet delta")
+    if coalesce_mlp:
+        y_target = y_target + _rows(captures[f"mlp.{layer_index}.delta"], "mlp delta")
+    n, d_hidden = n_cur.shape
+    _rank(transport_rank, min(n, d_hidden), "transport_rank")
+    _rank(chart_count, n, "chart_count")
+    _rank(chart_rank, d_hidden, "chart_rank")
+    generator_rank = chart_rank + 1 if generator_rank is None else generator_rank
+    _rank(generator_rank, chart_rank + 1, "generator_rank")
+    weights = _weights(row_weights, n)
+
+    y_norm = y_target / mx.maximum(mx.sqrt(mx.sum(y_target * y_target, axis=1, keepdims=True)), 1e-6)
+    gram_n = np.asarray((y_norm * weights[:, None]) @ y_norm.T, dtype=np.float64)
+    _, vecs = np.linalg.eigh(gram_n)
+    u_top = mx.array(vecs[:, -transport_rank:][:, ::-1].astype(np.float32))
+
+    b_cur_q, _ = np.linalg.qr(np.asarray(n_cur.T @ u_top, dtype=np.float64), mode="reduced")
+    b_cur = mx.array(b_cur_q[:, :transport_rank].astype(np.float32))
+    z_parts = []
+    updates = {}
+    if transport_source_layer is not None:
+        ctx_prev = _rows(captures[f"deltanet.{transport_source_layer}.context"], "source deltanet context")
+        b_ctx_q, _ = np.linalg.qr(np.asarray(ctx_prev.T @ u_top, dtype=np.float64), mode="reduced")
+        b_ctx = mx.array(b_ctx_q[:, :transport_rank].astype(np.float32))
+        z_parts.append(ctx_prev @ b_ctx)
+        updates[prefix + "transport_context_basis"] = b_ctx.astype(deployment_dtype)
+    z_parts.append(n_cur @ b_cur)
+    updates[prefix + "transport_input_basis"] = b_cur.astype(deployment_dtype)
+    z_lin = mx.concatenate(z_parts, axis=1) if len(z_parts) > 1 else z_parts[0]
+    dec_lin = anchored_ridge(z_lin, y_target, row_weights=weights, relative_ridge=ridge, solver=solver)
+    updates[prefix + "transport_decoder"] = dec_lin.astype(deployment_dtype)
+    y_base = z_lin @ dec_lin
+    residual = y_target - y_base
+
+    mean = mx.sum(n_cur * weights[:, None], axis=0)
+    first = int(mx.argmax(mx.sum((n_cur - mean) ** 2, axis=1) * weights).item())
+    centers = [n_cur[first]]
+    nearest = mx.sum((n_cur - centers[0]) ** 2, axis=1)
+    for _ in range(1, chart_count):
+        chosen = int(mx.argmax(nearest * weights).item())
+        centers.append(n_cur[chosen])
+        nearest = mx.minimum(nearest, mx.sum((n_cur - centers[-1]) ** 2, axis=1))
+    centers = mx.stack(centers)
+    for _ in range(kmeans_iterations):
+        distance = mx.sum((n_cur[:, None, :] - centers[None, :, :]) ** 2, axis=-1)
+        assignment = mx.argmin(distance, axis=1)
+        centers = mx.stack([
+            mx.where(
+                mx.sum(weights * (assignment == c)) > 1e-12,
+                mx.sum(n_cur * (weights * (assignment == c))[:, None], axis=0) / mx.maximum(mx.sum(weights * (assignment == c)), 1e-12),
+                centers[c],
+            )
+            for c in range(chart_count)
+        ])
+    displacement = n_cur[:, None, :] - centers[None, :, :]
+    distance = mx.sum(displacement ** 2, axis=-1)
+    scales = mx.sqrt(mx.maximum(mx.sum(distance * weights[:, None], axis=0), 1e-4))
+    res_norm = residual / mx.maximum(mx.sqrt(mx.sum(residual * residual, axis=1, keepdims=True)), 1e-6)
+    res_gram = np.asarray((res_norm * weights[:, None]) @ res_norm.T, dtype=np.float64)
+    _, r_vecs = np.linalg.eigh(res_gram)
+    need = min(chart_count * chart_rank, n)
+    u_res = mx.array(r_vecs[:, -need:][:, ::-1].astype(np.float32))
+    b_chart_q, _ = np.linalg.qr(np.asarray(n_cur.T @ u_res, dtype=np.float64), mode="reduced")
+    if b_chart_q.shape[1] < chart_count * chart_rank:
+        pad = np.eye(d_hidden, chart_count * chart_rank - b_chart_q.shape[1], dtype=np.float64)
+        b_chart_q, _ = np.linalg.qr(np.concatenate([b_chart_q, pad], axis=1), mode="reduced")
+    bases = mx.array(b_chart_q[:, : chart_count * chart_rank].astype(np.float32)).reshape(
+        d_hidden, chart_count, chart_rank
+    ).transpose(1, 0, 2)
+    encoders = mx.broadcast_to(mx.eye(chart_rank + 1)[:, :generator_rank], (chart_count, chart_rank + 1, generator_rank))
+    membership = mx.softmax(-0.5 * distance / (scales[None, :] ** 2 * temperature), axis=-1)
+    coordinates = mx.einsum("nch,chr->ncr", displacement, bases)
+    augmented = mx.concatenate((mx.ones((n, chart_count, 1)), coordinates), axis=-1)
+    features = (membership[:, :, None] * mx.einsum("ncr,crg->ncg", augmented, encoders)).reshape((n, -1))
+    decoded = anchored_ridge(
+        features, residual, row_weights=weights, relative_ridge=max(ridge, 0.1), solver=solver
+    ).reshape((chart_count, generator_rank, d_hidden))
+    for k_name, val in (
+        ("chart_centers", centers),
+        ("chart_bases", bases),
+        ("chart_distance_scales", scales),
+        ("local_generator_encoders", encoders),
+        ("chart_mode_decoders", decoded),
+    ):
+        updates[prefix + k_name] = val.astype(deployment_dtype)
+    mx.eval(updates)
+
+    remove = [
+        k for k in p
+        if k.startswith(prefix) and k not in {prefix + "input_norm_weight", prefix + "output_norm_weight"}
+    ]
+    if coalesce_mlp:
+        mlp_prefix = f"mlp.{layer_index}."
+        remove.extend(k for k in p if k.startswith(mlp_prefix))
+    override = {"temperature": temperature, "coalesced_mlp": bool(coalesce_mlp)}
+    if transport_source_layer is not None:
+        override["transport_source_layer"] = int(transport_source_layer)
+    fitted = runtime.with_parameters(
+        updates,
+        remove=tuple(remove),
+        layer_overrides={layer_index: {"deltanet": override}},
+    )
+    y_chart = y_base + features @ decoded.reshape((-1, d_hidden))
+    err = mx.sqrt(mx.sum((y_chart - y_target) ** 2) / mx.maximum(mx.sum(y_target ** 2), 1e-12))
+    return MLXFitResult(fitted, updates, {
+        "kind": "coalesced_chart_transport_supernode",
+        "solver": solver,
+        "capture_rows": n,
+        "transport_source_layer": transport_source_layer,
+        "coalesce_mlp": bool(coalesce_mlp),
+        "transport_rank": transport_rank,
+        "chart_count": chart_count,
+        "chart_rank": chart_rank,
+        "generator_rank": generator_rank,
+        "relative_error": float(err.item()),
+        "deployment_dtype": str(deployment_dtype),
+        "heldout_confirmation": False,
+        "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
+    })
+
+
 def fit_deltanet_carrier_basis(
     runtime: Any,
     layer_index: int,
@@ -1695,7 +1860,7 @@ def allocate_waterfill_deltanet_carrier_ranks(
 __all__ = [
     "MLXMoments", "MLXFitResult", "weighted_moments", "capture_runtime_rows",
     "capture_empirical_token_fisher", "capture_parameter_fisher", "anchored_ridge", "fit_reduced_attention",
-    "fit_reduced_deltanet", "fit_chart_deltanet", "fit_deltanet_carrier_basis",
+    "fit_reduced_deltanet", "fit_chart_deltanet", "fit_coalesced_deltanet", "fit_deltanet_carrier_basis",
     "allocate_waterfill_deltanet_carrier_ranks",
     "fit_chart_mlp", "optimize_trajectory", "allocate_waterfill_attention_ranks", "allocate_waterfill_joint_ranks",
 ]

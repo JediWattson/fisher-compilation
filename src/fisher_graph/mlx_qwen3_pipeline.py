@@ -352,10 +352,14 @@ def _xray(args):
     reduced_attn_layers = sorted(
         i for i in range(len(runtime.layers)) if f"attention.{i}.input_basis" in runtime.parameters
     )
+    dnet_route_site = {
+        i: (f"deltanet.{i}.context" if f"deltanet.{i}.qkv_weight" in runtime.parameters else f"deltanet.{i}.normalized")
+        for i in chart_deltanet_layers
+    }
     capture_sites = (
         [f"mlp.{i}.normalized" for i in chart_layers]
         + [f"mlp.{i}.delta" for i in chart_layers]
-        + [f"deltanet.{i}.context" for i in chart_deltanet_layers]
+        + [dnet_route_site[i] for i in chart_deltanet_layers]
         + [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
         + [f"attention.{i}.delta" for i in reduced_attn_layers]
     )
@@ -390,7 +394,7 @@ def _xray(args):
         ]
 
     for i in chart_deltanet_layers:
-        c_val = out.captures[f"deltanet.{i}.context"][0].astype(mx.float32)
+        c_val = out.captures[dnet_route_site[i]][0].astype(mx.float32)
         centers = runtime.parameters[f"deltanet.{i}.chart_centers"].astype(mx.float32)
         scales = runtime.parameters[f"deltanet.{i}.chart_distance_scales"].astype(mx.float32)
         temp = float(runtime.layers[i]["deltanet"].get("temperature", 1.0))
@@ -625,16 +629,21 @@ def _mac_stats(runtime, context_len):
         total += lin(m + "gate_weight") + lin(m + "up_weight") + lin(m + "down_weight")
         if "deltanet" in layer:
             d, dc = f"deltanet.{i}.", layer["deltanet"]
-            kh, vh = dc["key_heads"], dc["value_heads"]
-            kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
-            rank = dc.get("carrier_rank", kd)
-            total += (lin(d + "qkv_weight") + lin(d + "z_weight") + lin(d + "a_weight")
-                      + lin(d + "b_weight") + out_pair(d) + basis(d + "input_basis")
-                      + basis(d + "value_basis") + basis(d + "chart_bases")
-                      + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
-            conv_dim = 2 * kh * kd + vh * vd
-            total += conv_dim * dc["conv_kernel_size"] + 5 * vh * vd * rank
-            state_bytes += ((dc["conv_kernel_size"] - 1) * conv_dim + vh * vd * rank) * 4
+            if d + "qkv_weight" not in p:
+                total += (basis(d + "transport_context_basis") + basis(d + "transport_input_basis")
+                          + basis(d + "transport_decoder") + basis(d + "chart_bases")
+                          + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
+            else:
+                kh, vh = dc["key_heads"], dc["value_heads"]
+                kd, vd = dc["key_head_dimension"], dc["value_head_dimension"]
+                rank = dc.get("carrier_rank", kd)
+                total += (lin(d + "qkv_weight") + lin(d + "z_weight") + lin(d + "a_weight")
+                          + lin(d + "b_weight") + out_pair(d) + basis(d + "input_basis")
+                          + basis(d + "value_basis") + basis(d + "chart_bases")
+                          + basis(d + "local_generator_encoders") + basis(d + "chart_mode_decoders"))
+                conv_dim = 2 * kh * kd + vh * vd
+                total += conv_dim * dc["conv_kernel_size"] + 5 * vh * vd * rank
+                state_bytes += ((dc["conv_kernel_size"] - 1) * conv_dim + vh * vd * rank) * 4
         else:
             a, ac = f"attention.{i}.", layer["attention"]
             kh, d_head = ac["key_value_heads"], ac["head_dimension"]
@@ -709,10 +718,17 @@ def _interactive(args):
     chart_deltanets = sorted(
         i for i in range(len(runtime.layers)) if f"deltanet.{i}.chart_centers" in runtime.parameters
     )
+    bypassed_deltanets = sorted(
+        i for i in range(len(runtime.layers))
+        if "deltanet" in runtime.layers[i] and f"deltanet.{i}.qkv_weight" not in runtime.parameters
+    )
+    coalesced_full_layers = sorted(
+        i for i in bypassed_deltanets if runtime.layers[i]["deltanet"].get("coalesced_mlp", False)
+    )
     deltanet_ranks = {
         i: runtime.layers[i]["deltanet"].get("carrier_rank", runtime.layers[i]["deltanet"]["key_head_dimension"])
         for i in range(len(runtime.layers))
-        if "deltanet" in runtime.layers[i]
+        if "deltanet" in runtime.layers[i] and f"deltanet.{i}.qkv_weight" in runtime.parameters
     }
 
     def encode_prompt(raw_text: str) -> list[int]:
@@ -880,9 +896,11 @@ def _interactive(args):
     print(f"  Artifact       : {artifact_dir}")
     print(f"  Reduced Attn   : {reduced_attn}")
     print(f"  Chart MLPs     : {chart_mlps}")
-    if deltanet_ranks:
+    if deltanet_ranks or bypassed_deltanets:
         print(f"  Reduced DNet   : {reduced_deltanet}")
         print(f"  Chart DNet     : {chart_deltanets}")
+        if bypassed_deltanets:
+            print(f"  Bypassed DNet  : {bypassed_deltanets} (full-layer coalesced: {coalesced_full_layers})")
         print(f"  DeltaNet Ranks : {deltanet_ranks}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
