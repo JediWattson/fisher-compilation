@@ -639,7 +639,12 @@ class MLXQwen3:
                     temp = dc.get("temperature", 1.0)
                     neg_energy = -0.5 * mx.sum(d_disp_cached ** 2, axis=-1) / (d_scales ** 2 * temp)
                     free_energy = -mx.logsumexp(neg_energy, axis=-1)
-                    thr = float(p[d + ".energy_threshold"].item())
+                    ck_thr = ("energy_thr", d)
+                    thr = fc.get(ck_thr) if fc is not None else None
+                    if thr is None:
+                        thr = float(p[d + ".energy_threshold"].item())
+                        if fc is not None:
+                            fc[ck_thr] = thr
                     mean_fe = float(mx.mean(free_energy).item())
                     take_supernode = mean_fe <= thr
                     counts = self._routing_stats.setdefault(i, [0, 0])
