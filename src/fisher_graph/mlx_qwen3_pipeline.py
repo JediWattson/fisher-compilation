@@ -672,12 +672,14 @@ def _mac_stats(runtime, context_len):
 
 
 def _default_chat_artifact():
-    local = Path(".local-runs/qwen3_5-9b-carrier-compile/waterfill_carrier_50pct")
-    if local.is_dir():
-        return str(local)
-    local = Path(".local-runs/qwen3-ewc-refine/joint_waterfill_286mib")
-    if local.is_dir():
-        return str(local)
+    for candidate in (
+        ".local-runs/qwen3_5-9b-carrier-compile/energy_gated_9b",
+        ".local-runs/qwen3_5-9b-carrier-compile/waterfill_carrier_50pct",
+        ".local-runs/qwen3-ewc-refine/joint_waterfill_286mib",
+    ):
+        local = Path(candidate)
+        if local.is_dir():
+            return str(local)
     return "jediwattzon/qwen3-1.7b-fisher-ewc-graph"
 
 
