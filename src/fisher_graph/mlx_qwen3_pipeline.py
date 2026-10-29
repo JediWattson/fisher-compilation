@@ -367,6 +367,11 @@ def _xray(args):
         and int(runtime.parameters[f"mlp.{i}.gate_weight"].shape[0])
         < int(runtime.layers[i].get("mlp", {}).get("full_intermediate_size", 0) or 0)
     )
+    gated_dnet_layers = sorted(
+        i for i in range(len(runtime.layers))
+        if f"deltanet.{i}.energy_threshold" in runtime.parameters
+        and f"deltanet.{i}.chart_centers" in runtime.parameters
+    )
     attn_delta_layers = sorted(set(reduced_attn_layers) | set(chart_attn_layers) | set(value_attn_layers))
     dnet_route_site = {
         i: (f"deltanet.{i}.context" if f"deltanet.{i}.qkv_weight" in runtime.parameters else f"deltanet.{i}.normalized")
@@ -377,6 +382,7 @@ def _xray(args):
         + [f"mlp.{i}.delta" for i in chart_layers]
         + [dnet_route_site[i] for i in chart_deltanet_layers]
         + [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
+        + [f"deltanet.{i}.normalized" for i in gated_dnet_layers]
         + [f"attention.{i}.context" for i in chart_attn_layers]
         + [f"attention.{i}.delta" for i in attn_delta_layers]
         + [f"mlp.{i}.delta" for i in bottleneck_mlp_layers]
@@ -453,6 +459,26 @@ def _xray(args):
             for pos, tok in enumerate(ids)
         ]
 
+    energy_gating = {}
+    for i in gated_dnet_layers:
+        n_val = out.captures[f"deltanet.{i}.normalized"][0].astype(mx.float32)
+        centers = runtime.parameters[f"deltanet.{i}.chart_centers"].astype(mx.float32)
+        scales = runtime.parameters[f"deltanet.{i}.chart_distance_scales"].astype(mx.float32)
+        temp = float(runtime.layers[i]["deltanet"].get("temperature", 1.0))
+        disp = n_val[:, None, :] - centers[None, :, :]
+        free_energy = np.asarray(
+            -mx.logsumexp(-0.5 * mx.sum(disp ** 2, axis=-1) / (scales[None, :] ** 2 * temp), axis=-1)
+        )
+        thr = float(runtime.parameters[f"deltanet.{i}.energy_threshold"].astype(mx.float32).item())
+        mean_fe = float(np.mean(free_energy))
+        energy_gating[str(i)] = {
+            "threshold": thr,
+            "mean_free_energy": mean_fe,
+            "take_supernode": mean_fe <= thr,
+            "inside_count": int(np.sum(free_energy <= thr)),
+            "free_energy": [float(v) for v in free_energy],
+        }
+
     ablation_impacts = []
     ablation_sites = (
         [f"deltanet.{i}.delta" for i in chart_deltanet_layers]
@@ -492,6 +518,7 @@ def _xray(args):
         ],
         "chart_routing": token_routing,
         "chart_counts": chart_counts,
+        "energy_gating": energy_gating,
         "ablation_impacts": ablation_impacts,
     }
     if args.report:
@@ -561,6 +588,17 @@ def _print_xray_panel(payload, A):
             note = f"  … {n_rows - cap} more tokens" if n_rows > cap else ""
             note += f"{' · ' if note and hidden else '  … '}{len(hidden)} more layers" if hidden else ""
             print(A.dim(note))
+
+    gating = payload.get("energy_gating") or {}
+    if gating:
+        print(_hrule(A, "energy gate", style=A.magenta, tail="▓ F≤thr · ░ F>thr · verdict = mean over prompt"))
+        for k in sorted(gating, key=int):
+            g = gating[k]
+            thr, fe = g["threshold"], g["free_energy"]
+            strip = "".join(A.green("▓") if v <= thr else A.gray("░") for v in fe[:48])
+            verdict = A.green("supernode") if g["take_supernode"] else A.yellow("full block")
+            stats = A.gray(f"F {g['mean_free_energy']:.2f} thr {thr:.2f} {g['inside_count']}/{len(fe)}")
+            print(f"  {'d' + k:<5}{strip}  {stats} {verdict}")
 
     impacts = payload.get("ablation_impacts") or []
     if impacts:
