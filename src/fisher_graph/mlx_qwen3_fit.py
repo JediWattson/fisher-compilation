@@ -192,6 +192,7 @@ def capture_empirical_token_fisher(
                     matrices[name] = matrices[name] + rows.T @ rows
             count += 1
             mx.eval(diagonal, matrices)
+            mx.clear_cache()
             if count >= max_tokens:
                 break
         if count >= max_tokens:
@@ -480,14 +481,29 @@ def fit_reduced_deltanet(
     prefix = f"deltanet.{layer_index}."
     _require_no_incident_transports(runtime, prefix[:-1])
     p = runtime.parameters
-    deployment_dtype = p[prefix + "qkv_weight"].dtype
+    quantized = prefix + "qkv_weight.scales" in p
+    if quantized:
+        quant = runtime.config.get("quantization") or {}
+        q_gs, q_bits, q_mode = (int(quant.get("group_size", 64)), int(quant.get("bits", 4)),
+                                str(quant.get("mode", "affine")))
+        deployment_dtype = p[prefix + "qkv_weight.scales"].dtype
+
+        def dense(key):
+            return mx.dequantize(p[key], scales=p[key + ".scales"], biases=p.get(key + ".biases"),
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+    else:
+        deployment_dtype = p[prefix + "qkv_weight"].dtype
+
+        def dense(key):
+            return p[key].astype(mx.float32)
+
     if prefix + "input_basis" in p or prefix + "output_encoder_weight" in p:
         raise ValueError("deltanet fitting requires an exact source deltanet")
     x = _rows(captures[prefix + "normalized"], "normalized inputs")
     contexts = _rows(captures[prefix + "context"], "deltanet contexts")
     if len(x) != len(contexts):
         raise ValueError("input/context capture rows must align")
-    qkv, z, out = [p[prefix + key].astype(mx.float32) for key in ("qkv_weight", "z_weight", "output_decoder_weight")]
+    qkv, z, out = [dense(prefix + key) for key in ("qkv_weight", "z_weight", "output_decoder_weight")]
     _rank(input_rank, x.shape[1], "input_rank")
     _rank(output_rank, min(out.shape), "output_rank")
     weights = _weights(row_weights, x.shape[0])
@@ -501,42 +517,66 @@ def fit_reduced_deltanet(
         if dc.get("norm", {}).get("scale_parameterization") == "unit_offset":
             gain = gain + 1.0
         gain_v = mx.tile(mx.maximum(mx.abs(gain), 1e-3), vh)[:, None]
-        v_w = v_w * gain_v
+        v_eff = v_w * gain_v
         z_eff = z * gain_v
     else:
+        v_eff = v_w
         z_eff = z
-    ve = out @ v_w
-    ze = out @ z_eff
-    grams = [w.T @ w for w in (q_w, k_w, ve, ze)]
+    grams = [w.T @ w for w in (q_w, k_w, v_eff, z_eff)]
     metric = sum(scale * g / mx.maximum(mx.sum(mx.diag(g)), 1e-12) for scale, g in zip((1.0, 1.0, 2.0, 1.0), grams))
     cov = x.T @ (x * weights[:, None])
     cov = cov + ridge * mx.maximum(mx.sum(mx.diag(cov)) / x.shape[1], 1e-12) * mx.eye(x.shape[1])
     basis = _leading_basis(cov @ metric @ cov, input_rank, backend)
-    reconstruction = anchored_ridge(x @ basis, x, row_weights=weights, anchor=basis.T, relative_ridge=ridge, solver=solver)
+    if input_rank == x.shape[1]:
+        reconstruction = basis.T
+    else:
+        reconstruction = anchored_ridge(
+            x @ basis, x, row_weights=weights, anchor=basis.T, relative_ridge=ridge, solver=solver
+        )
 
     cc = contexts.T @ (contexts * weights[:, None])
     cc = cc + ridge * mx.maximum(mx.sum(mx.diag(cc)) / cc.shape[0], 1e-12) * mx.eye(cc.shape[0])
-    values, vectors = backend.eigh(cc)
-    floor = mx.maximum(mx.max(values) * 1e-7, 1e-12)
-    roots = mx.sqrt(mx.maximum(values, floor))
-    square_root = (vectors * roots) @ vectors.T
-    inverse_root = (vectors / roots) @ vectors.T
-    u, singular, vh_svd = backend.svd(square_root @ out.T)
-    root_s = mx.sqrt(mx.maximum(singular[:output_rank], 0))
-    encoder = (inverse_root @ (u[:, :output_rank] * root_s)).T
-    decoder = (root_s[:, None] * vh_svd[:output_rank, :]).T
-    updates = {
-        prefix + "input_basis": basis,
-        prefix + "qkv_weight": qkv @ reconstruction.T,
-        prefix + "z_weight": z @ reconstruction.T,
-        prefix + "output_encoder_weight": encoder,
-        prefix + "output_decoder_weight": decoder,
-    }
-    updates = {name: value.astype(deployment_dtype) for name, value in updates.items()}
+    out_gram = out @ cc @ out.T
+    v_out = _leading_basis(out_gram, output_rank, backend)
+    encoder_raw = v_out.T @ out
+    mode_scale = mx.sqrt(mx.maximum(mx.sqrt(mx.sum(encoder_raw * encoder_raw, axis=1)), 1e-6))
+    encoder = encoder_raw / mode_scale[:, None]
+    decoder = v_out * mode_scale[None, :]
+    if quantized and input_rank == x.shape[1]:
+        updates = {}
+        dense_updates = {
+            prefix + "output_encoder_weight": encoder,
+            prefix + "output_decoder_weight": decoder,
+        }
+    else:
+        updates = {prefix + "input_basis": basis.astype(deployment_dtype)}
+        dense_updates = {
+            prefix + "qkv_weight": qkv @ reconstruction.T,
+            prefix + "z_weight": z @ reconstruction.T,
+            prefix + "output_encoder_weight": encoder,
+            prefix + "output_decoder_weight": decoder,
+        }
+    for name, value in dense_updates.items():
+        if quantized:
+            if value.shape[-1] % q_gs:
+                raise ValueError(f"reduced {name} input dimension must be a multiple of the quantization group_size")
+            w_q, scales, biases = mx.quantize(value.astype(deployment_dtype),
+                                              group_size=q_gs, bits=q_bits, mode=q_mode)
+            updates[name], updates[name + ".scales"], updates[name + ".biases"] = w_q, scales, biases
+        else:
+            updates[name] = value.astype(deployment_dtype)
     mx.eval(updates)
-    approximation = ((contexts.astype(deployment_dtype) @ updates[prefix + "output_encoder_weight"].T)
-                     @ updates[prefix + "output_decoder_weight"].T).astype(mx.float32)
-    reference = (contexts.astype(deployment_dtype) @ p[prefix + "output_decoder_weight"].T).astype(mx.float32)
+
+    def deployed(key):
+        if quantized:
+            return mx.dequantize(updates[key], scales=updates[key + ".scales"],
+                                 biases=updates[key + ".biases"],
+                                 group_size=q_gs, bits=q_bits, mode=q_mode).astype(mx.float32)
+        return updates[key].astype(mx.float32)
+
+    approximation = ((contexts @ deployed(prefix + "output_encoder_weight").T)
+                     @ deployed(prefix + "output_decoder_weight").T).astype(mx.float32)
+    reference = (contexts @ out.T).astype(mx.float32)
     error = mx.sqrt(mx.sum((approximation - reference) ** 2) / mx.maximum(mx.sum(reference ** 2), 1e-12))
     return MLXFitResult(runtime.with_parameters(updates), updates, {
         "kind": "activation_weighted_deltanet_operator_pullback",
@@ -546,7 +586,8 @@ def fit_reduced_deltanet(
         "moment_dtype": "float32",
         "factorization_dtype": "float64" if solver == "numpy_float64" else "float32",
         "regression_accumulation_dtype": "float64" if solver == "numpy_float64" else "float32",
-        "deployment_dtype": str(deployment_dtype),
+        "deployment_dtype": (f"quantized_{q_bits}bit_gs{q_gs}_{q_mode}" if quantized
+                             else str(deployment_dtype)),
         "heldout_confirmation": False,
         "mlx_enable_tf32": os.environ.get("MLX_ENABLE_TF32", "backend_default"),
     })

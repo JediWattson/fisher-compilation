@@ -232,6 +232,8 @@ def _fit(args):
             updated_names.update(result.updates)
             reports.append({"layer": index, "component": comp_label, **result.report})
             del captures, result
+            import mlx.core as _mx
+            _mx.clear_cache()
             if part == "attention" and is_deltanet and getattr(args, "carrier_rank", None) is not None:
                 qk_sites = (f"deltanet.{index}.q", f"deltanet.{index}.k")
                 qk_rows = capture_runtime_rows(runtime, batches, qk_sites)
@@ -564,6 +566,10 @@ def _interactive(args):
     chart_mlps = sorted(
         i for i in range(len(runtime.layers)) if f"mlp.{i}.chart_centers" in runtime.parameters
     )
+    reduced_deltanet = sorted(
+        i for i in range(len(runtime.layers))
+        if f"deltanet.{i}.output_encoder_weight" in runtime.parameters or f"deltanet.{i}.input_basis" in runtime.parameters
+    )
     deltanet_ranks = {
         i: runtime.layers[i]["deltanet"].get("carrier_rank", runtime.layers[i]["deltanet"]["key_head_dimension"])
         for i in range(len(runtime.layers))
@@ -708,6 +714,7 @@ def _interactive(args):
     print(f"  Reduced Attn   : {reduced_attn}")
     print(f"  Chart MLPs     : {chart_mlps}")
     if deltanet_ranks:
+        print(f"  Reduced DNet   : {reduced_deltanet}")
         print(f"  DeltaNet Ranks : {deltanet_ranks}")
     print(f"  Chat Template  : {'ON' if chat_on else 'OFF'} (toggle with /chat)")
     print(f"  X-Ray Mode     : {'ON' if xray_on else 'OFF'} (toggle with /xray)")
