@@ -1636,6 +1636,40 @@ def _interactive(args):
             run_one(line)
 
 
+def _viz(args):
+    from .mlx_qwen3 import MLXQwen3
+    from .mlx_qwen3_viz import compute_3d_trace, serve_viz, write_viz_html
+
+    runtime = MLXQwen3.load(_resolve_artifact(args.artifact))
+    tokenizer = _tokenizer(args.tokenizer or _default_tokenizer(runtime))
+    if args.output:
+        trace = compute_3d_trace(
+            runtime, tokenizer, args.prompt, chat=args.chat,
+            max_prompt_tokens=args.max_prompt_tokens,
+            include_counterfactuals=not args.fast,
+        )
+        print(write_viz_html(trace, args.output))
+        return
+    server = serve_viz(
+        runtime, tokenizer,
+        host=args.host, port=args.port,
+        default_prompt=args.prompt, default_chat=args.chat,
+        max_prompt_tokens=args.max_prompt_tokens,
+    )
+    url = f"http://{args.host}:{server.server_port}/"
+    print(f"chart-graph visualizer -> {url}", file=sys.stderr, flush=True)
+    if not args.no_open:
+        import webbrowser
+
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1741,6 +1775,24 @@ def build_parser():
     chat.add_argument("--mute-deltanet-layer", type=int, action="append", default=[])
     chat.add_argument("--mute-chart", action="append", default=[], help="Format LAYER:CHART (e.g. 13:2)")
     chat.set_defaults(run=_chat)
+    viz = commands.add_parser(
+        "viz",
+        help="Interactive 3D chart-graph visualizer: serve a local WebGL scene of live routing",
+    )
+    viz.add_argument("--artifact", default=_default_chat_artifact(),
+                     help="Local artifact dir or HF repo id (default: local joint_waterfill or published repo)")
+    viz.add_argument("--tokenizer",
+                     help="Local tokenizer dir or HF repo id (default: inferred from artifact source)")
+    viz.add_argument("--prompt", default="France: Paris. Japan: Tokyo. Germany: Berlin. Italy:",
+                     help="Default prompt traced on page load")
+    viz.add_argument("--chat", action="store_true", help="Apply Qwen3 chat template (thinking disabled)")
+    viz.add_argument("--host", default="127.0.0.1")
+    viz.add_argument("--port", type=_positive_int, default=8765)
+    viz.add_argument("--output", help="Write a standalone HTML file with this prompt's trace instead of serving")
+    viz.add_argument("--fast", action="store_true", help="Skip counterfactual ablation passes")
+    viz.add_argument("--no-open", action="store_true", help="Do not open a browser window")
+    viz.add_argument("--max-prompt-tokens", type=_positive_int, default=512)
+    viz.set_defaults(run=_viz)
     return parser
 
 

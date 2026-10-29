@@ -199,6 +199,9 @@ fisher-graph-verify = "fisher_graph.verify:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+fisher_graph = ["assets/*.html"]
+
 [tool.setuptools]
 py-modules = [
   "fisher_graph_layer_agnostic_compression_setup",

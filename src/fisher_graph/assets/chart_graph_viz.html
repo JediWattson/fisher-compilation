@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fisher-Graph · Chart Topology in Motion</title>
+<style>
+  :root {
+    --bg: #06080f; --panel: rgba(13, 17, 30, 0.82); --edge: rgba(94, 234, 212, 0.16);
+    --ink: #dbe7ff; --dim: #6b7a9d; --acc: #22d3ee; --gold: #fbbf24; --bad: #f87171; --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #scene { position: fixed; inset: 0; }
+  .panel { position: fixed; background: var(--panel); border: 1px solid var(--edge); border-radius: 10px;
+    padding: 10px 12px; backdrop-filter: blur(9px); z-index: 5; }
+  #hdr { top: 12px; left: 12px; max-width: 460px; }
+  #hdr h1 { font-size: 13px; margin: 0 0 4px; letter-spacing: 0.4px; color: #fff; }
+  #hdr .sub { color: var(--dim); }
+  #hdr .badges { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .badge { border: 1px solid var(--edge); border-radius: 20px; padding: 1px 8px; color: var(--acc); font-size: 10px; }
+  .badge.gold { color: var(--gold); } .badge.ok { color: var(--ok); }
+  #tokens { top: 12px; right: 12px; width: 210px; max-height: 46vh; overflow-y: auto; }
+  #tokens .t { display: flex; justify-content: space-between; gap: 6px; padding: 2px 6px; border-radius: 6px;
+    cursor: pointer; white-space: nowrap; overflow: hidden; }
+  #tokens .t:hover { background: rgba(94,234,212,0.10); }
+  #tokens .t.sel { background: rgba(94,234,212,0.20); color: #fff; }
+  #tokens .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 5px; flex: none; }
+  #insp { right: 12px; bottom: 88px; width: 262px; max-height: 44vh; overflow-y: auto; }
+  #insp h2 { font-size: 12px; margin: 0 0 6px; color: #fff; }
+  #insp .row { display: flex; justify-content: space-between; color: var(--dim); margin: 2px 0; }
+  #insp .row b { color: var(--ink); font-weight: 600; }
+  .bars { margin: 6px 0 2px; }
+  .bar { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .bar .lab { width: 46px; color: var(--dim); flex: none; }
+  .bar .fill { height: 7px; border-radius: 4px; }
+  .bar .val { width: 42px; text-align: right; color: var(--dim); }
+  #fe { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.07); position: relative; margin: 4px 0 2px; }
+  #fe .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--gold); }
+  #fe .pos { position: absolute; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
+  #ctl { left: 12px; right: 288px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+  #ctl .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  button, select, input[type=text] { background: rgba(94,234,212,0.08); color: var(--ink); border: 1px solid var(--edge);
+    border-radius: 7px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  button:hover { background: rgba(94,234,212,0.18); }
+  button.on { background: rgba(94,234,212,0.26); color: #fff; border-color: var(--acc); }
+  input[type=range] { accent-color: var(--acc); }
+  #scrub { flex: 1; min-width: 160px; }
+  #promptbox { display: flex; gap: 8px; }
+  #promptbox input { flex: 1; }
+  #promptbox input:disabled { opacity: 0.45; cursor: not-allowed; }
+  #stepinfo { color: var(--dim); min-width: 190px; }
+  #legend { left: 12px; bottom: 118px; font-size: 10px; color: var(--dim); }
+  #legend .k { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  #legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  #overlay { position: fixed; inset: 0; background: rgba(4,6,12,0.86); z-index: 20; display: flex;
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px; }
+  #overlay .spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(94,234,212,0.25);
+    border-top-color: var(--acc); animation: rot 0.9s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  #ovltext { color: var(--dim); max-width: 520px; text-align: center; }
+  #preds { left: 12px; bottom: 188px; }
+  #preds h2 { font-size: 11px; margin: 0 0 6px; color: #fff; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-thumb { background: rgba(94,234,212,0.2); border-radius: 4px; }
+</style>
+<script type="importmap">
+  {"imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="scene"></div>
+
+<div class="panel" id="hdr">
+  <h1>Fisher-Graph · Chart Topology in Motion</h1>
+  <div class="sub" id="prompttext"></div>
+  <div class="badges" id="badges"></div>
+</div>
+
+<div class="panel" id="tokens"></div>
+<div class="panel" id="insp"><h2>Inspector</h2><div id="inspbody" class="sub">Hover a layer station or scrub the timeline.</div></div>
+<div class="panel" id="preds"><h2>Next-token predictions</h2><div id="predbody"></div></div>
+
+<div class="panel" id="legend">
+  <div class="k"><span class="sw" style="background:#22d3ee"></span> chart / cluster 0</div>
+  <div class="k"><span class="sw" style="background:#f472b6"></span> chart / cluster 1</div>
+  <div class="k"><span class="sw" style="background:#fbbf24"></span> chart / cluster 2</div>
+  <div class="k"><span class="sw" style="background:#4ade80"></span> chart / cluster 3</div>
+  <div class="k"><span class="sw" style="background:#fbbf24; border-radius:50%"></span> supernode bypass arch</div>
+  <div class="k"><span class="sw" style="background:#a78bfa"></span> cross-layer transport</div>
+  <div class="k"><span class="sw" style="background:#34d399"></span> + logit push pillar</div>
+</div>
+
+<div class="panel" id="ctl">
+  <div class="row">
+    <button id="play">▶ play</button>
+    <button id="wave" class="on">wave</button>
+    <button id="relay">relay</button>
+    <button id="focus">focus token</button>
+    <button id="followcam">ride cam</button>
+    <button id="resetcam">reset cam</button>
+    <span id="stepinfo">—</span>
+  </div>
+  <div class="row">
+    <span style="color:var(--dim)">sublayer</span>
+    <input id="scrub" type="range" min="0" max="64" step="0.05" value="0">
+    <span style="color:var(--dim)">speed</span>
+    <input id="speed" type="range" min="1" max="24" step="0.5" value="7" style="width:110px">
+  </div>
+  <div class="row" id="promptbox">
+    <input id="newprompt" type="text" placeholder="new prompt…">
+    <label style="color:var(--dim); display:flex; align-items:center; gap:4px">
+      <input id="chatmode" type="checkbox"> chat</label>
+    <label style="color:var(--dim); display:flex; align-items:center; gap:4px">
+      <input id="fastmode" type="checkbox"> fast</label>
+    <button id="runprompt">trace</button>
+  </div>
+</div>
+
+<div id="overlay"><div class="spin"></div><div id="ovltext">tracing prompt through all 64 sublayers…</div></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const CLUSTER_COLORS = [0x22d3ee, 0xf472b6, 0xfbbf24, 0x4ade80, 0xa78bfa, 0xfb923c];
+const css = c => '#' + c.toString(16).padStart(6, '0');
+const SPACING = 7, MIXER_Y = 9.5, MLP_Y = -9.5, HEAD_R = 4.6, CHART_R = 2.2, MLP_R = 3.1, ARCH_Y = 17;
+
+let renderer, scene, camera, controls, clock;
+let world = new THREE.Group();
+let TRACE = null, state = null;
+let playing = false, mode = 'wave', followCam = false;
+let step = 0, speed = 7, selected = -1;
+let ripples = [];
+
+function makeGlowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), r = g.createRadialGradient(64,64,0,64,64,64);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+let GLOW_TEX;
+
+function textSprite(text, color = '#8ea2c9', scale = 3.4) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = '600 44px Menlo, monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 10; g.fillStyle = color;
+  g.fillText(text, 256, 48);
+  const tex = new THREE.CanvasTexture(c);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(scale * 5.3, scale, 1);
+  return s;
+}
+
+function stationX(i) { return (i - (TRACE.architecture.length - 1) / 2) * SPACING; }
+function siteOf(st, kind) {
+  const mk = st.mixer_key;
+  if (kind === 'mixer') return TRACE.chart_routing[mk] || TRACE.head_cluster_routing[mk] || null;
+  return TRACE.neuron_cluster_routing['mlp.' + st.layer] || TRACE.chart_routing['mlp.' + st.layer] || null;
+}
+function chartSite(st) { return TRACE.chart_routing[st.mixer_key] || null; }
+function headSite(st) { return TRACE.head_cluster_routing[st.mixer_key] || null; }
+function pushOf(st, kind) {
+  const key = (kind === 'mixer' ? st.mixer_key : 'mlp.' + st.layer) + '.delta';
+  const arr = TRACE.direct_logit_push[key];
+  return arr ? arr[arr.length - 1] : 0;
+}
+
+// ---------- scene build ----------
+function disposeGroup(g) {
+  g.traverse(o => { if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.map && m.map !== GLOW_TEX) m.map.dispose(); m.dispose(); }); });
+}
+
+function buildTrace(trace) {
+  TRACE = trace;
+  scene.remove(world); disposeGroup(world);
+  world = new THREE.Group(); scene.add(world);
+  ripples = [];
+  state = { stations: [], particles: [], curves: [], trajLines: [], steps: trace.architecture.length * 2 };
+
+  const n = trace.architecture.length;
+  // residual spine
+  const spineMat = new THREE.MeshBasicMaterial({ color: 0x1e4d5c, transparent: true, opacity: 0.9 });
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, n * SPACING + 8, 10, 1), spineMat);
+  spine.rotation.z = Math.PI / 2; world.add(spine);
+  // faint grid
+  const grid = new THREE.GridHelper(n * SPACING + 30, n * 2, 0x14304a, 0x0c1a2c);
+  grid.position.y = -16.5; world.add(grid);
+
+  trace.architecture.forEach((st, i) => {
+    const x = stationX(i), grp = new THREE.Group(); world.add(grp);
+    const S = { st, i, x, nodes: { chart: [], head: [], mlp: [] }, auras: [] };
+
+    // ---- mixer band ----
+    const mk = st.mixer_key;
+    const nChart = chartSite(st) ? chartSite(st)[0].memberships.length : 0;
+    const nHead = headSite(st) ? headSite(st)[0].memberships.length : 0;
+    const mixCol = st.mixer_type === 'deltanet' ? 0x7dd3fc : 0xc4b5fd;
+    if (st.charted || st.head_cluster_count > 1 || nChart || nHead) {
+      // carrier-rank ring for deltanet (thickness ~ rank fraction)
+      if (st.mixer_type === 'deltanet') {
+        const frac = (st.carrier_rank || 128) / (st.full_carrier_dim || 128);
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(HEAD_R, 0.045 + 0.11 * frac, 8, 48),
+          new THREE.MeshBasicMaterial({ color: mixCol, transparent: true, opacity: 0.34 }));
+        ring.position.set(x, MIXER_Y, 0); ring.rotation.x = Math.PI / 2; grp.add(ring);
+      }
+      const addRing = (count, R, kind, geom) => {
+        for (let c = 0; c < count; c++) {
+          const a = (c / count) * Math.PI * 2 + Math.PI / 4;
+          const pos = new THREE.Vector3(x + R * Math.cos(a), MIXER_Y, R * Math.sin(a));
+          const col = CLUSTER_COLORS[c % CLUSTER_COLORS.length];
+          const node = new THREE.Mesh(geom,
+            new THREE.MeshBasicMaterial({ color: col }));
+          node.position.copy(pos); node.userData = { st: i, kind, c };
+          grp.add(node);
+          const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: GLOW_TEX, color: col, transparent: true, opacity: 0.16,
+            blending: THREE.AdditiveBlending, depthWrite: false }));
+          spr.position.copy(pos); spr.scale.set(3.4, 3.4, 1); grp.add(spr);
+          S.nodes[kind].push({ mesh: node, spr, pos, glow: 0 });
+        }
+      };
+      if (nChart) addRing(nChart, CHART_R, 'chart', new THREE.SphereGeometry(0.55, 20, 14));
+      if (nHead) addRing(nHead, HEAD_R, 'head', new THREE.OctahedronGeometry(0.5));
+    } else {
+      // uncompiled dense block
+      const block = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4),
+        new THREE.MeshBasicMaterial({ color: mixCol, transparent: true, opacity: 0.28, wireframe: false }));
+      block.position.set(x, MIXER_Y, 0); grp.add(block);
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: mixCol,
+        transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false }));
+      spr.position.set(x, MIXER_Y, 0); spr.scale.set(5, 5, 1); grp.add(spr);
+      S.block = { mesh: block, spr, pos: new THREE.Vector3(x, MIXER_Y, 0), glow: 0 };
+    }
+
+    // ---- energy gate + supernode arch ----
+    if (st.energy_gated) {
+      const gate = new THREE.Mesh(new THREE.TorusGeometry(5.4, 0.09, 8, 44),
+        new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.30 }));
+      gate.position.set(x, MIXER_Y, 0); gate.rotation.y = Math.PI / 2; grp.add(gate); S.gate = gate;
+      const arch = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(x - SPACING * 0.48, 0, 0),
+        new THREE.Vector3(x - SPACING * 0.22, ARCH_Y, 0),
+        new THREE.Vector3(x, ARCH_Y + 2.5, 0),
+        new THREE.Vector3(x + SPACING * 0.22, ARCH_Y, 0),
+        new THREE.Vector3(x + SPACING * 0.48, 0, 0)]);
+      const archMesh = new THREE.Mesh(new THREE.TubeGeometry(arch, 40, 0.09, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.4 }));
+      grp.add(archMesh); S.archApex = new THREE.Vector3(x, ARCH_Y + 2.5, 0);
+    }
+    // ---- cross-layer transport bridge ----
+    if (st.transport_source_layer != null && st.transport_source_layer < n) {
+      const sx = stationX(st.transport_source_layer);
+      const edge = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(sx, MIXER_Y, 0),
+        new THREE.Vector3((sx + x) / 2, MIXER_Y + 7, 0),
+        new THREE.Vector3(x, MIXER_Y + 1.5, 0)]);
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(edge, 24, 0.07, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0xa78bfa, transparent: true, opacity: 0.45 }));
+      grp.add(tube);
+    }
+
+    // ---- MLP band ----
+    const mSite = siteOf(st, 'mlp');
+    const nMlp = mSite ? mSite[0].memberships.length : 0;
+    if (nMlp) {
+      const frac = (st.mlp_intermediate_size || st.mlp_full_intermediate_size) / (st.mlp_full_intermediate_size || 12288);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(MLP_R, 0.04 + 0.16 * frac, 8, 44),
+        new THREE.MeshBasicMaterial({ color: 0xfda4af, transparent: true, opacity: 0.30 }));
+      ring.position.set(x, MLP_Y, 0); ring.rotation.x = Math.PI / 2; grp.add(ring);
+      for (let c = 0; c < nMlp; c++) {
+        const a = (c / nMlp) * Math.PI * 2 + Math.PI / 4;
+        const pos = new THREE.Vector3(x + MLP_R * Math.cos(a), MLP_Y, MLP_R * Math.sin(a));
+        const col = CLUSTER_COLORS[c % CLUSTER_COLORS.length];
+        const node = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55),
+          new THREE.MeshBasicMaterial({ color: col }));
+        node.position.copy(pos); node.userData = { st: i, kind: 'mlp', c }; grp.add(node);
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: col,
+          transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }));
+        spr.position.copy(pos); spr.scale.set(3.4, 3.4, 1); grp.add(spr);
+        S.nodes.mlp.push({ mesh: node, spr, pos, glow: 0 });
+      }
+    } else {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4),
+        new THREE.MeshBasicMaterial({ color: 0xfda4af, transparent: true, opacity: 0.24 }));
+      block.position.set(x, MLP_Y, 0); grp.add(block);
+      S.mlpBlock = { mesh: block, pos: new THREE.Vector3(x, MLP_Y, 0), glow: 0 };
+    }
+
+    // ---- ablation push pillar + label ----
+    const pushMix = pushOf(st, 'mixer'), pushMlp = pushOf(st, 'mlp');
+    const push = pushMix + pushMlp;
+    const h = Math.min(7, Math.abs(push) * 1.4) + 0.15;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, h, 6),
+      new THREE.MeshBasicMaterial({ color: push >= 0 ? 0x34d399 : 0xf87171, transparent: true, opacity: 0.75 }));
+    pillar.position.set(x, -15 + h / 2, 0); grp.add(pillar);
+    const tag = (st.mixer_type === 'deltanet' ? 'Δ' : 'A') + st.layer;
+    const lab = textSprite(tag, st.energy_gated ? '#fbbf24' : '#8ea2c9', 2.5);
+    lab.position.set(x, -18.6, 0); grp.add(lab);
+    state.stations.push(S);
+  });
+
+  // ---- token trajectories + instanced particles ----
+  const T = trace.tokens.length;
+  const tokenCol = t => new THREE.Color().setHSL((0.52 + 0.46 * (t / Math.max(1, T - 1))) % 1, 0.85, 0.62);
+  for (let t = 0; t < T; t++) {
+    const pts = [];
+    trace.architecture.forEach((st, i) => {
+      const x = stationX(i); let wp;
+      const gate = TRACE.energy_gating[String(i)];
+      if (st.energy_gated && gate && gate.token_skip && gate.token_skip[t]) {
+        wp = state.stations[i].archApex.clone();                       // over the arch
+      } else {
+        const site = siteOf(st, 'mixer');
+        if (site && state.stations[i].nodes.chart.length + state.stations[i].nodes.head.length) {
+          const prefer = state.stations[i].nodes.chart.length ? 'chart' : 'head';
+          const list = state.stations[i].nodes[prefer];
+          wp = list[site[t].dominant_chart % list.length].pos.clone();
+        } else wp = new THREE.Vector3(x, MIXER_Y, 0);
+      }
+      pts.push(wp);
+      const mSite = siteOf(st, 'mlp');
+      if (mSite && state.stations[i].nodes.mlp.length) {
+        pts.push(state.stations[i].nodes.mlp[mSite[t].dominant_chart % state.stations[i].nodes.mlp.length].pos.clone());
+      } else pts.push(new THREE.Vector3(x, MLP_Y, 0));
+    });
+    const curve = new THREE.CatmullRomCurve3(pts);
+    state.curves.push(curve);
+    const lg = new THREE.BufferGeometry().setFromPoints(curve.getPoints(state.steps * 4));
+    const line = new THREE.Line(lg, new THREE.LineBasicMaterial({
+      color: tokenCol(t), transparent: true, opacity: 0.13 }));
+    world.add(line); state.trajLines.push(line);
+  }
+  const geo = new THREE.SphereGeometry(0.34, 12, 10);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: false });
+  state.inst = new THREE.InstancedMesh(geo, mat, T);
+  state.inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let t = 0; t < T; t++) state.inst.setColorAt(t, tokenCol(t));
+  if (state.inst.instanceColor) state.inst.instanceColor.needsUpdate = true;
+  world.add(state.inst);
+  // selected-token ribbon + comet
+  state.ribbon = null;
+  state.comet = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const cspr = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, color: 0xffffff,
+    transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+  cspr.scale.set(4.5, 4.5, 1); state.comet.add(cspr);
+  state.comet.visible = false; world.add(state.comet);
+
+  buildHUD();
+  selectToken(state.stations.length ? Math.min(selected, T - 1) : -1);
+  if (selected < 0 && T) selectToken(T - 1);
+  updateScrubMax();
+  applyStep(step);
+}
+
+// ---------- HUD ----------
+function buildHUD() {
+  const T = TRACE.tokens.length;
+  document.getElementById('prompttext').textContent =
+    (TRACE.chat ? 'chat · ' : '') + '"' + TRACE.prompt.slice(0, 90) + (TRACE.prompt.length > 90 ? '…' : '') + '"';
+  const b = [];
+  b.push(`<span class="badge">${TRACE.architecture.length} layers · 64 sublayers</span>`);
+  if (TRACE.mac_stats) {
+    b.push(`<span class="badge ok">${(TRACE.mac_stats.macs_per_token / 1e9).toFixed(2)} G-MAC/tok</span>`);
+    b.push(`<span class="badge ok">${(TRACE.mac_stats.state_bytes / 1048576).toFixed(0)} MiB state</span>`);
+  }
+  const ng = Object.keys(TRACE.energy_gating).length;
+  if (ng) b.push(`<span class="badge gold">${ng} energy gates</span>`);
+  document.getElementById('badges').innerHTML = b.join(' ');
+  const tl = document.getElementById('tokens'); tl.innerHTML = '';
+  TRACE.tokens.forEach((tk, t) => {
+    const d = document.createElement('div'); d.className = 't'; d.dataset.t = t;
+    const col = new THREE.Color().setHSL((0.52 + 0.46 * (t / Math.max(1, T - 1))) % 1, 0.85, 0.62);
+    d.innerHTML = `<span><span class="dot" style="background:${css(col.getHex())}"></span>${tk.token.replace(/</g, '&lt;') || '∅'}</span><span style="color:var(--dim)">${t}</span>`;
+    d.onclick = () => { selectToken(t); setMode('focus'); };
+    tl.appendChild(d);
+  });
+  const pb = document.getElementById('predbody');
+  pb.innerHTML = TRACE.top5_predictions.map(p =>
+    `<div class="bar"><span class="lab" style="width:70px">${p.token.replace(/</g, '&lt;')}</span>
+     <span class="fill" style="width:${Math.max(2, p.probability * 130)}px;background:var(--acc)"></span>
+     <span class="val">${(p.probability * 100).toFixed(1)}%</span></div>`).join('');
+}
+
+function setMode(m) {
+  mode = m;
+  for (const id of ['wave', 'relay', 'focus']) document.getElementById(id).classList.toggle('on', id === m);
+  state.inst.visible = m !== 'focus';
+  state.comet.visible = m === 'focus' && selected >= 0;
+  state.trajLines.forEach((l, t) => {
+    l.material.opacity = m === 'focus' ? (t === selected ? 0.0 : 0.05) : 0.13; });
+  rebuildRibbon();
+}
+function selectToken(t) {
+  selected = t;
+  document.querySelectorAll('#tokens .t').forEach(el => el.classList.toggle('sel', +el.dataset.t === t));
+  if (state) { state.comet.visible = mode === 'focus' && t >= 0; rebuildRibbon(); }
+}
+function rebuildRibbon() {
+  if (state.ribbon) { world.remove(state.ribbon); state.ribbon.geometry.dispose(); state.ribbon.material.dispose(); state.ribbon = null; }
+  if (mode === 'focus' && selected >= 0 && state.curves[selected]) {
+    const tk = TRACE.tokens[selected];
+    const col = new THREE.Color().setHSL((0.52 + 0.46 * (selected / Math.max(1, TRACE.tokens.length - 1))) % 1, 0.85, 0.62);
+    state.ribbon = new THREE.Mesh(new THREE.TubeGeometry(state.curves[selected], 260, 0.10, 6, false),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85 }));
+    world.add(state.ribbon);
+  }
+}
+function updateScrubMax() { document.getElementById('scrub').max = state.steps - 1; }
+
+// ---------- per-frame ----------
+function applyStep(fstep) {
+  if (!state || !TRACE) return;
+  const n = TRACE.architecture.length;
+  document.getElementById('stepinfo').textContent =
+    `sublayer ${Math.min(state.steps - 1, fstep).toFixed(1)} / ${state.steps - 1}` +
+    (fstep / 2 < n ? ` · L${Math.floor(fstep / 2)}${fstep % 2 < 1 ? ' mixer' : ' mlp'}` : '');
+  // node glow
+  for (let i = 0; i < n; i++) {
+    const S = state.stations[i], st = S.st;
+    const inMixer = fstep >= 2 * i && fstep < 2 * i + 1;
+    const inMlp = fstep >= 2 * i + 1 && fstep < 2 * i + 2;
+    for (const [kind, site] of [['chart', chartSite(st)], ['head', headSite(st)]]) {
+      const nodes = S.nodes[kind];
+      if (!nodes.length) continue;
+      const membs = nodes.map((_, c) => {
+        let g = 0;
+        if (mode === 'focus' && selected >= 0) {
+          const e = site[selected]; g = e ? e.memberships[c] : 0;
+        } else {
+          for (const e of site) g += e.memberships[c];
+          g /= site.length;
+        }
+        return g;
+      });
+      nodes.forEach((nd, c) => {
+        const target = inMixer ? membs[c] * (mode === 'focus' ? 2.2 : 3.2) : 0.10;
+        nd.glow += (Math.min(1.4, target) - nd.glow) * 0.22;
+        nd.spr.material.opacity = 0.10 + nd.glow * 0.8;
+        const s = 1 + nd.glow * 1.15; nd.mesh.scale.set(s, s, s);
+      });
+    }
+    const mSite = siteOf(st, 'mlp');
+    S.nodes.mlp.forEach((nd, c) => {
+      let g = 0;
+      if (mSite) {
+        if (mode === 'focus' && selected >= 0) { const e = mSite[selected]; g = e ? e.memberships[c] : 0; }
+        else { for (const e of mSite) g += e.memberships[c]; g /= mSite.length; }
+      }
+      const target = inMlp ? g * (mode === 'focus' ? 2.2 : 3.2) : 0.10;
+      nd.glow += (Math.min(1.4, target) - nd.glow) * 0.22;
+      nd.spr.material.opacity = 0.10 + nd.glow * 0.8;
+      const s = 1 + nd.glow * 1.15; nd.mesh.scale.set(s, s, s);
+    });
+    if (S.gate) {
+      const g = TRACE.energy_gating[String(i)];
+      S.gate.material.color.set(g && g.take_supernode ? 0xfbbf24 : 0x7dd3fc);
+      S.gate.material.opacity = (inMixer ? 0.85 : 0.28);
+    }
+  }
+  // particles
+  const T = TRACE.tokens.length;
+  const u = Math.min(1, Math.max(0, fstep / (state.steps - 1)));
+  const m4 = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
+  for (let t = 0; t < T; t++) {
+    let ut = u;
+    if (mode === 'relay') ut = Math.min(1, Math.max(0, u - t * 0.35 / state.steps * 4));
+    state.curves[t].getPoint(ut, v);
+    m4.compose(v, q, sc); state.inst.setMatrixAt(t, m4);
+  }
+  state.inst.instanceMatrix.needsUpdate = true;
+  if (mode === 'focus' && selected >= 0) {
+    state.curves[selected].getPoint(u, v); state.comet.position.copy(v);
+    state.comet.material.color.setHSL((0.52 + 0.46 * (selected / Math.max(1, T - 1))) % 1, 0.9, 0.7);
+  }
+  if (followCam) {
+    const i = Math.min(n - 1, Math.max(0, Math.floor(fstep / 2)));
+    const tx = stationX(i) - 16;
+    controls.target.lerp(new THREE.Vector3(stationX(i) + 6, 1, 0), 0.06);
+    camera.position.lerp(new THREE.Vector3(tx, 12, 26), 0.05);
+  }
+}
+
+function inspect(i) {
+  const st = TRACE.architecture[i], S = state.stations[i];
+  const rows = [];
+  const kind = st.mixer_type === 'deltanet' ? 'Gated DeltaNet' : 'Full Attention';
+  rows.push(`<div class="row"><span>L${i} mixer</span><b>${kind}${st.energy_gated ? ' · energy-gated' : ''}</b></div>`);
+  if (st.mixer_type === 'deltanet')
+    rows.push(`<div class="row"><span>carrier rank</span><b>${st.carrier_rank} / ${st.full_carrier_dim}</b></div>`);
+  else
+    rows.push(`<div class="row"><span>value rank / heads</span><b>${st.value_rank || st.head_dimension} · ${st.query_heads}q/${st.kv_heads}kv</b></div>`);
+  rows.push(`<div class="row"><span>MLP width</span><b>${st.mlp_intermediate_size} / ${st.mlp_full_intermediate_size}</b></div>`);
+  if (st.transport_source_layer != null)
+    rows.push(`<div class="row"><span>transport</span><b>L${st.transport_source_layer} → L${i}${st.coalesced_mlp ? ' (+MLP)' : ''}</b></div>`);
+  const g = TRACE.energy_gating[String(i)];
+  if (g) rows.push(`<div class="row"><span>free energy</span><b>${g.mean_free_energy} vs τ=${g.threshold} · ${g.take_supernode ? 'SUPERNODE' : 'full block'}</b></div>
+    <div class="row"><span>tokens skipped</span><b>${g.inside_count}/${TRACE.tokens.length}</b></div>`);
+  const pm = pushOf(st, 'mixer'), pl = pushOf(st, 'mlp');
+  rows.push(`<div class="row"><span>logit push Δ/MLP</span><b style="color:${pm + pl >= 0 ? 'var(--ok)' : 'var(--bad)'}">${pm >= 0 ? '+' : ''}${pm} / ${pl >= 0 ? '+' : ''}${pl}</b></div>`);
+  let bars = '';
+  const sel = selected >= 0 ? selected : TRACE.tokens.length - 1;
+  for (const [title, site] of [['charts', chartSite(st)], ['head clu', headSite(st)], ['mlp clu', siteOf(st, 'mlp')]]) {
+    if (!site) continue;
+    const e = site[sel];
+    if (!e) continue;
+    bars += `<div class="bars"><div style="color:var(--dim);margin:4px 0 2px">${title} · '${TRACE.tokens[sel].token.replace(/</g, '&lt;')}'</div>` +
+      e.memberships.map((m, c) =>
+        `<div class="bar"><span class="lab">c${c}</span><span class="fill" style="width:${Math.max(2, m * 130)}px;background:${css(CLUSTER_COLORS[c % 6])}"></span><span class="val">${m.toFixed(2)}</span></div>`).join('') + `</div>`;
+  }
+  document.getElementById('inspbody').innerHTML = rows.join('') + bars;
+}
+
+// ---------- ripples ----------
+function ripple(pos, color) {
+  const r = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.05, 6, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+  r.position.copy(pos); r.lookAt(camera.position); world.add(r);
+  ripples.push({ m: r, life: 1 });
+}
+
+// ---------- raycast hover ----------
+const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+let hoverTimer = 0;
+function onMove(e) {
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  hoverTimer = 0.25;
+}
+
+// ---------- boot ----------
+async function boot() {
+  GLOW_TEX = makeGlowTexture();
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  document.getElementById('scene').appendChild(renderer.domElement);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x06080f);
+  scene.fog = new THREE.FogExp2(0x06080f, 0.0038);
+  camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+  camera.position.set(-60, 44, 78);
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.06;
+  clock = new THREE.Clock();
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight); });
+  addEventListener('mousemove', onMove);
+
+  document.getElementById('play').onclick = () => { playing = !playing;
+    document.getElementById('play').textContent = playing ? '❚❚ pause' : '▶ play'; };
+  document.getElementById('wave').onclick = () => setMode('wave');
+  document.getElementById('relay').onclick = () => setMode('relay');
+  document.getElementById('focus').onclick = () => { if (selected < 0) selected = TRACE.tokens.length - 1; setMode('focus'); };
+  document.getElementById('followcam').onclick = e => { followCam = !followCam; e.target.classList.toggle('on', followCam); };
+  document.getElementById('resetcam').onclick = () => { followCam = false;
+    document.getElementById('followcam').classList.remove('on');
+    camera.position.set(-60, 44, 78); controls.target.set(0, 0, 0); };
+  document.getElementById('scrub').oninput = e => { step = +e.target.value; applyStep(step); };
+  document.getElementById('speed').oninput = e => { speed = +e.target.value; };
+  document.getElementById('runprompt').onclick = runPrompt;
+  document.getElementById('newprompt').addEventListener('keydown', e => { if (e.key === 'Enter') runPrompt(); });
+
+  const embedded = window.__TRACE__ || null;
+  if (embedded) { document.getElementById('newprompt').placeholder = 'new prompt (server required)…'; loadTrace(embedded); }
+  else await fetchTrace(document.getElementById('newprompt').value || DEFAULT_PROMPT, false, false);
+
+  renderer.setAnimationLoop(() => {
+    const dt = clock.getDelta();
+    if (playing) { step += speed * dt;
+      if (step >= state.steps - 1) step = 0;
+      document.getElementById('scrub').value = step; }
+    applyStep(step);
+    // random ambient ripples on hot nodes while playing
+    if (playing && Math.random() < 0.10) {
+      const i = Math.floor(step / 2), S = state.stations[i];
+      if (S) { const all = [...S.nodes.chart, ...S.nodes.head, ...S.nodes.mlp].filter(n => n.glow > 0.5);
+        if (all.length) { const nd = all[Math.floor(Math.random() * all.length)]; ripple(nd.pos, nd.mesh.material.color.getHex()); } }
+    }
+    ripples = ripples.filter(r => { r.life -= dt * 1.4; r.m.scale.multiplyScalar(1 + dt * 2.4);
+      r.m.material.opacity = Math.max(0, r.life); if (r.life <= 0) { world.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); return false; } return true; });
+    if (hoverTimer > 0) { hoverTimer -= dt;
+      if (hoverTimer <= 0) {
+        ray.setFromCamera(mouse, camera);
+        const hits = ray.intersectObjects(world.children, true).filter(h => h.object.userData && h.object.userData.st !== undefined);
+        if (hits.length) inspect(hits[0].object.userData.st); } }
+    controls.update();
+    renderer.render(scene, camera);
+  });
+}
+
+function loadTrace(trace) {
+  buildTrace(trace);
+  inspect(Math.floor(step / 2));
+  document.getElementById('overlay').style.display = 'none';
+}
+async function fetchTrace(prompt, chat, fast) {
+  document.getElementById('overlay').style.display = 'flex';
+  document.getElementById('ovltext').textContent = 'tracing prompt through all 64 sublayers…';
+  try {
+    const r = await fetch('/trace.json?prompt=' + encodeURIComponent(prompt) +
+      '&chat=' + (chat ? '1' : '0') + '&fast=' + (fast ? '1' : '0'));
+    if (!r.ok) throw new Error(await r.text());
+    step = 0; selected = -1; loadTrace(await r.json());
+  } catch (err) {
+    document.getElementById('ovltext').textContent = 'trace failed: ' + (err.message || err);
+    setTimeout(() => document.getElementById('overlay').style.display = 'none', 2600);
+  }
+}
+function runPrompt() {
+  const p = document.getElementById('newprompt').value.trim();
+  if (p) fetchTrace(p, document.getElementById('chatmode').checked, document.getElementById('fastmode').checked);
+}
+
+const DEFAULT_PROMPT = window.__DEFAULT_PROMPT__ || 'France: Paris. Japan: Tokyo. Germany: Berlin. Italy:';
+boot();
+</script>
+</body>
+</html>
